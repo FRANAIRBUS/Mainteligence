@@ -35,11 +35,8 @@ service cloud.firestore {
     }
 
     match /assets/{assetId} {
-      allow get, create, update, delete: if isAdmin();
-    }
-
-    match /assets {
-      allow list: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
 
     match /tickets/{ticketId} {
