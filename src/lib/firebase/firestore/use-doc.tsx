@@ -10,7 +10,11 @@ export function useDoc<T>(path: string) {
   const db = useFirestore();
 
   useEffect(() => {
-    if (!db) return;
+    if (!db || !path) {
+      setLoading(false);
+      setData(null);
+      return;
+    }
     const docRef = doc(db, path);
     const unsubscribe = onSnapshot(
       docRef,
