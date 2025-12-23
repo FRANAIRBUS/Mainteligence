@@ -1,13 +1,15 @@
 // src/firebase/config.ts
 import { FirebaseOptions, getApp, getApps, initializeApp } from 'firebase/app';
 
+const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+
 const firebaseConfig: FirebaseOptions = {
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  projectId: projectId,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  storageBucket: projectId ? `${projectId}.appspot.com` : undefined,
 };
 
 // Initialize Firebase
