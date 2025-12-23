@@ -164,21 +164,27 @@ export default function IncidentsPage() {
 
   // Phase 3: Construct the tickets query only when firestore, user, AND userProfile are ready.
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null; 
-    
+    if (!firestore || !user || !userProfile) return null;
+
     const ticketsCollection = collection(firestore, 'tickets');
 
     if (isMantenimiento) {
       // Admins and maintenance can see all tickets.
       return query(ticketsCollection);
     }
-    
-    // An 'operario' can see tickets they created OR are assigned to them.
-    return query(ticketsCollection, or(
-      where('createdBy', '==', user.uid),
-      where('assignedTo', '==', user.uid)
-    ));
 
+    // An 'operario' can see tickets they created, are assigned to them, or are in their department.
+    const userDepartmentId = userProfile.departmentId;
+    const conditions = [
+        where('createdBy', '==', user.uid),
+        where('assignedTo', '==', user.uid)
+    ];
+
+    if (userDepartmentId) {
+        conditions.push(where('departmentId', '==', userDepartmentId));
+    }
+
+    return query(ticketsCollection, or(...conditions));
   }, [firestore, user, userProfile, isMantenimiento]);
   
   // Phase 4: Execute the query for tickets and load other collections.
