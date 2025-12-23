@@ -150,15 +150,8 @@ export default function IncidentsPage() {
 
     const ticketsCollection = collection(firestore, 'tickets');
 
-    if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
-      return query(ticketsCollection);
-    }
-    
-    if (userProfile.role === 'operario') {
-      return query(ticketsCollection, where('createdBy', '==', user.uid));
-    }
-    
-    return null;
+    // Admin, mantenimiento y operario ahora ven todos los tickets
+    return query(ticketsCollection);
 
   }, [firestore, userProfile, user]);
 
@@ -239,7 +232,7 @@ export default function IncidentsPage() {
                 <div>
                   <CardTitle>Incidencias</CardTitle>
                   <CardDescription className="mt-2">
-                    {userProfile?.role === 'operario' ? 'Visualiza aquí tus incidencias creadas.' : 'Visualiza y gestiona todas las incidencias correctivas.'}
+                    {userProfile?.role === 'operario' ? 'Visualiza aquí todas las incidencias.' : 'Visualiza y gestiona todas las incidencias correctivas.'}
                   </CardDescription>
                 </div>
                 <Button onClick={() => setIsAddIncidentOpen(true)}>Crear Incidencia</Button>
