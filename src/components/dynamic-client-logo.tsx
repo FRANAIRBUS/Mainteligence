@@ -29,6 +29,7 @@ export function DynamicClientLogo({
     );
   }
 
+  // Pass the loaded URL to the ClientLogo component
   return (
     <ClientLogo
       src={settings?.logoUrl}

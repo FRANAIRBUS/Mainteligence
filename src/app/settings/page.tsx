@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
 import { useUser, useFirestore, useStorage, useDoc } from '@/lib/firebase';
+import type { User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
@@ -25,16 +26,18 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
-import { FirestorePermissionError } from '@/lib/firebase/errors';
+import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
+import Image from 'next/image';
 
 interface AppSettings {
   logoUrl?: string;
+  updatedAt?: any;
 }
 
 export default function SettingsPage() {
@@ -43,12 +46,15 @@ export default function SettingsPage() {
   const storage = useStorage();
   const firestore = useFirestore();
   const { toast } = useToast();
+  
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const isAdmin = userProfile?.role === 'admin';
 
-  const { data: settings } = useDoc<AppSettings>('settings/app');
+  const { data: settings, loading: settingsLoading } = useDoc<AppSettings>('settings/app');
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
-  const [logoUrl, setLogoUrl] = useState<string | undefined | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -57,10 +63,14 @@ export default function SettingsPage() {
   }, [user, userLoading, router]);
   
   useEffect(() => {
-    if (settings) {
-      setLogoUrl(settings.logoUrl);
+    if (selectedFile) {
+      const objectUrl = URL.createObjectURL(selectedFile);
+      setPreviewUrl(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
+    } else {
+      setPreviewUrl(null);
     }
-  }, [settings]);
+  }, [selectedFile]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -70,60 +80,54 @@ export default function SettingsPage() {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !storage || !firestore) {
+    if (!selectedFile || !storage || !firestore || !isAdmin) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Por favor, selecciona un archivo para subir.',
+        description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
       });
       return;
     }
 
     setIsPending(true);
     
+    // Fixed path as requested
+    const logoRef = ref(storage, `branding/logo.png`);
+    
     try {
-      const logoRef = ref(storage, `logos/client-logo-${Date.now()}.png`);
+      // Upload the file, overwriting the previous one
       const uploadResult = await uploadBytes(logoRef, selectedFile);
       const downloadURL = await getDownloadURL(uploadResult.ref);
 
+      // Save the URL in Firestore
       const settingsRef = doc(firestore, 'settings', 'app');
-      const settingsData = { logoUrl: downloadURL };
+      const settingsData = { 
+        logoUrl: downloadURL,
+        updatedAt: serverTimestamp(),
+      };
+      
+      await setDoc(settingsRef, settingsData, { merge: true });
 
-      setDoc(settingsRef, settingsData, { merge: true })
-        .then(() => {
-          setLogoUrl(downloadURL);
-          toast({
-            title: 'Éxito',
-            description: 'El logo se ha actualizado correctamente.',
-          });
-          setSelectedFile(null);
-          // Forzar recarga para asegurar que todos los componentes vean el cambio
-          window.location.reload();
-        })
-        .catch((error) => {
-          if (error.code === 'permission-denied') {
-            const permissionError = new FirestorePermissionError({
-              path: settingsRef.path,
-              operation: 'update',
-              requestResourceData: settingsData,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-          } else {
-             toast({
-              variant: 'destructive',
-              title: 'Error al guardar en Firestore',
-              description: error.message || 'Ocurrió un error inesperado.',
-            });
-          }
-        });
+      toast({
+        title: 'Éxito',
+        description: 'El logo se ha actualizado correctamente.',
+      });
+      setSelectedFile(null);
+      // Force reload to ensure all components see the change.
+      window.location.reload();
 
     } catch (error: any) {
       if (error.code === 'storage/unauthorized') {
-        toast({
-            variant: 'destructive',
-            title: 'Error de Permiso de Storage',
-            description: 'No tienes permiso para subir archivos. Revisa las reglas de Storage.',
-        });
+        errorEmitter.emit('permission-error', new StoragePermissionError({
+          path: logoRef.fullPath,
+          operation: 'write',
+        }));
+      } else if (error.code === 'permission-denied') {
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: 'settings/app',
+          operation: 'update',
+          requestResourceData: { logoUrl: '...' },
+        }));
       } else {
         toast({
             variant: 'destructive',
@@ -136,7 +140,9 @@ export default function SettingsPage() {
     }
   }
 
-  if (userLoading || !user) {
+  const initialLoading = userLoading || profileLoading;
+
+  if (initialLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -173,36 +179,63 @@ export default function SettingsPage() {
             <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl mb-8">
               Ajustes
             </h1>
-            <Card>
-              <CardHeader>
-                <CardTitle>Ajustes de la Empresa</CardTitle>
-                <CardDescription>
-                  Actualiza el logo y las preferencias de la aplicación.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-2">
-                  <Label>Logo Actual</Label>
-                  <div className="flex items-center gap-4">
-                    <DynamicClientLogo width={64} height={64} className="bg-muted p-1" />
-                    <p className="text-sm text-muted-foreground">Este es el logo que se muestra en toda la aplicación.</p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="logo-upload">Subir Nuevo Logo</Label>
-                  <Input id="logo-upload" type="file" onChange={handleFileChange} accept="image/png, image/jpeg, image/gif, image/webp" />
-                  {selectedFile && <p className="text-xs text-muted-foreground">Archivo seleccionado: {selectedFile.name}</p>}
-                </div>
-              </CardContent>
-              <CardFooter className="border-t px-6 py-4">
-                <Button onClick={handleUpload} disabled={isPending || !selectedFile}>
-                  {isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Guardar Cambios
-                </Button>
-              </CardFooter>
-            </Card>
+            {isAdmin ? (
+                <Card>
+                <CardHeader>
+                    <CardTitle>Ajustes de la Empresa</CardTitle>
+                    <CardDescription>
+                    Actualiza el logo y las preferencias de la aplicación.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    <div className="space-y-2">
+                    <Label>Logo Actual</Label>
+                    <div className="flex items-center gap-4">
+                        {settingsLoading ? <Icons.spinner className='animate-spin' /> : <DynamicClientLogo width={64} height={64} className="bg-muted p-1" />}
+                        <p className="text-sm text-muted-foreground">Este es el logo que se muestra en toda la aplicación.</p>
+                    </div>
+                    </div>
+                     <div className="space-y-2">
+                      <Label>Previsualización</Label>
+                       <div className="flex items-center gap-4">
+                         {previewUrl ? (
+                           <Image src={previewUrl} alt="Previsualización del logo" width={64} height={64} className="bg-muted p-1 rounded-md" />
+                         ) : (
+                           <div className="flex h-[64px] w-[64px] items-center justify-center rounded-md bg-muted text-xs text-muted-foreground">
+                             Sin previsualización
+                           </div>
+                         )}
+                         <p className="text-sm text-muted-foreground">Previsualización del nuevo logo seleccionado.</p>
+                       </div>
+                     </div>
+                    <div className="space-y-2">
+                    <Label htmlFor="logo-upload">Subir Nuevo Logo</Label>
+                    <Input id="logo-upload" type="file" onChange={handleFileChange} accept="image/png, image/jpeg, image/gif, image/webp" />
+                    {selectedFile && <p className="text-xs text-muted-foreground">Archivo seleccionado: {selectedFile.name}</p>}
+                    </div>
+                </CardContent>
+                <CardFooter className="border-t px-6 py-4">
+                    <Button onClick={handleUpload} disabled={isPending || !selectedFile}>
+                    {isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Guardar Cambios
+                    </Button>
+                </CardFooter>
+                </Card>
+            ) : (
+                 <Card className="border-destructive/50">
+                    <CardHeader className="flex flex-row items-center gap-4">
+                         <AlertTriangle className="h-8 w-8 text-destructive" />
+                         <div>
+                            <CardTitle>Acceso Denegado</CardTitle>
+                            <CardDescription>
+                                Solo los administradores pueden modificar los ajustes de la empresa.
+                            </CardDescription>
+                        </div>
+                    </CardHeader>
+                </Card>
+            )}
           </div>
         </main>
       </SidebarInset>

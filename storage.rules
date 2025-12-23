@@ -7,17 +7,17 @@ service firebase.storage {
       return get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Allow public read access to logos.
-    // Allow admins to write to the /logos/ folder.
-    match /logos/{allPaths=**} {
+    // Allow public read access to the company logo.
+    // Allow admins to write (upload/overwrite) the logo.
+    match /branding/logo.png {
       allow read;
       allow write: if request.auth != null && isAdmin();
     }
     
-    // Allow authenticated users to write to their own ticket folders.
+    // Allow authenticated users to write to their own ticket folders for photo evidence.
     match /tickets/{ticketId}/{allPaths=**} {
-        allow read: if request.auth != null;
-        allow write: if request.auth != null;
+        allow read: if request.auth != null; // Allow authenticated users to read ticket images
+        allow write: if request.auth != null; // Allow any authenticated user to upload images to a ticket folder
     }
   }
 }

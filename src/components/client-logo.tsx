@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 export function ClientLogo({
@@ -14,17 +13,29 @@ export function ClientLogo({
   height?: number;
   className?: string;
 }) {
-  const logoSrc = src || '/client-logo.png';
+  // Use the provided src, or fallback to a default local image
+  const logoSrc = src || '/default-logo.png';
 
+  // Use a standard <img> tag to avoid Next.js Image component issues with external domains
+  // and to ensure it works without complex configuration.
   return (
-    <Image
+    <img
       src={logoSrc}
       alt="Logo del Cliente"
       width={width}
       height={height}
-      className={cn('rounded-md', className)}
-      priority={!src} // Only prioritize the default local logo
-      key={src} // Add key to force re-render on src change
+      className={cn('rounded-md object-contain', className)}
+      // Add a key to force re-render when the src changes
+      key={src || 'default-logo'}
+      // Handle potential loading errors for the remote image
+      onError={(e) => {
+        // If the remote logo fails to load, fall back to the default logo
+        const target = e.target as HTMLImageElement;
+        if (target.src !== '/default-logo.png') {
+            target.onerror = null; // prevent infinite loop
+            target.src = '/default-logo.png';
+        }
+      }}
     />
   );
 }

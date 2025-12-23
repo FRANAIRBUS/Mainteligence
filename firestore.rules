@@ -26,7 +26,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwner(userId) || isMantenimiento();
       allow list: if isMantenimiento();
-      allow create: if isSignedIn();
+      allow create: if isSignedIn(); // Allow any signed-in user to create their own user doc (on first sign-in)
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin() && !isOwner(userId);
     }
@@ -48,11 +48,6 @@ service cloud.firestore {
 
     match /tickets/{ticketId} {
       allow get: if isSignedIn() && (isMantenimiento() || resource.data.createdBy == request.auth.uid || resource.data.assignedTo == request.auth.uid);
-      // For 'list' operations (queries):
-      // - Maintenance/Admins can list everything.
-      // - An 'operario' can only list tickets they created OR are assigned to.
-      // The Firestore client SDK enforces this with 'where' clauses. The rule here
-      // just needs to allow the query to proceed for an authenticated operario.
       allow list: if isMantenimiento() || (isOperario() && request.auth.uid != null);
       allow create: if isSignedIn();
       allow delete: if isAdmin();
@@ -68,8 +63,8 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read: if isSignedIn(); // Allow any signed-in user to read settings (for the logo)
+      allow write: if isAdmin(); // Only admins can change settings
     }
   }
 }
