@@ -42,8 +42,6 @@ export default function SettingsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
 
-  const { data: settings, loading: settingsLoading } = useDoc<AppSettings>('settings/app');
-
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isPending, setIsPending] = useState(false);
 
@@ -84,7 +82,9 @@ export default function SettingsPage() {
         description: 'El logo se ha actualizado correctamente. La página se recargará para aplicar los cambios.',
       });
       setSelectedFile(null);
-      // Force a reload to ensure all components get the new logo URL
+      
+      // Force a hard reload to ensure all components get the new logo URL
+      // Using router.refresh() which is the recommended way in App Router
       router.refresh(); 
 
     } catch (error: any) {
@@ -99,7 +99,7 @@ export default function SettingsPage() {
     }
   }
 
-  const isLoading = userLoading || settingsLoading;
+  const isLoading = userLoading;
 
   if (isLoading || !user) {
     return (

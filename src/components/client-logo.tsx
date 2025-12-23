@@ -1,7 +1,6 @@
 'use client';
 
 import Image from 'next/image';
-import { Skeleton } from './ui/skeleton';
 import { cn } from '@/lib/utils';
 
 export function ClientLogo({
@@ -17,19 +16,6 @@ export function ClientLogo({
 }) {
   const logoSrc = src || '/client-logo.png';
 
-  if (!src) {
-     return (
-        <Image
-        src={logoSrc}
-        alt="Logo del Cliente"
-        width={width}
-        height={height}
-        className={cn('rounded-md', className)}
-        priority
-        />
-     )
-  }
-
   return (
     <Image
       src={logoSrc}
@@ -37,7 +23,8 @@ export function ClientLogo({
       width={width}
       height={height}
       className={cn('rounded-md', className)}
-      priority
+      priority={!src} // Only prioritize the default local logo
+      key={src} // Add key to force re-render on src change
     />
   );
 }
