@@ -47,7 +47,8 @@ export default function LoginPage() {
     try {
       await signInWithPopup(auth, provider);
       router.push('/');
-    } catch (err: any)      setError(err.message);
+    } catch (err: any) {
+      setError(err.message);
     }
   };
 
