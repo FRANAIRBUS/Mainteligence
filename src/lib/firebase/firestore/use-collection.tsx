@@ -11,14 +11,18 @@ import { useFirestore } from '../provider';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 
-export function useCollection<T>(pathOrRef: string | CollectionReference) {
+export function useCollection<T>(pathOrRef: string | CollectionReference | null) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
 
   useEffect(() => {
-    if (!db) return;
+    if (!db || !pathOrRef) {
+      setLoading(false);
+      setData([]);
+      return;
+    }
 
     let collectionRef: CollectionReference;
     if (typeof pathOrRef === 'string') {
@@ -51,7 +55,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference) {
     );
 
     return () => unsubscribe();
-  }, [db, pathOrRef]);
+  }, [db, typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path]);
 
   return { data, loading, error };
 }
