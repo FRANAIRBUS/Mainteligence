@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollectionQuery, useDoc, useFirestore } from '@/lib/firebase';
+import { useUser, useCollection, useDoc } from '@/lib/firebase';
 import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
@@ -43,7 +43,6 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { collection, query } from 'firebase/firestore';
 
 function IncidentsTable({
   tickets,
@@ -144,30 +143,18 @@ function IncidentsTable({
 export default function IncidentsPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
-  const firestore = useFirestore();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : '');
-  
-  const ticketsQuery = useMemo(() => {
-    if (!firestore) return null;
-    const ticketsCollection = collection(firestore, 'tickets');
-    // All roles will now see all tickets. Permissions are handled by Firestore rules.
-    return query(ticketsCollection);
-  }, [firestore]);
 
-  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
+  // --- START: SIMPLIFIED DATA FETCHING ---
+  const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   
   const canLoadAdminCatalogs = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
-  const sitesQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'sites') : null, [firestore, userProfile]);
-  const departmentsQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'departments') : null, [firestore, userProfile]);
-  
-  const assetsQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? collection(firestore, 'assets') : null, [firestore, canLoadAdminCatalogs]);
-  const usersQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? query(collection(firestore, 'users')) : null, [firestore, canLoadAdminCatalogs]);
-
-  const { data: sites, loading: sitesLoading } = useCollectionQuery<Site>(sitesQuery);
-  const { data: departments, loading: departmentsLoading } = useCollectionQuery<Department>(departmentsQuery);
-  const { data: assets, loading: assetsLoading } = useCollectionQuery<Asset>(assetsQuery);
-  const { data: users, loading: usersLoading } = useCollectionQuery<User>(usersQuery);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadAdminCatalogs ? 'assets' : '');
+  const { data: users, loading: usersLoading } = useCollection<User>(canLoadAdminCatalogs ? 'users' : '');
+  // --- END: SIMPLIFIED DATA FETCHING ---
   
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
@@ -191,7 +178,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
-  const isLoading = userLoading || profileLoading || ticketsLoading;
+  const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || deptsLoading;
   
   if (isLoading && !tickets.length) {
     return (
@@ -201,7 +188,7 @@ export default function IncidentsPage() {
     );
   }
 
-  const tableIsLoading = ticketsLoading;
+  const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading;
 
   return (
     <SidebarProvider>

@@ -42,9 +42,7 @@ service cloud.firestore {
     }
 
     match /tickets/{ticketId} {
-      // Allow public read access to solve persistent permission issues.
-      // Write access is still secure.
-      allow read: true; 
+      allow read: if request.auth != null;
       
       allow create: if request.auth != null;
       allow delete: if isAdmin();
