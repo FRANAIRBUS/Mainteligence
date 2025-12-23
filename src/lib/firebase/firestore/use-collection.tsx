@@ -21,7 +21,8 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
 
   useEffect(() => {
     // If the path is explicitly null or empty, or db is not available, do nothing.
-    if (!db || !pathOrRef) {
+    // This is key to preventing calls with invalid paths and respecting conditional rendering of hooks.
+    if (!db || !memoizedPath) {
       setData([]);
       setLoading(false);
       return;
@@ -33,7 +34,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
     if (typeof pathOrRef === 'string') {
       collectionRef = collection(db, pathOrRef);
     } else {
-      collectionRef = pathOrRef;
+      collectionRef = pathOrRef!; // We know it's not null here because of the check above
     }
 
     const unsubscribe = onSnapshot(
@@ -71,10 +72,12 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  // We stringify the query components to create a stable dependency for useEffect.
   const queryPath = useMemo(() => query ? (query as any)._query.path.segments.join('/') : null, [query]);
   const queryFilters = useMemo(() => query ? JSON.stringify((query as any)._query.filters) : null, [query]);
 
   useEffect(() => {
+    // If the query is null, do nothing. This is the key to conditional execution.
     if (query === null) {
       setLoading(false);
       setData([]);
@@ -107,7 +110,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
     );
 
     return () => unsubscribe();
-  }, [query, queryPath, queryFilters]);
+  }, [query, queryPath, queryFilters]); // Depend on the stable, stringified query parts.
 
   return { data, loading, error };
 }

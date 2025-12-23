@@ -148,11 +148,13 @@ export default function IncidentsPage() {
 
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
 
+  // Unconditional hook calls, with `null` as the path when data is not needed.
   const ticketsQuery = useMemo(() => {
     if (!firestore || !userProfile) return null; // No query until profile is loaded
     
     const ticketsCollection = collection(firestore, 'tickets');
     
+    // Operario only sees tickets from their department
     if (userProfile.role === 'operario' && userProfile.departmentId) {
       return query(ticketsCollection, where('departmentId', '==', userProfile.departmentId));
     }
@@ -161,9 +163,13 @@ export default function IncidentsPage() {
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(ticketsCollection);
     }
+    
+    // Fallback for operario without department: show only their own tickets
+    if(userProfile.role === 'operario' && !userProfile.departmentId) {
+       return query(ticketsCollection, where('createdBy', '==', userProfile.id));
+    }
 
-    // Fallback for operario without department or other cases
-    return null;
+    return null; // Return null if no condition is met
 
   }, [firestore, userProfile]);
 
@@ -172,6 +178,7 @@ export default function IncidentsPage() {
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   
   const canLoadAdminData = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
+  
   const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
   const { data: usersData, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
 
@@ -200,6 +207,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
+  // The main page is loading if we don't have the user or their profile yet.
   const pageLoading = userLoading || profileLoading;
   
   if (pageLoading) {
@@ -210,6 +218,7 @@ export default function IncidentsPage() {
     );
   }
   
+  // Table loading state depends on tickets and catalogs.
   const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading;
   const maintenanceUsers = useMemo(() => users.filter(u => u.role === 'mantenimiento' || u.role === 'admin'), [users]);
 
