@@ -44,5 +44,10 @@ service cloud.firestore {
         allow read: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
         allow create: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
     }
+
+    match /settings/{settingId} {
+      allow read;
+      allow write: if isAdmin();
+    }
   }
 }

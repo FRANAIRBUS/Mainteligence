@@ -83,7 +83,7 @@ export default function SettingsPage() {
       toast({
         variant: 'destructive',
         title: 'Error al subir el logo',
-        description: error.message || 'Ocurrió un error inesperado.',
+        description: error.message || 'Ocurrió un error inesperado. Revisa las reglas de seguridad.',
       });
     } finally {
       setIsPending(false);
