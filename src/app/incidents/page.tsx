@@ -43,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query } from 'firebase/firestore';
 
 function IncidentsTable({
   tickets,
@@ -148,6 +148,7 @@ export default function IncidentsPage() {
   const ticketsQuery = useMemo(() => {
     if (!firestore) return null;
     const ticketsCollection = collection(firestore, 'tickets');
+    // All roles will now see all tickets. Permissions are handled by Firestore rules.
     return query(ticketsCollection);
   }, [firestore]);
 
@@ -156,16 +157,16 @@ export default function IncidentsPage() {
   const canLoadAdminCatalogs = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
   // Sites and Departments are needed by all roles to display names in the table.
-  // CRITICAL: We only create the query if the user profile is loaded to avoid race conditions.
+  // We only create the query if the user profile is loaded to avoid race conditions.
   const sitesQuery = useMemo(() => firestore && userProfile ? collection(firestore, 'sites') : null, [firestore, userProfile]);
   const departmentsQuery = useMemo(() => firestore && userProfile ? collection(firestore, 'departments') : null, [firestore, userProfile]);
 
   // Assets and Users are only needed for forms used by admin/mantenimiento.
   const assetsQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? collection(firestore, 'assets') : null, [firestore, canLoadAdminCatalogs]);
-  const usersQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? query(collection(firestore, 'users'), where('role', 'in', ['admin', 'mantenimiento'])) : null, [firestore, canLoadAdminCatalogs]);
+  const usersQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? query(collection(firestore, 'users')) : null, [firestore, canLoadAdminCatalogs]);
 
-  const { data: sites } = useCollectionQuery<Site>(sitesQuery);
-  const { data: departments } = useCollectionQuery<Department>(departmentsQuery);
+  const { data: sites, loading: sitesLoading } = useCollectionQuery<Site>(sitesQuery);
+  const { data: departments, loading: departmentsLoading } = useCollectionQuery<Department>(departmentsQuery);
   const { data: assets, loading: assetsLoading } = useCollectionQuery<Asset>(assetsQuery);
   const { data: users, loading: usersLoading } = useCollectionQuery<User>(usersQuery);
   
@@ -192,9 +193,10 @@ export default function IncidentsPage() {
   };
 
   // The main page loading state should only depend on the essential data for ALL users.
+  // Catalog loading is handled asynchronously.
   const isLoading = userLoading || profileLoading || ticketsLoading;
   
-  if (isLoading) {
+  if (isLoading && !tickets.length) { // Show loader only on initial load
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -202,8 +204,8 @@ export default function IncidentsPage() {
     );
   }
 
-  // We can render the page even if catalogs are still loading for admin roles.
-  const tableIsLoading = ticketsLoading;
+  // The table can be loading catalogs in the background while still displaying ticket data.
+  const tableIsLoading = ticketsLoading || (!!userProfile && (sitesLoading || departmentsLoading));
 
   return (
     <SidebarProvider>
@@ -247,7 +249,7 @@ export default function IncidentsPage() {
                 tickets={tickets} 
                 sites={sitesMap}
                 departments={departmentsMap}
-                loading={tableIsLoading} 
+                loading={tableIsLoading && !tickets.length} // Show table loader only if there's no data yet
                 onViewDetails={handleViewDetails}
                 onEdit={handleEditRequest}
                 userRole={userProfile?.role}
