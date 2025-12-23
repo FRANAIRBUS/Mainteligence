@@ -91,21 +91,21 @@ export default function SettingsPage() {
 
     setIsPending(true);
     
-    // Fixed path as requested
-    const logoRef = ref(storage, `branding/logo.png`);
+    const logoRef = ref(storage, 'branding/logo.png');
+    const settingsRef = doc(firestore, 'settings', 'app');
     
     try {
-      // Upload the file, overwriting the previous one
+      // Step 1: Upload to Storage
       const uploadResult = await uploadBytes(logoRef, selectedFile);
+      
+      // Step 2: Get Download URL
       const downloadURL = await getDownloadURL(uploadResult.ref);
 
-      // Save the URL in Firestore
-      const settingsRef = doc(firestore, 'settings', 'app');
+      // Step 3: Save to Firestore
       const settingsData = { 
         logoUrl: downloadURL,
         updatedAt: serverTimestamp(),
       };
-      
       await setDoc(settingsRef, settingsData, { merge: true });
 
       toast({
@@ -117,17 +117,20 @@ export default function SettingsPage() {
       window.location.reload();
 
     } catch (error: any) {
+      // Enhanced Error Handling
       if (error.code === 'storage/unauthorized') {
-        errorEmitter.emit('permission-error', new StoragePermissionError({
+        const permissionError = new StoragePermissionError({
           path: logoRef.fullPath,
           operation: 'write',
-        }));
+        });
+        errorEmitter.emit('permission-error', permissionError);
       } else if (error.code === 'permission-denied') {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-          path: 'settings/app',
+        const permissionError = new FirestorePermissionError({
+          path: settingsRef.path,
           operation: 'update',
-          requestResourceData: { logoUrl: '...' },
-        }));
+          requestResourceData: { logoUrl: '...' }, // Don't log the full URL
+        });
+        errorEmitter.emit('permission-error', permissionError);
       } else {
         toast({
             variant: 'destructive',
