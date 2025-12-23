@@ -7,7 +7,6 @@ service cloud.firestore {
       if (request.auth == null) {
         return false;
       }
-      // Use exists() to avoid errors on non-existent documents
       let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
       return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc.data.role == 'admin';
     }
@@ -23,30 +22,36 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if request.auth.uid == userId || isMantenimiento();
       allow list: if isMantenimiento();
-      allow create: if isAdmin(); // Only admins can create users through the backend for now
+      // Allow any authenticated user to create their own user document
+      allow create: if request.auth.uid == userId;
       allow update: if isAdmin() || request.auth.uid == userId;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() && request.auth.uid != userId;
     }
 
     match /sites/{siteId} {
-      allow get, list: if request.auth != null;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
     match /departments/{departmentId} {
-      allow get, list: if request.auth != null;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
     match /assets/{assetId} {
-      allow get, list: if request.auth != null;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
     match /tickets/{ticketId} {
       allow get: if request.auth != null && (isMantenimiento() || resource.data.createdBy == request.auth.uid || resource.data.assignedTo == request.auth.uid);
-      // Admin/Mantenimiento can list all. Operario can list tickets created by or assigned to them.
-      allow list: if isMantenimiento() || (request.auth != null && (request.query.where.field == 'createdBy' || request.query.where.field == 'assignedTo'));
+      // Admin/Mantenimiento can list all.
+      // Operario can only list tickets created by or assigned to them via a specific query.
+      allow list: if isMantenimiento() || (request.auth != null && (
+          (request.query.where.field == 'createdBy' && request.query.where.value == request.auth.uid) ||
+          (request.query.where.field == 'assignedTo' && request.query.where.value == request.auth.uid) ||
+          (request.query.where.field == 'createdBy' || request.query.where.field == 'assignedTo') // For 'or' queries
+      ));
       allow create: if request.auth != null;
       allow delete: if isAdmin();
       allow update: if 

@@ -167,9 +167,10 @@ export default function IncidentsPage() {
   const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
   const { data: users, loading: usersLoading } = useCollection<User>(canLoadData ? 'users' : null);
 
-  // Phase 3.5: Construct the tickets query only when firestore and userProfile are ready.
+  // Phase 4: Construct the tickets query only when firestore, user, AND userProfile are ready.
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null; // Wait for profile
+    // Do not run query if essential data is missing
+    if (!firestore || !user || !userProfile) return null; 
     
     const ticketsCollection = collection(firestore, 'tickets');
 
@@ -186,7 +187,7 @@ export default function IncidentsPage() {
 
   }, [firestore, user, userProfile]);
 
-  // Phase 3.6: Execute the query for tickets.
+  // Phase 5: Execute the query for tickets. This hook handles the `null` query case gracefully.
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
@@ -201,7 +202,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  // The page is in its initial loading state if we are waiting for auth or profile.
+  // The page is in its initial loading state if we are waiting for auth or the user's profile.
   const initialLoading = userLoading || profileLoading;
   
   if (initialLoading) {
@@ -212,7 +213,8 @@ export default function IncidentsPage() {
     );
   }
   
-  // Table data is loading if any of the main collections are still loading.
+  // Data for the table is loading if any of the main collections are still loading.
+  // We also check ticketsLoading, which will be true if the query is running.
   const tableDataIsLoading = ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
 
   return (
@@ -274,7 +276,7 @@ export default function IncidentsPage() {
         departments={departments}
         assets={assets}
       />
-      {editingTicket && (
+      {editingTicket && users && (
         <EditIncidentDialog
           open={isEditIncidentOpen}
           onOpenChange={setIsEditIncidentOpen}

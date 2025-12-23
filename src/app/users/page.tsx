@@ -173,6 +173,8 @@ function CreateAdminProfile() {
         title: '¡Éxito!',
         description: 'Tu perfil de administrador ha sido creado.',
       });
+      // Consider a page reload or state update to refresh the view
+      window.location.reload();
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -194,8 +196,8 @@ function CreateAdminProfile() {
           Completar Configuración de Administrador
         </CardTitle>
         <CardDescription>
-          Tu usuario autenticado no tiene un perfil en la base de datos.
-          Crea uno ahora para obtener permisos de administrador.
+          Tu cuenta de usuario autenticada no tiene un perfil en la base de datos de la aplicación.
+          Crea un perfil de administrador ahora para obtener permisos de gestión.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -212,6 +214,7 @@ export default function UsersPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
 
+  // Phase 1: Wait for user authentication
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
@@ -221,20 +224,20 @@ export default function UsersPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   
-  const canLoadData = !userLoading && !!user;
-  
+  // Phase 2: Load user profile, but only if user is authenticated
   const { data: userProfile, loading: profileLoading } = useDoc<User>(
-    canLoadData ? `users/${user.uid}` : null
+    user ? `users/${user.uid}` : null
   );
 
   const isAdmin = userProfile?.role === 'admin';
   
+  // Phase 3: Load app data, but only if the current user is an admin
   const { data: users, loading: usersLoading } = useCollection<User>(
-    canLoadData && isAdmin ? 'users' : null
+    isAdmin ? 'users' : null
   );
   
   const { data: departments, loading: deptsLoading } = useCollection<Department>(
-    canLoadData && isAdmin ? 'departments' : null
+    isAdmin ? 'departments' : null
   );
 
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
@@ -249,6 +252,14 @@ export default function UsersPage() {
   };
   
   const handleDeleteRequest = (userId: string) => {
+    if (userId === user?.uid) {
+        toast({
+            variant: "destructive",
+            title: "Acción no permitida",
+            description: "No puedes eliminar tu propia cuenta de usuario.",
+        });
+        return;
+    }
     setDeletingUserId(userId);
     setIsDeleteDialogOpen(true);
   };
@@ -273,6 +284,7 @@ export default function UsersPage() {
     }
   };
 
+  // Initial loading is true if we are waiting for auth or profile info
   const initialLoading = userLoading || profileLoading;
 
   if (initialLoading) {
@@ -283,6 +295,7 @@ export default function UsersPage() {
     );
   }
 
+  // This is a specific state: user is authenticated but has no profile document.
   const showCreateAdminProfile = !profileLoading && !userProfile;
   const tableIsLoading = isAdmin && (usersLoading || deptsLoading);
 
@@ -344,8 +357,8 @@ export default function UsersPage() {
           )}
         </main>
       </SidebarInset>
-      {isAdmin && <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} departments={departments} />}
-      {editingUser && isAdmin && (
+      {isAdmin && departments && <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} departments={departments} />}
+      {editingUser && isAdmin && departments && (
         <EditUserDialog
           key={editingUser.id}
           open={isEditUserOpen}
@@ -360,7 +373,7 @@ export default function UsersPage() {
             <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta acción no se puede deshacer. Esto eliminará permanentemente al usuario
-              de la base de datos (pero no de Firebase Auth).
+              de la base de datos de la aplicación (pero no de Firebase Authentication).
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
