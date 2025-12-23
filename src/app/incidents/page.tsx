@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useDoc } from '@/lib/firebase';
+import { useUser, useCollection, useDoc, useCollectionQuery, useFirestore } from '@/lib/firebase';
 import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
@@ -43,6 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { query, collection, where } from 'firebase/firestore';
 
 function IncidentsTable({
   tickets,
@@ -143,18 +144,37 @@ function IncidentsTable({
 export default function IncidentsPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
+  const firestore = useFirestore();
+
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
 
-  const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
+  const ticketsQuery = useMemo(() => {
+    if (!firestore || !userProfile) return null; // No query until profile is loaded
+    
+    const ticketsCollection = collection(firestore, 'tickets');
+    
+    if (userProfile.role === 'operario' && userProfile.departmentId) {
+      return query(ticketsCollection, where('departmentId', '==', userProfile.departmentId));
+    }
+    
+    // For admin and mantenimiento, get all tickets
+    if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
+      return query(ticketsCollection);
+    }
+
+    // Fallback for operario without department or other cases
+    return null;
+
+  }, [firestore, userProfile]);
+
+  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   
-  // Hooks are now called unconditionally
   const canLoadAdminData = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
   const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
   const { data: usersData, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
 
-  // Memoize the potentially empty arrays to keep them stable
   const assets = useMemo(() => assetsData || [], [assetsData]);
   const users = useMemo(() => usersData || [], [usersData]);
 

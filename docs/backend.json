@@ -19,6 +19,10 @@
           "enum": ["operario", "mantenimiento", "admin"],
           "description": "The user's role."
         },
+        "departmentId": {
+          "type": "string",
+          "description": "The ID of the department the user belongs to."
+        },
         "isMaintenanceLead": {
           "type": "boolean",
           "description": "Whether the user is a maintenance lead."

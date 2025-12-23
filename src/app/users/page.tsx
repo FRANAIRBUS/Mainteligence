@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
-import type { User } from '@/lib/firebase/models';
+import type { User, Department } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
@@ -221,6 +221,7 @@ export default function UsersPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   const { data: users, loading: usersLoading } = useCollection<User>('users');
+  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   const { data: userProfile, loading: profileLoading } = useDoc<User>(
     user ? `users/${user.uid}` : ''
   );
@@ -263,7 +264,7 @@ export default function UsersPage() {
     }
   };
 
-  if (userLoading || profileLoading || !user) {
+  if (userLoading || profileLoading || deptsLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -334,13 +335,14 @@ export default function UsersPage() {
           )}
         </main>
       </SidebarInset>
-      <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} />
+      <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} departments={departments} />
       {editingUser && (
         <EditUserDialog
           key={editingUser.id}
           open={isEditUserOpen}
           onOpenChange={setIsEditUserOpen}
           user={editingUser}
+          departments={departments}
         />
       )}
        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

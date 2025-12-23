@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useFirestore } from '@/lib/firebase';
-import type { User } from '@/lib/firebase/models';
+import type { User, Department } from '@/lib/firebase/models';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -42,6 +42,7 @@ const formSchema = z.object({
     .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
   email: z.string().email({ message: 'Por favor, ingrese un correo electrónico válido.' }),
   role: z.enum(['operario', 'mantenimiento', 'admin']),
+  departmentId: z.string().optional(),
 });
 
 type EditUserFormValues = z.infer<typeof formSchema>;
@@ -50,9 +51,10 @@ interface EditUserDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   user: User;
+  departments: Department[];
 }
 
-export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps) {
+export function EditUserDialog({ open, onOpenChange, user, departments }: EditUserDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
   const [isPending, setIsPending] = useState(false);
@@ -63,6 +65,7 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
       displayName: user.displayName || '',
       email: user.email || '',
       role: user.role || 'operario',
+      departmentId: user.departmentId || '',
     },
   });
 
@@ -143,32 +146,58 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Rol</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    name={field.name}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecciona un rol" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="operario">Operario</SelectItem>
-                      <SelectItem value="mantenimiento">Mantenimiento</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Rol</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      name={field.name}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecciona un rol" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="operario">Operario</SelectItem>
+                        <SelectItem value="mantenimiento">Mantenimiento</SelectItem>
+                        <SelectItem value="admin">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+               <FormField
+                control={form.control}
+                name="departmentId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Departamento</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecciona un departamento" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {departments.map((dept) => (
+                          <SelectItem key={dept.id} value={dept.id}>
+                            {dept.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <DialogFooter>
               <Button type="submit" disabled={isPending}>
                 {isPending && (

@@ -3,6 +3,7 @@ export type User = {
   displayName: string;
   email: string;
   role: 'operario' | 'mantenimiento' | 'admin';
+  departmentId?: string;
   isMaintenanceLead: boolean;
   active: boolean;
   siteIds?: string[];
