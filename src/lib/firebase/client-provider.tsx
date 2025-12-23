@@ -1,6 +1,6 @@
 // src/firebase/client-provider.tsx
 'use client';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode, useMemo } from 'react';
 import { initializeFirebase } from '.';
 import type { FirebaseApp } from 'firebase/app';
 import type { Auth } from 'firebase/auth';
@@ -11,6 +11,22 @@ interface FirebaseClientProviderProps {
   children: ReactNode;
 }
 
+// We memoize the firebase instances to avoid re-initializing them on every render.
+// This is safe because these are client-side singletons.
+let firebaseInstances: {
+  app: FirebaseApp;
+  auth: Auth;
+  firestore: Firestore;
+} | null = null;
+
+async function getFirebaseInstances() {
+  if (!firebaseInstances) {
+    firebaseInstances = await initializeFirebase();
+  }
+  return firebaseInstances;
+}
+
+
 export function FirebaseClientProvider({
   children,
 }: FirebaseClientProviderProps) {
@@ -18,20 +34,31 @@ export function FirebaseClientProvider({
     app: FirebaseApp;
     auth: Auth;
     firestore: Firestore;
-  } | null>(null);
+  } | null>(firebaseInstances);
 
   useEffect(() => {
-    const init = async () => {
-      const firebaseInstances = await initializeFirebase();
-      setFirebase(firebaseInstances);
+    // If firebase is already initialized, don't do anything.
+    if (firebase) return;
+
+    let isMounted = true;
+    
+    getFirebaseInstances().then(instances => {
+      if (isMounted) {
+        setFirebase(instances);
+      }
+    });
+
+    return () => {
+      isMounted = false;
     };
-    init();
-  }, []);
+  }, [firebase]);
 
   if (!firebase) {
-    // Return null on the client during initialization to match the server render
-    // and avoid hydration mismatch.
-    return null;
+    // While firebase is initializing, you can show a loader or nothing.
+    // Returning children directly is one way to avoid content layout shifts
+    // but you might want to show a loading screen.
+    // For this hydration error, we'll return children.
+    return <>{children}</>;
   }
 
   return (
