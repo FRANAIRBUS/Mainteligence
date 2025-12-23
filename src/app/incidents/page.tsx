@@ -145,16 +145,11 @@ export default function IncidentsPage() {
   const router = useRouter();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : '');
 
-  // --- START: SIMPLIFIED DATA FETCHING ---
   const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  
-  const canLoadAdminCatalogs = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
-
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadAdminCatalogs ? 'assets' : '');
-  const { data: users, loading: usersLoading } = useCollection<User>(canLoadAdminCatalogs ? 'users' : '');
-  // --- END: SIMPLIFIED DATA FETCHING ---
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: users, loading: usersLoading } = useCollection<User>('users');
   
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
@@ -178,9 +173,9 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
-  const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || deptsLoading;
+  const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
   
-  if (isLoading && !tickets.length) {
+  if (isLoading && !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -254,7 +249,7 @@ export default function IncidentsPage() {
           open={isEditIncidentOpen}
           onOpenChange={setIsEditIncidentOpen}
           ticket={editingTicket}
-          users={users}
+          users={users.filter(u => u.role === 'mantenimiento' || u.role === 'admin')}
         />
       )}
     </SidebarProvider>
