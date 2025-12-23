@@ -5,10 +5,11 @@ import {
   onSnapshot,
   Query,
   DocumentData,
+  CollectionReference,
 } from 'firebase/firestore';
 import { useFirestore } from '../provider';
 
-export function useCollection<T>(path: string) {
+export function useCollection<T>(pathOrRef: string | CollectionReference) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -17,7 +18,13 @@ export function useCollection<T>(path: string) {
   useEffect(() => {
     if (!db) return;
 
-    const collectionRef = collection(db, path);
+    let collectionRef: CollectionReference;
+    if (typeof pathOrRef === 'string') {
+      collectionRef = collection(db, pathOrRef);
+    } else {
+      collectionRef = pathOrRef;
+    }
+
     const unsubscribe = onSnapshot(
       collectionRef,
       (snapshot) => {
@@ -35,7 +42,7 @@ export function useCollection<T>(path: string) {
     );
 
     return () => unsubscribe();
-  }, [db, path]);
+  }, [db, pathOrRef]);
 
   return { data, loading, error };
 }
@@ -46,11 +53,12 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!query) {
+    if (query === null) {
       setLoading(false);
       setData([]);
       return;
     }
+    
     setLoading(true);
     const unsubscribe = onSnapshot(
       query,
@@ -70,7 +78,9 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
     );
 
     return () => unsubscribe();
-  }, [query]);
+  // We stringify the query object to use it as a dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query ? query.path : null, query ? JSON.stringify(query) : null]);
 
   return { data, loading, error };
 }

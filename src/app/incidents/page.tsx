@@ -45,9 +45,11 @@ import { AddIncidentDialog } from '@/components/add-incident-dialog';
 function IncidentsTable({
   tickets,
   loading,
+  onViewDetails,
 }: {
   tickets: Ticket[];
   loading: boolean;
+  onViewDetails: (ticketId: string) => void;
 }) {
   if (loading) {
     return (
@@ -74,7 +76,7 @@ function IncidentsTable({
       <TableBody>
         {tickets.length > 0 ? (
           tickets.map((ticket) => (
-            <TableRow key={ticket.id}>
+            <TableRow key={ticket.id} className="cursor-pointer" onClick={() => onViewDetails(ticket.id)}>
               <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0,6)}</TableCell>
               <TableCell>{ticket.title}</TableCell>
                <TableCell>
@@ -86,7 +88,7 @@ function IncidentsTable({
               <TableCell>
                 {ticket.createdAt?.toDate ? ticket.createdAt.toDate().toLocaleDateString() : 'N/A'}
               </TableCell>
-              <TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -100,8 +102,8 @@ function IncidentsTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem>Ver Detalles</DropdownMenuItem>
-                    <DropdownMenuItem>Editar</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onViewDetails(ticket.id)}>Ver Detalles</DropdownMenuItem>
+                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -145,6 +147,10 @@ export default function IncidentsPage() {
       </div>
     );
   }
+  
+  const handleViewDetails = (ticketId: string) => {
+    router.push(`/incidents/${ticketId}`);
+  };
 
   return (
     <SidebarProvider>
@@ -182,7 +188,7 @@ export default function IncidentsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <IncidentsTable tickets={tickets} loading={ticketsLoading} />
+              <IncidentsTable tickets={tickets} loading={ticketsLoading} onViewDetails={handleViewDetails} />
             </CardContent>
           </Card>
         </main>

@@ -32,19 +32,19 @@ export function MainNav() {
     user ? `users/${user.uid}` : ''
   );
 
-  const allMenuItems = [
+  const allMenuItems = useMemo(() => [
     {
       label: "General",
       items: [
         { href: "/", label: "Panel", icon: LayoutGrid, active: pathname === "/" },
         { href: "/incidents", label: "Incidencias", icon: Wrench, active: pathname.startsWith("/incidents") },
         { href: "/preventive", label: "Preventivos", icon: CalendarClock, active: pathname.startsWith("/preventive"), roles: ['admin', 'mantenimiento'] },
-        { href: "/reports", label: "Informes", icon: LineChart, active: pathname.startsWith("/reports"), roles: ['admin', 'mantenimiento'] },
+        { href: "/reports", label: "Informes", icon: LineChart, active: pathname.startsWith("/reports"), roles: ['admin', 'mantenimiento', 'operario'] },
       ],
     },
     {
       label: "Gestión",
-      roles: ['admin', 'mantenimiento'],
+      roles: ['admin'],
       items: [
         { href: "/locations", label: "Ubicaciones", icon: Building, active: pathname.startsWith("/locations") },
         { href: "/departments", label: "Departamentos", icon: Archive, active: pathname.startsWith("/departments") },
@@ -60,7 +60,7 @@ export function MainNav() {
         { href: "/smart-tagging", label: "Etiquetado IA", icon: Tags, active: pathname.startsWith("/smart-tagging") },
       ],
     }
-  ];
+  ], [pathname]);
 
   const menuItems = useMemo(() => {
     if (!userProfile) return [];
@@ -68,12 +68,12 @@ export function MainNav() {
     const userRole = userProfile.role;
 
     return allMenuItems
-      .filter(group => !group.roles || group.roles.includes(userRole))
       .map(group => ({
         ...group,
         items: group.items.filter(item => !item.roles || item.roles.includes(userRole)),
       }))
-      .filter(group => group.items.length > 0);
+      .filter(group => group.items.length > 0)
+      .filter(group => !group.roles || group.roles.includes(userRole));
 
   }, [userProfile, allMenuItems]);
 

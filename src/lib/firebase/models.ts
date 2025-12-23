@@ -48,4 +48,22 @@ export type Ticket = {
   updatedAt: any; // Timestamp
   closedAt?: any; // Timestamp
   closedBy?: string;
+  waiting?: {
+    reason: string;
+    detail: string;
+    eta?: any; // Timestamp
+  };
+  lastCommentAt?: any; // Timestamp
+  reportPdfUrl?: string;
+  emailSentAt?: any; // Timestamp
+  templateId?: string;
+  templateSnapshot?: {
+    name: string;
+    frequencyDays: number;
+  };
+  preventive?: {
+    frequencyDays: number;
+    scheduledFor: any; // Timestamp
+    checklist: any[];
+  };
 };

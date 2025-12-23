@@ -165,6 +165,21 @@
         },
         "closedBy": {
           "type": "string"
+        },
+        "lastCommentAt": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "reportPdfUrl": {
+            "type": "string",
+            "format": "uri"
+        },
+        "emailSentAt": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "templateId": {
+            "type": "string"
         }
       },
       "required": [
