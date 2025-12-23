@@ -6,23 +6,26 @@ service cloud.firestore {
     function isOwner(userId) {
       return request.auth.uid == userId;
     }
+
+    function isAdmin() {
+      return request.auth.token.role == 'admin';
+    }
  
     match /users/{userId} {
       allow read;
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
+      allow write: if isAdmin() || isOwner(userId);
     }
 
     match /sites/{siteId} {
-        allow read, write: if request.auth.token.role == 'admin';
+        allow read, write: if isAdmin();
     }
 
     match /departments/{departmentId} {
-        allow read, write: if request.auth.token.role == 'admin';
+        allow read, write: if isAdmin();
     }
 
     match /assets/{assetId} {
-        allow read, write: if request.auth.token.role == 'admin';
+        allow read, write: if isAdmin();
     }
 
     match /tickets/{ticketId} {
