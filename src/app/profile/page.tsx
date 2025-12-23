@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { useAuth, useFirestore, useUser } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
@@ -94,12 +94,12 @@ export default function ProfilePage() {
 
     setIsPending(true);
     try {
-      // Update Firestore document
+      // Use setDoc with merge to create or update the document.
       const userDocRef = doc(firestore, 'users', user.uid);
-      await updateDoc(userDocRef, {
+      await setDoc(userDocRef, {
         displayName: data.displayName,
         updatedAt: serverTimestamp(),
-      });
+      }, { merge: true });
       
       // Update Firebase Auth profile
       await updateProfile(auth.currentUser, {
