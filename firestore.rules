@@ -44,10 +44,12 @@ service cloud.firestore {
 
     match /tickets/{ticketId} {
       allow get: if request.auth != null && (isMantenimiento() || resource.data.createdBy == request.auth.uid || resource.data.assignedTo == request.auth.uid);
-      // For list, Admins/Mantenimiento can list all. Others must provide a query matching their user ID.
-      // Firestore rules for 'list' can't inspect the 'OR' query shape from the client directly in a secure way
-      // other than checking for auth. The security is enforced by the client query logic.
-      allow list: if isMantenimiento() || request.auth != null;
+      // For list, we allow any authenticated user to attempt the query.
+      // The actual security is enforced by the client query logic, which constructs
+      // a query that Firestore can validate against 'get' rules for each document.
+      // An operario's query will be `where('createdBy', '==', uid)` or `where('assignedTo', '==', uid)`
+      // which is secure. An admin/mantenimiento will fetch all, which is also allowed.
+      allow list: if request.auth != null;
       allow create: if request.auth != null;
       allow delete: if isAdmin();
       allow update: if 

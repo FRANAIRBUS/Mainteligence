@@ -179,8 +179,9 @@ export default function IncidentsPage() {
   }, [firestore, user, userProfile]);
 
   const canLoadData = !!user && !!userProfile;
+  
   // Phase 4: Execute the query for tickets and load other collections only when the query is ready and data can be loaded
-  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
+  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(canLoadData ? ticketsQuery : null);
   const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
   const { data: departments, loading: deptsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
   const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
