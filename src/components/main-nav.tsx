@@ -12,7 +12,6 @@ import {
   Wrench,
   CalendarClock,
   LineChart,
-  Users,
   Building,
   Archive,
   UserCog,
@@ -31,25 +30,25 @@ export function MainNav() {
       label: "Overview",
       items: [
         { href: "/", label: "Dashboard", icon: LayoutGrid, active: pathname === "/" },
-        { href: "/tasks", label: "Tasks", icon: Wrench, active: pathname === "/tasks" },
-        { href: "/preventive", label: "Preventive", icon: CalendarClock, active: pathname === "/preventive" },
-        { href: "/reports", label: "Reports", icon: LineChart, active: pathname === "/reports" },
+        { href: "/tasks", label: "Tasks", icon: Wrench, active: pathname.startsWith("/tasks") },
+        { href: "/preventive", label: "Preventive", icon: CalendarClock, active: pathname.startsWith("/preventive") },
+        { href: "/reports", label: "Reports", icon: LineChart, active: pathname.startsWith("/reports") },
       ],
     },
     {
-      label: "Admin",
+      label: "Management",
       items: [
-        { href: "/incidents", label: "Incidents", icon: FileText, active: pathname === "/incidents" },
-        { href: "/locations", label: "Locations", icon: Building, active: pathname === "/locations" },
-        { href: "/departments", label: "Departments", icon: Archive, active: pathname === "/departments" },
-        { href: "/users", label: "Users & Roles", icon: UserCog, active: pathname === "/users" },
-        { href: "/settings", label: "Settings", icon: Settings, active: pathname === "/settings" },
+        { href: "/incidents", label: "Incidents", icon: FileText, active: pathname.startsWith("/incidents") },
+        { href: "/locations", label: "Locations", icon: Building, active: pathname.startsWith("/locations") },
+        { href: "/departments", label: "Departments", icon: Archive, active: pathname.startsWith("/departments") },
+        { href: "/users", label: "Users & Roles", icon: UserCog, active: pathname.startsWith("/users") },
       ],
     },
     {
-      label: "Tools",
+      label: "Configuration",
       items: [
-        { href: "/smart-tagging", label: "Smart Tagging", icon: Tags, active: pathname === "/smart-tagging" },
+        { href: "/settings", label: "Settings", icon: Settings, active: pathname.startsWith("/settings") },
+        { href: "/smart-tagging", label: "Smart Tagging", icon: Tags, active: pathname.startsWith("/smart-tagging") },
       ],
     }
   ];
