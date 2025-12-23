@@ -160,11 +160,18 @@ export default function IncidentsPage() {
   }, [user, userLoading, router]);
 
   const tickets = useMemo(() => {
-    if (!userProfile || !allTickets) return [];
-    if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
-      return allTickets;
+    if (!userProfile || !allTickets || !user) return [];
+    
+    switch (userProfile.role) {
+      case 'admin':
+        return allTickets;
+      case 'mantenimiento':
+        return allTickets.filter(ticket => ticket.assignedTo === user.uid || !ticket.assignedTo);
+      case 'operario':
+        return allTickets.filter(ticket => ticket.createdBy === user.uid);
+      default:
+        return [];
     }
-    return allTickets.filter(ticket => ticket.createdBy === user?.uid);
   }, [allTickets, userProfile, user]);
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
