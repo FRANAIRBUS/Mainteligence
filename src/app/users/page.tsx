@@ -14,7 +14,7 @@ import { Icons } from '@/components/icons';
 import { useUser, useCollection } from '@/lib/firebase';
 import type { User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Table,
   TableBody,
@@ -34,8 +34,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
+import { AddUserDialog } from '@/components/add-user-dialog';
 
 function UserTable({ users, loading }: { users: User[]; loading: boolean }) {
   if (loading) {
@@ -71,7 +77,9 @@ function UserTable({ users, loading }: { users: User[]; loading: boolean }) {
             {users.length > 0 ? (
               users.map((user) => (
                 <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.displayName}</TableCell>
+                  <TableCell className="font-medium">
+                    {user.displayName}
+                  </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     <Badge variant="outline">{user.role}</Badge>
@@ -84,7 +92,11 @@ function UserTable({ users, loading }: { users: User[]; loading: boolean }) {
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button aria-haspopup="true" size="icon" variant="ghost">
+                        <Button
+                          aria-haspopup="true"
+                          size="icon"
+                          variant="ghost"
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                           <span className="sr-only">Toggle menu</span>
                         </Button>
@@ -120,6 +132,7 @@ export default function UsersPage() {
     error,
   } = useCollection<User>('users');
   const router = useRouter();
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -163,20 +176,21 @@ export default function UsersPage() {
         <main className="flex-1 p-4 sm:p-6 md:p-8">
           <div className="flex items-center justify-between">
             <div>
-                <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
+              <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
                 Users & Roles
-                </h1>
-                <p className="mt-2 text-muted-foreground">
+              </h1>
+              <p className="mt-2 text-muted-foreground">
                 Manage all users and their permissions.
-                </p>
+              </p>
             </div>
-            <Button>Add User</Button>
+            <Button onClick={() => setIsAddUserOpen(true)}>Add User</Button>
           </div>
           <div className="mt-8">
             <UserTable users={users} loading={usersLoading} />
           </div>
         </main>
       </SidebarInset>
+      <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} />
     </SidebarProvider>
   );
 }
