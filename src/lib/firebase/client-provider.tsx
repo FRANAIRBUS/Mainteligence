@@ -27,11 +27,11 @@ export function FirebaseClientProvider({
     };
     init();
   }, []);
-  
+
   if (!firebase) {
-    // Render children without firebase context during initialization
-    // to prevent hydration mismatch.
-     return <>{children}</>;
+    // Return null on the client during initialization to match the server render
+    // and avoid hydration mismatch.
+    return null;
   }
 
   return (
