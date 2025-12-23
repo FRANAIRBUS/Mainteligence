@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useFirestore, useStorage } from '@/lib/firebase';
+import { useUser, useFirestore, useStorage, useDoc } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
@@ -31,21 +31,27 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 
+interface AppSettings {
+    logoUrl?: string;
+}
+
 export default function SettingsPage() {
-  const { user, loading } = useUser();
+  const { user, loading: userLoading } = useUser();
   const router = useRouter();
   const storage = useStorage();
   const firestore = useFirestore();
   const { toast } = useToast();
 
+  const { data: settings, loading: settingsLoading } = useDoc<AppSettings>('settings/app');
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!userLoading && !user) {
       router.push('/login');
     }
-  }, [user, loading, router]);
+  }, [user, userLoading, router]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -75,9 +81,12 @@ export default function SettingsPage() {
 
       toast({
         title: 'Éxito',
-        description: 'El logo se ha actualizado correctamente.',
+        description: 'El logo se ha actualizado correctamente. La página se recargará para aplicar los cambios.',
       });
       setSelectedFile(null);
+      // Force a reload to ensure all components get the new logo URL
+      router.refresh(); 
+
     } catch (error: any) {
       console.error("Error uploading file: ", error);
       toast({
@@ -90,7 +99,9 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading || !user) {
+  const isLoading = userLoading || settingsLoading;
+
+  if (isLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
