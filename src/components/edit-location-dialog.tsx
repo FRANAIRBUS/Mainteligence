@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -43,7 +43,7 @@ type EditLocationFormValues = z.infer<typeof formSchema>;
 interface EditLocationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  site: Site;
+  site: Site | null;
 }
 
 export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDialogProps) {
@@ -53,11 +53,16 @@ export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDia
 
   const form = useForm<EditLocationFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: {
-      name: site.name || '',
-      code: site.code || '',
-    },
   });
+  
+  useEffect(() => {
+    if (site) {
+      form.reset({
+        name: site.name || '',
+        code: site.code || '',
+      });
+    }
+  }, [site, form]);
 
   const onSubmit = async (data: EditLocationFormValues) => {
     if (!firestore || !site) {
@@ -96,6 +101,10 @@ export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDia
     if (!isPending) {
         onOpenChange(isOpen);
     }
+  }
+  
+  if (!site) {
+    return null;
   }
 
   return (

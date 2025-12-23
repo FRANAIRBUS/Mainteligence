@@ -234,14 +234,11 @@ export default function LocationsPage() {
         open={isAddLocationOpen}
         onOpenChange={setIsAddLocationOpen}
       />
-      {editingSite && (
-        <EditLocationDialog
-          key={editingSite.id}
-          open={isEditLocationOpen}
-          onOpenChange={setIsEditLocationOpen}
-          site={editingSite}
-        />
-      )}
+      <EditLocationDialog
+        open={isEditLocationOpen}
+        onOpenChange={setIsEditLocationOpen}
+        site={editingSite}
+      />
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
