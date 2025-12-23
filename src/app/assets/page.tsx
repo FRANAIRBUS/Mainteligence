@@ -187,7 +187,7 @@ export default function AssetsPage() {
 
   const isLoading = userLoading || assetsLoading || sitesLoading;
 
-  if (isLoading && !user) {
+  if (isLoading || !user) {
      return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

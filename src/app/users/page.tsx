@@ -260,10 +260,9 @@ export default function UsersPage() {
     }
   };
 
-  const showCreateAdminProfile =
-    !userLoading && user && !profileLoading && !userProfile;
+  const isLoading = userLoading || profileLoading;
 
-  if (userLoading || !user) {
+  if (isLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -271,6 +270,7 @@ export default function UsersPage() {
     );
   }
 
+  const showCreateAdminProfile = !profileLoading && !userProfile;
   const isAdmin = userProfile?.role === 'admin';
 
   return (
@@ -318,14 +318,16 @@ export default function UsersPage() {
               </CardContent>
             </Card>
           ) : (
-            <Card className="mt-8">
-              <CardContent className="pt-6">
-                <div className="text-center text-muted-foreground">
-                  <p>No tienes permiso para ver esta página.</p>
-                  <p className="text-sm">Por favor, contacta a un administrador.</p>
-                </div>
-              </CardContent>
-            </Card>
+            !showCreateAdminProfile && (
+              <Card className="mt-8">
+                <CardContent className="pt-6">
+                  <div className="text-center text-muted-foreground">
+                    <p>No tienes permiso para ver esta página.</p>
+                    <p className="text-sm">Por favor, contacta a un administrador.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )
           )}
         </main>
       </SidebarInset>

@@ -168,8 +168,10 @@ export default function DepartmentsPage() {
       setDeletingDeptId(null);
     }
   };
+  
+  const isLoading = userLoading || departmentsLoading;
 
-  if (userLoading || !user) {
+  if (isLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

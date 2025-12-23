@@ -142,7 +142,7 @@ export default function PreventivePage() {
 
   const isLoading = userLoading || ticketsLoading;
 
-  if (isLoading && !user) {
+  if (isLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
