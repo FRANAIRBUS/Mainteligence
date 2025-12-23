@@ -150,27 +150,29 @@ export default function IncidentsPage() {
 
     const ticketsCollection = collection(firestore, 'tickets');
 
-    // Admin and Mantenimiento roles see all tickets (global view)
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(ticketsCollection);
     }
     
-    // Operario role only sees tickets they created
     if (userProfile.role === 'operario') {
       return query(ticketsCollection, where('createdBy', '==', user.uid));
     }
     
-    // Default to no query if role is not recognized
     return null;
 
   }, [firestore, userProfile, user]);
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
 
-  const { data: sites, loading: sitesLoading } = useCollectionQuery<Site>(firestore ? collection(firestore, 'sites') : null);
-  const { data: departments, loading: departmentsLoading } = useCollectionQuery<Department>(firestore ? collection(firestore, 'departments') : null);
-  const { data: assets, loading: assetsLoading } = useCollectionQuery<Asset>(firestore ? collection(firestore, 'assets') : null);
-  const { data: users, loading: usersLoading } = useCollectionQuery<User>(firestore ? collection(firestore, 'users') : null);
+  const sitesQuery = useMemo(() => (firestore && user) ? collection(firestore, 'sites') : null, [firestore, user]);
+  const departmentsQuery = useMemo(() => (firestore && user) ? collection(firestore, 'departments') : null, [firestore, user]);
+  const assetsQuery = useMemo(() => (firestore && user) ? collection(firestore, 'assets') : null, [firestore, user]);
+  const usersQuery = useMemo(() => (firestore && user) ? collection(firestore, 'users') : null, [firestore, user]);
+
+  const { data: sites, loading: sitesLoading } = useCollectionQuery<Site>(sitesQuery);
+  const { data: departments, loading: departmentsLoading } = useCollectionQuery<Department>(departmentsQuery);
+  const { data: assets, loading: assetsLoading } = useCollectionQuery<Asset>(assetsQuery);
+  const { data: users, loading: usersLoading } = useCollectionQuery<User>(usersQuery);
   
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
@@ -196,7 +198,7 @@ export default function IncidentsPage() {
 
   const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || departmentsLoading || assetsLoading || usersLoading;
 
-  if (isLoading || !user || !userProfile) {
+  if (userLoading || !user || (!profileLoading && !userProfile) ) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
