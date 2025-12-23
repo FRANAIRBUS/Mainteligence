@@ -150,28 +150,29 @@ export default function IncidentsPage() {
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
 
-  // Step 1: Wait for user to be loaded.
+  // Step 1: Wait for user to be loaded. Redirect if not logged in.
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
 
-  // Step 2: Only fetch profile and other data once user is available.
+  // Step 2: Fetch profile only when user is available.
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   
-  // Step 3: Hooks are now called conditionally based on user, but using null to prevent rule violations.
+  // Step 3: Fetch catalogs only when user is available.
   const { data: sites, loading: sitesLoading } = useCollection<Site>(user ? 'sites' : null);
   const { data: departments, loading: deptsLoading } = useCollection<Department>(user ? 'departments' : null);
   const { data: assets, loading: assetsLoading } = useCollection<Asset>(user ? 'assets' : null);
   const { data: users, loading: usersLoading } = useCollection<User>(user ? 'users' : null);
 
+  // Step 4: Construct the tickets query only when firestore and userProfile are ready.
   const ticketsQuery = useMemo(() => {
-    // Step 4: Don't create a query until firestore and userProfile are ready.
     if (!firestore || !userProfile || !user) return null;
     
     const ticketsCollection = collection(firestore, 'tickets');
 
+    // Admin and Mantenimiento can see all tickets.
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(ticketsCollection);
     }
@@ -184,6 +185,7 @@ export default function IncidentsPage() {
 
   }, [firestore, userProfile, user]);
 
+  // Step 5: Execute the query for tickets.
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
@@ -198,6 +200,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
+  // The page is loading if the user or their profile are not yet loaded.
   const pageIsLoading = userLoading || profileLoading;
   
   if (pageIsLoading) {
@@ -208,6 +211,7 @@ export default function IncidentsPage() {
     );
   }
   
+  // The table data is loading if any of the collections are still loading.
   const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
 
   return (
