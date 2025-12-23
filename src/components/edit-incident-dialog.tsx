@@ -52,7 +52,7 @@ interface EditIncidentDialogProps {
   users: User[];
 }
 
-export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIncidentDialogProps) {
+export function EditIncidentDialog({ open, onOpenChange, ticket, users = [] }: EditIncidentDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
   const { user: currentUser, loading: userLoading } = useUser();
@@ -205,32 +205,34 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
               )}
             />
             
-            <FormField
-              control={form.control}
-              name="assignedTo"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Asignado A</FormLabel>
-                  {/* The value passed to the Select should be a string. We use 'null' as a string to represent the null value. */}
-                  <Select onValueChange={field.onChange} value={field.value || 'null'} disabled={!canEditAssignment}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Sin asignar" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="null">Sin asignar</SelectItem>
-                      {users.map(user => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.displayName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {canEditAssignment && (
+              <FormField
+                control={form.control}
+                name="assignedTo"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Asignado A</FormLabel>
+                    {/* The value passed to the Select should be a string. We use 'null' as a string to represent the null value. */}
+                    <Select onValueChange={field.onChange} value={field.value || 'null'} disabled={!canEditAssignment}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin asignar" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="null">Sin asignar</SelectItem>
+                        {users.map(user => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.displayName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>Cancelar</Button>

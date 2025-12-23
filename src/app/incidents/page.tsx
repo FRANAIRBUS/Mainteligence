@@ -160,13 +160,15 @@ export default function IncidentsPage() {
   // Phase 2: Once user is authenticated, load their profile.
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   
+  const isMantenimiento = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
+
   // Phase 3: Construct the tickets query only when firestore, user, AND userProfile are ready.
   const ticketsQuery = useMemo(() => {
     if (!firestore || !user || !userProfile) return null; 
     
     const ticketsCollection = collection(firestore, 'tickets');
 
-    if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
+    if (isMantenimiento) {
       // Admins and maintenance can see all tickets.
       return query(ticketsCollection);
     }
@@ -177,15 +179,14 @@ export default function IncidentsPage() {
       where('assignedTo', '==', user.uid)
     ));
 
-  }, [firestore, user, userProfile]);
+  }, [firestore, user, userProfile, isMantenimiento]);
   
   // Phase 4: Execute the query for tickets and load other collections.
-  // The hooks themselves will wait for the query to be non-null.
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
-  const { data: users, loading: usersLoading } = useCollection<User>('users');
+  // Only fetch users if the current user is an admin or maintenance staff.
+  const { data: users, loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
 
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
@@ -210,7 +211,7 @@ export default function IncidentsPage() {
     );
   }
   
-  const tableDataIsLoading = ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
+  const tableDataIsLoading = ticketsLoading || sitesLoading || deptsLoading || (isMantenimiento && usersLoading);
 
   return (
     <SidebarProvider>
@@ -268,7 +269,7 @@ export default function IncidentsPage() {
         open={isAddIncidentOpen}
         onOpenChange={setIsAddIncidentOpen}
       />
-      {editingTicket && users.length > 0 && (
+      {editingTicket && (
         <EditIncidentDialog
           open={isEditIncidentOpen}
           onOpenChange={setIsEditIncidentOpen}

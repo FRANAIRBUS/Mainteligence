@@ -51,6 +51,7 @@ export default function IncidentDetailPage() {
 
   const { user, loading: userLoading } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const isMantenimiento = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
   const { data: ticket, loading: ticketLoading } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
   
@@ -60,7 +61,8 @@ export default function IncidentDetailPage() {
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
-  const { data: users, loading: usersLoading } = useCollection<User>('users');
+  // Only fetch users if the current user is an admin or maintenance staff.
+  const { data: users, loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
@@ -83,7 +85,7 @@ export default function IncidentDetailPage() {
     }
   }, [user, userLoading, router, ticket, ticketLoading, userProfile, profileLoading]);
 
-  const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading || assignedToLoading;
+  const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading || sitesLoading || deptsLoading || assetsLoading || (isMantenimiento && usersLoading) || assignedToLoading;
 
   if (isLoading || !userProfile) { // Also check for userProfile, since it's needed for auth
     return (
