@@ -38,6 +38,13 @@ export function useCollection<T>(pathOrRef: string | CollectionReference) {
         setLoading(false);
       },
       (err) => {
+        if (err.code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+            path: collectionRef.path,
+            operation: 'list',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        }
         setError(err);
         setLoading(false);
       }
@@ -76,7 +83,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
       (err) => {
         if (err.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
-            path: query.path,
+            path: (query as any)._query.path.segments.join('/'),
             operation: 'list',
           });
           errorEmitter.emit('permission-error', permissionError);
@@ -89,7 +96,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
     return () => unsubscribe();
   // We stringify the query object to use it as a dependency.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query ? query.path : null, query ? JSON.stringify(query) : null]);
+  }, [query ? (query as any)._query.path.segments.join('/') : null, query ? JSON.stringify((query as any)._query.filters) : null]);
 
   return { data, loading, error };
 }
