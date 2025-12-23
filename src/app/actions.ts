@@ -3,8 +3,9 @@
 import { suggestTags } from '@/ai/flows/smart-tagging-assistant';
 import { z } from 'zod';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { getFirestore } from 'firebase/firestore/lite';
+import { getFirestore } from 'firebase/firestore';
 import { app } from '@/lib/firebase/config';
+import { revalidatePath } from 'next/cache';
 
 // Note: This is a simplified action. In a real-world scenario, creating users
 // would be handled by a secure backend service (e.g., Firebase Functions)
@@ -47,6 +48,8 @@ export async function addUserAction(prevState: any, formData: FormData) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    
+    revalidatePath('/users');
 
     return {
       message: `User ${displayName} created successfully.`,

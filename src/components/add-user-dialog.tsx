@@ -68,7 +68,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
 
   useEffect(() => {
     if (state?.message) {
-      if (state.error) {
+      if (state.error || state.errors) {
         toast({
           variant: 'destructive',
           title: 'Error',
@@ -105,7 +105,12 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form action={formAction} className="space-y-4">
+          <form action={formAction} className="space-y-4" onSubmit={(evt) => {
+              evt.preventDefault();
+              form.handleSubmit(() => {
+                  formAction(new FormData(evt.currentTarget));
+              })(evt);
+          }}>
             <FormField
               control={form.control}
               name="displayName"
@@ -154,6 +159,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
+                    name={field.name}
                   >
                     <FormControl>
                       <SelectTrigger>

@@ -18,6 +18,7 @@ import {
   FileText,
   Settings,
   Tags,
+  HardHat,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -30,7 +31,7 @@ export function MainNav() {
       label: "Overview",
       items: [
         { href: "/", label: "Dashboard", icon: LayoutGrid, active: pathname === "/" },
-        { href: "/tasks", label: "Tasks", icon: Wrench, active: pathname.startsWith("/tasks") },
+        { href: "/incidents", label: "Incidents", icon: Wrench, active: pathname.startsWith("/incidents") },
         { href: "/preventive", label: "Preventive", icon: CalendarClock, active: pathname.startsWith("/preventive") },
         { href: "/reports", label: "Reports", icon: LineChart, active: pathname.startsWith("/reports") },
       ],
@@ -38,9 +39,9 @@ export function MainNav() {
     {
       label: "Management",
       items: [
-        { href: "/incidents", label: "Incidents", icon: FileText, active: pathname.startsWith("/incidents") },
         { href: "/locations", label: "Locations", icon: Building, active: pathname.startsWith("/locations") },
         { href: "/departments", label: "Departments", icon: Archive, active: pathname.startsWith("/departments") },
+        { href: "/assets", label: "Assets", icon: HardHat, active: pathname.startsWith("/assets") },
         { href: "/users", label: "Users & Roles", icon: UserCog, active: pathname.startsWith("/users") },
       ],
     },
