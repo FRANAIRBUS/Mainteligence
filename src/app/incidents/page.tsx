@@ -164,10 +164,10 @@ export default function IncidentsPage() {
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
 
-  const sitesQuery = useMemo(() => (firestore && user) ? collection(firestore, 'sites') : null, [firestore, user]);
-  const departmentsQuery = useMemo(() => (firestore && user) ? collection(firestore, 'departments') : null, [firestore, user]);
-  const assetsQuery = useMemo(() => (firestore && user) ? collection(firestore, 'assets') : null, [firestore, user]);
-  const usersQuery = useMemo(() => (firestore && user) ? collection(firestore, 'users') : null, [firestore, user]);
+  const sitesQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'sites') : null, [firestore, userProfile]);
+  const departmentsQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'departments') : null, [firestore, userProfile]);
+  const assetsQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'assets') : null, [firestore, userProfile]);
+  const usersQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'users') : null, [firestore, userProfile]);
 
   const { data: sites, loading: sitesLoading } = useCollectionQuery<Site>(sitesQuery);
   const { data: departments, loading: departmentsLoading } = useCollectionQuery<Department>(departmentsQuery);
