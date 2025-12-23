@@ -2,8 +2,7 @@
 
 import { suggestTags } from '@/ai/flows/smart-tagging-assistant';
 import { z } from 'zod';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { getFirestore } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getFirestore } from 'firebase/firestore';
 import { app } from '@/lib/firebase/config';
 import { revalidatePath } from 'next/cache';
 
