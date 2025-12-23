@@ -211,7 +211,7 @@ export default function IncidentDetailPage() {
             open={isEditDialogOpen}
             onOpenChange={setIsEditDialogOpen}
             ticket={ticket}
-            users={users.filter(u => u.role === 'mantenimiento' || u.role === 'admin')}
+            users={users}
         />
       )}
     </SidebarProvider>

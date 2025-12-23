@@ -182,15 +182,14 @@ export default function IncidentsPage() {
   
   const canLoadAdminData = useMemo(() => userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento', [userProfile]);
 
-  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
-  const { data: usersData, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
+  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: usersData, loading: usersLoading } = useCollection<User>('users');
   
   // Memoize derived data, with safe defaults for conditional data
   const assets = useMemo(() => assetsData || [], [assetsData]);
   const users = useMemo(() => usersData || [], [usersData]);
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
-  const maintenanceUsers = useMemo(() => users.filter(u => u.role === 'mantenimiento' || u.role === 'admin'), [users]);
   
   const handleViewDetails = (ticketId: string) => {
     router.push(`/incidents/${ticketId}`);
@@ -277,7 +276,7 @@ export default function IncidentsPage() {
           open={isEditIncidentOpen}
           onOpenChange={setIsEditIncidentOpen}
           ticket={editingTicket}
-          users={maintenanceUsers}
+          users={users}
         />
       )}
     </SidebarProvider>
