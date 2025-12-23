@@ -1,4 +1,3 @@
-
 'use client';
 
 import { MainNav } from '@/components/main-nav';
@@ -126,6 +125,12 @@ export default function PreventivePage() {
   const firestore = useFirestore();
   const router = useRouter();
 
+  useEffect(() => {
+    if (!userLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, userLoading, router]);
+
   const preventiveQuery = useMemo(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'tickets'), where('type', '==', 'preventivo'));
@@ -133,16 +138,7 @@ export default function PreventivePage() {
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(preventiveQuery);
 
-
-  useEffect(() => {
-    if (!userLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, userLoading, router]);
-
-  const isLoading = userLoading || ticketsLoading;
-
-  if (isLoading || !user) {
+  if (userLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

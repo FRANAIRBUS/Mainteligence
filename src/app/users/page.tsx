@@ -209,24 +209,26 @@ function CreateAdminProfile() {
 
 export default function UsersPage() {
   const { user, loading: userLoading } = useUser();
-  const firestore = useFirestore();
-  const { toast } = useToast();
-  const { data: users, loading: usersLoading } = useCollection<User>('users');
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(
-    user ? `users/${user.uid}` : ''
-  );
   const router = useRouter();
-  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
-  const [isEditUserOpen, setIsEditUserOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
+
+  const firestore = useFirestore();
+  const { toast } = useToast();
+  const { data: users, loading: usersLoading } = useCollection<User>('users');
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(
+    user ? `users/${user.uid}` : ''
+  );
+  
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [isEditUserOpen, setIsEditUserOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   const handleEditUser = (userToEdit: User) => {
     setEditingUser(userToEdit);
@@ -260,9 +262,7 @@ export default function UsersPage() {
     }
   };
 
-  const isLoading = userLoading || profileLoading;
-
-  if (isLoading || !user) {
+  if (userLoading || profileLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -270,7 +270,7 @@ export default function UsersPage() {
     );
   }
 
-  const showCreateAdminProfile = !profileLoading && !userProfile;
+  const showCreateAdminProfile = !userProfile;
   const isAdmin = userProfile?.role === 'admin';
 
   return (

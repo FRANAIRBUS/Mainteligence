@@ -51,10 +51,17 @@ type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 export default function ProfilePage() {
   const { user, loading: userLoading } = useUser();
+  const router = useRouter();
+  
+  useEffect(() => {
+    if (!userLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, userLoading, router]);
+  
   const firestore = useFirestore();
   const auth = useAuth();
   const { toast } = useToast();
-  const router = useRouter();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<ProfileFormValues>({
@@ -66,16 +73,13 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    if (!userLoading && !user) {
-      router.push('/login');
-    }
     if (user) {
       form.reset({
         displayName: user.displayName || '',
         email: user.email || '',
       });
     }
-  }, [user, userLoading, router, form]);
+  }, [user, form]);
   
   const onSubmit = async (data: ProfileFormValues) => {
     if (!user || !firestore || !auth?.currentUser) {

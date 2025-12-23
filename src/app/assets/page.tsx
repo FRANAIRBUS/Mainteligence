@@ -145,20 +145,21 @@ function AssetsTable({
 
 export default function AssetsPage() {
   const { user, loading: userLoading } = useUser();
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const router = useRouter();
-  const firestore = useFirestore();
-  const { toast } = useToast();
-  const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
+
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+  const firestore = useFirestore();
+  const { toast } = useToast();
+  const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
 
   const handleDeleteRequest = (assetId: string) => {
     setDeletingAssetId(assetId);
@@ -187,7 +188,7 @@ export default function AssetsPage() {
 
   const isLoading = userLoading || assetsLoading || sitesLoading;
 
-  if (isLoading || !user) {
+  if (userLoading || !user) {
      return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

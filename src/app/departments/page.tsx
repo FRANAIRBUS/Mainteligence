@@ -127,22 +127,23 @@ function DepartmentsTable({
 
 export default function DepartmentsPage() {
   const { user, loading: userLoading } = useUser();
+  const router = useRouter();
+  
+  useEffect(() => {
+    if (!userLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, userLoading, router]);
+
   const firestore = useFirestore();
   const { toast } = useToast();
   const {
     data: departments,
     loading: departmentsLoading,
   } = useCollection<Department>('departments');
-  const router = useRouter();
   const [isAddDepartmentOpen, setIsAddDepartmentOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingDeptId, setDeletingDeptId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!userLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, userLoading, router]);
 
   const handleDeleteRequest = (departmentId: string) => {
     setDeletingDeptId(departmentId);
@@ -169,9 +170,7 @@ export default function DepartmentsPage() {
     }
   };
   
-  const isLoading = userLoading || departmentsLoading;
-
-  if (isLoading || !user) {
+  if (userLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

@@ -122,12 +122,7 @@ function IncidentsTable({
 
 export default function IncidentsPage() {
   const { user, loading: userLoading } = useUser();
-  const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
-  const { data: departments, loading: departmentsLoading } = useCollection<Department>('departments');
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
   const router = useRouter();
-  const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -135,9 +130,15 @@ export default function IncidentsPage() {
     }
   }, [user, userLoading, router]);
 
+  const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+  const { data: departments, loading: departmentsLoading } = useCollection<Department>('departments');
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
+
   const isLoading = userLoading || ticketsLoading || sitesLoading || departmentsLoading || assetsLoading;
 
-  if (isLoading || !user) {
+  if (userLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

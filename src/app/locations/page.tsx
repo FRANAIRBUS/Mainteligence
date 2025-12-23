@@ -130,24 +130,26 @@ function LocationsTable({
 
 export default function LocationsPage() {
   const { user, loading: userLoading } = useUser();
+  const router = useRouter();
+  
+  useEffect(() => {
+    if (!userLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, userLoading, router]);
+
   const firestore = useFirestore();
   const { toast } = useToast();
   const {
     data: sites,
     loading: sitesLoading,
   } = useCollection<Site>('sites');
-  const router = useRouter();
+  
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
   const [isEditLocationOpen, setIsEditLocationOpen] = useState(false);
   const [editingSite, setEditingSite] = useState<Site | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingSiteId, setDeletingSiteId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!userLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, userLoading, router]);
 
   const handleEditRequest = (site: Site) => {
     setEditingSite(site);
@@ -179,9 +181,7 @@ export default function LocationsPage() {
     }
   };
 
-  const isLoading = userLoading || sitesLoading;
-
-  if (isLoading || !user) {
+  if (userLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

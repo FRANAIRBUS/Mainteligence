@@ -32,6 +32,7 @@ export default function Home() {
     );
   }
 
+  // Only render the full layout once the user is confirmed
   return (
     <SidebarProvider>
       <Sidebar>
