@@ -38,7 +38,7 @@ import { Loader2 } from 'lucide-react';
 const formSchema = z.object({
   status: z.enum(['Abierta', 'En curso', 'En espera', 'Resuelta', 'Cerrada']),
   priority: z.enum(['Baja', 'Media', 'Alta', 'Crítica']),
-  // assignedTo: z.string().optional(),
+  assignedTo: z.string().optional().nullable(),
 });
 
 type EditIncidentFormValues = z.infer<typeof formSchema>;
@@ -61,7 +61,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
     defaultValues: {
       status: ticket.status,
       priority: ticket.priority,
-      // assignedTo: ticket.assignedTo || '',
+      assignedTo: ticket.assignedTo || '',
     },
   });
 
@@ -69,7 +69,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
     form.reset({
       status: ticket.status,
       priority: ticket.priority,
-      // assignedTo: ticket.assignedTo || '',
+      assignedTo: ticket.assignedTo || '',
     });
   }, [ticket, form]);
 
@@ -83,28 +83,16 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
       return;
     }
 
-    const userIsCreator = ticket.createdBy === currentUser.uid;
-    // According to spec, only creator can change priority, but not status.
-    // Maintenance and Admin can change anything. Let's simplify for now
-    // and allow admin/maintenance to change both, creator can only change priority.
-
-    if (userIsCreator && data.status !== ticket.status) {
-        toast({
-            variant: 'destructive',
-            title: 'Permiso Denegado',
-            description: 'No puedes cambiar el estado de la incidencia.',
-        });
-        return;
-    }
-
-
     setIsPending(true);
     try {
       const ticketRef = doc(firestore, 'tickets', ticket.id);
-      await updateDoc(ticketRef, {
+      
+      const updateData: Partial<Ticket> = {
         ...data,
         updatedAt: serverTimestamp(),
-      });
+      };
+      
+      await updateDoc(ticketRef, updateData);
 
       toast({
         title: 'Éxito',
@@ -127,6 +115,14 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
       onOpenChange(isOpen);
     }
   };
+  
+  const userRole = users.find(u => u.id === currentUser?.uid)?.role;
+  const isCreator = ticket.createdBy === currentUser?.uid;
+
+  const canEditStatus = userRole === 'admin' || userRole === 'mantenimiento';
+  const canEditPriority = userRole === 'admin' || userRole === 'mantenimiento' || isCreator;
+  const canEditAssignment = userRole === 'admin' || userRole === 'mantenimiento';
+
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -145,7 +141,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Estado</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canEditStatus}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecciona un estado" />
@@ -169,7 +165,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Prioridad</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canEditPriority}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecciona una prioridad" />
@@ -186,14 +182,14 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
                 </FormItem>
               )}
             />
-            {/* 
+            
             <FormField
               control={form.control}
               name="assignedTo"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Asignado A</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value || ''} disabled={!canEditAssignment}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Sin asignar" />
@@ -212,7 +208,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
                 </FormItem>
               )}
             />
-            */}
+            
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>Cancelar</Button>
               <Button type="submit" disabled={isPending}>

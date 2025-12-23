@@ -117,7 +117,7 @@ function IncidentsTable({
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
                     <DropdownMenuItem onClick={() => onViewDetails(ticket.id)}>Ver Detalles</DropdownMenuItem>
-                    {(userRole === 'admin' || userRole === 'mantenimiento') && (
+                    {(userRole === 'admin' || userRole === 'mantenimiento' || ticket.createdBy === userRole) && (
                        <DropdownMenuItem onClick={() => onEdit(ticket)}>Editar</DropdownMenuItem>
                     )}
                   </DropdownMenuContent>
@@ -160,15 +160,15 @@ export default function IncidentsPage() {
   }, [user, userLoading, router]);
 
   const tickets = useMemo(() => {
-    if (!userProfile) return [];
+    if (!userProfile || !allTickets) return [];
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return allTickets;
     }
-    return allTickets.filter(ticket => ticket.createdBy === user.uid);
+    return allTickets.filter(ticket => ticket.createdBy === user?.uid);
   }, [allTickets, userProfile, user]);
 
-  const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {}), [sites]);
-  const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {}), [departments]);
+  const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
+  const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
   
   const handleViewDetails = (ticketId: string) => {
     router.push(`/incidents/${ticketId}`);

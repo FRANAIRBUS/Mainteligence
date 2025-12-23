@@ -42,7 +42,7 @@ export type Ticket = {
   description: string;
   createdBy: string;
   assignedRole?: string;
-  assignedTo?: string;
+  assignedTo?: string | null;
   photoUrls?: string[];
   createdAt: any; // Timestamp
   updatedAt: any; // Timestamp

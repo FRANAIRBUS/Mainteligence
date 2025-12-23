@@ -54,6 +54,7 @@ export default function IncidentDetailPage() {
 
   const { data: ticket, loading: ticketLoading } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : '');
   const { data: createdByUser, loading: createdByLoading } = useDoc<User>(ticket ? `users/${ticket.createdBy}` : '');
+  const { data: assignedToUser, loading: assignedToLoading } = useDoc<User>(ticket && ticket.assignedTo ? `users/${ticket.assignedTo}` : '');
   
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
@@ -79,7 +80,7 @@ export default function IncidentDetailPage() {
     }
   }, [user, userLoading, router, ticket, ticketLoading, userProfile]);
 
-  const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
+  const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading || assignedToLoading;
 
   if (isLoading || !ticket || !userProfile) {
     return (
@@ -89,7 +90,7 @@ export default function IncidentDetailPage() {
     );
   }
 
-  const canEdit = userProfile.role === 'admin' || userProfile.role === 'mantenimiento';
+  const canEdit = userProfile.role === 'admin' || userProfile.role === 'mantenimiento' || ticket.createdBy === user.uid;
 
   return (
     <SidebarProvider>
@@ -174,6 +175,13 @@ export default function IncidentDetailPage() {
                                     label="Creado por"
                                     value={createdByUser?.displayName || 'N/A'}
                                 />
+                                {assignedToUser && (
+                                  <InfoCard 
+                                      icon={UserIcon}
+                                      label="Asignado a"
+                                      value={assignedToUser?.displayName || 'N/A'}
+                                  />
+                                )}
                                 <InfoCard 
                                     icon={Building}
                                     label="Ubicación"
