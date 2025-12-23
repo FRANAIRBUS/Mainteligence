@@ -145,11 +145,15 @@ export default function IncidentsPage() {
   const router = useRouter();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : '');
 
+  // Essential data for all users
   const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
-  const { data: users, loading: usersLoading } = useCollection<User>('users');
+  
+  // Data for admin/maintenance roles
+  const canLoadAdminData = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
+  const { data: users, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
   
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
@@ -173,17 +177,20 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
-  const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
+  // Main loading state depends only on essential data
+  const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || deptsLoading;
   
-  if (isLoading && !user) {
+  if (isLoading && !userProfile) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
       </div>
     );
   }
-
+  
+  // Table loading state can be true even if main page is loaded
   const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading;
+  const maintenanceUsers = useMemo(() => users.filter(u => u.role === 'mantenimiento' || u.role === 'admin'), [users]);
 
   return (
     <SidebarProvider>
@@ -249,7 +256,7 @@ export default function IncidentsPage() {
           open={isEditIncidentOpen}
           onOpenChange={setIsEditIncidentOpen}
           ticket={editingTicket}
-          users={users.filter(u => u.role === 'mantenimiento' || u.role === 'admin')}
+          users={maintenanceUsers}
         />
       )}
     </SidebarProvider>

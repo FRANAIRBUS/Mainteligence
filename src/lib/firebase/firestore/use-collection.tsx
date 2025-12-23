@@ -23,6 +23,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
       setData([]);
       return;
     }
+    setLoading(true);
 
     let collectionRef: CollectionReference;
     if (typeof pathOrRef === 'string') {
