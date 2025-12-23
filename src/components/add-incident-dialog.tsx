@@ -220,7 +220,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
                         <FormControl>
                         <SelectTrigger>
                             <SelectValue placeholder="Selecciona un activo" />
-                        </Trigger>
+                        </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                         {assets.map(asset => (
