@@ -56,7 +56,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
   const { toast } = useToast();
   const firestore = useFirestore();
   const { user: currentUser, loading: userLoading } = useUser();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(currentUser ? `users/${currentUser.uid}` : '');
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(currentUser ? `users/${currentUser.uid}` : null);
 
   const [isPending, setIsPending] = useState(false);
 
@@ -93,7 +93,8 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
     const updateData: Partial<Ticket> & { updatedAt: any } = {
       status: data.status,
       priority: data.priority,
-      assignedTo: data.assignedTo,
+      // Convert "null" string back to actual null for Firestore
+      assignedTo: data.assignedTo === 'null' ? null : data.assignedTo,
       updatedAt: serverTimestamp(),
     };
     
@@ -210,14 +211,15 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Asignado A</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || ''} disabled={!canEditAssignment}>
+                  {/* The value passed to the Select should be a string. We use 'null' as a string to represent the null value. */}
+                  <Select onValueChange={field.onChange} value={field.value || 'null'} disabled={!canEditAssignment}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Sin asignar" />
-                      </SelectTrigger>
+                      </T rigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">Sin asignar</SelectItem>
+                      <SelectItem value="null">Sin asignar</SelectItem>
                       {users.map(user => (
                         <SelectItem key={user.id} value={user.id}>
                           {user.displayName}
