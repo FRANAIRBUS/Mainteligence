@@ -32,7 +32,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { MoreHorizontal, AlertTriangle, Loader2 } from 'lucide-react';
 import {
   Card,
@@ -44,15 +44,27 @@ import {
 import { AddUserDialog } from '@/components/add-user-dialog';
 import { EditUserDialog } from '@/components/edit-user-dialog';
 import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 function UserTable({
   users,
   loading,
   onEditUser,
+  onDeleteUser,
 }: {
   users: User[];
   loading: boolean;
   onEditUser: (user: User) => void;
+  onDeleteUser: (userId: string) => void;
 }) {
   if (loading) {
     return (
@@ -106,7 +118,12 @@ function UserTable({
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
                     <DropdownMenuItem onClick={() => onEditUser(user)}>Editar</DropdownMenuItem>
-                    <DropdownMenuItem>Eliminar</DropdownMenuItem>
+                    <DropdownMenuItem 
+                      className="text-red-600"
+                      onClick={() => onDeleteUser(user.id)}
+                    >
+                        Eliminar
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -192,6 +209,8 @@ function CreateAdminProfile() {
 
 export default function UsersPage() {
   const { user, loading: userLoading } = useUser();
+  const firestore = useFirestore();
+  const { toast } = useToast();
   const { data: users, loading: usersLoading } = useCollection<User>('users');
   const { data: userProfile, loading: profileLoading } = useDoc<User>(
     user ? `users/${user.uid}` : ''
@@ -200,6 +219,8 @@ export default function UsersPage() {
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -210,6 +231,33 @@ export default function UsersPage() {
   const handleEditUser = (userToEdit: User) => {
     setEditingUser(userToEdit);
     setIsEditUserOpen(true);
+  };
+  
+  const handleDeleteRequest = (userId: string) => {
+    setDeletingUserId(userId);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingUserId || !firestore) return;
+    try {
+      // NOTE: This only deletes the Firestore document, not the Firebase Auth user.
+      // In a real app, you'd call a Cloud Function to delete the Auth user.
+      await deleteDoc(doc(firestore, 'users', deletingUserId));
+      toast({
+        title: 'Éxito',
+        description: 'Usuario eliminado correctamente.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No se pudo eliminar el usuario.',
+      });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setDeletingUserId(null);
+    }
   };
 
   const showCreateAdminProfile =
@@ -266,7 +314,7 @@ export default function UsersPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <UserTable users={users} loading={usersLoading} onEditUser={handleEditUser} />
+                <UserTable users={users} loading={usersLoading} onEditUser={handleEditUser} onDeleteUser={handleDeleteRequest} />
               </CardContent>
             </Card>
           ) : (
@@ -290,6 +338,21 @@ export default function UsersPage() {
           user={editingUser}
         />
       )}
+       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Esto eliminará permanentemente al usuario
+              de la base de datos (pero no de Firebase Auth).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm}>Continuar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }

@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection } from '@/lib/firebase';
+import { useUser, useCollection, useFirestore } from '@/lib/firebase';
 import type { Asset, Site } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -41,15 +41,29 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AddAssetDialog } from '@/components/add-asset-dialog';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 function AssetsTable({
   assets,
   sites,
   loading,
+  onDelete,
 }: {
   assets: Asset[];
   sites: Site[];
   loading: boolean;
+  onDelete: (assetId: string) => void;
 }) {
   const sitesById = useMemo(() => {
     return sites.reduce((acc, site) => {
@@ -105,8 +119,13 @@ function AssetsTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem>Editar</DropdownMenuItem>
-                    <DropdownMenuItem>Eliminar</DropdownMenuItem>
+                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-600"
+                      onClick={() => onDelete(asset.id)}
+                    >
+                      Eliminar
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -129,13 +148,42 @@ export default function AssetsPage() {
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const router = useRouter();
+  const firestore = useFirestore();
+  const { toast } = useToast();
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
+
+  const handleDeleteRequest = (assetId: string) => {
+    setDeletingAssetId(assetId);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingAssetId || !firestore) return;
+    try {
+      await deleteDoc(doc(firestore, 'assets', deletingAssetId));
+      toast({
+        title: 'Éxito',
+        description: 'Activo eliminado correctamente.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No se pudo eliminar el activo.',
+      });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setDeletingAssetId(null);
+    }
+  };
 
   const isLoading = userLoading || assetsLoading || sitesLoading;
 
@@ -183,12 +231,27 @@ export default function AssetsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <AssetsTable assets={assets} sites={sites} loading={isLoading} />
+              <AssetsTable assets={assets} sites={sites} loading={isLoading} onDelete={handleDeleteRequest} />
             </CardContent>
           </Card>
         </main>
       </SidebarInset>
       <AddAssetDialog open={isAddAssetOpen} onOpenChange={setIsAddAssetOpen} sites={sites} />
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Esto eliminará permanentemente el
+              activo de la base de datos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm}>Continuar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }

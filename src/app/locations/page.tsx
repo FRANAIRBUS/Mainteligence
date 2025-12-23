@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection } from '@/lib/firebase';
+import { useUser, useCollection, useFirestore } from '@/lib/firebase';
 import type { Site } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -40,13 +40,27 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { AddLocationDialog } from '@/components/add-location-dialog';
+import { doc, deleteDoc } from 'firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 function LocationsTable({
   sites,
   loading,
+  onDelete,
 }: {
   sites: Site[];
   loading: boolean;
+  onDelete: (siteId: string) => void;
 }) {
   if (loading) {
     return (
@@ -87,8 +101,13 @@ function LocationsTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem>Editar</DropdownMenuItem>
-                    <DropdownMenuItem>Eliminar</DropdownMenuItem>
+                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-600"
+                      onClick={() => onDelete(site.id)}
+                    >
+                      Eliminar
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -108,18 +127,48 @@ function LocationsTable({
 
 export default function LocationsPage() {
   const { user, loading: userLoading } = useUser();
+  const firestore = useFirestore();
+  const { toast } = useToast();
   const {
     data: sites,
     loading: sitesLoading,
   } = useCollection<Site>('sites');
   const router = useRouter();
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingSiteId, setDeletingSiteId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
+
+  const handleDeleteRequest = (siteId: string) => {
+    setDeletingSiteId(siteId);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingSiteId || !firestore) return;
+    try {
+      await deleteDoc(doc(firestore, 'sites', deletingSiteId));
+      toast({
+        title: 'Éxito',
+        description: 'Ubicación eliminada correctamente.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No se pudo eliminar la ubicación.',
+      });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setDeletingSiteId(null);
+    }
+  };
+
 
   if (userLoading || !user) {
     return (
@@ -165,7 +214,7 @@ export default function LocationsPage() {
                 </div>
             </CardHeader>
             <CardContent>
-              <LocationsTable sites={sites} loading={sitesLoading} />
+              <LocationsTable sites={sites} loading={sitesLoading} onDelete={handleDeleteRequest} />
             </CardContent>
           </Card>
         </main>
@@ -174,6 +223,21 @@ export default function LocationsPage() {
         open={isAddLocationOpen}
         onOpenChange={setIsAddLocationOpen}
       />
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. Esto eliminará permanentemente la
+              ubicación de la base de datos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteConfirm}>Continuar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }
