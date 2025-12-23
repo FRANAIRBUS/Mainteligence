@@ -11,8 +11,8 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useFirestore } from '@/lib/firebase';
-import type { Site } from '@/lib/firebase/models';
+import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
+import type { Site, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
@@ -60,11 +60,13 @@ function LocationsTable({
   loading,
   onEdit,
   onDelete,
+  canEdit,
 }: {
   sites: Site[];
   loading: boolean;
   onEdit: (site: Site) => void;
   onDelete: (siteId: string) => void;
+  canEdit: boolean;
 }) {
   if (loading) {
     return (
@@ -80,9 +82,11 @@ function LocationsTable({
         <TableRow>
           <TableHead>Nombre</TableHead>
           <TableHead>Código</TableHead>
-          <TableHead>
-            <span className="sr-only">Acciones</span>
-          </TableHead>
+          {canEdit && (
+            <TableHead>
+              <span className="sr-only">Acciones</span>
+            </TableHead>
+          )}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -91,35 +95,37 @@ function LocationsTable({
             <TableRow key={site.id}>
               <TableCell className="font-medium">{site.name}</TableCell>
               <TableCell>{site.code}</TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-haspopup="true"
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Menú de acciones</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => onEdit(site)}>Editar</DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-red-600"
-                      onClick={() => onDelete(site.id)}
-                    >
-                      Eliminar
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
+              {canEdit && (
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-haspopup="true"
+                        size="icon"
+                        variant="ghost"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Menú de acciones</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => onEdit(site)}>Editar</DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-red-600"
+                        onClick={() => onDelete(site.id)}
+                      >
+                        Eliminar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              )}
             </TableRow>
           ))
         ) : (
           <TableRow>
-            <TableCell colSpan={3} className="h-24 text-center">
+            <TableCell colSpan={canEdit ? 3 : 2} className="h-24 text-center">
               No se encontraron ubicaciones.
             </TableCell>
           </TableRow>
@@ -141,10 +147,11 @@ export default function LocationsPage() {
 
   const firestore = useFirestore();
   const { toast } = useToast();
-  const {
-    data: sites,
-    loading: sitesLoading,
-  } = useCollection<Site>('sites');
+  
+  const canLoadData = !userLoading && !!user;
+  
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(canLoadData ? `users/${user.uid}` : null);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
   
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
   const [isEditLocationOpen, setIsEditLocationOpen] = useState(false);
@@ -182,13 +189,18 @@ export default function LocationsPage() {
     }
   };
 
-  if (userLoading || !user) {
+  const initialLoading = userLoading || profileLoading;
+
+  if (initialLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
       </div>
     );
   }
+
+  const isAdmin = userProfile?.role === 'admin';
+  const tableIsLoading = sitesLoading;
 
   return (
     <SidebarProvider>
@@ -224,24 +236,30 @@ export default function LocationsPage() {
                       Gestiona todas las ubicaciones físicas de la empresa.
                     </CardDescription>
                   </div>
-                  <Button onClick={() => setIsAddLocationOpen(true)}>Añadir Ubicación</Button>
+                  {isAdmin && <Button onClick={() => setIsAddLocationOpen(true)}>Añadir Ubicación</Button>}
                 </div>
             </CardHeader>
             <CardContent>
-              <LocationsTable sites={sites} loading={sitesLoading} onEdit={handleEditRequest} onDelete={handleDeleteRequest} />
+              <LocationsTable 
+                sites={sites} 
+                loading={tableIsLoading} 
+                onEdit={handleEditRequest} 
+                onDelete={handleDeleteRequest} 
+                canEdit={isAdmin}
+              />
             </CardContent>
           </Card>
         </main>
       </SidebarInset>
-      <AddLocationDialog
+      {isAdmin && <AddLocationDialog
         open={isAddLocationOpen}
         onOpenChange={setIsAddLocationOpen}
-      />
-      <EditLocationDialog
+      />}
+      {isAdmin && <EditLocationDialog
         open={isEditLocationOpen}
         onOpenChange={setIsEditLocationOpen}
         site={editingSite}
-      />
+      />}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

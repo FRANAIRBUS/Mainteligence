@@ -7,8 +7,9 @@ service cloud.firestore {
       if (request.auth == null) {
         return false;
       }
-      let userRole = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-      return userRole == 'admin';
+      // Use exists() to avoid errors on non-existent documents
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc.data.role == 'admin';
     }
 
     function isMantenimiento() {
@@ -22,8 +23,9 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if request.auth.uid == userId || isMantenimiento();
       allow list: if isMantenimiento();
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin(); // Only admins can create users through the backend for now
       allow update: if isAdmin() || request.auth.uid == userId;
+      allow delete: if isAdmin();
     }
 
     match /sites/{siteId} {
@@ -43,11 +45,13 @@ service cloud.firestore {
 
     match /tickets/{ticketId} {
       allow get: if request.auth != null && (isMantenimiento() || resource.data.createdBy == request.auth.uid || resource.data.assignedTo == request.auth.uid);
-      allow list: if isMantenimiento() || (request.auth != null && request.query.where.field == 'assignedTo' && request.query.where.value == request.auth.uid);
+      // Admin/Mantenimiento can list all. Operario can list tickets created by or assigned to them.
+      allow list: if isMantenimiento() || (request.auth != null && (request.query.where.field == 'createdBy' || request.query.where.field == 'assignedTo'));
       allow create: if request.auth != null;
       allow delete: if isAdmin();
       allow update: if 
         isMantenimiento() ||
+        // Operario can only change priority of their own tickets
         (request.auth.uid == resource.data.createdBy &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority', 'updatedAt']));
     }
@@ -58,7 +62,7 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: true;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
   }

@@ -11,8 +11,8 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useFirestore } from '@/lib/firebase';
-import type { Asset, Site } from '@/lib/firebase/models';
+import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
+import type { Asset, Site, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -60,11 +60,13 @@ function AssetsTable({
   sites,
   loading,
   onDelete,
+  canEdit,
 }: {
   assets: Asset[];
   sites: Site[];
   loading: boolean;
   onDelete: (assetId: string) => void;
+  canEdit: boolean;
 }) {
   const sitesById = useMemo(() => {
     return sites.reduce((acc, site) => {
@@ -88,9 +90,11 @@ function AssetsTable({
           <TableHead>Nombre</TableHead>
           <TableHead>Código</TableHead>
           <TableHead>Ubicación</TableHead>
-          <TableHead>
-            <span className="sr-only">Acciones</span>
-          </TableHead>
+          {canEdit && (
+            <TableHead>
+              <span className="sr-only">Acciones</span>
+            </TableHead>
+          )}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -106,35 +110,37 @@ function AssetsTable({
                   'N/A'
                 )}
               </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-haspopup="true"
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Menú de acciones</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-red-600"
-                      onClick={() => onDelete(asset.id)}
-                    >
-                      Eliminar
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
+              {canEdit && (
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-haspopup="true"
+                        size="icon"
+                        variant="ghost"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Menú de acciones</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                      <DropdownMenuItem disabled>Editar</DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-red-600"
+                        onClick={() => onDelete(asset.id)}
+                      >
+                        Eliminar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              )}
             </TableRow>
           ))
         ) : (
           <TableRow>
-            <TableCell colSpan={4} className="h-24 text-center">
+            <TableCell colSpan={canEdit ? 4 : 3} className="h-24 text-center">
               No se encontraron activos.
             </TableCell>
           </TableRow>
@@ -154,10 +160,15 @@ export default function AssetsPage() {
     }
   }, [user, userLoading, router]);
 
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const firestore = useFirestore();
   const { toast } = useToast();
+  
+  const canLoadData = !userLoading && !!user;
+
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(canLoadData ? `users/${user.uid}` : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
+
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
@@ -187,15 +198,18 @@ export default function AssetsPage() {
     }
   };
 
-  const isLoading = userLoading || assetsLoading || sitesLoading;
+  const initialLoading = userLoading || profileLoading;
 
-  if (userLoading || !user) {
+  if (initialLoading) {
      return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
       </div>
     );
   }
+
+  const isAdmin = userProfile?.role === 'admin';
+  const tableIsLoading = assetsLoading || sitesLoading;
 
   return (
     <SidebarProvider>
@@ -231,16 +245,16 @@ export default function AssetsPage() {
                     Gestiona todos los activos y equipos de la empresa.
                   </CardDescription>
                 </div>
-                <Button onClick={() => setIsAddAssetOpen(true)}>Añadir Activo</Button>
+                {isAdmin && <Button onClick={() => setIsAddAssetOpen(true)}>Añadir Activo</Button>}
               </div>
             </CardHeader>
             <CardContent>
-              <AssetsTable assets={assets} sites={sites} loading={isLoading} onDelete={handleDeleteRequest} />
+              <AssetsTable assets={assets} sites={sites} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={isAdmin} />
             </CardContent>
           </Card>
         </main>
       </SidebarInset>
-      <AddAssetDialog open={isAddAssetOpen} onOpenChange={setIsAddAssetOpen} sites={sites} />
+      {isAdmin && <AddAssetDialog open={isAddAssetOpen} onOpenChange={setIsAddAssetOpen} sites={sites} />}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

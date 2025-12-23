@@ -11,8 +11,8 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useFirestore } from '@/lib/firebase';
-import type { Department } from '@/lib/firebase/models';
+import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
+import type { Department, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
@@ -58,10 +58,12 @@ function DepartmentsTable({
   departments,
   loading,
   onDelete,
+  canEdit,
 }: {
   departments: Department[];
   loading: boolean;
   onDelete: (departmentId: string) => void;
+  canEdit: boolean;
 }) {
   if (loading) {
     return (
@@ -77,9 +79,11 @@ function DepartmentsTable({
         <TableRow>
           <TableHead>Nombre</TableHead>
           <TableHead>Código</TableHead>
-          <TableHead>
-            <span className="sr-only">Acciones</span>
-          </TableHead>
+          {canEdit && (
+            <TableHead>
+              <span className="sr-only">Acciones</span>
+            </TableHead>
+          )}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -88,35 +92,37 @@ function DepartmentsTable({
             <TableRow key={dept.id}>
               <TableCell className="font-medium">{dept.name}</TableCell>
               <TableCell>{dept.code}</TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-haspopup="true"
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Menú de acciones</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-red-600"
-                      onClick={() => onDelete(dept.id)}
-                    >
-                      Eliminar
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
+              {canEdit && (
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-haspopup="true"
+                        size="icon"
+                        variant="ghost"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Menú de acciones</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                      <DropdownMenuItem disabled>Editar</DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-red-600"
+                        onClick={() => onDelete(dept.id)}
+                      >
+                        Eliminar
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              )}
             </TableRow>
           ))
         ) : (
           <TableRow>
-            <TableCell colSpan={3} className="h-24 text-center">
+            <TableCell colSpan={canEdit ? 3 : 2} className="h-24 text-center">
               No se encontraron departamentos.
             </TableCell>
           </TableRow>
@@ -138,10 +144,12 @@ export default function DepartmentsPage() {
 
   const firestore = useFirestore();
   const { toast } = useToast();
-  const {
-    data: departments,
-    loading: departmentsLoading,
-  } = useCollection<Department>('departments');
+  
+  const canLoadData = !userLoading && !!user;
+
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(canLoadData ? `users/${user.uid}` : null);
+  const { data: departments, loading: departmentsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
+
   const [isAddDepartmentOpen, setIsAddDepartmentOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingDeptId, setDeletingDeptId] = useState<string | null>(null);
@@ -171,13 +179,19 @@ export default function DepartmentsPage() {
     }
   };
   
-  if (userLoading || !user) {
+  const initialLoading = userLoading || profileLoading;
+
+  if (initialLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
       </div>
     );
   }
+
+  const isAdmin = userProfile?.role === 'admin';
+  const tableIsLoading = departmentsLoading;
+
 
   return (
     <SidebarProvider>
@@ -213,19 +227,19 @@ export default function DepartmentsPage() {
                       Gestiona todos los departamentos de la empresa.
                     </CardDescription>
                   </div>
-                  <Button onClick={() => setIsAddDepartmentOpen(true)}>Añadir Departamento</Button>
+                  {isAdmin && <Button onClick={() => setIsAddDepartmentOpen(true)}>Añadir Departamento</Button>}
                 </div>
             </CardHeader>
             <CardContent>
-              <DepartmentsTable departments={departments} loading={departmentsLoading} onDelete={handleDeleteRequest} />
+              <DepartmentsTable departments={departments} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={isAdmin} />
             </CardContent>
           </Card>
         </main>
       </SidebarInset>
-       <AddDepartmentDialog
+       {isAdmin && <AddDepartmentDialog
         open={isAddDepartmentOpen}
         onOpenChange={setIsAddDepartmentOpen}
-      />
+      />}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

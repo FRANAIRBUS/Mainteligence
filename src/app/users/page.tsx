@@ -220,12 +220,23 @@ export default function UsersPage() {
 
   const firestore = useFirestore();
   const { toast } = useToast();
-  const { data: users, loading: usersLoading } = useCollection<User>('users');
-  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
+  
+  const canLoadData = !userLoading && !!user;
+  
   const { data: userProfile, loading: profileLoading } = useDoc<User>(
-    user ? `users/${user.uid}` : ''
+    canLoadData ? `users/${user.uid}` : null
+  );
+
+  const isAdmin = userProfile?.role === 'admin';
+  
+  const { data: users, loading: usersLoading } = useCollection<User>(
+    canLoadData && isAdmin ? 'users' : null
   );
   
+  const { data: departments, loading: deptsLoading } = useCollection<Department>(
+    canLoadData && isAdmin ? 'departments' : null
+  );
+
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -245,8 +256,6 @@ export default function UsersPage() {
   const handleDeleteConfirm = async () => {
     if (!deletingUserId || !firestore) return;
     try {
-      // NOTE: This only deletes the Firestore document, not the Firebase Auth user.
-      // In a real app, you'd call a Cloud Function to delete the Auth user.
       await deleteDoc(doc(firestore, 'users', deletingUserId));
       toast({
         title: 'Éxito',
@@ -264,7 +273,9 @@ export default function UsersPage() {
     }
   };
 
-  if (userLoading || profileLoading || deptsLoading || !user) {
+  const initialLoading = userLoading || profileLoading;
+
+  if (initialLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -272,8 +283,8 @@ export default function UsersPage() {
     );
   }
 
-  const showCreateAdminProfile = !userProfile;
-  const isAdmin = userProfile?.role === 'admin';
+  const showCreateAdminProfile = !profileLoading && !userProfile;
+  const tableIsLoading = isAdmin && (usersLoading || deptsLoading);
 
   return (
     <SidebarProvider>
@@ -302,7 +313,7 @@ export default function UsersPage() {
         <main className="flex-1 p-4 sm:p-6 md:p-8">
           {showCreateAdminProfile && <CreateAdminProfile />}
 
-          {isAdmin || users.length > 0 ? (
+          {isAdmin ? (
             <Card>
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
@@ -312,13 +323,11 @@ export default function UsersPage() {
                       Gestiona todos los usuarios y sus permisos.
                     </CardDescription>
                   </div>
-                  {isAdmin && (
                     <Button onClick={() => setIsAddUserOpen(true)}>Añadir Usuario</Button>
-                  )}
                 </div>
               </CardHeader>
               <CardContent>
-                <UserTable users={users} loading={usersLoading} onEditUser={handleEditUser} onDeleteUser={handleDeleteRequest} />
+                <UserTable users={users} loading={tableIsLoading} onEditUser={handleEditUser} onDeleteUser={handleDeleteRequest} />
               </CardContent>
             </Card>
           ) : (
@@ -335,8 +344,8 @@ export default function UsersPage() {
           )}
         </main>
       </SidebarInset>
-      <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} departments={departments} />
-      {editingUser && (
+      {isAdmin && <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} departments={departments} />}
+      {editingUser && isAdmin && (
         <EditUserDialog
           key={editingUser.id}
           open={isEditUserOpen}

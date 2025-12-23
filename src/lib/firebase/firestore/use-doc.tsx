@@ -10,9 +10,11 @@ export function useDoc<T>(path: string | null) {
   const db = useFirestore();
 
   useEffect(() => {
+    // If path is null, we are not ready to fetch.
     if (!db || !path) {
       setLoading(false);
       setData(null);
+      setError(null);
       return;
     }
     setLoading(true);
@@ -23,18 +25,24 @@ export function useDoc<T>(path: string | null) {
         if (docSnap.exists()) {
           setData({ id: docSnap.id, ...docSnap.data() } as T);
         } else {
+          // Document does not exist
           setData(null);
         }
         setLoading(false);
+        setError(null);
       },
       (err) => {
+        // Handle errors, including permission errors
+        console.error(`Error fetching document ${path}:`, err);
         setError(err);
+        setData(null);
         setLoading(false);
       }
     );
 
     return () => unsubscribe();
   }, [db, path]);
+  
   return { data, loading, error };
 }
 
@@ -45,9 +53,11 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    // If docRef is null, we are not ready to fetch.
     if (!docRef) {
       setLoading(false);
       setData(null);
+      setError(null);
       return;
     }
     setLoading(true);
@@ -58,8 +68,11 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
         setData(null);
       }
       setLoading(false);
+      setError(null);
     }, (err) => {
+      console.error(`Error fetching document ref ${docRef.path}:`, err);
       setError(err);
+      setData(null);
       setLoading(false);
     });
 

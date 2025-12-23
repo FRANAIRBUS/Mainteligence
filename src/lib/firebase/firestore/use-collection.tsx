@@ -17,12 +17,14 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
 
+  // Use a stable reference for the path to avoid re-running the effect unnecessarily
   const memoizedPath = typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path;
 
   useEffect(() => {
+    // If the path/ref is null, it means we are not ready to fetch, so we wait.
     if (!db || !memoizedPath) {
+      setLoading(false); // Not loading because we are intentionally not fetching
       setData([]);
-      setLoading(false);
       setError(null);
       return;
     }
@@ -35,8 +37,9 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
     } else if (pathOrRef) {
       collectionRef = pathOrRef; 
     } else {
-      setData([]);
+      // This case should theoretically not be hit due to the check above, but for safety:
       setLoading(false);
+      setData([]);
       return;
     }
 
@@ -61,6 +64,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
         }
         console.error(`Error fetching collection ${collectionRef.path}:`, err);
         setError(err);
+        setData([]); // Clear data on error
         setLoading(false);
       }
     );
@@ -78,8 +82,9 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
+    // If the query is null, it means we are not ready to fetch.
     if (query === null) {
-      setLoading(false);
+      setLoading(false); // Not loading because we are intentionally not fetching
       setData([]);
       setError(null);
       return;
@@ -107,12 +112,13 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
         }
         console.error(`Error executing query:`, err);
         setError(err);
+        setData([]); // Clear data on error
         setLoading(false);
       }
     );
 
     return () => unsubscribe();
-  }, [query]);
+  }, [query]); // The query object itself is the dependency
 
   return { data, loading, error };
 }

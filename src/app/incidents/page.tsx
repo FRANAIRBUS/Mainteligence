@@ -150,25 +150,26 @@ export default function IncidentsPage() {
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
 
-  // Step 1: Wait for user to be loaded. Redirect if not logged in.
+  // Phase 1: Wait for user authentication to complete.
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
 
-  // Step 2: Fetch profile only when user is available.
+  // Phase 2: Once user is authenticated, load their profile.
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   
-  // Step 3: Fetch catalogs only when user is available.
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(user ? 'sites' : null);
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(user ? 'departments' : null);
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(user ? 'assets' : null);
-  const { data: users, loading: usersLoading } = useCollection<User>(user ? 'users' : null);
+  // Phase 3: Only load collections after user authentication is confirmed.
+  const canLoadData = !userLoading && !!user;
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
+  const { data: departments, loading: deptsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
+  const { data: users, loading: usersLoading } = useCollection<User>(canLoadData ? 'users' : null);
 
-  // Step 4: Construct the tickets query only when firestore and userProfile are ready.
+  // Phase 3.5: Construct the tickets query only when firestore and userProfile are ready.
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !userProfile || !user) return null;
+    if (!firestore || !user || !userProfile) return null; // Wait for profile
     
     const ticketsCollection = collection(firestore, 'tickets');
 
@@ -183,9 +184,9 @@ export default function IncidentsPage() {
         where('assignedTo', '==', user.uid)
     ));
 
-  }, [firestore, userProfile, user]);
+  }, [firestore, user, userProfile]);
 
-  // Step 5: Execute the query for tickets.
+  // Phase 3.6: Execute the query for tickets.
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
@@ -200,10 +201,10 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  // The page is loading if the user or their profile are not yet loaded.
-  const pageIsLoading = userLoading || profileLoading;
+  // The page is in its initial loading state if we are waiting for auth or profile.
+  const initialLoading = userLoading || profileLoading;
   
-  if (pageIsLoading) {
+  if (initialLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -211,8 +212,8 @@ export default function IncidentsPage() {
     );
   }
   
-  // The table data is loading if any of the collections are still loading.
-  const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
+  // Table data is loading if any of the main collections are still loading.
+  const tableDataIsLoading = ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
 
   return (
     <SidebarProvider>
@@ -256,7 +257,7 @@ export default function IncidentsPage() {
                 tickets={tickets} 
                 sites={sitesMap}
                 departments={departmentsMap}
-                loading={tableIsLoading}
+                loading={tableDataIsLoading}
                 onViewDetails={handleViewDetails}
                 onEdit={handleEditRequest}
                 userRole={userProfile?.role}
