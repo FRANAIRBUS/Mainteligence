@@ -13,7 +13,7 @@ import {
 import { Icons } from '@/components/icons';
 import { useUser, useFirestore, useStorage } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import {
   Card,
   CardContent,
@@ -39,7 +39,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -54,8 +54,8 @@ export default function SettingsPage() {
     }
   };
 
-  const handleUpload = async () => {
-    if (!selectedFile || !storage || !firestore) {
+  const uploadLogo = async () => {
+     if (!selectedFile || !storage || !firestore) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -63,9 +63,7 @@ export default function SettingsPage() {
       });
       return;
     }
-
-    setIsUploading(true);
-    try {
+     try {
       const logoRef = ref(storage, `logos/client-logo.png`);
       const uploadResult = await uploadBytes(logoRef, selectedFile);
       const downloadURL = await getDownloadURL(uploadResult.ref);
@@ -85,10 +83,14 @@ export default function SettingsPage() {
         title: 'Error al subir el logo',
         description: error.message || 'Ocurrió un error inesperado.',
       });
-    } finally {
-      setIsUploading(false);
     }
-  };
+  }
+
+  const handleUpload = () => {
+    startTransition(async () => {
+      await uploadLogo();
+    })
+  }
 
   if (loading || !user) {
     return (
@@ -149,8 +151,8 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
               <CardFooter className="border-t px-6 py-4">
-                <Button onClick={handleUpload} disabled={isUploading || !selectedFile}>
-                  {isUploading ? (
+                <Button onClick={handleUpload} disabled={isPending || !selectedFile}>
+                  {isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : null}
                   Guardar Cambios
