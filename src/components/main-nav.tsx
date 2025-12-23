@@ -63,9 +63,8 @@ export function MainNav() {
   ], [pathname]);
 
   const menuItems = useMemo(() => {
-    if (!userProfile) return [];
-    
-    const userRole = userProfile.role;
+    // If profile is loading, default to operario role to show base menu
+    const userRole = userProfile?.role || 'operario';
 
     return allMenuItems
       .map(group => ({
@@ -77,7 +76,7 @@ export function MainNav() {
 
   }, [userProfile, allMenuItems]);
 
-  if (userLoading || profileLoading) {
+  if (userLoading) {
     return (
       <div className="flex w-full flex-col gap-2 p-2">
          <div className="space-y-2">

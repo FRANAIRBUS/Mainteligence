@@ -7,15 +7,15 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
-    function getUserData(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data;
+    function getUserData() {
+      if (request.auth == null) {
+        return null;
+      }
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function isUserRole(role) {
-      if (request.auth == null) {
-        return false;
-      }
-      let userData = getUserData(request.auth.uid);
+      let userData = getUserData();
       return userData != null && userData.role == role;
     }
 
@@ -28,42 +28,47 @@ service cloud.firestore {
     }
  
     match /users/{userId} {
-      allow read: if request.auth != null;
+      // Los admins pueden listar y obtener cualquier usuario.
+      allow list, get: if isAdmin();
+      // Un usuario autenticado puede obtener su propio perfil.
+      allow get: if request.auth.uid == userId;
+      // Los admins pueden crear, actualizar y eliminar usuarios.
       allow create, delete: if isAdmin();
+      // Un usuario puede actualizar su propio perfil.
       allow update: if isAdmin() || isOwner(userId);
     }
 
     match /sites/{siteId} {
-      allow list, get: if request.auth != null;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
     match /departments/{departmentId} {
-      allow list, get: if request.auth != null;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
     match /assets/{assetId} {
-      allow list, get: if request.auth != null;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
     match /tickets/{ticketId} {
-        allow read: if isMantenimiento() || resource.data.createdBy == request.auth.uid;
-        allow create: if request.auth.uid != null;
-        allow delete: if isAdmin();
-        
-        allow update: if 
-          // Admins and Maintenance can update most fields.
-          isMantenimiento() ||
-          // The creator can ONLY update the priority and nothing else (plus updatedAt).
-          (request.auth.uid == resource.data.createdBy &&
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority', 'updatedAt']));
+      allow read: if isMantenimiento() || resource.data.createdBy == request.auth.uid;
+      allow create: if request.auth.uid != null;
+      allow delete: if isAdmin();
+      
+      allow update: if 
+        // Admins y Mantenimiento pueden actualizar.
+        isMantenimiento() ||
+        // El creador solo puede actualizar la prioridad.
+        (request.auth.uid == resource.data.createdBy &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority', 'updatedAt']));
     }
 
     match /tickets/{ticketId}/comments/{commentId} {
-        allow read, create: if isMantenimiento() || get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid;
-        allow update, delete: if isAdmin();
+      allow read, create: if isMantenimiento() || get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
     match /settings/{settingId} {
