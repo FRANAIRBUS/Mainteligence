@@ -163,13 +163,14 @@ export default function IncidentsPage() {
     
     const ticketsCollection = collection(firestore, 'tickets');
     
-    if (userProfile.role === 'operario' && userProfile.departmentId) {
-      return query(ticketsCollection, where('departmentId', '==', userProfile.departmentId));
-    }
-    
     // Admin and Mantenimiento see all tickets
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(ticketsCollection);
+    }
+    
+    // Operario with a department sees tickets for that department
+    if (userProfile.role === 'operario' && userProfile.departmentId) {
+      return query(ticketsCollection, where('departmentId', '==', userProfile.departmentId));
     }
     
     // Operario without department sees their own tickets
@@ -183,14 +184,11 @@ export default function IncidentsPage() {
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  
-  const canLoadAdminData = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
+  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: usersData, loading: usersLoading } = useCollection<User>('users');
 
-  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
-  const { data: usersData, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
-
-  const assets = useMemo(() => assetsData || [], [assetsData]);
-  const users = useMemo(() => usersData || [], [usersData]);
+  const assets = assetsData || [];
+  const users = usersData || [];
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
