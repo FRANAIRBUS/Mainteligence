@@ -146,7 +146,10 @@ export default function DepartmentsPage() {
   const { toast } = useToast();
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-  const { data: departments, loading: departmentsLoading } = useCollection<Department>('departments');
+  
+  const isAdmin = userProfile?.role === 'admin';
+
+  const { data: departments, loading: departmentsLoading } = useCollection<Department>(isAdmin ? 'departments' : null);
 
   const [isAddDepartmentOpen, setIsAddDepartmentOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -187,7 +190,6 @@ export default function DepartmentsPage() {
     );
   }
 
-  const isAdmin = userProfile?.role === 'admin';
   const tableIsLoading = departmentsLoading;
 
 
@@ -216,22 +218,33 @@ export default function DepartmentsPage() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-          <Card>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>Departamentos</CardTitle>
-                    <CardDescription className="mt-2">
-                      Gestiona todos los departamentos de la empresa.
-                    </CardDescription>
+          {isAdmin ? (
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>Departamentos</CardTitle>
+                      <CardDescription className="mt-2">
+                        Gestiona todos los departamentos de la empresa.
+                      </CardDescription>
+                    </div>
+                    {isAdmin && <Button onClick={() => setIsAddDepartmentOpen(true)}>Añadir Departamento</Button>}
                   </div>
-                  {isAdmin && <Button onClick={() => setIsAddDepartmentOpen(true)}>Añadir Departamento</Button>}
+              </CardHeader>
+              <CardContent>
+                <DepartmentsTable departments={departments} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={isAdmin} />
+              </CardContent>
+            </Card>
+          ) : (
+             <Card className="mt-8">
+              <CardContent className="pt-6">
+                <div className="text-center text-muted-foreground">
+                  <p>No tienes permiso para ver esta página.</p>
+                  <p className="text-sm">Por favor, contacta a un administrador.</p>
                 </div>
-            </CardHeader>
-            <CardContent>
-              <DepartmentsTable departments={departments} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={isAdmin} />
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </main>
       </SidebarInset>
        {isAdmin && <AddDepartmentDialog

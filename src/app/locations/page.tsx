@@ -149,7 +149,10 @@ export default function LocationsPage() {
   const { toast } = useToast();
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+  
+  const isAdmin = userProfile?.role === 'admin';
+
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(isAdmin ? 'sites' : null);
   
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
   const [isEditLocationOpen, setIsEditLocationOpen] = useState(false);
@@ -197,7 +200,6 @@ export default function LocationsPage() {
     );
   }
 
-  const isAdmin = userProfile?.role === 'admin';
   const tableIsLoading = sitesLoading;
 
   return (
@@ -225,28 +227,39 @@ export default function LocationsPage() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-          <Card>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>Ubicaciones</CardTitle>
-                    <CardDescription className="mt-2">
-                      Gestiona todas las ubicaciones físicas de la empresa.
-                    </CardDescription>
+          {isAdmin ? (
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>Ubicaciones</CardTitle>
+                      <CardDescription className="mt-2">
+                        Gestiona todas las ubicaciones físicas de la empresa.
+                      </CardDescription>
+                    </div>
+                    {isAdmin && <Button onClick={() => setIsAddLocationOpen(true)}>Añadir Ubicación</Button>}
                   </div>
-                  {isAdmin && <Button onClick={() => setIsAddLocationOpen(true)}>Añadir Ubicación</Button>}
+              </CardHeader>
+              <CardContent>
+                <LocationsTable 
+                  sites={sites} 
+                  loading={tableIsLoading} 
+                  onEdit={handleEditRequest} 
+                  onDelete={handleDeleteRequest} 
+                  canEdit={isAdmin}
+                />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="mt-8">
+              <CardContent className="pt-6">
+                <div className="text-center text-muted-foreground">
+                  <p>No tienes permiso para ver esta página.</p>
+                  <p className="text-sm">Por favor, contacta a un administrador.</p>
                 </div>
-            </CardHeader>
-            <CardContent>
-              <LocationsTable 
-                sites={sites} 
-                loading={tableIsLoading} 
-                onEdit={handleEditRequest} 
-                onDelete={handleDeleteRequest} 
-                canEdit={isAdmin}
-              />
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </main>
       </SidebarInset>
       {isAdmin && <AddLocationDialog

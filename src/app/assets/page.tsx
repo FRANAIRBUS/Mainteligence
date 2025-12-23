@@ -164,8 +164,11 @@ export default function AssetsPage() {
   const { toast } = useToast();
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+
+  const isAdmin = userProfile?.role === 'admin';
+  
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(isAdmin ? 'assets' : null);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(isAdmin ? 'sites' : null);
 
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -206,7 +209,6 @@ export default function AssetsPage() {
     );
   }
 
-  const isAdmin = userProfile?.role === 'admin';
   const tableIsLoading = assetsLoading || sitesLoading;
 
   return (
@@ -234,6 +236,7 @@ export default function AssetsPage() {
           </div>
         </header>        
         <main className="flex-1 p-4 sm:p-6 md:p-8">
+          {isAdmin ? (
           <Card>
             <CardHeader>
                <div className="flex items-start justify-between gap-4">
@@ -250,6 +253,16 @@ export default function AssetsPage() {
               <AssetsTable assets={assets} sites={sites} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={isAdmin} />
             </CardContent>
           </Card>
+          ) : (
+            <Card className="mt-8">
+              <CardContent className="pt-6">
+                <div className="text-center text-muted-foreground">
+                  <p>No tienes permiso para ver esta página.</p>
+                  <p className="text-sm">Por favor, contacta a un administrador.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </main>
       </SidebarInset>
       {isAdmin && <AddAssetDialog open={isAddAssetOpen} onOpenChange={setIsAddAssetOpen} sites={sites} />}

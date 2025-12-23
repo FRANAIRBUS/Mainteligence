@@ -3,58 +3,62 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
  
-    function isAdmin() {
-      if (request.auth == null) {
-        return false;
-      }
-      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && userDoc.data.role == 'admin';
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOperario() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'operario';
     }
 
     function isMantenimiento() {
-      if (request.auth == null) {
-        return false;
-      }
-      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (userDoc.data.role == 'mantenimiento' || userDoc.data.role == 'admin');
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
+    }
+
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
  
     match /users/{userId} {
-      allow get: if request.auth.uid == userId || isMantenimiento();
+      allow get: if isOwner(userId) || isMantenimiento();
       allow list: if isMantenimiento();
-      allow create: if request.auth.uid == userId || isAdmin();
-      allow update: if isAdmin() || request.auth.uid == userId;
-      allow delete: if isAdmin() && request.auth.uid != userId;
+      // Allow creation for new users signing up or admins creating profiles
+      allow create: if isSignedIn();
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin() && !isOwner(userId);
     }
 
+    // Catalog collections are readable by any authenticated user
+    // but only writable by admins.
     match /sites/{siteId} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
     match /departments/{departmentId} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
     match /assets/{assetId} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
     match /tickets/{ticketId} {
-      allow get: if request.auth != null && (isMantenimiento() || resource.data.createdBy == request.auth.uid || resource.data.assignedTo == request.auth.uid);
-      // For list, we allow any authenticated user to attempt the query.
-      // The actual security is enforced by the client query logic, which constructs
-      // a query that Firestore can validate against 'get' rules for each document.
-      // An operario's query will be `where('createdBy', '==', uid)` or `where('assignedTo', '==', uid)`
-      // which is secure. An admin/mantenimiento will fetch all, which is also allowed.
-      allow list: if request.auth != null;
-      allow create: if request.auth != null;
+      allow get: if isSignedIn() && (isMantenimiento() || resource.data.createdBy == request.auth.uid || resource.data.assignedTo == request.auth.uid);
+      // A user can list tickets if they are admin/maintenance, OR
+      // if the query is filtering by createdBy or assignedTo their own UID.
+      allow list: if isMantenimiento() || (isOperario() && (request.query.getRules().where.get('createdBy') == request.auth.uid || request.query.getRules().where.get('assignedTo') == request.auth.uid));
+      allow create: if isSignedIn();
       allow delete: if isAdmin();
       allow update: if 
         isMantenimiento() ||
-        (request.auth.uid == resource.data.createdBy &&
+        (isOperario() && resource.data.createdBy == request.auth.uid &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority', 'updatedAt']));
     }
 
@@ -64,7 +68,7 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if request.auth != null;
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
   }

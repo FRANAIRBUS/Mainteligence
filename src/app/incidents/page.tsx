@@ -167,6 +167,7 @@ export default function IncidentsPage() {
     const ticketsCollection = collection(firestore, 'tickets');
 
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
+      // Admins and maintenance can see all tickets.
       return query(ticketsCollection);
     }
     
@@ -177,15 +178,14 @@ export default function IncidentsPage() {
     ));
 
   }, [firestore, user, userProfile]);
-
-  const canLoadData = !!user && !!userProfile;
   
-  // Phase 4: Execute the query for tickets and load other collections only when the query is ready and data can be loaded
-  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(canLoadData ? ticketsQuery : null);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
-  const { data: users, loading: usersLoading } = useCollection<User>(canLoadData ? 'users' : null);
+  // Phase 4: Execute the query for tickets and load other collections.
+  // The hooks themselves will wait for the query to be non-null.
+  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: users, loading: usersLoading } = useCollection<User>('users');
 
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
@@ -264,11 +264,11 @@ export default function IncidentsPage() {
           </Card>
         </main>
       </SidebarInset>
-      {canLoadData && <AddIncidentDialog
+      <AddIncidentDialog
         open={isAddIncidentOpen}
         onOpenChange={setIsAddIncidentOpen}
-      />}
-      {editingTicket && users && canLoadData && (
+      />
+      {editingTicket && users.length > 0 && (
         <EditIncidentDialog
           open={isEditIncidentOpen}
           onOpenChange={setIsEditIncidentOpen}
