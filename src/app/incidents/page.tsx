@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection } from '@/lib/firebase';
-import type { Ticket } from '@/lib/firebase/models';
+import type { Ticket, Site, Department, Asset } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
@@ -40,6 +40,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { AddIncidentDialog } from '@/components/add-incident-dialog';
 
 function IncidentsTable({
   tickets,
@@ -74,7 +75,7 @@ function IncidentsTable({
         {tickets.length > 0 ? (
           tickets.map((ticket) => (
             <TableRow key={ticket.id}>
-              <TableCell className="font-medium">{ticket.displayId}</TableCell>
+              <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0,6)}</TableCell>
               <TableCell>{ticket.title}</TableCell>
                <TableCell>
                 <Badge variant="outline">{ticket.status}</Badge>
@@ -83,7 +84,7 @@ function IncidentsTable({
                 <Badge variant="secondary">{ticket.priority}</Badge>
               </TableCell>
               <TableCell>
-                {ticket.createdAt?.toDateString() || 'N/A'}
+                {ticket.createdAt?.toDate ? ticket.createdAt.toDate().toLocaleDateString() : 'N/A'}
               </TableCell>
               <TableCell>
                 <DropdownMenu>
@@ -121,8 +122,12 @@ function IncidentsTable({
 
 export default function IncidentsPage() {
   const { user, loading: userLoading } = useUser();
-    const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
+  const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+  const { data: departments, loading: departmentsLoading } = useCollection<Department>('departments');
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
   const router = useRouter();
+  const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -130,7 +135,9 @@ export default function IncidentsPage() {
     }
   }, [user, userLoading, router]);
 
-  if (userLoading || !user) {
+  const isLoading = userLoading || ticketsLoading || sitesLoading || departmentsLoading || assetsLoading;
+
+  if (isLoading && !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -170,7 +177,7 @@ export default function IncidentsPage() {
                     Visualiza y gestiona todas las incidencias correctivas.
                   </CardDescription>
                 </div>
-                <Button>Crear Incidencia</Button>
+                <Button onClick={() => setIsAddIncidentOpen(true)}>Crear Incidencia</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -179,6 +186,13 @@ export default function IncidentsPage() {
           </Card>
         </main>
       </SidebarInset>
+      <AddIncidentDialog
+        open={isAddIncidentOpen}
+        onOpenChange={setIsAddIncidentOpen}
+        sites={sites}
+        departments={departments}
+        assets={assets}
+      />
     </SidebarProvider>
   );
 }
