@@ -31,10 +31,6 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 
-interface AppSettings {
-    logoUrl?: string;
-}
-
 export default function SettingsPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
@@ -84,8 +80,7 @@ export default function SettingsPage() {
       setSelectedFile(null);
       
       // Force a hard reload to ensure all components get the new logo URL
-      // Using router.refresh() which is the recommended way in App Router
-      router.refresh(); 
+      window.location.reload();
 
     } catch (error: any) {
       console.error("Error uploading file: ", error);
