@@ -164,9 +164,8 @@ export default function IncidentsPage() {
     
     switch (userProfile.role) {
       case 'admin':
-        return allTickets;
       case 'mantenimiento':
-        return allTickets.filter(ticket => ticket.assignedTo === user.uid || !ticket.assignedTo);
+        return allTickets;
       case 'operario':
         return allTickets.filter(ticket => ticket.createdBy === user.uid);
       default:
