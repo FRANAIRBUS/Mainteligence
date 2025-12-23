@@ -146,14 +146,10 @@ export default function IncidentsPage() {
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : '');
   
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !userProfile || !user) return null;
-
+    if (!firestore || !user) return null;
     const ticketsCollection = collection(firestore, 'tickets');
-
-    // Admin, mantenimiento y operario ahora ven todos los tickets
     return query(ticketsCollection);
-
-  }, [firestore, userProfile, user]);
+  }, [firestore, user]);
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
 
