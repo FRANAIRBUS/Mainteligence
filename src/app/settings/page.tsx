@@ -77,7 +77,7 @@ export default function SettingsPage() {
         title: 'Éxito',
         description: 'El logo se ha actualizado correctamente.',
       });
-      setSelectedFile(null); // Clear the selected file on success
+      setSelectedFile(null);
     } catch (error: any) {
       console.error("Error uploading file: ", error);
       toast({
@@ -86,7 +86,7 @@ export default function SettingsPage() {
         description: error.message || 'Ocurrió un error inesperado.',
       });
     } finally {
-      setIsPending(false); // Ensure pending state is always reset
+      setIsPending(false);
     }
   }
 
