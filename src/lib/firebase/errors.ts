@@ -7,6 +7,12 @@ export type SecurityRuleContext = {
   requestResourceData?: any;
 };
 
+// Defines the context for a Firebase Storage security rule violation.
+export type StorageSecurityRuleContext = {
+  path: string;
+  operation: 'read' | 'write' | 'delete';
+};
+
 // A custom error class to provide detailed context about Firestore permission errors.
 export class FirestorePermissionError extends Error {
   public context: SecurityRuleContext;
@@ -18,4 +24,17 @@ ${JSON.stringify(context, null, 2)}`;
     this.name = 'FirestorePermissionError';
     this.context = context;
   }
+}
+
+// A custom error class to provide detailed context about Storage permission errors.
+export class StoragePermissionError extends Error {
+    public context: StorageSecurityRuleContext;
+    
+    constructor(context: StorageSecurityRuleContext) {
+        const message = `StorageError: Missing or insufficient permissions: The following request was denied by Firebase Storage Security Rules:
+${JSON.stringify(context, null, 2)}`;
+        super(message);
+        this.name = 'StoragePermissionError';
+        this.context = context;
+    }
 }

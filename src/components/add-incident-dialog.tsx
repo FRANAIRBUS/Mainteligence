@@ -6,10 +6,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useFirestore, useUser } from '@/lib/firebase';
+import { useFirestore, useUser, useStorage } from '@/lib/firebase';
 import type { Site, Department, Asset } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
-import { FirestorePermissionError } from '@/lib/firebase/errors';
+import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -65,8 +66,10 @@ interface AddIncidentDialogProps {
 export function AddIncidentDialog({ open, onOpenChange, sites, departments, assets }: AddIncidentDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
+  const storage = useStorage();
   const { user } = useUser();
   const [isPending, setIsPending] = useState(false);
+  const [photos, setPhotos] = useState<File[]>([]);
 
   const form = useForm<AddIncidentFormValues>({
     resolver: zodResolver(formSchema),
@@ -76,59 +79,91 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
       priority: 'Media',
     },
   });
+  
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setPhotos(Array.from(e.target.files));
+    }
+  };
 
   const onSubmit = async (data: AddIncidentFormValues) => {
-    if (!firestore || !user) {
+    if (!firestore || !user || !storage) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No autenticado o base de datos no disponible.',
+        description: 'No autenticado o servicios de Firebase no disponibles.',
       });
       return;
     }
     setIsPending(true);
 
-    const docData = {
-        ...data,
-        type: 'correctivo',
-        status: 'Abierta',
-        createdBy: user.uid,
-        assignedRole: 'maintenance',
-        assignedTo: null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`
-    };
+    try {
+        const ticketId = `TICKET_${Date.now()}`; // Temporary ID for storage path
+        const photoUrls: string[] = [];
 
-    const collectionRef = collection(firestore, "tickets");
-    addDoc(collectionRef, docData)
-      .then(() => {
+        for (const photo of photos) {
+            const photoRef = ref(storage, `tickets/${ticketId}/${photo.name}`);
+            try {
+                const snapshot = await uploadBytes(photoRef, photo);
+                const url = await getDownloadURL(snapshot.ref);
+                photoUrls.push(url);
+            } catch (storageError: any) {
+                 if (storageError.code === 'storage/unauthorized' || storageError.code === 'storage/object-not-found') {
+                    const permissionError = new StoragePermissionError({
+                      path: photoRef.fullPath,
+                      operation: 'write',
+                    });
+                    errorEmitter.emit('permission-error', permissionError);
+                } else {
+                     throw storageError;
+                }
+                setIsPending(false);
+                return;
+            }
+        }
+        
+        const docData = {
+            ...data,
+            type: 'correctivo',
+            status: 'Abierta',
+            createdBy: user.uid,
+            assignedRole: 'maintenance',
+            assignedTo: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            photoUrls,
+            displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`
+        };
+
+        const collectionRef = collection(firestore, "tickets");
+        await addDoc(collectionRef, docData);
+
         toast({
-          title: 'Éxito',
-          description: `Incidencia '${data.title}' creada correctamente.`,
+            title: 'Éxito',
+            description: `Incidencia '${data.title}' creada correctamente.`,
         });
         onOpenChange(false);
         form.reset();
-      })
-      .catch((error) => {
+        setPhotos([]);
+
+    } catch (error: any) {
         if (error.code === 'permission-denied') {
-          const permissionError = new FirestorePermissionError({
-            path: collectionRef.path,
-            operation: 'create',
-            requestResourceData: docData,
-          });
-          errorEmitter.emit('permission-error', permissionError);
+            const permissionError = new FirestorePermissionError({
+                path: 'tickets',
+                operation: 'create',
+                requestResourceData: data,
+            });
+            errorEmitter.emit('permission-error', permissionError);
         } else {
-          toast({
-            variant: 'destructive',
-            title: 'Error al crear la incidencia',
-            description: error.message || 'Ocurrió un error inesperado.',
-          });
+            toast({
+                variant: 'destructive',
+                title: 'Error al crear la incidencia',
+                description: error.message || 'Ocurrió un error inesperado.',
+            });
         }
-      })
-      .finally(() => {
+    } finally {
         setIsPending(false);
-      });
+    }
   };
 
   const handleOpenChange = (isOpen: boolean) => {
@@ -136,6 +171,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
       onOpenChange(isOpen);
       if (!isOpen) {
         form.reset();
+        setPhotos([]);
       }
     }
   };
@@ -270,6 +306,24 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
                 )}
                 />
             </div>
+            
+            <FormItem>
+              <FormLabel>Fotos (Opcional)</FormLabel>
+              <FormControl>
+                <Input 
+                  type="file" 
+                  multiple 
+                  onChange={handlePhotoChange} 
+                  accept="image/*"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+            {photos.length > 0 && (
+                <div className="text-xs text-muted-foreground">
+                    {photos.length} archivo(s) seleccionado(s).
+                </div>
+            )}
             
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>Cancelar</Button>
