@@ -11,10 +11,10 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection } from '@/lib/firebase';
-import type { Ticket, Site, Department, Asset } from '@/lib/firebase/models';
+import { useUser, useCollection, useDoc } from '@/lib/firebase';
+import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   Table,
   TableBody,
@@ -41,15 +41,25 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
+import { EditIncidentDialog } from '@/components/edit-incident-dialog';
+import Image from 'next/image';
 
 function IncidentsTable({
   tickets,
+  sites,
+  departments,
   loading,
   onViewDetails,
+  onEdit,
+  userRole,
 }: {
   tickets: Ticket[];
+  sites: Record<string, string>;
+  departments: Record<string, string>;
   loading: boolean;
   onViewDetails: (ticketId: string) => void;
+  onEdit: (ticket: Ticket) => void;
+  userRole?: string;
 }) {
   if (loading) {
     return (
@@ -67,6 +77,8 @@ function IncidentsTable({
           <TableHead>Título</TableHead>
           <TableHead>Estado</TableHead>
           <TableHead>Prioridad</TableHead>
+          <TableHead>Ubicación</TableHead>
+          <TableHead>Departamento</TableHead>
           <TableHead>Creado</TableHead>
           <TableHead>
             <span className="sr-only">Acciones</span>
@@ -85,6 +97,8 @@ function IncidentsTable({
                <TableCell>
                 <Badge variant="secondary">{ticket.priority}</Badge>
               </TableCell>
+              <TableCell>{sites[ticket.siteId] || 'N/A'}</TableCell>
+              <TableCell>{departments[ticket.departmentId] || 'N/A'}</TableCell>
               <TableCell>
                 {ticket.createdAt?.toDate ? ticket.createdAt.toDate().toLocaleDateString() : 'N/A'}
               </TableCell>
@@ -103,7 +117,9 @@ function IncidentsTable({
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
                     <DropdownMenuItem onClick={() => onViewDetails(ticket.id)}>Ver Detalles</DropdownMenuItem>
-                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
+                    {(userRole === 'admin' || userRole === 'mantenimiento') && (
+                       <DropdownMenuItem onClick={() => onEdit(ticket)}>Editar</DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -111,7 +127,7 @@ function IncidentsTable({
           ))
         ) : (
           <TableRow>
-            <TableCell colSpan={6} className="h-24 text-center">
+            <TableCell colSpan={8} className="h-24 text-center">
               No se encontraron incidencias.
             </TableCell>
           </TableRow>
@@ -125,6 +141,17 @@ function IncidentsTable({
 export default function IncidentsPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : '');
+
+  const { data: allTickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+  const { data: departments, loading: departmentsLoading } = useCollection<Department>('departments');
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: users, loading: usersLoading } = useCollection<User>('users');
+  
+  const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
+  const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
+  const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -132,36 +159,48 @@ export default function IncidentsPage() {
     }
   }, [user, userLoading, router]);
 
-  const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
-  const { data: departments, loading: departmentsLoading } = useCollection<Department>('departments');
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
-  const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
+  const tickets = useMemo(() => {
+    if (!userProfile) return [];
+    if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
+      return allTickets;
+    }
+    return allTickets.filter(ticket => ticket.createdBy === user.uid);
+  }, [allTickets, userProfile, user]);
 
-  const isLoading = userLoading || ticketsLoading || sitesLoading || departmentsLoading || assetsLoading;
+  const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {}), [sites]);
+  const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {}), [departments]);
+  
+  const handleViewDetails = (ticketId: string) => {
+    router.push(`/incidents/${ticketId}`);
+  };
 
-  if (userLoading || !user) {
+  const handleEditRequest = (ticket: Ticket) => {
+    setEditingTicket(ticket);
+    setIsEditIncidentOpen(true);
+  };
+
+  const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || departmentsLoading || assetsLoading || usersLoading;
+
+  if (isLoading || !user || !userProfile) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
       </div>
     );
   }
-  
-  const handleViewDetails = (ticketId: string) => {
-    router.push(`/incidents/${ticketId}`);
-  };
 
   return (
     <SidebarProvider>
       <Sidebar>
-        <SidebarHeader className="p-4">
-          <a href="/" className="flex items-center gap-2">
-            <Icons.logo className="h-8 w-8 text-sidebar-primary" />
-            <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-              Maintelligence
-            </span>
-          </a>
+        <SidebarHeader className="p-4 text-center">
+            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
+              <Image src="/client-logo.png" alt="Logo del Cliente" width={80} height={80} className="rounded-md" />
+            </div>
+            <a href="/" className="flex flex-col items-center gap-2">
+                <span className="text-xl font-headline font-semibold text-sidebar-foreground">
+                Maintelligence
+                </span>
+            </a>
         </SidebarHeader>
         <SidebarContent>
           <MainNav />
@@ -181,14 +220,22 @@ export default function IncidentsPage() {
                 <div>
                   <CardTitle>Incidencias</CardTitle>
                   <CardDescription className="mt-2">
-                    Visualiza y gestiona todas las incidencias correctivas.
+                    {userProfile?.role === 'operario' ? 'Visualiza aquí tus incidencias creadas.' : 'Visualiza y gestiona todas las incidencias correctivas.'}
                   </CardDescription>
                 </div>
                 <Button onClick={() => setIsAddIncidentOpen(true)}>Crear Incidencia</Button>
               </div>
             </CardHeader>
             <CardContent>
-              <IncidentsTable tickets={tickets} loading={ticketsLoading} onViewDetails={handleViewDetails} />
+              <IncidentsTable 
+                tickets={tickets} 
+                sites={sitesMap}
+                departments={departmentsMap}
+                loading={isLoading} 
+                onViewDetails={handleViewDetails}
+                onEdit={handleEditRequest}
+                userRole={userProfile?.role}
+                />
             </CardContent>
           </Card>
         </main>
@@ -200,6 +247,14 @@ export default function IncidentsPage() {
         departments={departments}
         assets={assets}
       />
+      {editingTicket && (
+        <EditIncidentDialog
+          open={isEditIncidentOpen}
+          onOpenChange={setIsEditIncidentOpen}
+          ticket={editingTicket}
+          users={users.filter(u => u.role === 'mantenimiento' || u.role === 'admin')}
+        />
+      )}
     </SidebarProvider>
   );
 }

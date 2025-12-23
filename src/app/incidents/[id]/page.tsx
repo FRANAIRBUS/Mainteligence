@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useDoc, useUser, useCollection } from '@/lib/firebase';
 import type { Ticket, User, Site, Department, Asset } from '@/lib/firebase/models';
@@ -26,6 +26,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Edit, CalendarIcon, User as UserIcon, Building, Archive, HardHat } from 'lucide-react';
 import { format } from 'date-fns';
+import Image from 'next/image';
+import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 
 function InfoCard({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value: string | React.ReactNode }) {
     return (
@@ -53,9 +55,12 @@ export default function IncidentDetailPage() {
   const { data: ticket, loading: ticketLoading } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : '');
   const { data: createdByUser, loading: createdByLoading } = useDoc<User>(ticket ? `users/${ticket.createdBy}` : '');
   
-  const { data: sites } = useCollection<Site>('sites');
-  const { data: departments } = useCollection<Department>('departments');
-  const { data: assets } = useCollection<Asset>('assets');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: users, loading: usersLoading } = useCollection<User>('users');
+
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
   const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
   const departmentName = useMemo(() => departments?.find(d => d.id === ticket?.departmentId)?.name || 'N/A', [departments, ticket]);
@@ -66,11 +71,17 @@ export default function IncidentDetailPage() {
     if (!userLoading && !user) {
       router.push('/login');
     }
-  }, [user, userLoading, router]);
+     if (!ticketLoading && !userLoading && ticket && user) {
+      const canView = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento' || ticket.createdBy === user.uid;
+      if (!canView) {
+        router.push('/incidents');
+      }
+    }
+  }, [user, userLoading, router, ticket, ticketLoading, userProfile]);
 
-  const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading;
+  const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
 
-  if (isLoading || !ticket) {
+  if (isLoading || !ticket || !userProfile) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -78,18 +89,20 @@ export default function IncidentDetailPage() {
     );
   }
 
-  const isAdmin = userProfile?.role === 'admin';
+  const canEdit = userProfile.role === 'admin' || userProfile.role === 'mantenimiento';
 
   return (
     <SidebarProvider>
       <Sidebar>
-        <SidebarHeader className="p-4">
-          <a href="/" className="flex items-center gap-2">
-            <Icons.logo className="h-8 w-8 text-sidebar-primary" />
-            <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-              Maintelligence
-            </span>
-          </a>
+        <SidebarHeader className="p-4 text-center">
+            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
+              <Image src="/client-logo.png" alt="Logo del Cliente" width={80} height={80} className="rounded-md" />
+            </div>
+            <a href="/" className="flex flex-col items-center gap-2">
+                <span className="text-xl font-headline font-semibold text-sidebar-foreground">
+                Maintelligence
+                </span>
+            </a>
         </SidebarHeader>
         <SidebarContent>
           <MainNav />
@@ -99,7 +112,7 @@ export default function IncidentDetailPage() {
         <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
            <div className="flex items-center gap-2">
             <SidebarTrigger className="md:hidden" />
-            <Button variant="outline" size="icon" onClick={() => router.back()} className='h-8 w-8'>
+            <Button variant="outline" size="icon" onClick={() => router.push('/incidents')} className='h-8 w-8'>
                 <ArrowLeft className="h-4 w-4" />
                 <span className="sr-only">Volver</span>
             </Button>
@@ -113,7 +126,7 @@ export default function IncidentDetailPage() {
                 {/* Header */}
                 <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
                     <div className="grid gap-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <h1 className="font-headline text-2xl font-bold tracking-tight md:text-3xl">
                                 {ticket.title}
                             </h1>
@@ -122,8 +135,8 @@ export default function IncidentDetailPage() {
                         </div>
                         <p className="text-muted-foreground">ID de Incidencia: {ticket.displayId}</p>
                     </div>
-                     {isAdmin && (
-                        <Button>
+                     {canEdit && (
+                        <Button onClick={() => setIsEditDialogOpen(true)}>
                             <Edit className="mr-2 h-4 w-4" />
                             Editar Incidencia
                         </Button>
@@ -185,6 +198,14 @@ export default function IncidentDetailPage() {
             </div>
         </main>
       </SidebarInset>
+      {canEdit && (
+        <EditIncidentDialog
+            open={isEditDialogOpen}
+            onOpenChange={setIsEditDialogOpen}
+            ticket={ticket}
+            users={users.filter(u => u.role === 'mantenimiento' || u.role === 'admin')}
+        />
+      )}
     </SidebarProvider>
   );
 }
