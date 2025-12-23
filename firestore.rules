@@ -8,11 +8,13 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return request.auth.token.role == 'admin';
+      // Check the user's role from their document in the /users collection.
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
  
     match /users/{userId} {
       allow read;
+      // Allow write if the user is an admin or is modifying their own profile.
       allow write: if isAdmin() || isOwner(userId);
     }
 
@@ -29,14 +31,14 @@ service cloud.firestore {
     }
 
     match /tickets/{ticketId} {
-        allow read: if request.auth.uid == resource.data.createdBy || request.auth.token.role in ['mantenimiento', 'admin'];
+        allow read: if request.auth.uid == resource.data.createdBy || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
         allow create: if request.auth.uid != null;
-        allow update: if request.auth.token.role in ['mantenimiento', 'admin'] || (request.auth.uid == resource.data.createdBy && !('status' in request.resource.data));
+        allow update: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'] || (request.auth.uid == resource.data.createdBy && !('status' in request.resource.data));
     }
 
     match /tickets/{ticketId}/comments/{commentId} {
-        allow read: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || request.auth.token.role in ['mantenimiento', 'admin'];
-        allow create: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || request.auth.token.role in ['mantenimiento', 'admin'];
+        allow read: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
+        allow create: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
     }
   }
 }
