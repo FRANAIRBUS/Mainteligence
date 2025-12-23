@@ -33,6 +33,10 @@ import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 
+interface AppSettings {
+  logoUrl?: string;
+}
+
 export default function SettingsPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
@@ -40,14 +44,23 @@ export default function SettingsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
 
+  const { data: settings } = useDoc<AppSettings>('settings/app');
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isPending, setIsPending] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | undefined | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
+  
+  useEffect(() => {
+    if (settings) {
+      setLogoUrl(settings.logoUrl);
+    }
+  }, [settings]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -67,40 +80,50 @@ export default function SettingsPage() {
     }
 
     setIsPending(true);
+    
     try {
-      const logoRef = ref(storage, `logos/client-logo.png`);
+      const logoRef = ref(storage, `logos/client-logo-${Date.now()}.png`);
       const uploadResult = await uploadBytes(logoRef, selectedFile);
       const downloadURL = await getDownloadURL(uploadResult.ref);
 
       const settingsRef = doc(firestore, 'settings', 'app');
-      await setDoc(settingsRef, { logoUrl: downloadURL }, { merge: true });
+      const settingsData = { logoUrl: downloadURL };
 
-      toast({
-        title: 'Éxito',
-        description: 'El logo se ha actualizado correctamente. La página se recargará para aplicar los cambios.',
-      });
-      setSelectedFile(null);
-      
-      // Force a hard reload to ensure all components get the new logo URL
-      window.location.reload();
+      setDoc(settingsRef, settingsData, { merge: true })
+        .then(() => {
+          setLogoUrl(downloadURL);
+          toast({
+            title: 'Éxito',
+            description: 'El logo se ha actualizado correctamente.',
+          });
+          setSelectedFile(null);
+          // Forzar recarga para asegurar que todos los componentes vean el cambio
+          window.location.reload();
+        })
+        .catch((error) => {
+          if (error.code === 'permission-denied') {
+            const permissionError = new FirestorePermissionError({
+              path: settingsRef.path,
+              operation: 'update',
+              requestResourceData: settingsData,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+          } else {
+             toast({
+              variant: 'destructive',
+              title: 'Error al guardar en Firestore',
+              description: error.message || 'Ocurrió un error inesperado.',
+            });
+          }
+        });
 
     } catch (error: any) {
-      console.error("Error uploading file: ", error);
       if (error.code === 'storage/unauthorized') {
-        // This is a generic way to handle storage errors, could be more specific
         toast({
             variant: 'destructive',
             title: 'Error de Permiso de Storage',
-            description: 'No tienes permiso para subir archivos.',
+            description: 'No tienes permiso para subir archivos. Revisa las reglas de Storage.',
         });
-      } else if (error.code === 'permission-denied') {
-        const settingsRef = doc(firestore, 'settings', 'app');
-        const permissionError = new FirestorePermissionError({
-          path: settingsRef.path,
-          operation: 'update',
-          requestResourceData: { logoUrl: '[URL_OMITTED]' },
-        });
-        errorEmitter.emit('permission-error', permissionError);
       } else {
         toast({
             variant: 'destructive',
@@ -113,9 +136,7 @@ export default function SettingsPage() {
     }
   }
 
-  const isLoading = userLoading;
-
-  if (isLoading || !user) {
+  if (userLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
