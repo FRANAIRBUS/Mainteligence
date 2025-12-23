@@ -196,7 +196,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
                         <FormControl>
                         <SelectTrigger>
                             <SelectValue placeholder="Selecciona un departamento" />
-                        </Trigger>
+                        </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                         {departments.map(dept => (
@@ -242,7 +242,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
                         <FormControl>
                         <SelectTrigger>
                             <SelectValue placeholder="Selecciona una prioridad" />
-                        </Trigger>
+                        </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                             <SelectItem value="Baja">Baja</SelectItem>
