@@ -150,16 +150,19 @@ export default function IncidentsPage() {
 
     const ticketsCollection = collection(firestore, 'tickets');
 
-    switch (userProfile.role) {
-      case 'admin':
-        return query(ticketsCollection);
-      case 'mantenimiento':
-        return query(ticketsCollection, where('assignedTo', 'in', [null, user.uid]));
-      case 'operario':
-        return query(ticketsCollection, where('createdBy', '==', user.uid));
-      default:
-        return null;
+    // Admin and Mantenimiento roles see all tickets (global view)
+    if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
+      return query(ticketsCollection);
     }
+    
+    // Operario role only sees tickets they created
+    if (userProfile.role === 'operario') {
+      return query(ticketsCollection, where('createdBy', '==', user.uid));
+    }
+    
+    // Default to no query if role is not recognized
+    return null;
+
   }, [firestore, userProfile, user]);
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
