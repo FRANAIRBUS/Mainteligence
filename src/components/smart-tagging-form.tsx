@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -45,19 +45,31 @@ function SubmitButton({ isPending }: { isPending: boolean }) {
 
 function SuggestedTags({ state, isPending }: { state: TagFormState, isPending: boolean }) {
   const { toast } = useToast();
-  const [showResults, setShowResults] = useState(false);
-  
-  useEffect(() => {
-    // Show results only when a new message is set after the initial state
-    if (state.message) {
-      setShowResults(true);
-    }
-  }, [state]);
 
-
-  if (!showResults) {
-    return null;
+  if (isPending) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Tags /> Etiquetas Sugeridas
+          </CardTitle>
+          <CardDescription>
+            Haz clic en una etiqueta para copiarla. Úsalas para categorizar la tarea.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            <Skeleton className="h-6 w-20 rounded-full" />
+            <Skeleton className="h-6 w-24 rounded-full" />
+            <Skeleton className="h-6 w-16 rounded-full" />
+            <Skeleton className="h-6 w-28 rounded-full" />
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
+
+  if (!state.message) return null;
 
   return (
     <Card>
@@ -70,14 +82,7 @@ function SuggestedTags({ state, isPending }: { state: TagFormState, isPending: b
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {isPending ? (
-          <div className="flex flex-wrap gap-2">
-            <Skeleton className="h-6 w-20 rounded-full" />
-            <Skeleton className="h-6 w-24 rounded-full" />
-            <Skeleton className="h-6 w-16 rounded-full" />
-            <Skeleton className="h-6 w-28 rounded-full" />
-          </div>
-        ) : state.tags.length > 0 ? (
+        {state.tags.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {state.tags.map((tag, index) => (
               <Badge
@@ -119,19 +124,6 @@ export default function SmartTaggingForm() {
       description: '',
     },
   });
-
-  useEffect(() => {
-    if (state.errors?.description) {
-      form.setError('description', { message: state.errors.description.join(', ') });
-    }
-    if (state.message && state.message !== 'Éxito' && !state.errors) {
-       toast({
-        variant: "destructive",
-        title: "Error",
-        description: state.message,
-      });
-    }
-  }, [state, form, toast]);
   
   const onSubmit = (data: z.infer<typeof formSchema>) => {
     const formData = new FormData();
@@ -140,6 +132,16 @@ export default function SmartTaggingForm() {
     startTransition(async () => {
       const result = await handleTagSuggestion(state, formData);
       setState(result);
+      if (result.errors?.description) {
+        form.setError('description', { message: result.errors.description.join(', ') });
+      }
+      if (result.message && result.message !== 'Éxito' && !result.errors) {
+         toast({
+          variant: "destructive",
+          title: "Error",
+          description: result.message,
+        });
+      }
     });
   }
 
