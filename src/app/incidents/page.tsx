@@ -43,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { collection, query, where, or } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 
 function IncidentsTable({
   tickets,
@@ -150,37 +150,38 @@ export default function IncidentsPage() {
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
 
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user?.uid ? `users/${user.uid}` : null);
-
+  // Step 1: Wait for user to be loaded.
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
 
+  // Step 2: Only fetch profile and other data once user is available.
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !userProfile || !user?.uid) return null;
+    // Step 3: Don't create a query until firestore and userProfile are ready.
+    if (!firestore || !userProfile || !user) return null;
+    
     const ticketsCollection = collection(firestore, 'tickets');
 
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(ticketsCollection);
     }
     
-    return query(ticketsCollection, or(
-        where('createdBy', '==', user.uid),
-        where('assignedTo', '==', user.uid)
-    ));
+    // An 'operario' can see tickets they created OR tickets assigned to them.
+    return query(ticketsCollection, where('assignedTo', '==', user.uid));
 
-  }, [firestore, userProfile, user?.uid]);
+  }, [firestore, userProfile, user]);
 
+  // Step 4: Hooks are now called conditionally, but based on stable values that only change once.
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
-  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>('assets');
-  const { data: usersData, loading: usersLoading } = useCollection<User>('users');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(user ? 'sites' : null);
+  const { data: departments, loading: deptsLoading } = useCollection<Department>(user ? 'departments' : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(user ? 'assets' : null);
+  const { data: users, loading: usersLoading } = useCollection<User>(user ? 'users' : null);
 
-  const assets = useMemo(() => assetsData || [], [assetsData]);
-  const users = useMemo(() => usersData || [], [usersData]);
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
   
@@ -193,9 +194,9 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  const pageLoading = userLoading || profileLoading;
+  const pageIsLoading = userLoading || profileLoading;
   
-  if (pageLoading) {
+  if (pageIsLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
