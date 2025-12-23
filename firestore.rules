@@ -7,18 +7,22 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
     function isAdmin() {
-      // Check the user's role from their existing document in the /users collection.
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return getUserRole() == 'admin';
+    }
+
+    function isMantenimiento() {
+        return getUserRole() in ['mantenimiento', 'admin'];
     }
  
     match /users/{userId} {
       allow read;
-      // Allow a user to create their own profile, or allow an admin to create any user.
       allow create: if isOwner(userId) || isAdmin();
-      // Users can update their own profile, and admins can update any profile.
       allow update: if isOwner(userId) || isAdmin();
-      // Only admins should be able to delete users.
       allow delete: if isAdmin();
     }
 
@@ -35,14 +39,14 @@ service cloud.firestore {
     }
 
     match /tickets/{ticketId} {
-        allow read: if request.auth.uid == resource.data.createdBy || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
+        allow read: if isMantenimiento() || request.auth.uid == resource.data.createdBy;
         allow create: if request.auth.uid != null;
-        allow update: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'] || (request.auth.uid == resource.data.createdBy && !('status' in request.resource.data));
+        allow update: if isMantenimiento() || (request.auth.uid == resource.data.createdBy && !('status' in request.resource.data));
     }
 
     match /tickets/{ticketId}/comments/{commentId} {
-        allow read: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
-        allow create: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
+        allow read: if isMantenimiento() || get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid;
+        allow create: if isMantenimiento() || get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid;
     }
 
     match /settings/{settingId} {

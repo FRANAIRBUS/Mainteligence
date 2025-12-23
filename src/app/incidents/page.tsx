@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useDoc } from '@/lib/firebase';
+import { useUser, useCollectionQuery, useDoc, useFirestore } from '@/lib/firebase';
 import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
@@ -43,6 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { collection, query, where } from 'firebase/firestore';
 
 function IncidentsTable({
   tickets,
@@ -141,13 +142,34 @@ function IncidentsTable({
 export default function IncidentsPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
+  const firestore = useFirestore();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : '');
+  
+  const ticketsQuery = useMemo(() => {
+    if (!firestore || !userProfile || !user) return null;
 
-  const { data: allTickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
-  const { data: departments, loading: departmentsLoading } = useCollection<Department>('departments');
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
-  const { data: users, loading: usersLoading } = useCollection<User>('users');
+    const ticketsCollection = collection(firestore, 'tickets');
+
+    switch (userProfile.role) {
+      case 'admin':
+      case 'mantenimiento':
+        // Admins and maintenance see all tickets
+        return query(ticketsCollection);
+      case 'operario':
+        // Operarios only see tickets they created
+        return query(ticketsCollection, where('createdBy', '==', user.uid));
+      default:
+        // No role, no tickets
+        return null;
+    }
+  }, [firestore, userProfile, user]);
+
+  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
+
+  const { data: sites, loading: sitesLoading } = useCollectionQuery<Site>(firestore ? collection(firestore, 'sites') : null);
+  const { data: departments, loading: departmentsLoading } = useCollectionQuery<Department>(firestore ? collection(firestore, 'departments') : null);
+  const { data: assets, loading: assetsLoading } = useCollectionQuery<Asset>(firestore ? collection(firestore, 'assets') : null);
+  const { data: users, loading: usersLoading } = useCollectionQuery<User>(firestore ? collection(firestore, 'users') : null);
   
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
@@ -158,20 +180,6 @@ export default function IncidentsPage() {
       router.push('/login');
     }
   }, [user, userLoading, router]);
-
-  const tickets = useMemo(() => {
-    if (!userProfile || !allTickets || !user) return [];
-    
-    switch (userProfile.role) {
-      case 'admin':
-      case 'mantenimiento':
-        return allTickets;
-      case 'operario':
-        return allTickets.filter(ticket => ticket.createdBy === user.uid);
-      default:
-        return [];
-    }
-  }, [allTickets, userProfile, user]);
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
