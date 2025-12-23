@@ -27,12 +27,12 @@ service cloud.firestore {
     }
 
     match /sites/{siteId} {
-      allow get, list: if request.auth != null;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
     match /departments/{departmentId} {
-      allow get, list: if request.auth != null;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
@@ -42,22 +42,15 @@ service cloud.firestore {
     }
 
     match /tickets/{ticketId} {
-      // Any authenticated user can get a ticket if they created it or are maintenance staff.
-      allow get: if request.auth != null && (isMantenimiento() || resource.data.createdBy == request.auth.uid);
-      
-      // Maintenance/Admins can list all tickets.
-      // Operarios can list tickets created by them OR assigned to them.
+      allow get: if request.auth != null && (isMantenimiento() || resource.data.createdBy == request.auth.uid || resource.data.assignedTo == request.auth.uid);
       allow list: if request.auth != null && (isMantenimiento() || 
                     (request.query.where.field == 'createdBy' && request.query.where.value == request.auth.uid) ||
                     (request.query.where.field == 'assignedTo' && request.query.where.value == request.auth.uid) ||
                     (request.query.where.filters[0].field.string_value == 'createdBy' && request.query.where.filters[0].value.string_value == request.auth.uid) ||
                     (request.query.where.filters[1].field.string_value == 'assignedTo' && request.query.where.filters[1].value.string_value == request.auth.uid)
                     );
-
       allow create: if request.auth != null;
       allow delete: if isAdmin();
-      
-      // Allow updates by maintenance staff, or by the creator if they are only changing priority.
       allow update: if 
         isMantenimiento() ||
         (request.auth.uid == resource.data.createdBy &&

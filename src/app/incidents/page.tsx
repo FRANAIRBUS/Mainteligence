@@ -150,7 +150,6 @@ export default function IncidentsPage() {
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
 
-  // Load user profile first, unconditionally.
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user?.uid ? `users/${user.uid}` : null);
 
   useEffect(() => {
@@ -159,7 +158,6 @@ export default function IncidentsPage() {
     }
   }, [user, userLoading, router]);
 
-  // Based on the profile, create the appropriate query for tickets.
   const ticketsQuery = useMemo(() => {
     if (!firestore || !userProfile || !user?.uid) return null;
     const ticketsCollection = collection(firestore, 'tickets');
@@ -168,7 +166,6 @@ export default function IncidentsPage() {
       return query(ticketsCollection);
     }
     
-    // Operario sees tickets they created OR are assigned to them.
     return query(ticketsCollection, or(
         where('createdBy', '==', user.uid),
         where('assignedTo', '==', user.uid)
@@ -176,14 +173,12 @@ export default function IncidentsPage() {
 
   }, [firestore, userProfile, user?.uid]);
 
-  // Now, call all data hooks unconditionally.
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   const { data: assetsData, loading: assetsLoading } = useCollection<Asset>('assets');
   const { data: usersData, loading: usersLoading } = useCollection<User>('users');
 
-  // Memoize derived data safely.
   const assets = useMemo(() => assetsData || [], [assetsData]);
   const users = useMemo(() => usersData || [], [usersData]);
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
@@ -198,7 +193,6 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  // Page is loading if user or their profile is loading.
   const pageLoading = userLoading || profileLoading;
   
   if (pageLoading) {
@@ -209,7 +203,6 @@ export default function IncidentsPage() {
     );
   }
   
-  // Table is loading if any of its data sources are loading.
   const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
 
   return (
