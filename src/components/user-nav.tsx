@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useUser, useAuth } from '@/lib/firebase';
 import { signOut } from 'firebase/auth';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 export function UserNav() {
@@ -74,9 +75,11 @@ export function UserNav() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem>
-            Perfil
-            <DropdownMenuShortcut>⇧⌘P</DropdownMenuShortcut>
+           <DropdownMenuItem asChild>
+            <Link href="/profile">
+              Perfil
+              <DropdownMenuShortcut>⇧⌘P</DropdownMenuShortcut>
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuItem>
             Ajustes
