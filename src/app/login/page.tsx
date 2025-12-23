@@ -11,42 +11,96 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth } from '@/lib/firebase';
+import { useAuth, useFirestore } from '@/lib/firebase';
 import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   signInWithPopup,
+  createUserWithEmailAndPassword,
+  updateProfile,
 } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, useEffect } from 'react';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isLoginView, setIsLoginView] = useState(true);
   const auth = useAuth();
+  const firestore = useFirestore();
   const router = useRouter();
 
-  const handleLogin = async (e: FormEvent) => {
+  // Reset form when switching views
+  useEffect(() => {
+    setError(null);
+    setEmail('');
+    setPassword('');
+  }, [isLoginView]);
+
+  const handleAuthAction = async (e: FormEvent) => {
     e.preventDefault();
     if (!auth) return;
     setError(null);
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      router.push('/');
-    } catch (err: any) {
-      setError(err.message);
+
+    if (isLoginView) {
+      // Login logic
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        router.push('/');
+      } catch (err: any) {
+        setError(err.message);
+      }
+    } else {
+      // Register logic
+      try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // After creating the user in Auth, create their profile in Firestore
+        if (firestore && user) {
+            const userDocRef = doc(firestore, 'users', user.uid);
+            await setDoc(userDocRef, {
+                displayName: user.email, // Default display name
+                email: user.email,
+                role: 'operario', // Default role for new sign-ups
+                active: true,
+                isMaintenanceLead: false,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+            }, { merge: true }); // Use merge to be safe
+        }
+        router.push('/');
+      } catch (err: any) {
+        setError(err.message);
+      }
     }
   };
 
   const handleGoogleSignIn = async () => {
-    if (!auth) return;
+    if (!auth || !firestore) return;
     setError(null);
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      // After Google Sign-in, create or update their profile in Firestore
+      const userDocRef = doc(firestore, 'users', user.uid);
+      await setDoc(userDocRef, {
+        displayName: user.displayName,
+        email: user.email,
+        // If the document doesn't exist, default to 'operario'. 
+        // If it exists, this merge will not overwrite the existing role.
+        role: 'operario',
+        active: true,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      
       router.push('/');
+
     } catch (err: any) {
       setError(err.message);
     }
@@ -61,11 +115,11 @@ export default function LoginPage() {
           </div>
           <CardTitle className="text-2xl">Maintelligence</CardTitle>
           <CardDescription>
-            Inicia sesión en tu cuenta para continuar
+            {isLoginView ? 'Inicia sesión para continuar' : 'Crea una cuenta para empezar'}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleAuthAction} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Correo electrónico</Label>
               <Input
@@ -91,7 +145,7 @@ export default function LoginPage() {
               <p className="text-sm text-destructive">{error}</p>
             )}
             <Button type="submit" className="w-full">
-              Iniciar Sesión
+              {isLoginView ? 'Iniciar Sesión' : 'Registrarse'}
             </Button>
           </form>
           <div className="relative my-4">
@@ -100,7 +154,7 @@ export default function LoginPage() {
             </div>
             <div className="relative flex justify-center text-xs uppercase">
               <span className="bg-background px-2 text-muted-foreground">
-                O continuar con
+                O
               </span>
             </div>
           </div>
@@ -109,11 +163,13 @@ export default function LoginPage() {
             className="w-full"
             onClick={handleGoogleSignIn}
           >
-            Google
+            Continuar con Google
           </Button>
         </CardContent>
-        <CardFooter className="justify-center text-sm">
-          <p>¿No tienes una cuenta? <a href="#" className="text-primary hover:underline">Regístrate</a></p>
+        <CardFooter className="flex justify-center text-sm">
+           <Button variant="link" onClick={() => setIsLoginView(!isLoginView)}>
+                {isLoginView ? '¿No tienes una cuenta? Regístrate' : '¿Ya tienes una cuenta? Inicia Sesión'}
+            </Button>
         </CardFooter>
       </Card>
     </div>

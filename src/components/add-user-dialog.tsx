@@ -8,6 +8,8 @@ import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore } from '@/lib/firebase';
 import type { Department } from '@/lib/firebase/models';
+import { errorEmitter } from '@/lib/firebase/error-emitter';
+import { FirestorePermissionError } from '@/lib/firebase/errors';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -41,9 +43,6 @@ const formSchema = z.object({
     .string()
     .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
   email: z.string().email({ message: 'Por favor, ingrese un correo electrónico válido.' }),
-  password: z
-    .string()
-    .min(6, { message: 'La contraseña debe tener al menos 6 caracteres.' }),
   role: z.enum(['operario', 'mantenimiento', 'admin']),
   departmentId: z.string().optional(),
 });
@@ -66,7 +65,6 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     defaultValues: {
       displayName: '',
       email: '',
-      password: '',
       role: 'operario',
     },
   });
@@ -81,39 +79,44 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
         return;
     }
     setIsPending(true);
-    try {
-      const { displayName, email, role, departmentId } = data;
-      // Esto es un marcador de posición para la lógica de creación de usuarios real.
-      // En una aplicación real, usarías el SDK de administración de Firebase en un entorno seguro
-      // para crear el usuario en Firebase Auth y luego agregar su perfil a Firestore.
-      // Para este prototipo, solo agregaremos el usuario a la colección 'users'.
-      await addDoc(collection(firestore, "users"), {
-        displayName,
-        email,
-        role,
-        departmentId: departmentId || null,
-        active: true,
-        isMaintenanceLead: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      
-      toast({
-        title: 'Éxito',
-        description: `Usuario ${displayName} creado correctamente.`,
-      });
-      onOpenChange(false);
-      form.reset();
 
-    } catch (e: any) {
-       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: e.message || 'No se pudo crear el usuario.',
-      });
-    } finally {
+    const collectionRef = collection(firestore, "users");
+    const docData = {
+      ...data,
+      active: true,
+      isMaintenanceLead: data.role === 'admin' || data.role === 'mantenimiento', // Default lead status
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    
+    addDoc(collectionRef, docData)
+    .then(() => {
+        toast({
+            title: 'Éxito',
+            description: `Perfil para ${data.displayName} creado. El usuario ahora debe registrarse o iniciar sesión con el email ${data.email}.`,
+        });
+        onOpenChange(false);
+        form.reset();
+    })
+    .catch((error) => {
+        if (error.code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+            path: collectionRef.path,
+            operation: 'create',
+            requestResourceData: docData,
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        } else {
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: error.message || 'No se pudo crear el perfil de usuario.',
+            });
+        }
+    })
+    .finally(() => {
         setIsPending(false);
-    }
+    });
   };
   
   const handleOpenChange = (isOpen: boolean) => {
@@ -129,9 +132,9 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Añadir Nuevo Usuario</DialogTitle>
+          <DialogTitle>Añadir Perfil de Usuario</DialogTitle>
           <DialogDescription>
-            Introduce los detalles de la nueva cuenta de usuario.
+            Crea un perfil con un rol para un nuevo usuario. El usuario deberá registrarse usando este mismo email.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -157,19 +160,6 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                   <FormLabel>Correo Electrónico</FormLabel>
                   <FormControl>
                     <Input placeholder="john.doe@example.com" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Contraseña</FormLabel>
-                  <FormControl>
-                    <Input type="password" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -211,10 +201,11 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Selecciona un departamento" />
-                        </SelectTrigger>
+                          <SelectValue placeholder="Opcional" />
+                        </Trigger>
                       </FormControl>
                       <SelectContent>
+                        <SelectItem value="">Ninguno</SelectItem>
                         {departments.map((dept) => (
                           <SelectItem key={dept.id} value={dept.id}>
                             {dept.name}
@@ -228,11 +219,12 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
               />
             </div>
             <DialogFooter>
+               <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)} disabled={isPending}>Cancelar</Button>
               <Button type="submit" disabled={isPending}>
                 {isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                Crear Usuario
+                Crear Perfil
               </Button>
             </DialogFooter>
           </form>
