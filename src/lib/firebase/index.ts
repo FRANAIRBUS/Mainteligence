@@ -1,6 +1,7 @@
 // src/firebase/index.ts
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import { app } from './config';
 import type { FirebaseApp } from 'firebase/app';
 
@@ -8,11 +9,13 @@ export const initializeFirebase = async (): Promise<{
   app: FirebaseApp;
   auth: Auth;
   firestore: Firestore;
+  storage: FirebaseStorage;
 }> => {
   const auth = getAuth(app);
   const firestore = getFirestore(app);
+  const storage = getStorage(app);
 
-  return { app, auth, firestore };
+  return { app, auth, firestore, storage };
 };
 
 export {
@@ -21,6 +24,7 @@ export {
   useFirebaseApp,
   useFirestore,
   useAuth,
+  useStorage,
 } from './provider';
 export { FirebaseClientProvider } from './client-provider';
 export { useUser } from './auth/use-user';

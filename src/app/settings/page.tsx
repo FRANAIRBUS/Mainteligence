@@ -11,9 +11,9 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser } from '@/lib/firebase';
+import { useUser, useFirestore, useStorage } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Card,
   CardContent,
@@ -25,18 +25,70 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import Image from 'next/image';
 import { Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, setDoc } from 'firebase/firestore';
+import { ClientLogo } from '@/components/client-logo';
 
 export default function SettingsPage() {
   const { user, loading } = useUser();
   const router = useRouter();
+  const storage = useStorage();
+  const firestore = useFirestore();
+  const { toast } = useToast();
+
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
     }
   }, [user, loading, router]);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile || !storage || !firestore) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Por favor, selecciona un archivo para subir.',
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const logoRef = ref(storage, `logos/client-logo.png`);
+      const uploadResult = await uploadBytes(logoRef, selectedFile);
+      const downloadURL = await getDownloadURL(uploadResult.ref);
+
+      const settingsRef = doc(firestore, 'settings', 'app');
+      await setDoc(settingsRef, { logoUrl: downloadURL }, { merge: true });
+
+      toast({
+        title: 'Éxito',
+        description: 'El logo se ha actualizado correctamente.',
+      });
+      setSelectedFile(null);
+    } catch (error: any) {
+      console.error("Error uploading file: ", error);
+      toast({
+        variant: 'destructive',
+        title: 'Error al subir el logo',
+        description: error.message || 'Ocurrió un error inesperado.',
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   if (loading || !user) {
     return (
@@ -50,14 +102,14 @@ export default function SettingsPage() {
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader className="p-4 text-center">
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <Image src="/client-logo.png" alt="Logo del Cliente" width={80} height={80} className="rounded-md" />
-            </div>
-            <a href="/" className="flex flex-col items-center gap-2">
-                <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-                Maintelligence
-                </span>
-            </a>
+          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
+            <ClientLogo />
+          </div>
+          <a href="/" className="flex flex-col items-center gap-2">
+            <span className="text-xl font-headline font-semibold text-sidebar-foreground">
+              Maintelligence
+            </span>
+          </a>
         </SidebarHeader>
         <SidebarContent>
           <MainNav />
@@ -71,41 +123,41 @@ export default function SettingsPage() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-           <div className="mx-auto max-w-2xl">
-              <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl mb-8">
-                  Ajustes
-              </h1>
-              <Card>
-                  <CardHeader>
-                  <CardTitle>Ajustes de la Empresa</CardTitle>
-                  <CardDescription>
-                      Actualiza el logo y las preferencias de la aplicación.
-                  </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                      <div className="space-y-2">
-                        <Label>Logo Actual</Label>
-                        <div className="flex items-center gap-4">
-                           <Image src="/client-logo.png" alt="Logo actual" width={64} height={64} className="rounded-md bg-muted p-1"/>
-                           <p className="text-sm text-muted-foreground">Este es el logo que se muestra en toda la aplicación.</p>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="logo-upload">Subir Nuevo Logo</Label>
-                        <Input id="logo-upload" type="file" disabled />
-                        <p className="text-xs text-muted-foreground">
-                            Funcionalidad de subida no implementada todavía.
-                        </p>
-                      </div>
-                  </CardContent>
-                  <CardFooter className="border-t px-6 py-4">
-                  <Button type="submit" disabled>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Guardar Cambios (No implementado)
-                  </Button>
-                  </CardFooter>
-              </Card>
-           </div>
+          <div className="mx-auto max-w-2xl">
+            <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl mb-8">
+              Ajustes
+            </h1>
+            <Card>
+              <CardHeader>
+                <CardTitle>Ajustes de la Empresa</CardTitle>
+                <CardDescription>
+                  Actualiza el logo y las preferencias de la aplicación.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label>Logo Actual</Label>
+                  <div className="flex items-center gap-4">
+                    <ClientLogo width={64} height={64} className="bg-muted p-1" />
+                    <p className="text-sm text-muted-foreground">Este es el logo que se muestra en toda la aplicación.</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="logo-upload">Subir Nuevo Logo</Label>
+                  <Input id="logo-upload" type="file" onChange={handleFileChange} accept="image/png, image/jpeg, image/gif, image/webp" />
+                  {selectedFile && <p className="text-xs text-muted-foreground">Archivo seleccionado: {selectedFile.name}</p>}
+                </div>
+              </CardContent>
+              <CardFooter className="border-t px-6 py-4">
+                <Button onClick={handleUpload} disabled={isUploading || !selectedFile}>
+                  {isUploading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Guardar Cambios
+                </Button>
+              </CardFooter>
+            </Card>
+          </div>
         </main>
       </SidebarInset>
     </SidebarProvider>

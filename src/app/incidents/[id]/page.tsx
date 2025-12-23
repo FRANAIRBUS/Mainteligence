@@ -26,8 +26,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Edit, CalendarIcon, User as UserIcon, Building, Archive, HardHat } from 'lucide-react';
 import { format } from 'date-fns';
-import Image from 'next/image';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
+import { ClientLogo } from '@/components/client-logo';
 
 function InfoCard({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value: string | React.ReactNode }) {
     return (
@@ -71,7 +71,7 @@ export default function IncidentDetailPage() {
     if (!userLoading && !user) {
       router.push('/login');
     }
-     if (!ticketLoading && !userLoading && ticket && user) {
+     if (!ticketLoading && !userLoading && ticket && user && userProfile) {
       const canView = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento' || ticket.createdBy === user.uid;
       if (!canView) {
         router.push('/incidents');
@@ -96,7 +96,7 @@ export default function IncidentDetailPage() {
       <Sidebar>
         <SidebarHeader className="p-4 text-center">
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <Image src="/client-logo.png" alt="Logo del Cliente" width={80} height={80} className="rounded-md" />
+              <ClientLogo />
             </div>
             <a href="/" className="flex flex-col items-center gap-2">
                 <span className="text-xl font-headline font-semibold text-sidebar-foreground">

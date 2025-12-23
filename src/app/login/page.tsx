@@ -19,7 +19,7 @@ import {
 } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import Image from 'next/image';
+import { ClientLogo } from '@/components/client-logo';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -47,8 +47,7 @@ export default function LoginPage() {
     try {
       await signInWithPopup(auth, provider);
       router.push('/');
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: any)      setError(err.message);
     }
   };
 
@@ -57,7 +56,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <div className="mb-4 flex justify-center">
-             <Image src="/client-logo.png" alt="Logo del Cliente" width={80} height={80} className="rounded-md" />
+             <ClientLogo />
           </div>
           <CardTitle className="text-2xl">Maintelligence</CardTitle>
           <CardDescription>

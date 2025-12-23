@@ -41,7 +41,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { collection, query, where } from 'firebase/firestore';
-import Image from 'next/image';
+import { ClientLogo } from '@/components/client-logo';
 
 function PreventiveTable({
   tickets,
@@ -152,7 +152,7 @@ export default function PreventivePage() {
       <Sidebar>
         <SidebarHeader className="p-4 text-center">
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <Image src="/client-logo.png" alt="Logo del Cliente" width={80} height={80} className="rounded-md" />
+              <ClientLogo />
             </div>
             <a href="/" className="flex flex-col items-center gap-2">
                 <span className="text-xl font-headline font-semibold text-sidebar-foreground">

@@ -1,0 +1,16 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper function to check if the user is an admin by reading their role from Firestore.
+    function isAdmin() {
+      return get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Allow admins to read and write to the /logos/ folder.
+    match /logos/{allPaths=**} {
+      allow read;
+      allow write: if request.auth != null && isAdmin();
+    }
+  }
+}
