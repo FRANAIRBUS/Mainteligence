@@ -160,14 +160,7 @@ export default function IncidentsPage() {
   // Phase 2: Once user is authenticated, load their profile.
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   
-  // Phase 3: Only load collections after user authentication is confirmed.
-  const canLoadData = !userLoading && !!user;
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
-  const { data: users, loading: usersLoading } = useCollection<User>(canLoadData ? 'users' : null);
-
-  // Phase 4: Construct the tickets query only when firestore, user, AND userProfile are ready.
+  // Phase 3: Construct the tickets query only when firestore, user, AND userProfile are ready.
   const ticketsQuery = useMemo(() => {
     // Do not run query if essential data is missing
     if (!firestore || !user || !userProfile) return null; 
@@ -179,13 +172,21 @@ export default function IncidentsPage() {
       return query(ticketsCollection);
     }
     
-    // An 'operario' can see tickets assigned to them.
-    return query(ticketsCollection, where('assignedTo', '==', user.uid));
+    // An 'operario' can see tickets they created OR are assigned to them.
+    return query(ticketsCollection, or(
+      where('createdBy', '==', user.uid),
+      where('assignedTo', '==', user.uid)
+    ));
 
   }, [firestore, user, userProfile]);
 
-  // Phase 5: Execute the query for tickets. This hook handles the `null` query case gracefully.
+  // Phase 4: Execute the query for tickets and load other collections only when the query is ready
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(ticketsQuery ? 'sites' : null);
+  const { data: departments, loading: deptsLoading } = useCollection<Department>(ticketsQuery ? 'departments' : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(ticketsQuery ? 'assets' : null);
+  const { data: users, loading: usersLoading } = useCollection<User>(ticketsQuery ? 'users' : null);
+
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
@@ -210,8 +211,7 @@ export default function IncidentsPage() {
     );
   }
   
-  // Data for the table is loading if any of the main collections are still loading.
-  // We also check ticketsLoading, which will be true if the query is running.
+  // Data for the table is loading if any of the main collections are still loading after the query is set.
   const tableDataIsLoading = ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
 
   return (
