@@ -13,7 +13,7 @@ import {
 import { Icons } from '@/components/icons';
 import { useUser, useFirestore, useStorage } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Card,
   CardContent,
@@ -39,7 +39,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -54,8 +54,8 @@ export default function SettingsPage() {
     }
   };
 
-  const uploadLogo = async () => {
-     if (!selectedFile || !storage || !firestore) {
+  const handleUpload = async () => {
+    if (!selectedFile || !storage || !firestore) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -63,7 +63,9 @@ export default function SettingsPage() {
       });
       return;
     }
-     try {
+
+    setIsPending(true);
+    try {
       const logoRef = ref(storage, `logos/client-logo.png`);
       const uploadResult = await uploadBytes(logoRef, selectedFile);
       const downloadURL = await getDownloadURL(uploadResult.ref);
@@ -75,7 +77,7 @@ export default function SettingsPage() {
         title: 'Éxito',
         description: 'El logo se ha actualizado correctamente.',
       });
-      setSelectedFile(null);
+      setSelectedFile(null); // Clear the selected file on success
     } catch (error: any) {
       console.error("Error uploading file: ", error);
       toast({
@@ -83,13 +85,9 @@ export default function SettingsPage() {
         title: 'Error al subir el logo',
         description: error.message || 'Ocurrió un error inesperado.',
       });
+    } finally {
+      setIsPending(false); // Ensure pending state is always reset
     }
-  }
-
-  const handleUpload = () => {
-    startTransition(async () => {
-      await uploadLogo();
-    })
   }
 
   if (loading || !user) {
