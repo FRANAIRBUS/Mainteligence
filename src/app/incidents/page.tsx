@@ -164,10 +164,12 @@ export default function IncidentsPage() {
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
 
-  const sitesQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'sites') : null, [firestore, userProfile]);
-  const departmentsQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'departments') : null, [firestore, userProfile]);
-  const assetsQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'assets') : null, [firestore, userProfile]);
-  const usersQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'users') : null, [firestore, userProfile]);
+  const canLoadCatalogs = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
+
+  const sitesQuery = useMemo(() => (firestore && canLoadCatalogs) ? collection(firestore, 'sites') : null, [firestore, canLoadCatalogs]);
+  const departmentsQuery = useMemo(() => (firestore && canLoadCatalogs) ? collection(firestore, 'departments') : null, [firestore, canLoadCatalogs]);
+  const assetsQuery = useMemo(() => (firestore && canLoadCatalogs) ? collection(firestore, 'assets') : null, [firestore, canLoadCatalogs]);
+  const usersQuery = useMemo(() => (firestore && canLoadCatalogs) ? collection(firestore, 'users') : null, [firestore, canLoadCatalogs]);
 
   const { data: sites, loading: sitesLoading } = useCollectionQuery<Site>(sitesQuery);
   const { data: departments, loading: departmentsLoading } = useCollectionQuery<Department>(departmentsQuery);
@@ -196,9 +198,9 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
-  const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || departmentsLoading || assetsLoading || usersLoading;
+  const isLoading = userLoading || profileLoading || ticketsLoading || (canLoadCatalogs && (sitesLoading || departmentsLoading || assetsLoading || usersLoading));
 
-  if (userLoading || !user || (!profileLoading && !userProfile) ) {
+  if (userLoading || profileLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
