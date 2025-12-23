@@ -160,14 +160,14 @@ export default function IncidentsPage() {
   // Phase 2: Once user is authenticated, load their profile.
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   
+  const canLoadData = !!user && !!userProfile;
+
   // Phase 3: Construct the tickets query only when firestore, user, AND userProfile are ready.
   const ticketsQuery = useMemo(() => {
-    // Do not run query if essential data is missing
     if (!firestore || !user || !userProfile) return null; 
     
     const ticketsCollection = collection(firestore, 'tickets');
 
-    // Admin and Mantenimiento can see all tickets.
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(ticketsCollection);
     }
@@ -180,12 +180,12 @@ export default function IncidentsPage() {
 
   }, [firestore, user, userProfile]);
 
-  // Phase 4: Execute the query for tickets and load other collections only when the query is ready
-  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(ticketsQuery ? 'sites' : null);
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(ticketsQuery ? 'departments' : null);
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(ticketsQuery ? 'assets' : null);
-  const { data: users, loading: usersLoading } = useCollection<User>(ticketsQuery ? 'users' : null);
+  // Phase 4: Execute the query for tickets and load other collections only when the query is ready and data can be loaded
+  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(canLoadData ? ticketsQuery : null);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
+  const { data: departments, loading: deptsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
+  const { data: users, loading: usersLoading } = useCollection<User>(canLoadData ? 'users' : null);
 
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
@@ -200,7 +200,6 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  // The page is in its initial loading state if we are waiting for auth or the user's profile.
   const initialLoading = userLoading || profileLoading;
   
   if (initialLoading) {
@@ -211,7 +210,6 @@ export default function IncidentsPage() {
     );
   }
   
-  // Data for the table is loading if any of the main collections are still loading after the query is set.
   const tableDataIsLoading = ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
 
   return (
@@ -266,11 +264,11 @@ export default function IncidentsPage() {
           </Card>
         </main>
       </SidebarInset>
-      <AddIncidentDialog
+      {canLoadData && <AddIncidentDialog
         open={isAddIncidentOpen}
         onOpenChange={setIsAddIncidentOpen}
-      />
-      {editingTicket && users && (
+      />}
+      {editingTicket && users && canLoadData && (
         <EditIncidentDialog
           open={isEditIncidentOpen}
           onOpenChange={setIsEditIncidentOpen}

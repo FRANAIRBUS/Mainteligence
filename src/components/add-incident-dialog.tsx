@@ -65,12 +65,12 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
   const { toast } = useToast();
   const firestore = useFirestore();
   const storage = useStorage();
-  const { user, loading: userLoading } = useUser();
+  const { user } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
 
   // Load catalogs only when the dialog is open and user is authenticated
-  const canLoadData = !userLoading && !!user;
+  const canLoadData = !!user;
   const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
   const { data: departments, loading: deptsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
   const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
@@ -170,7 +170,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
     }
   };
 
-  const isLoading = userLoading || sitesLoading || deptsLoading || assetsLoading;
+  const isLoading = sitesLoading || deptsLoading || assetsLoading;
   
   if(isLoading) {
     return (

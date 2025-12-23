@@ -15,15 +15,14 @@ service cloud.firestore {
       if (request.auth == null) {
         return false;
       }
-      let userRole = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-      return userRole == 'mantenimiento' || userRole == 'admin';
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (userDoc.data.role == 'mantenimiento' || userDoc.data.role == 'admin');
     }
  
     match /users/{userId} {
       allow get: if request.auth.uid == userId || isMantenimiento();
       allow list: if isMantenimiento();
-      // Allow any authenticated user to create their own user document
-      allow create: if request.auth.uid == userId;
+      allow create: if request.auth.uid == userId || isAdmin();
       allow update: if isAdmin() || request.auth.uid == userId;
       allow delete: if isAdmin() && request.auth.uid != userId;
     }
@@ -45,8 +44,6 @@ service cloud.firestore {
 
     match /tickets/{ticketId} {
       allow get: if request.auth != null && (isMantenimiento() || resource.data.createdBy == request.auth.uid || resource.data.assignedTo == request.auth.uid);
-      // Mantenimiento can list all tickets.
-      // Operarios can list tickets they created OR are assigned to.
       allow list: if isMantenimiento() || 
                     (request.auth != null && 
                       (request.query.where[0].field == 'createdBy' && request.query.where[0].value == request.auth.uid) ||
@@ -56,7 +53,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
       allow update: if 
         isMantenimiento() ||
-        // Operario can only change priority of their own tickets
         (request.auth.uid == resource.data.createdBy &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority', 'updatedAt']));
     }
