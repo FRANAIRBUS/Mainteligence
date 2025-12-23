@@ -8,14 +8,18 @@ service cloud.firestore {
     }
 
     function getUserData(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data;
+      // Check for existence before accessing data to prevent errors on non-existent users
+      return exists(/databases/$(database)/documents/users/$(userId))
+        ? get(/databases/$(database)/documents/users/$(userId)).data
+        : null;
     }
 
     function isUserRole(role) {
-       if (request.auth == null) {
+      if (request.auth == null) {
         return false;
       }
-      return getUserData(request.auth.uid).role == role;
+      let userData = getUserData(request.auth.uid);
+      return userData != null && userData.role == role;
     }
 
     function isAdmin() {
@@ -23,28 +27,28 @@ service cloud.firestore {
     }
 
     function isMantenimiento() {
-        return isUserRole('mantenimiento') || isAdmin();
+      return isUserRole('mantenimiento') || isAdmin();
     }
  
-    // Users can be read by any authenticated user (to list technicians, etc.)
+    // Any authenticated user can read user profiles (to list technicians, creators, etc.)
     // Only admins can create/delete users.
-    // Users can update their own profile.
+    // An admin or the user themselves can update a profile.
     match /users/{userId} {
       allow read: if request.auth != null;
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || isOwner(userId);
     }
 
-    // Catalog collections are readable by any authenticated user
-    // but only writable by admins.
+    // Catalog collections are readable by any authenticated user for forms and lists.
+    // Writable only by admins.
     match /sites/{siteId} {
-        allow read: if request.auth != null;
-        allow write: if isAdmin();
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
 
     match /departments/{departmentId} {
-        allow read: if request.auth != null;
-        allow write: if isAdmin();
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
     }
 
     match /assets/{assetId} {
@@ -52,34 +56,34 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Tickets can be read by maintenance/admins, or by the user who created it.
-    // Creation is allowed for any authenticated user.
-    // Update rules are granular based on role.
+    // Tickets can be created by any authenticated user.
+    // Reading is allowed for maintenance/admins, or the user who created it.
+    // Deleting is for admins only.
+    // Updating has granular role-based logic.
     match /tickets/{ticketId} {
-        allow read: if isMantenimiento() || request.auth.uid == resource.data.createdBy;
-        
+        allow read: if isMantenimiento() || resource.data.createdBy == request.auth.uid;
         allow create: if request.auth.uid != null;
+        allow delete: if isAdmin();
         
+        // Granular update rules
         allow update: if 
-          // Admin and Mantenimiento can update most fields
+          // Admins and Maintenance can update most fields.
           isMantenimiento() ||
-          // The creator can ONLY update the priority
+          // The creator can ONLY update the priority and nothing else (plus updatedAt).
           (request.auth.uid == resource.data.createdBy &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority', 'updatedAt']));
-            
-        allow delete: if isAdmin();
     }
 
     // Comments can be read/created by maintenance/admins or the ticket creator.
     match /tickets/{ticketId}/comments/{commentId} {
-        allow read: if isMantenimiento() || get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid;
-        allow create: if isMantenimiento() || get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid;
+        allow read, create: if isMantenimiento() || get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid;
+        allow update, delete: if isAdmin();
     }
 
     // App settings (like the logo) are publicly readable.
     // Only admins can change them.
     match /settings/{settingId} {
-      allow read;
+      allow read: true;
       allow write: if isAdmin();
     }
   }
