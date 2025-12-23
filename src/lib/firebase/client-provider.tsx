@@ -31,7 +31,7 @@ export function FirebaseClientProvider({
   if (!firebase) {
     // Render children without firebase context during initialization
     // to prevent hydration mismatch.
-     return <>{children}</>
+     return <>{children}</>;
   }
 
   return (
