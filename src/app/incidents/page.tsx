@@ -179,11 +179,8 @@ export default function IncidentsPage() {
       return query(ticketsCollection);
     }
     
-    // An 'operario' can see tickets they created OR tickets assigned to them.
-    return query(ticketsCollection, or(
-        where('createdBy', '==', user.uid),
-        where('assignedTo', '==', user.uid)
-    ));
+    // An 'operario' can see tickets assigned to them.
+    return query(ticketsCollection, where('assignedTo', '==', user.uid));
 
   }, [firestore, user, userProfile]);
 
@@ -272,9 +269,6 @@ export default function IncidentsPage() {
       <AddIncidentDialog
         open={isAddIncidentOpen}
         onOpenChange={setIsAddIncidentOpen}
-        sites={sites}
-        departments={departments}
-        assets={assets}
       />
       {editingTicket && users && (
         <EditIncidentDialog

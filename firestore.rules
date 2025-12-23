@@ -45,13 +45,7 @@ service cloud.firestore {
 
     match /tickets/{ticketId} {
       allow get: if request.auth != null && (isMantenimiento() || resource.data.createdBy == request.auth.uid || resource.data.assignedTo == request.auth.uid);
-      // Admin/Mantenimiento can list all.
-      // Operario can only list tickets created by or assigned to them via a specific query.
-      allow list: if isMantenimiento() || (request.auth != null && (
-          (request.query.where.field == 'createdBy' && request.query.where.value == request.auth.uid) ||
-          (request.query.where.field == 'assignedTo' && request.query.where.value == request.auth.uid) ||
-          (request.query.where.field == 'createdBy' || request.query.where.field == 'assignedTo') // For 'or' queries
-      ));
+      allow list: if isMantenimiento() || (request.auth != null && request.query.where.field == 'assignedTo' && request.query.where.value == request.auth.uid);
       allow create: if request.auth != null;
       allow delete: if isAdmin();
       allow update: if 

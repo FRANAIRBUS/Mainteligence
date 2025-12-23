@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useFirestore, useUser, useStorage } from '@/lib/firebase';
+import { useFirestore, useUser, useStorage, useCollection } from '@/lib/firebase';
 import type { Site, Department, Asset } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
+import { Icons } from './icons';
 
 const formSchema = z.object({
   title: z
@@ -58,18 +59,21 @@ type AddIncidentFormValues = z.infer<typeof formSchema>;
 interface AddIncidentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  sites: Site[];
-  departments: Department[];
-  assets: Asset[];
 }
 
-export function AddIncidentDialog({ open, onOpenChange, sites, departments, assets }: AddIncidentDialogProps) {
+function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const { toast } = useToast();
   const firestore = useFirestore();
   const storage = useStorage();
-  const { user } = useUser();
+  const { user, loading: userLoading } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
+
+  // Load catalogs only when the dialog is open and user is authenticated
+  const canLoadData = !userLoading && !!user;
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
+  const { data: departments, loading: deptsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
 
   const form = useForm<AddIncidentFormValues>({
     resolver: zodResolver(formSchema),
@@ -79,7 +83,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
       priority: 'Media',
     },
   });
-  
+
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setPhotos(Array.from(e.target.files));
@@ -166,14 +170,176 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
     }
   };
 
+  const isLoading = userLoading || sitesLoading || deptsLoading || assetsLoading;
+  
+  if(isLoading) {
+    return (
+        <div className="flex h-96 items-center justify-center">
+            <Icons.spinner className="h-8 w-8 animate-spin" />
+        </div>
+    )
+  }
+
+  return (
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <FormField
+          control={form.control}
+          name="title"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Título</FormLabel>
+              <FormControl>
+                <Input placeholder="Ej: Fuga de agua en el baño" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+         <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Descripción</FormLabel>
+              <FormControl>
+                <Textarea placeholder="Describe el problema en detalle..." {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+            control={form.control}
+            name="siteId"
+            render={({ field }) => (
+                <FormItem>
+                <FormLabel>Ubicación</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Selecciona una ubicación" />
+                    </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                    {sites.map(site => (
+                        <SelectItem key={site.id} value={site.id}>{site.name}</SelectItem>
+                    ))}
+                    </SelectContent>
+                </Select>
+                <FormMessage />
+                </FormItem>
+            )}
+            />
+            <FormField
+            control={form.control}
+            name="departmentId"
+            render={({ field }) => (
+                <FormItem>
+                <FormLabel>Departamento</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Selecciona un departamento" />
+                    </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                    {departments.map(dept => (
+                        <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                    ))}
+                    </SelectContent>
+                </Select>
+                <FormMessage />
+                </FormItem>
+            )}
+            />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <FormField
+            control={form.control}
+            name="assetId"
+            render={({ field }) => (
+                <FormItem>
+                <FormLabel>Activo (Opcional)</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Selecciona un activo" />
+                    </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                    {assets.map(asset => (
+                        <SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>
+                    ))}
+                    </SelectContent>
+                </Select>
+                <FormMessage />
+                </FormItem>
+            )}
+            />
+            <FormField
+            control={form.control}
+            name="priority"
+            render={({ field }) => (
+                <FormItem>
+                <FormLabel>Prioridad</FormLabel>
+                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                    <SelectTrigger>
+                        <SelectValue placeholder="Selecciona una prioridad" />
+                    </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                        <SelectItem value="Baja">Baja</SelectItem>
+                        <SelectItem value="Media">Media</SelectItem>
+                        <SelectItem value="Alta">Alta</SelectItem>
+                        <SelectItem value="Crítica">Crítica</SelectItem>
+                    </SelectContent>
+                </Select>
+                <FormMessage />
+                </FormItem>
+            )}
+            />
+        </div>
+        
+        <FormItem>
+          <FormLabel>Fotos (Opcional)</FormLabel>
+          <FormControl>
+            <Input 
+              type="file" 
+              multiple 
+              onChange={handlePhotoChange} 
+              accept="image/*"
+            />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+        {photos.length > 0 && (
+            <div className="text-xs text-muted-foreground">
+                {photos.length} archivo(s) seleccionado(s).
+            </div>
+        )}
+        
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>Cancelar</Button>
+          <Button type="submit" disabled={isPending}>
+            {isPending && (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            )}
+            Crear Incidencia
+          </Button>
+        </DialogFooter>
+      </form>
+    </Form>
+  );
+}
+
+
+export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps) {
+  
   const handleOpenChange = (isOpen: boolean) => {
-    if (!isPending) {
-      onOpenChange(isOpen);
-      if (!isOpen) {
-        form.reset();
-        setPhotos([]);
-      }
-    }
+    onOpenChange(isOpen);
   };
 
   return (
@@ -185,157 +351,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
             Describe el problema para que el equipo de mantenimiento pueda solucionarlo.
           </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Título</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Ej: Fuga de agua en el baño" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-             <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Descripción</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Describe el problema en detalle..." {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                control={form.control}
-                name="siteId"
-                render={({ field }) => (
-                    <FormItem>
-                    <FormLabel>Ubicación</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Selecciona una ubicación" />
-                        </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                        {sites.map(site => (
-                            <SelectItem key={site.id} value={site.id}>{site.name}</SelectItem>
-                        ))}
-                        </SelectContent>
-                    </Select>
-                    <FormMessage />
-                    </FormItem>
-                )}
-                />
-                <FormField
-                control={form.control}
-                name="departmentId"
-                render={({ field }) => (
-                    <FormItem>
-                    <FormLabel>Departamento</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Selecciona un departamento" />
-                        </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                        {departments.map(dept => (
-                            <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
-                        ))}
-                        </SelectContent>
-                    </Select>
-                    <FormMessage />
-                    </FormItem>
-                )}
-                />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormField
-                control={form.control}
-                name="assetId"
-                render={({ field }) => (
-                    <FormItem>
-                    <FormLabel>Activo (Opcional)</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Selecciona un activo" />
-                        </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                        {assets.map(asset => (
-                            <SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>
-                        ))}
-                        </SelectContent>
-                    </Select>
-                    <FormMessage />
-                    </FormItem>
-                )}
-                />
-                <FormField
-                control={form.control}
-                name="priority"
-                render={({ field }) => (
-                    <FormItem>
-                    <FormLabel>Prioridad</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Selecciona una prioridad" />
-                        </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                            <SelectItem value="Baja">Baja</SelectItem>
-                            <SelectItem value="Media">Media</SelectItem>
-                            <SelectItem value="Alta">Alta</SelectItem>
-                            <SelectItem value="Crítica">Crítica</SelectItem>
-                        </SelectContent>
-                    </Select>
-                    <FormMessage />
-                    </FormItem>
-                )}
-                />
-            </div>
-            
-            <FormItem>
-              <FormLabel>Fotos (Opcional)</FormLabel>
-              <FormControl>
-                <Input 
-                  type="file" 
-                  multiple 
-                  onChange={handlePhotoChange} 
-                  accept="image/*"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-            {photos.length > 0 && (
-                <div className="text-xs text-muted-foreground">
-                    {photos.length} archivo(s) seleccionado(s).
-                </div>
-            )}
-            
-            <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>Cancelar</Button>
-              <Button type="submit" disabled={isPending}>
-                {isPending && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                Crear Incidencia
-              </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+        {open && <AddIncidentForm onOpenChange={onOpenChange} />}
       </DialogContent>
     </Dialog>
   );
