@@ -43,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query, where, or } from 'firebase/firestore';
 
 function IncidentsTable({
   tickets,
@@ -159,9 +159,15 @@ export default function IncidentsPage() {
 
   // Step 2: Only fetch profile and other data once user is available.
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  
+  // Step 3: Hooks are now called conditionally based on user, but using null to prevent rule violations.
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(user ? 'sites' : null);
+  const { data: departments, loading: deptsLoading } = useCollection<Department>(user ? 'departments' : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(user ? 'assets' : null);
+  const { data: users, loading: usersLoading } = useCollection<User>(user ? 'users' : null);
 
   const ticketsQuery = useMemo(() => {
-    // Step 3: Don't create a query until firestore and userProfile are ready.
+    // Step 4: Don't create a query until firestore and userProfile are ready.
     if (!firestore || !userProfile || !user) return null;
     
     const ticketsCollection = collection(firestore, 'tickets');
@@ -171,16 +177,14 @@ export default function IncidentsPage() {
     }
     
     // An 'operario' can see tickets they created OR tickets assigned to them.
-    return query(ticketsCollection, where('assignedTo', '==', user.uid));
+    return query(ticketsCollection, or(
+        where('createdBy', '==', user.uid),
+        where('assignedTo', '==', user.uid)
+    ));
 
   }, [firestore, userProfile, user]);
 
-  // Step 4: Hooks are now called conditionally, but based on stable values that only change once.
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(user ? 'sites' : null);
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(user ? 'departments' : null);
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(user ? 'assets' : null);
-  const { data: users, loading: usersLoading } = useCollection<User>(user ? 'users' : null);
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);

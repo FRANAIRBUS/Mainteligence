@@ -35,7 +35,6 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
     } else if (pathOrRef) {
       collectionRef = pathOrRef; 
     } else {
-       // This case should ideally not be hit due to the check above, but as a safeguard:
       setData([]);
       setLoading(false);
       return;
@@ -60,6 +59,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
           });
           errorEmitter.emit('permission-error', permissionError);
         }
+        console.error(`Error fetching collection ${collectionRef.path}:`, err);
         setError(err);
         setLoading(false);
       }
@@ -77,8 +77,6 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  // We can't easily stringify the entire query for memoization, 
-  // so we rely on the parent component to memoize the query object itself with useMemo.
   useEffect(() => {
     if (query === null) {
       setLoading(false);
@@ -107,6 +105,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
           });
           errorEmitter.emit('permission-error', permissionError);
         }
+        console.error(`Error executing query:`, err);
         setError(err);
         setLoading(false);
       }

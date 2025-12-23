@@ -217,6 +217,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
+                      <SelectItem value="">Sin asignar</SelectItem>
                       {users.map(user => (
                         <SelectItem key={user.id} value={user.id}>
                           {user.displayName}
