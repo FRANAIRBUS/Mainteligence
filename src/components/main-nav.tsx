@@ -15,29 +15,36 @@ import {
   Building,
   Archive,
   UserCog,
-  FileText,
   Settings,
   Tags,
   HardHat,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useDoc, useUser } from "@/lib/firebase";
+import type { User } from "@/lib/firebase/models";
+import { useMemo } from "react";
 
 export function MainNav() {
   const pathname = usePathname();
+  const { user, loading: userLoading } = useUser();
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(
+    user ? `users/${user.uid}` : ''
+  );
 
-  const menuItems = [
+  const allMenuItems = [
     {
       label: "General",
       items: [
         { href: "/", label: "Panel", icon: LayoutGrid, active: pathname === "/" },
         { href: "/incidents", label: "Incidencias", icon: Wrench, active: pathname.startsWith("/incidents") },
-        { href: "/preventive", label: "Preventivos", icon: CalendarClock, active: pathname.startsWith("/preventive") },
-        { href: "/reports", label: "Informes", icon: LineChart, active: pathname.startsWith("/reports") },
+        { href: "/preventive", label: "Preventivos", icon: CalendarClock, active: pathname.startsWith("/preventive"), roles: ['admin', 'mantenimiento'] },
+        { href: "/reports", label: "Informes", icon: LineChart, active: pathname.startsWith("/reports"), roles: ['admin', 'mantenimiento'] },
       ],
     },
     {
       label: "Gestión",
+      roles: ['admin', 'mantenimiento'],
       items: [
         { href: "/locations", label: "Ubicaciones", icon: Building, active: pathname.startsWith("/locations") },
         { href: "/departments", label: "Departamentos", icon: Archive, active: pathname.startsWith("/departments") },
@@ -47,12 +54,47 @@ export function MainNav() {
     },
     {
       label: "Configuración",
+      roles: ['admin'],
       items: [
         { href: "/settings", label: "Ajustes", icon: Settings, active: pathname.startsWith("/settings") },
         { href: "/smart-tagging", label: "Etiquetado IA", icon: Tags, active: pathname.startsWith("/smart-tagging") },
       ],
     }
   ];
+
+  const menuItems = useMemo(() => {
+    if (!userProfile) return [];
+    
+    const userRole = userProfile.role;
+
+    return allMenuItems
+      .filter(group => !group.roles || group.roles.includes(userRole))
+      .map(group => ({
+        ...group,
+        items: group.items.filter(item => !item.roles || item.roles.includes(userRole)),
+      }))
+      .filter(group => group.items.length > 0);
+
+  }, [userProfile, allMenuItems]);
+
+  if (userLoading || profileLoading) {
+    return (
+      <div className="flex w-full flex-col gap-2 p-2">
+         <div className="space-y-2">
+          <div className="h-4 w-20 rounded-full bg-muted" />
+          <div className="h-8 w-full rounded-md bg-muted" />
+          <div className="h-8 w-full rounded-md bg-muted" />
+        </div>
+         <div className="mt-4 space-y-2">
+          <div className="h-4 w-24 rounded-full bg-muted" />
+          <div className="h-8 w-full rounded-md bg-muted" />
+          <div className="h-8 w-full rounded-md bg-muted" />
+          <div className="h-8 w-full rounded-md bg-muted" />
+          <div className="h-8 w-full rounded-md bg-muted" />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex w-full flex-col gap-2">
