@@ -1,6 +1,6 @@
-// src/firebase/client-provider.tsx
+
 'use client';
-import { useEffect, useState, type ReactNode, useMemo } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { initializeFirebase } from '.';
 import type { FirebaseApp } from 'firebase/app';
 import type { Auth } from 'firebase/auth';
@@ -56,8 +56,8 @@ export function FirebaseClientProvider({
   if (!firebase) {
     // While firebase is initializing, you can show a loader or nothing.
     // Returning children directly is one way to avoid content layout shifts
-    // but you might want to show a loading screen.
-    // For this hydration error, we'll return children.
+    // but it might cause hydration errors if the server renders something different.
+    // For this case, returning children is safe because the server also renders children.
     return <>{children}</>;
   }
 
