@@ -40,6 +40,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { AddLocationDialog } from '@/components/add-location-dialog';
+import { EditLocationDialog } from '@/components/edit-location-dialog';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -56,10 +57,12 @@ import {
 function LocationsTable({
   sites,
   loading,
+  onEdit,
   onDelete,
 }: {
   sites: Site[];
   loading: boolean;
+  onEdit: (site: Site) => void;
   onDelete: (siteId: string) => void;
 }) {
   if (loading) {
@@ -101,7 +104,7 @@ function LocationsTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onEdit(site)}>Editar</DropdownMenuItem>
                     <DropdownMenuItem
                       className="text-red-600"
                       onClick={() => onDelete(site.id)}
@@ -135,6 +138,8 @@ export default function LocationsPage() {
   } = useCollection<Site>('sites');
   const router = useRouter();
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
+  const [isEditLocationOpen, setIsEditLocationOpen] = useState(false);
+  const [editingSite, setEditingSite] = useState<Site | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingSiteId, setDeletingSiteId] = useState<string | null>(null);
 
@@ -143,6 +148,11 @@ export default function LocationsPage() {
       router.push('/login');
     }
   }, [user, userLoading, router]);
+
+  const handleEditRequest = (site: Site) => {
+    setEditingSite(site);
+    setIsEditLocationOpen(true);
+  }
 
   const handleDeleteRequest = (siteId: string) => {
     setDeletingSiteId(siteId);
@@ -215,7 +225,7 @@ export default function LocationsPage() {
                 </div>
             </CardHeader>
             <CardContent>
-              <LocationsTable sites={sites} loading={sitesLoading} onDelete={handleDeleteRequest} />
+              <LocationsTable sites={sites} loading={sitesLoading} onEdit={handleEditRequest} onDelete={handleDeleteRequest} />
             </CardContent>
           </Card>
         </main>
@@ -224,6 +234,14 @@ export default function LocationsPage() {
         open={isAddLocationOpen}
         onOpenChange={setIsAddLocationOpen}
       />
+      {editingSite && (
+        <EditLocationDialog
+          key={editingSite.id}
+          open={isEditLocationOpen}
+          onOpenChange={setIsEditLocationOpen}
+          site={editingSite}
+        />
+      )}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
