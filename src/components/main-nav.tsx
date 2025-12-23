@@ -56,8 +56,8 @@ export function MainNav() {
       label: "Configuración",
       roles: ['admin'],
       items: [
-        { href: "/settings", label: "Ajustes", icon: Settings, active: pathname.startsWith("/settings") },
-        { href: "/smart-tagging", label: "Etiquetado IA", icon: Tags, active: pathname.startsWith("/smart-tagging") },
+        { href: "/settings", label: "Ajustes de la Empresa", icon: Settings, active: pathname.startsWith("/settings") },
+        { href: "/smart-tagging", label: "Asistente IA", icon: Tags, active: pathname.startsWith("/smart-tagging") },
       ],
     }
   ], [pathname]);
