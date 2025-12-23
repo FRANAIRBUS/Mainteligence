@@ -25,7 +25,7 @@ import { useToast } from '@/hooks/use-toast';
 
 const formSchema = z.object({
   description: z.string().min(10, {
-    message: 'Description must be at least 10 characters.',
+    message: 'La descripción debe tener al menos 10 caracteres.',
   }),
 });
 
@@ -38,7 +38,7 @@ function SubmitButton() {
       ) : (
         <>
           <Sparkles className="mr-2 h-4 w-4" />
-          Suggest Tags
+          Sugerir Etiquetas
         </>
       )}
     </Button>
@@ -63,10 +63,10 @@ function SuggestedTags({ state, pending }: { state: FormState, pending: boolean 
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Tags /> Suggested Tags
+          <Tags /> Etiquetas Sugeridas
         </CardTitle>
         <CardDescription>
-          Click on a tag to copy it. Use these to categorize the task.
+          Haz clic en una etiqueta para copiarla. Úsalas para categorizar la tarea.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -87,8 +87,8 @@ function SuggestedTags({ state, pending }: { state: FormState, pending: boolean 
                 onClick={() => {
                   navigator.clipboard.writeText(tag);
                   toast({
-                    title: "Copied!",
-                    description: `Tag "${tag}" copied to clipboard.`,
+                    title: "¡Copiado!",
+                    description: `Etiqueta "${tag}" copiada al portapapeles.`,
                   });
                 }}
               >
@@ -99,7 +99,7 @@ function SuggestedTags({ state, pending }: { state: FormState, pending: boolean 
         ) : (
           <div className="flex items-center gap-2 text-muted-foreground">
             <AlertCircle className="h-5 w-5" />
-            <p>No tags were suggested. Please try a more detailed description.</p>
+            <p>No se sugirieron etiquetas. Intenta con una descripción más detallada.</p>
           </div>
         )}
       </CardContent>
@@ -148,9 +148,9 @@ function SmartTaggingFormContent({
           }}
         >
           <CardHeader>
-            <CardTitle>New Maintenance Task</CardTitle>
+            <CardTitle>Nueva Tarea de Mantenimiento</CardTitle>
             <CardDescription>
-              Describe the task and our AI will suggest relevant tags to keep your work organized.
+              Describe la tarea y nuestra IA sugerirá etiquetas relevantes para mantener tu trabajo organizado.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -160,10 +160,10 @@ function SmartTaggingFormContent({
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Task Description</FormLabel>
+                    <FormLabel>Descripción de la Tarea</FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="e.g., 'The main conveyor belt is making a loud grinding noise and has stopped moving. Seems like a motor or bearing failure.'"
+                        placeholder="Ej: 'La cinta transportadora principal hace un fuerte ruido de rechinamiento y se ha detenido. Parece una falla del motor o de un rodamiento.'"
                         className="min-h-[120px] resize-y"
                         disabled={pending}
                         {...field}

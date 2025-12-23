@@ -28,28 +28,28 @@ export function MainNav() {
 
   const menuItems = [
     {
-      label: "Overview",
+      label: "General",
       items: [
-        { href: "/", label: "Dashboard", icon: LayoutGrid, active: pathname === "/" },
-        { href: "/incidents", label: "Incidents", icon: Wrench, active: pathname.startsWith("/incidents") },
-        { href: "/preventive", label: "Preventive", icon: CalendarClock, active: pathname.startsWith("/preventive") },
-        { href: "/reports", label: "Reports", icon: LineChart, active: pathname.startsWith("/reports") },
+        { href: "/", label: "Panel", icon: LayoutGrid, active: pathname === "/" },
+        { href: "/incidents", label: "Incidencias", icon: Wrench, active: pathname.startsWith("/incidents") },
+        { href: "/preventive", label: "Preventivos", icon: CalendarClock, active: pathname.startsWith("/preventive") },
+        { href: "/reports", label: "Informes", icon: LineChart, active: pathname.startsWith("/reports") },
       ],
     },
     {
-      label: "Management",
+      label: "Gestión",
       items: [
-        { href: "/locations", label: "Locations", icon: Building, active: pathname.startsWith("/locations") },
-        { href: "/departments", label: "Departments", icon: Archive, active: pathname.startsWith("/departments") },
-        { href: "/assets", label: "Assets", icon: HardHat, active: pathname.startsWith("/assets") },
-        { href: "/users", label: "Users & Roles", icon: UserCog, active: pathname.startsWith("/users") },
+        { href: "/locations", label: "Ubicaciones", icon: Building, active: pathname.startsWith("/locations") },
+        { href: "/departments", label: "Departamentos", icon: Archive, active: pathname.startsWith("/departments") },
+        { href: "/assets", label: "Activos", icon: HardHat, active: pathname.startsWith("/assets") },
+        { href: "/users", label: "Usuarios y Roles", icon: UserCog, active: pathname.startsWith("/users") },
       ],
     },
     {
-      label: "Configuration",
+      label: "Configuración",
       items: [
-        { href: "/settings", label: "Settings", icon: Settings, active: pathname.startsWith("/settings") },
-        { href: "/smart-tagging", label: "Smart Tagging", icon: Tags, active: pathname.startsWith("/smart-tagging") },
+        { href: "/settings", label: "Ajustes", icon: Settings, active: pathname.startsWith("/settings") },
+        { href: "/smart-tagging", label: "Etiquetado IA", icon: Tags, active: pathname.startsWith("/smart-tagging") },
       ],
     }
   ];

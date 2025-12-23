@@ -66,12 +66,12 @@ function UserTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Display Name</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead>Role</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead>Nombre</TableHead>
+          <TableHead>Correo electrónico</TableHead>
+          <TableHead>Rol</TableHead>
+          <TableHead>Estado</TableHead>
           <TableHead>
-            <span className="sr-only">Actions</span>
+            <span className="sr-only">Acciones</span>
           </TableHead>
         </TableRow>
       </TableHeader>
@@ -88,7 +88,7 @@ function UserTable({
               </TableCell>
               <TableCell>
                 <Badge variant={user.active ? 'default' : 'secondary'}>
-                  {user.active ? 'Active' : 'Inactive'}
+                  {user.active ? 'Activo' : 'Inactivo'}
                 </Badge>
               </TableCell>
               <TableCell>
@@ -100,13 +100,13 @@ function UserTable({
                       variant="ghost"
                     >
                       <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Toggle menu</span>
+                      <span className="sr-only">Menú de acciones</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => onEditUser(user)}>Edit</DropdownMenuItem>
-                    <DropdownMenuItem>Delete</DropdownMenuItem>
+                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => onEditUser(user)}>Editar</DropdownMenuItem>
+                    <DropdownMenuItem>Eliminar</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -115,7 +115,7 @@ function UserTable({
         ) : (
           <TableRow>
             <TableCell colSpan={5} className="h-24 text-center">
-              No users found.
+              No se encontraron usuarios.
             </TableCell>
           </TableRow>
         )}
@@ -135,7 +135,7 @@ function CreateAdminProfile() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'User or database not available.',
+        description: 'Usuario o base de datos no disponibles.',
       });
       return;
     }
@@ -152,15 +152,15 @@ function CreateAdminProfile() {
         updatedAt: serverTimestamp(),
       });
       toast({
-        title: 'Success!',
-        description: 'Your admin profile has been created.',
+        title: '¡Éxito!',
+        description: 'Tu perfil de administrador ha sido creado.',
       });
     } catch (error: any) {
       toast({
         variant: 'destructive',
-        title: 'Permission Error',
+        title: 'Error de Permiso',
         description:
-          'Could not create admin profile. Check Firestore security rules.',
+          'No se pudo crear el perfil de administrador. Revisa las reglas de seguridad de Firestore.',
       });
       console.error(error);
     } finally {
@@ -173,17 +173,17 @@ function CreateAdminProfile() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="text-amber-500" />
-          Complete Admin Setup
+          Completar Configuración de Administrador
         </CardTitle>
         <CardDescription>
-          Your authenticated user does not have a profile in the database.
-          Create one now to gain admin permissions.
+          Tu usuario autenticado no tiene un perfil en la base de datos.
+          Crea uno ahora para obtener permisos de administrador.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Button onClick={handleCreateAdmin} disabled={isCreating}>
           {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Create My Admin Profile
+          Crear Mi Perfil de Administrador
         </Button>
       </CardContent>
     </Card>
@@ -255,13 +255,13 @@ export default function UsersPage() {
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <CardTitle>Users & Roles</CardTitle>
+                    <CardTitle>Usuarios y Roles</CardTitle>
                     <CardDescription className="mt-2">
-                      Manage all users and their permissions.
+                      Gestiona todos los usuarios y sus permisos.
                     </CardDescription>
                   </div>
                   {isAdmin && (
-                    <Button onClick={() => setIsAddUserOpen(true)}>Add User</Button>
+                    <Button onClick={() => setIsAddUserOpen(true)}>Añadir Usuario</Button>
                   )}
                 </div>
               </CardHeader>
@@ -273,8 +273,8 @@ export default function UsersPage() {
             <Card className="mt-8">
               <CardContent className="pt-6">
                 <div className="text-center text-muted-foreground">
-                  <p>You do not have permission to view this page.</p>
-                  <p className="text-sm">Please contact an administrator.</p>
+                  <p>No tienes permiso para ver esta página.</p>
+                  <p className="text-sm">Por favor, contacta a un administrador.</p>
                 </div>
               </CardContent>
             </Card>

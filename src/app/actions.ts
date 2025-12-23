@@ -3,9 +3,11 @@
 import { suggestTags } from '@/ai/flows/smart-tagging-assistant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
+import { initializeFirebase } from '@/lib/firebase/server';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 const tagFormSchema = z.object({
-  description: z.string().min(10, { message: "Description must be at least 10 characters." }),
+  description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
 });
 
 export type TagFormState = {
@@ -28,7 +30,7 @@ export async function handleTagSuggestion(
 
   if (!validatedFields.success) {
     return {
-      message: 'Invalid form data.',
+      message: 'Datos del formulario no válidos.',
       tags: [],
       errors: validatedFields.error.flatten().fieldErrors,
     };
@@ -41,21 +43,21 @@ export async function handleTagSuggestion(
 
     if (!result.tags || result.tags.length === 0) {
       return {
-        message: 'No tags were suggested. Please try a more detailed description.',
+        message: 'No se sugirieron etiquetas. Intente con una descripción más detallada.',
         tags: [],
         timestamp: Date.now(),
       };
     }
     
     return {
-      message: 'Success',
+      message: 'Éxito',
       tags: result.tags,
       timestamp: Date.now(),
     };
   } catch (error) {
-    console.error('Error in handleTagSuggestion:', error);
+    console.error('Error en handleTagSuggestion:', error);
     return {
-      message: 'An unexpected error occurred. Please try again later.',
+      message: 'Ocurrió un error inesperado. Por favor, intente más tarde.',
       tags: [],
     };
   }

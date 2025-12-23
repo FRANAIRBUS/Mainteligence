@@ -37,11 +37,11 @@ export default function SmartTaggingPage() {
           <div className="mx-auto flex max-w-6xl flex-col gap-8">
             <div>
               <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
-                Smart Tagging Assistant
+                Asistente de Etiquetado Inteligente
               </h1>
               <p className="mt-2 text-muted-foreground">
-                Automatically categorize your maintenance tasks. Enter a
-                description below to get AI-suggested tags.
+                Categoriza automáticamente tus tareas de mantenimiento. Ingresa una
+                descripción para obtener etiquetas sugeridas por IA.
               </p>
             </div>
             <div className="w-full">

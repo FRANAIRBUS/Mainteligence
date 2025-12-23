@@ -61,24 +61,24 @@ export default function LoginPage() {
           </div>
           <CardTitle className="text-2xl">Maintelligence</CardTitle>
           <CardDescription>
-            Sign in to your account to continue
+            Inicia sesión en tu cuenta para continuar
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Correo electrónico</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="m@example.com"
+                placeholder="m@ejemplo.com"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">Contraseña</Label>
               <Input
                 id="password"
                 type="password"
@@ -91,7 +91,7 @@ export default function LoginPage() {
               <p className="text-sm text-destructive">{error}</p>
             )}
             <Button type="submit" className="w-full">
-              Sign In
+              Iniciar Sesión
             </Button>
           </form>
           <div className="relative my-4">
@@ -100,7 +100,7 @@ export default function LoginPage() {
             </div>
             <div className="relative flex justify-center text-xs uppercase">
               <span className="bg-background px-2 text-muted-foreground">
-                Or continue with
+                O continuar con
               </span>
             </div>
           </div>
@@ -113,7 +113,7 @@ export default function LoginPage() {
           </Button>
         </CardContent>
         <CardFooter className="justify-center text-sm">
-          <p>Don't have an account? <a href="#" className="text-primary hover:underline">Sign up</a></p>
+          <p>¿No tienes una cuenta? <a href="#" className="text-primary hover:underline">Regístrate</a></p>
         </CardFooter>
       </Card>
     </div>

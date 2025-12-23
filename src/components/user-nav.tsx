@@ -26,7 +26,7 @@ export function UserNav() {
       await signOut(auth);
       router.push('/login');
     } catch (error) {
-      console.error('Error signing out:', error);
+      console.error('Error al cerrar sesión:', error);
     }
   };
 
@@ -54,7 +54,7 @@ export function UserNav() {
           <Avatar className="h-8 w-8">
             <AvatarImage
               src={user.photoURL ?? ''}
-              alt={user.displayName ?? 'user avatar'}
+              alt={user.displayName ?? 'avatar de usuario'}
               data-ai-hint="user avatar"
             />
             <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>
@@ -65,27 +65,27 @@ export function UserNav() {
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">
-              {user.displayName || 'User'}
+              {user.displayName || 'Usuario'}
             </p>
             <p className="text-xs leading-none text-muted-foreground">
-              {user.email || 'No email'}
+              {user.email || 'Sin correo electrónico'}
             </p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem>
-            Profile
+            Perfil
             <DropdownMenuShortcut>⇧⌘P</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem>
-            Settings
+            Ajustes
             <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>
-          Log out
+          Cerrar sesión
           <DropdownMenuShortcut>⇧⌘Q</DropdownMenuShortcut>
         </DropdownMenuItem>
       </DropdownMenuContent>

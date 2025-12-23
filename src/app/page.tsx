@@ -58,11 +58,11 @@ export default function Home() {
           <div className="mx-auto flex max-w-6xl flex-col gap-8">
             <div>
               <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
-                Dashboard
+                Panel de Control
               </h1>
               <p className="mt-2 text-muted-foreground">
-                Welcome to Maintelligence. Here is an overview of the
-                maintenance tasks.
+                Bienvenido a Maintelligence. Aquí tienes un resumen de las
+                tareas de mantenimiento.
               </p>
             </div>
           </div>

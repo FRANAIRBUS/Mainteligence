@@ -68,20 +68,20 @@ function AssetsTable({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Assets</CardTitle>
+        <CardTitle>Activos</CardTitle>
         <CardDescription>
-          A list of all company assets and equipment.
+          Una lista de todos los activos y equipos de la empresa.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Code</TableHead>
-              <TableHead>Location</TableHead>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Código</TableHead>
+              <TableHead>Ubicación</TableHead>
               <TableHead>
-                <span className="sr-only">Actions</span>
+                <span className="sr-only">Acciones</span>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -107,13 +107,13 @@ function AssetsTable({
                           variant="ghost"
                         >
                           <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Toggle menu</span>
+                          <span className="sr-only">Menú de acciones</span>
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem>Edit</DropdownMenuItem>
-                        <DropdownMenuItem>Delete</DropdownMenuItem>
+                        <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                        <DropdownMenuItem>Editar</DropdownMenuItem>
+                        <DropdownMenuItem>Eliminar</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -122,7 +122,7 @@ function AssetsTable({
             ) : (
               <TableRow>
                 <TableCell colSpan={4} className="h-24 text-center">
-                  No assets found.
+                  No se encontraron activos.
                 </TableCell>
               </TableRow>
             )}
@@ -182,13 +182,13 @@ export default function AssetsPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
-                Assets
+                Activos
               </h1>
               <p className="mt-2 text-muted-foreground">
-                Manage all company assets and equipment.
+                Gestiona todos los activos y equipos de la empresa.
               </p>
             </div>
-            <Button>Add Asset</Button>
+            <Button>Añadir Activo</Button>
           </div>
           <div className="mt-8">
             <AssetsTable assets={assets} sites={sites} loading={isLoading} />

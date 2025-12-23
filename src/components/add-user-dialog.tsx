@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -38,11 +38,11 @@ import { Loader2 } from 'lucide-react';
 const formSchema = z.object({
   displayName: z
     .string()
-    .min(2, { message: 'Display name must be at least 2 characters.' }),
-  email: z.string().email({ message: 'Please enter a valid email address.' }),
+    .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
+  email: z.string().email({ message: 'Por favor, ingrese un correo electrónico válido.' }),
   password: z
     .string()
-    .min(6, { message: 'Password must be at least 6 characters.' }),
+    .min(6, { message: 'La contraseña debe tener al menos 6 caracteres.' }),
   role: z.enum(['operario', 'mantenimiento', 'admin']),
 });
 
@@ -73,17 +73,17 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
         toast({
             variant: 'destructive',
             title: 'Error',
-            description: 'Firestore is not available. Please try again later.',
+            description: 'Firestore no está disponible. Por favor, intente de nuevo más tarde.',
         });
         return;
     }
     setIsPending(true);
     try {
       const { displayName, email, role } = data;
-      // This is a placeholder for actual user creation logic.
-      // In a real app, you would use the Firebase Admin SDK in a secure environment
-      // to create the user in Firebase Auth and then add their profile to Firestore.
-      // For this prototype, we'll just add the user to the 'users' collection.
+      // Esto es un marcador de posición para la lógica de creación de usuarios real.
+      // En una aplicación real, usarías el SDK de administración de Firebase en un entorno seguro
+      // para crear el usuario en Firebase Auth y luego agregar su perfil a Firestore.
+      // Para este prototipo, solo agregaremos el usuario a la colección 'users'.
       await addDoc(collection(firestore, "users"), {
         displayName,
         email,
@@ -95,8 +95,8 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
       });
       
       toast({
-        title: 'Success',
-        description: `User ${displayName} created successfully.`,
+        title: 'Éxito',
+        description: `Usuario ${displayName} creado correctamente.`,
       });
       onOpenChange(false);
       form.reset();
@@ -105,7 +105,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
        toast({
         variant: 'destructive',
         title: 'Error',
-        description: e.message || 'Failed to create user.',
+        description: e.message || 'No se pudo crear el usuario.',
       });
     } finally {
         setIsPending(false);
@@ -125,9 +125,9 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Add New User</DialogTitle>
+          <DialogTitle>Añadir Nuevo Usuario</DialogTitle>
           <DialogDescription>
-            Enter the details for the new user account.
+            Introduce los detalles de la nueva cuenta de usuario.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -137,7 +137,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
               name="displayName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Display Name</FormLabel>
+                  <FormLabel>Nombre</FormLabel>
                   <FormControl>
                     <Input placeholder="John Doe" {...field} />
                   </FormControl>
@@ -150,7 +150,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel>Correo Electrónico</FormLabel>
                   <FormControl>
                     <Input placeholder="john.doe@example.com" {...field} />
                   </FormControl>
@@ -163,7 +163,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Password</FormLabel>
+                  <FormLabel>Contraseña</FormLabel>
                   <FormControl>
                     <Input type="password" {...field} />
                   </FormControl>
@@ -176,7 +176,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
               name="role"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Role</FormLabel>
+                  <FormLabel>Rol</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
@@ -184,7 +184,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a role" />
+                        <SelectValue placeholder="Selecciona un rol" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -202,7 +202,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
                 {isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                Create User
+                Crear Usuario
               </Button>
             </DialogFooter>
           </form>

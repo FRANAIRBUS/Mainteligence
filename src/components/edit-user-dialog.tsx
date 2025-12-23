@@ -39,8 +39,8 @@ import { Loader2 } from 'lucide-react';
 const formSchema = z.object({
   displayName: z
     .string()
-    .min(2, { message: 'Display name must be at least 2 characters.' }),
-  email: z.string().email({ message: 'Please enter a valid email address.' }),
+    .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
+  email: z.string().email({ message: 'Por favor, ingrese un correo electrónico válido.' }),
   role: z.enum(['operario', 'mantenimiento', 'admin']),
 });
 
@@ -71,7 +71,7 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
         toast({
             variant: 'destructive',
             title: 'Error',
-            description: 'Firestore is not available or user not found.',
+            description: 'Firestore no está disponible o no se encontró el usuario.',
         });
         return;
     }
@@ -84,8 +84,8 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
       });
       
       toast({
-        title: 'Success',
-        description: `User ${data.displayName} updated successfully.`,
+        title: 'Éxito',
+        description: `Usuario ${data.displayName} actualizado correctamente.`,
       });
       onOpenChange(false);
 
@@ -93,7 +93,7 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
        toast({
         variant: 'destructive',
         title: 'Error',
-        description: e.message || 'Failed to update user.',
+        description: e.message || 'No se pudo actualizar el usuario.',
       });
     } finally {
         setIsPending(false);
@@ -110,9 +110,9 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Edit User</DialogTitle>
+          <DialogTitle>Editar Usuario</DialogTitle>
           <DialogDescription>
-            Modify the details for {user.displayName}.
+            Modifica los detalles de {user.displayName}.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -122,7 +122,7 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
               name="displayName"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Display Name</FormLabel>
+                  <FormLabel>Nombre</FormLabel>
                   <FormControl>
                     <Input placeholder="John Doe" {...field} />
                   </FormControl>
@@ -135,7 +135,7 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel>Correo Electrónico</FormLabel>
                   <FormControl>
                     <Input placeholder="john.doe@example.com" {...field} />
                   </FormControl>
@@ -148,7 +148,7 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
               name="role"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Role</FormLabel>
+                  <FormLabel>Rol</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
@@ -156,7 +156,7 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a role" />
+                        <SelectValue placeholder="Selecciona un rol" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -174,7 +174,7 @@ export function EditUserDialog({ open, onOpenChange, user }: EditUserDialogProps
                 {isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                Save Changes
+                Guardar Cambios
               </Button>
             </DialogFooter>
           </form>

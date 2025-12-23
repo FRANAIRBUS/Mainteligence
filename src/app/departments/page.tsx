@@ -58,19 +58,19 @@ function DepartmentsTable({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Departments</CardTitle>
+        <CardTitle>Departamentos</CardTitle>
         <CardDescription>
-          A list of all company departments.
+          Una lista de todos los departamentos de la empresa.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Code</TableHead>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Código</TableHead>
               <TableHead>
-                <span className="sr-only">Actions</span>
+                <span className="sr-only">Acciones</span>
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -89,13 +89,13 @@ function DepartmentsTable({
                           variant="ghost"
                         >
                           <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Toggle menu</span>
+                          <span className="sr-only">Menú de acciones</span>
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem>Edit</DropdownMenuItem>
-                        <DropdownMenuItem>Delete</DropdownMenuItem>
+                        <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                        <DropdownMenuItem>Editar</DropdownMenuItem>
+                        <DropdownMenuItem>Eliminar</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -104,7 +104,7 @@ function DepartmentsTable({
             ) : (
               <TableRow>
                 <TableCell colSpan={3} className="h-24 text-center">
-                  No departments found.
+                  No se encontraron departamentos.
                 </TableCell>
               </TableRow>
             )}
@@ -164,13 +164,13 @@ export default function DepartmentsPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
-                Departments
+                Departamentos
               </h1>
               <p className="mt-2 text-muted-foreground">
-                Manage all company departments.
+                Gestiona todos los departamentos de la empresa.
               </p>
             </div>
-            <Button>Add Department</Button>
+            <Button>Añadir Departamento</Button>
           </div>
           <div className="mt-8">
             <DepartmentsTable departments={departments} loading={departmentsLoading} />
