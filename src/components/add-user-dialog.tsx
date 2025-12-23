@@ -1,11 +1,12 @@
 'use client';
 
-import { useActionState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { addUserAction } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { useFirestore } from '@/lib/firebase';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -54,7 +55,8 @@ interface AddUserDialogProps {
 
 export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
   const { toast } = useToast();
-  const [state, formAction, isPending] = useActionState(addUserAction, null);
+  const firestore = useFirestore();
+  const [isPending, setIsPending] = useState(false);
 
   const form = useForm<AddUserFormValues>({
     resolver: zodResolver(formSchema),
@@ -66,24 +68,49 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
     },
   });
 
-  useEffect(() => {
-    if (state?.message) {
-      if (state.error || state.errors) {
+  const onSubmit = async (data: AddUserFormValues) => {
+    if (!firestore) {
         toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: state.message,
+            variant: 'destructive',
+            title: 'Error',
+            description: 'Firestore is not available. Please try again later.',
         });
-      } else {
-        toast({
-          title: 'Success',
-          description: state.message,
-        });
-        onOpenChange(false);
-        form.reset();
-      }
+        return;
     }
-  }, [state, toast, onOpenChange, form]);
+    setIsPending(true);
+    try {
+      const { displayName, email, role } = data;
+      // This is a placeholder for actual user creation logic.
+      // In a real app, you would use the Firebase Admin SDK in a secure environment
+      // to create the user in Firebase Auth and then add their profile to Firestore.
+      // For this prototype, we'll just add the user to the 'users' collection.
+      await addDoc(collection(firestore, "users"), {
+        displayName,
+        email,
+        role,
+        active: true,
+        isMaintenanceLead: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      
+      toast({
+        title: 'Success',
+        description: `User ${displayName} created successfully.`,
+      });
+      onOpenChange(false);
+      form.reset();
+
+    } catch (e: any) {
+       toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: e.message || 'Failed to create user.',
+      });
+    } finally {
+        setIsPending(false);
+    }
+  };
   
   const handleOpenChange = (isOpen: boolean) => {
     if (!isPending) {
@@ -104,7 +131,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form action={formAction} className="space-y-4">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
               control={form.control}
               name="displayName"
