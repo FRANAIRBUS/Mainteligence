@@ -149,11 +149,15 @@ export default function IncidentsPage() {
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   
+  // Hooks are now called unconditionally
   const canLoadAdminData = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
+  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
+  const { data: usersData, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
 
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
-  const { data: users, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
-  
+  // Memoize the potentially empty arrays to keep them stable
+  const assets = useMemo(() => assetsData || [], [assetsData]);
+  const users = useMemo(() => usersData || [], [usersData]);
+
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
@@ -176,9 +180,9 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
-  const isLoading = userLoading || profileLoading;
+  const pageLoading = userLoading || profileLoading;
   
-  if (isLoading || (!userProfile && !profileLoading)) {
+  if (pageLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -187,7 +191,7 @@ export default function IncidentsPage() {
   }
   
   const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading;
-  const maintenanceUsers = useMemo(() => users?.filter(u => u.role === 'mantenimiento' || u.role === 'admin') || [], [users]);
+  const maintenanceUsers = useMemo(() => users.filter(u => u.role === 'mantenimiento' || u.role === 'admin'), [users]);
 
   return (
     <SidebarProvider>

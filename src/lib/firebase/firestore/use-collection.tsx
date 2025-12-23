@@ -20,9 +20,10 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
   const memoizedPath = typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path;
 
   useEffect(() => {
+    // If the path is explicitly null or empty, or db is not available, do nothing.
     if (!db || !pathOrRef) {
+      setData([]);
       setLoading(false);
-      setData([]); // Reset data when path is null
       return;
     }
     
