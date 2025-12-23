@@ -150,42 +150,36 @@ export default function IncidentsPage() {
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
 
+  // Load user profile first, unconditionally.
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(user?.uid ? `users/${user.uid}` : null);
+
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
 
-  // Always call all hooks unconditionally at the top level
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user?.uid ? `users/${user.uid}` : null);
-
+  // Based on the profile, create the appropriate query for tickets.
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !userProfile) return null;
+    if (!firestore || !userProfile || !user?.uid) return null;
 
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(collection(firestore, 'tickets'));
     }
-
-    if (userProfile.role === 'operario' && userProfile.departmentId) {
-      return query(collection(firestore, 'tickets'), where('departmentId', '==', userProfile.departmentId));
-    }
     
-    // Fallback for operario without a department or other cases
+    // Default for 'operario'
     return query(collection(firestore, 'tickets'), where('createdBy', '==', user.uid));
 
-  }, [firestore, userProfile, user]);
+  }, [firestore, userProfile, user?.uid]);
 
+  // Now, call all data hooks unconditionally.
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
-
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  
-  const canLoadAdminData = useMemo(() => userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento', [userProfile]);
-
   const { data: assetsData, loading: assetsLoading } = useCollection<Asset>('assets');
   const { data: usersData, loading: usersLoading } = useCollection<User>('users');
-  
-  // Memoize derived data, with safe defaults for conditional data
+
+  // Memoize derived data safely.
   const assets = useMemo(() => assetsData || [], [assetsData]);
   const users = useMemo(() => usersData || [], [usersData]);
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
@@ -200,6 +194,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
+  // Page is loading if user or their profile is loading.
   const pageLoading = userLoading || profileLoading;
   
   if (pageLoading) {
@@ -210,7 +205,8 @@ export default function IncidentsPage() {
     );
   }
   
-  const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading || (canLoadAdminData && (assetsLoading || usersLoading));
+  // Table is loading if any of its data sources are loading.
+  const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading;
 
   return (
     <SidebarProvider>

@@ -50,12 +50,13 @@ export default function IncidentDetailPage() {
   const ticketId = Array.isArray(id) ? id[0] : id;
 
   const { user, loading: userLoading } = useUser();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : '');
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
 
-  const { data: ticket, loading: ticketLoading } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : '');
-  const { data: createdByUser, loading: createdByLoading } = useDoc<User>(ticket ? `users/${ticket.createdBy}` : '');
-  const { data: assignedToUser, loading: assignedToLoading } = useDoc<User>(ticket && ticket.assignedTo ? `users/${ticket.assignedTo}` : '');
+  const { data: ticket, loading: ticketLoading } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
   
+  // Fetch all collections needed for display unconditionally
+  const { data: createdByUser, loading: createdByLoading } = useDoc<User>(ticket ? `users/${ticket.createdBy}` : null);
+  const { data: assignedToUser, loading: assignedToLoading } = useDoc<User>(ticket && ticket.assignedTo ? `users/${ticket.assignedTo}` : null);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
@@ -63,6 +64,7 @@ export default function IncidentDetailPage() {
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
+  // Memoize derived data
   const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
   const departmentName = useMemo(() => departments?.find(d => d.id === ticket?.departmentId)?.name || 'N/A', [departments, ticket]);
   const assetName = useMemo(() => assets?.find(a => a.id === ticket?.assetId)?.name || 'N/A', [assets, ticket]);
@@ -72,22 +74,32 @@ export default function IncidentDetailPage() {
     if (!userLoading && !user) {
       router.push('/login');
     }
-     if (!ticketLoading && !userLoading && ticket && user && userProfile) {
+     // Authorization check after data has loaded
+     if (!ticketLoading && !userLoading && !profileLoading && ticket && user && userProfile) {
       const canView = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento' || ticket.createdBy === user.uid;
       if (!canView) {
         router.push('/incidents');
       }
     }
-  }, [user, userLoading, router, ticket, ticketLoading, userProfile]);
+  }, [user, userLoading, router, ticket, ticketLoading, userProfile, profileLoading]);
 
   const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading || sitesLoading || deptsLoading || assetsLoading || usersLoading || assignedToLoading;
 
-  if (isLoading || !ticket || !userProfile) {
+  if (isLoading || !userProfile) { // Also check for userProfile, since it's needed for auth
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
       </div>
     );
+  }
+  
+  // After loading, if ticket is not found (and not loading), show not found message
+  if (!ticket && !ticketLoading) {
+    return (
+       <div className="flex h-screen w-screen items-center justify-center">
+          <p>Incidencia no encontrada.</p>
+      </div>
+    )
   }
 
   const canEdit = userProfile.role === 'admin' || userProfile.role === 'mantenimiento' || ticket.createdBy === user.uid;
