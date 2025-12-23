@@ -287,7 +287,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
                     <FormControl>
                     <SelectTrigger>
                         <SelectValue placeholder="Selecciona una prioridad" />
-                    </Tle>
+                    </SelectTrigger>
                     </FormControl>
                     <SelectContent>
                         <SelectItem value="Baja">Baja</SelectItem>
