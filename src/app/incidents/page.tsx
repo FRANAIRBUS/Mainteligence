@@ -43,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { collection, query } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 
 function IncidentsTable({
   tickets,
@@ -156,12 +156,9 @@ export default function IncidentsPage() {
 
   const canLoadAdminCatalogs = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
-  // Sites and Departments are needed by all roles to display names in the table.
-  // We only create the query if the user profile is loaded to avoid race conditions.
-  const sitesQuery = useMemo(() => firestore && userProfile ? collection(firestore, 'sites') : null, [firestore, userProfile]);
-  const departmentsQuery = useMemo(() => firestore && userProfile ? collection(firestore, 'departments') : null, [firestore, userProfile]);
-
-  // Assets and Users are only needed for forms used by admin/mantenimiento.
+  const sitesQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'sites') : null, [firestore, userProfile]);
+  const departmentsQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'departments') : null, [firestore, userProfile]);
+  
   const assetsQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? collection(firestore, 'assets') : null, [firestore, canLoadAdminCatalogs]);
   const usersQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? query(collection(firestore, 'users')) : null, [firestore, canLoadAdminCatalogs]);
 
@@ -192,11 +189,9 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
-  // The main page loading state should only depend on the essential data for ALL users.
-  // Catalog loading is handled asynchronously.
   const isLoading = userLoading || profileLoading || ticketsLoading;
   
-  if (isLoading && !tickets.length) { // Show loader only on initial load
+  if (isLoading && !tickets.length) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -204,7 +199,6 @@ export default function IncidentsPage() {
     );
   }
 
-  // The table can be loading catalogs in the background while still displaying ticket data.
   const tableIsLoading = ticketsLoading || (!!userProfile && (sitesLoading || departmentsLoading));
 
   return (
@@ -249,7 +243,7 @@ export default function IncidentsPage() {
                 tickets={tickets} 
                 sites={sitesMap}
                 departments={departmentsMap}
-                loading={tableIsLoading && !tickets.length} // Show table loader only if there's no data yet
+                loading={tableIsLoading && !tickets.length}
                 onViewDetails={handleViewDetails}
                 onEdit={handleEditRequest}
                 userRole={userProfile?.role}
