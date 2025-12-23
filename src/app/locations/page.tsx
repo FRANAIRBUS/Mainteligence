@@ -148,10 +148,8 @@ export default function LocationsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   
-  const canLoadData = !userLoading && !!user;
-  
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(canLoadData ? `users/${user.uid}` : null);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
   const [isEditLocationOpen, setIsEditLocationOpen] = useState(false);

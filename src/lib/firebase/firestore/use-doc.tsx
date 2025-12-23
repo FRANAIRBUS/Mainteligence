@@ -2,21 +2,31 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot, DocumentReference } from 'firebase/firestore';
 import { useFirestore } from '../provider';
+import { useUser } from '..';
 
 export function useDoc<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
+  const { user, loading: userLoading } = useUser();
 
   useEffect(() => {
-    // If path is null, we are not ready to fetch.
-    if (!db || !path) {
+    // If path is null, user not ready, or db not ready, we wait.
+    if (!db || !path || userLoading) {
       setLoading(false);
       setData(null);
       setError(null);
       return;
     }
+    // If path relies on user.uid, but user is null, also wait.
+    if (path.includes('undefined') && !user) {
+      setLoading(false);
+      setData(null);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     const docRef = doc(db, path);
     const unsubscribe = onSnapshot(
@@ -41,7 +51,7 @@ export function useDoc<T>(path: string | null) {
     );
 
     return () => unsubscribe();
-  }, [db, path]);
+  }, [db, path, user, userLoading]);
   
   return { data, loading, error };
 }
@@ -51,10 +61,11 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const { user, loading: userLoading } = useUser();
 
   useEffect(() => {
-    // If docRef is null, we are not ready to fetch.
-    if (!docRef) {
+    // If docRef is null, or user is not ready, we are not ready to fetch.
+    if (!docRef || userLoading || !user) {
       setLoading(false);
       setData(null);
       setError(null);
@@ -77,7 +88,7 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
     });
 
     return () => unsubscribe();
-  }, [docRef]);
+  }, [docRef, user, userLoading]);
 
   return { data, loading, error };
 }

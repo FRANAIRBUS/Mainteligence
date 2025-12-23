@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import {
   collection,
   onSnapshot,
@@ -7,23 +7,25 @@ import {
   DocumentData,
   CollectionReference,
 } from 'firebase/firestore';
-import { useFirestore } from '../provider';
+import { useAuth, useFirestore } from '../provider';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
+import { useUser } from '../auth/use-user';
 
 export function useCollection<T>(pathOrRef: string | CollectionReference | null) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
+  const { user, loading: userLoading } = useUser();
 
   // Use a stable reference for the path to avoid re-running the effect unnecessarily
   const memoizedPath = typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path;
 
   useEffect(() => {
-    // If the path/ref is null, it means we are not ready to fetch, so we wait.
-    if (!db || !memoizedPath) {
-      setLoading(false); // Not loading because we are intentionally not fetching
+    // If the path/ref is null, user is not logged in, or firebase is not ready, we are not ready to fetch.
+    if (!db || !memoizedPath || userLoading || !user) {
+      setLoading(false); 
       setData([]);
       setError(null);
       return;
@@ -37,7 +39,6 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
     } else if (pathOrRef) {
       collectionRef = pathOrRef; 
     } else {
-      // This case should theoretically not be hit due to the check above, but for safety:
       setLoading(false);
       setData([]);
       return;
@@ -71,7 +72,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, memoizedPath]);
+  }, [db, memoizedPath, user, userLoading]);
 
   return { data, loading, error };
 }
@@ -80,11 +81,12 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const { user, loading: userLoading } = useUser();
 
   useEffect(() => {
-    // If the query is null, it means we are not ready to fetch.
-    if (query === null) {
-      setLoading(false); // Not loading because we are intentionally not fetching
+    // If the query is null, or user not ready, we are not ready to fetch.
+    if (query === null || userLoading || !user) {
+      setLoading(false);
       setData([]);
       setError(null);
       return;
@@ -118,7 +120,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
     );
 
     return () => unsubscribe();
-  }, [query]); // The query object itself is the dependency
+  }, [query, user, userLoading]); // The query object itself is the dependency
 
   return { data, loading, error };
 }

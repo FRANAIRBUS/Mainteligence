@@ -145,10 +145,8 @@ export default function DepartmentsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   
-  const canLoadData = !userLoading && !!user;
-
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(canLoadData ? `users/${user.uid}` : null);
-  const { data: departments, loading: departmentsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const { data: departments, loading: departmentsLoading } = useCollection<Department>('departments');
 
   const [isAddDepartmentOpen, setIsAddDepartmentOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);

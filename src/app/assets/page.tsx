@@ -163,11 +163,9 @@ export default function AssetsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   
-  const canLoadData = !userLoading && !!user;
-
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(canLoadData ? `users/${user.uid}` : null);
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
 
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);

@@ -69,11 +69,10 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
   const [isPending, setIsPending] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
 
-  // Load catalogs only when the dialog is open and user is authenticated
-  const canLoadData = !!user;
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
+  // These hooks are now safe because they wait for user auth internally
+  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
+  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
 
   const form = useForm<AddIncidentFormValues>({
     resolver: zodResolver(formSchema),
@@ -288,7 +287,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
                     <FormControl>
                     <SelectTrigger>
                         <SelectValue placeholder="Selecciona una prioridad" />
-                    </SelectTrigger>
+                    </Tle>
                     </FormControl>
                     <SelectContent>
                         <SelectItem value="Baja">Baja</SelectItem>
