@@ -146,20 +146,17 @@ export default function IncidentsPage() {
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : '');
   
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !userProfile) return null;
+    if (!firestore) return null;
     const ticketsCollection = collection(firestore, 'tickets');
-    
-    // Admin and Mantenimiento see all tickets. Operario used to see only their own.
-    // Based on user request, operario now also sees all tickets.
     return query(ticketsCollection);
-
-  }, [firestore, userProfile]);
+  }, [firestore]);
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
 
   const canLoadAdminCatalogs = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
   // Sites and Departments are needed by all roles to display names in the table.
+  // CRITICAL: We only create the query if the user profile is loaded to avoid race conditions.
   const sitesQuery = useMemo(() => firestore && userProfile ? collection(firestore, 'sites') : null, [firestore, userProfile]);
   const departmentsQuery = useMemo(() => firestore && userProfile ? collection(firestore, 'departments') : null, [firestore, userProfile]);
 
@@ -167,8 +164,8 @@ export default function IncidentsPage() {
   const assetsQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? collection(firestore, 'assets') : null, [firestore, canLoadAdminCatalogs]);
   const usersQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? query(collection(firestore, 'users'), where('role', 'in', ['admin', 'mantenimiento'])) : null, [firestore, canLoadAdminCatalogs]);
 
-  const { data: sites, loading: sitesLoading } = useCollectionQuery<Site>(sitesQuery);
-  const { data: departments, loading: departmentsLoading } = useCollectionQuery<Department>(departmentsQuery);
+  const { data: sites } = useCollectionQuery<Site>(sitesQuery);
+  const { data: departments } = useCollectionQuery<Department>(departmentsQuery);
   const { data: assets, loading: assetsLoading } = useCollectionQuery<Asset>(assetsQuery);
   const { data: users, loading: usersLoading } = useCollectionQuery<User>(usersQuery);
   
@@ -194,16 +191,19 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
-  const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || departmentsLoading || (canLoadAdminCatalogs && (assetsLoading || usersLoading));
-  const tableIsLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || departmentsLoading;
-
-  if (userLoading || profileLoading || !user) {
+  // The main page loading state should only depend on the essential data for ALL users.
+  const isLoading = userLoading || profileLoading || ticketsLoading;
+  
+  if (isLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
       </div>
     );
   }
+
+  // We can render the page even if catalogs are still loading for admin roles.
+  const tableIsLoading = ticketsLoading;
 
   return (
     <SidebarProvider>
