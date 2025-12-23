@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { doc, onSnapshot, DocumentReference } from 'firebase/firestore';
 import { useFirestore } from '../provider';
 
-export function useDoc<T>(path: string) {
+export function useDoc<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
@@ -15,6 +15,7 @@ export function useDoc<T>(path: string) {
       setData(null);
       return;
     }
+    setLoading(true);
     const docRef = doc(db, path);
     const unsubscribe = onSnapshot(
       docRef,

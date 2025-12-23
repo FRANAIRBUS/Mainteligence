@@ -76,9 +76,8 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const queryPath = useMemo(() => query ? (query as any)._query.path.segments.join('/') : null, [query]);
-  const queryFilters = useMemo(() => query ? JSON.stringify((query as any)._query.filters) : null, [query]);
-
+  // We can't easily stringify the entire query for memoization, 
+  // so we rely on the parent component to memoize the query object itself with useMemo.
   useEffect(() => {
     if (query === null) {
       setLoading(false);
@@ -112,8 +111,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
     );
 
     return () => unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, queryPath, queryFilters]);
+  }, [query]);
 
   return { data, loading, error };
 }

@@ -156,39 +156,38 @@ export default function IncidentsPage() {
     }
   }, [user, userLoading, router]);
   
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(user?.uid ? `users/${user.uid}` : null);
 
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !userProfile) return null;
+    if (!firestore || !userProfile || !user?.uid) return null;
     
     const ticketsCollection = collection(firestore, 'tickets');
     
-    // Admin and Mantenimiento see all tickets
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(ticketsCollection);
     }
     
-    // Operario with a department sees tickets for that department
     if (userProfile.role === 'operario' && userProfile.departmentId) {
       return query(ticketsCollection, where('departmentId', '==', userProfile.departmentId));
     }
     
-    // Operario without department sees their own tickets
     if(userProfile.role === 'operario') {
-       return query(ticketsCollection, where('createdBy', '==', user?.uid));
+       return query(ticketsCollection, where('createdBy', '==', user.uid));
     }
 
-    return null; 
+    return query(ticketsCollection, where('createdBy', '==', 'non-existent-user-id')); // Return no results if logic fails
   }, [firestore, userProfile, user?.uid]);
 
+  const canLoadAdminData = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
+  
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>('assets');
-  const { data: usersData, loading: usersLoading } = useCollection<User>('users');
-
-  const assets = assetsData || [];
-  const users = usersData || [];
+  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
+  const { data: usersData, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
+  
+  const assets = useMemo(() => assetsData || [], [assetsData]);
+  const users = useMemo(() => usersData || [], [usersData]);
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
@@ -212,7 +211,7 @@ export default function IncidentsPage() {
     );
   }
   
-  const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading;
+  const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading || (canLoadAdminData && (assetsLoading || usersLoading));
   const maintenanceUsers = useMemo(() => users.filter(u => u.role === 'mantenimiento' || u.role === 'admin'), [users]);
 
   return (
