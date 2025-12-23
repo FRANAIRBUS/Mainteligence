@@ -42,9 +42,18 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { AddUserDialog } from '@/components/add-user-dialog';
+import { EditUserDialog } from '@/components/edit-user-dialog';
 import { useToast } from '@/hooks/use-toast';
 
-function UserTable({ users, loading }: { users: User[]; loading: boolean }) {
+function UserTable({
+  users,
+  loading,
+  onEditUser,
+}: {
+  users: User[];
+  loading: boolean;
+  onEditUser: (user: User) => void;
+}) {
   if (loading) {
     return (
       <div className="flex h-64 w-full items-center justify-center">
@@ -54,74 +63,64 @@ function UserTable({ users, loading }: { users: User[]; loading: boolean }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Users</CardTitle>
-        <CardDescription>
-          A list of all the users in your account.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Display Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Display Name</TableHead>
+          <TableHead>Email</TableHead>
+          <TableHead>Role</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>
+            <span className="sr-only">Actions</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {users.length > 0 ? (
+          users.map((user) => (
+            <TableRow key={user.id}>
+              <TableCell className="font-medium">
+                {user.displayName}
+              </TableCell>
+              <TableCell>{user.email}</TableCell>
+              <TableCell>
+                <Badge variant="outline">{user.role}</Badge>
+              </TableCell>
+              <TableCell>
+                <Badge variant={user.active ? 'default' : 'secondary'}>
+                  {user.active ? 'Active' : 'Inactive'}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      aria-haspopup="true"
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Toggle menu</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => onEditUser(user)}>Edit</DropdownMenuItem>
+                    <DropdownMenuItem>Delete</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.length > 0 ? (
-              users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">
-                    {user.displayName}
-                  </TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{user.role}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={user.active ? 'default' : 'secondary'}>
-                      {user.active ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-haspopup="true"
-                          size="icon"
-                          variant="ghost"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Toggle menu</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem>Edit</DropdownMenuItem>
-                        <DropdownMenuItem>Delete</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={5} className="h-24 text-center">
-                  No users found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          ))
+        ) : (
+          <TableRow>
+            <TableCell colSpan={5} className="h-24 text-center">
+              No users found.
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -199,12 +198,19 @@ export default function UsersPage() {
   );
   const router = useRouter();
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [isEditUserOpen, setIsEditUserOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
     }
   }, [user, userLoading, router]);
+
+  const handleEditUser = (userToEdit: User) => {
+    setEditingUser(userToEdit);
+    setIsEditUserOpen(true);
+  };
 
   const showCreateAdminProfile =
     !userLoading && user && !profileLoading && !userProfile;
@@ -244,36 +250,46 @@ export default function UsersPage() {
         <main className="flex-1 p-4 sm:p-6 md:p-8">
           {showCreateAdminProfile && <CreateAdminProfile />}
 
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
-                Users & Roles
-              </h1>
-              <p className="mt-2 text-muted-foreground">
-                Manage all users and their permissions.
-              </p>
-            </div>
-            {isAdmin && (
-              <Button onClick={() => setIsAddUserOpen(true)}>Add User</Button>
-            )}
-          </div>
-          <div className="mt-8">
-            {isAdmin || users.length > 0 ? (
-               <UserTable users={users} loading={usersLoading} />
-            ) : (
-                <Card className="mt-8">
-                    <CardContent className="pt-6">
-                        <div className="text-center text-muted-foreground">
-                            <p>You do not have permission to view this page.</p>
-                            <p className="text-sm">Please contact an administrator.</p>
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-          </div>
+          {isAdmin || users.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <CardTitle>Users & Roles</CardTitle>
+                    <CardDescription className="mt-2">
+                      Manage all users and their permissions.
+                    </CardDescription>
+                  </div>
+                  {isAdmin && (
+                    <Button onClick={() => setIsAddUserOpen(true)}>Add User</Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <UserTable users={users} loading={usersLoading} onEditUser={handleEditUser} />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="mt-8">
+              <CardContent className="pt-6">
+                <div className="text-center text-muted-foreground">
+                  <p>You do not have permission to view this page.</p>
+                  <p className="text-sm">Please contact an administrator.</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </main>
       </SidebarInset>
       <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} />
+      {editingUser && (
+        <EditUserDialog
+          key={editingUser.id}
+          open={isEditUserOpen}
+          onOpenChange={setIsEditUserOpen}
+          user={editingUser}
+        />
+      )}
     </SidebarProvider>
   );
 }
