@@ -160,8 +160,6 @@ export default function IncidentsPage() {
   // Phase 2: Once user is authenticated, load their profile.
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   
-  const canLoadData = !!user && !!userProfile;
-
   // Phase 3: Construct the tickets query only when firestore, user, AND userProfile are ready.
   const ticketsQuery = useMemo(() => {
     if (!firestore || !user || !userProfile) return null; 
@@ -180,8 +178,9 @@ export default function IncidentsPage() {
 
   }, [firestore, user, userProfile]);
 
+  const canLoadData = !!user && !!userProfile;
   // Phase 4: Execute the query for tickets and load other collections only when the query is ready and data can be loaded
-  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(canLoadData ? ticketsQuery : null);
+  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
   const { data: sites, loading: sitesLoading } = useCollection<Site>(canLoadData ? 'sites' : null);
   const { data: departments, loading: deptsLoading } = useCollection<Department>(canLoadData ? 'departments' : null);
   const { data: assets, loading: assetsLoading } = useCollection<Asset>(canLoadData ? 'assets' : null);
