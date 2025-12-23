@@ -43,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query } from 'firebase/firestore';
 
 function IncidentsTable({
   tickets,
@@ -53,6 +53,7 @@ function IncidentsTable({
   onViewDetails,
   onEdit,
   userRole,
+  userId,
 }: {
   tickets: Ticket[];
   sites: Record<string, string>;
@@ -61,6 +62,7 @@ function IncidentsTable({
   onViewDetails: (ticketId: string) => void;
   onEdit: (ticket: Ticket) => void;
   userRole?: string;
+  userId?: string;
 }) {
   if (loading) {
     return (
@@ -118,7 +120,7 @@ function IncidentsTable({
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
                     <DropdownMenuItem onClick={() => onViewDetails(ticket.id)}>Ver Detalles</DropdownMenuItem>
-                    {(userRole === 'admin' || userRole === 'mantenimiento' || ticket.createdBy === userRole) && (
+                    {(userRole === 'admin' || userRole === 'mantenimiento' || ticket.createdBy === userId) && (
                        <DropdownMenuItem onClick={() => onEdit(ticket)}>Editar</DropdownMenuItem>
                     )}
                   </DropdownMenuContent>
@@ -153,7 +155,7 @@ export default function IncidentsPage() {
   }, [firestore]);
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
-
+  
   const canLoadAdminCatalogs = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
   const sitesQuery = useMemo(() => (firestore && userProfile) ? collection(firestore, 'sites') : null, [firestore, userProfile]);
@@ -199,7 +201,7 @@ export default function IncidentsPage() {
     );
   }
 
-  const tableIsLoading = ticketsLoading || (!!userProfile && (sitesLoading || departmentsLoading));
+  const tableIsLoading = ticketsLoading;
 
   return (
     <SidebarProvider>
@@ -243,10 +245,11 @@ export default function IncidentsPage() {
                 tickets={tickets} 
                 sites={sitesMap}
                 departments={departmentsMap}
-                loading={tableIsLoading && !tickets.length}
+                loading={tableIsLoading}
                 onViewDetails={handleViewDetails}
                 onEdit={handleEditRequest}
                 userRole={userProfile?.role}
+                userId={user?.uid}
                 />
             </CardContent>
           </Card>
