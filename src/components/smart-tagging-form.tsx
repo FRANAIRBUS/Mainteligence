@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect, useActionState, useState } from 'react';
-import { useFormStatus } from 'react-dom';
+import { useEffect, useState, useTransition } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -16,7 +15,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
-import { handleTagSuggestion, type FormState } from '@/app/actions';
+import { handleTagSuggestion, type TagFormState } from '@/app/actions';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Sparkles, Tags, AlertCircle } from 'lucide-react';
@@ -29,11 +28,10 @@ const formSchema = z.object({
   }),
 });
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
+function SubmitButton({ isPending }: { isPending: boolean }) {
   return (
-    <Button type="submit" disabled={pending} className="w-full sm:w-auto">
-      {pending ? (
+    <Button type="submit" disabled={isPending} className="w-full sm:w-auto">
+      {isPending ? (
         <Loader2 className="animate-spin" />
       ) : (
         <>
@@ -45,7 +43,7 @@ function SubmitButton() {
   );
 }
 
-function SuggestedTags({ state, pending }: { state: FormState, pending: boolean }) {
+function SuggestedTags({ state, isPending }: { state: TagFormState, isPending: boolean }) {
   const { toast } = useToast();
   const [showResults, setShowResults] = useState(false);
 
@@ -70,7 +68,7 @@ function SuggestedTags({ state, pending }: { state: FormState, pending: boolean 
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {pending ? (
+        {isPending ? (
           <div className="flex flex-wrap gap-2">
             <Skeleton className="h-6 w-20 rounded-full" />
             <Skeleton className="h-6 w-24 rounded-full" />
@@ -99,7 +97,7 @@ function SuggestedTags({ state, pending }: { state: FormState, pending: boolean 
         ) : (
           <div className="flex items-center gap-2 text-muted-foreground">
             <AlertCircle className="h-5 w-5" />
-            <p>No se sugirieron etiquetas. Intenta con una descripción más detallada.</p>
+            <p>{state.message || "No se sugirieron etiquetas."}</p>
           </div>
         )}
       </CardContent>
@@ -107,15 +105,10 @@ function SuggestedTags({ state, pending }: { state: FormState, pending: boolean 
   );
 }
 
-function SmartTaggingFormContent({
-  formAction,
-  initialState,
-}: {
-  formAction: (payload: FormData) => void;
-  initialState: FormState;
-}) {
-  const [state, action] = useActionState(formAction, initialState);
-  const { pending } = useFormStatus();
+export default function SmartTaggingForm() {
+  const initialState: TagFormState = { message: '', tags: [] };
+  const [state, setState] = useState<TagFormState>(initialState);
+  const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -126,27 +119,32 @@ function SmartTaggingFormContent({
   });
 
   useEffect(() => {
-    if (state.message && state.message !== 'Success' && state.message !== 'Invalid form data.') {
-      toast({
+    if (state.errors?.description) {
+      form.setError('description', { message: state.errors.description.join(', ') });
+    }
+    if (state.message && state.message !== 'Éxito' && !state.errors) {
+       toast({
         variant: "destructive",
         title: "Error",
         description: state.message,
       });
     }
-  }, [state, toast]);
+  }, [state, form, toast]);
+  
+  const onSubmit = async (formData: FormData) => {
+    const valid = await form.trigger();
+    if (!valid) return;
+    
+    startTransition(async () => {
+      const result = await handleTagSuggestion(state, formData);
+      setState(result);
+    });
+  }
 
   return (
     <div className="grid gap-6">
        <Card>
-        <form
-          action={(formData) => {
-            form.trigger().then((isValid) => {
-              if (isValid) {
-                action(formData);
-              }
-            });
-          }}
-        >
+        <form action={onSubmit}>
           <CardHeader>
             <CardTitle>Nueva Tarea de Mantenimiento</CardTitle>
             <CardDescription>
@@ -165,7 +163,7 @@ function SmartTaggingFormContent({
                       <Textarea
                         placeholder="Ej: 'La cinta transportadora principal hace un fuerte ruido de rechinamiento y se ha detenido. Parece una falla del motor o de un rodamiento.'"
                         className="min-h-[120px] resize-y"
-                        disabled={pending}
+                        disabled={isPending}
                         {...field}
                       />
                     </FormControl>
@@ -176,19 +174,11 @@ function SmartTaggingFormContent({
             </Form>
           </CardContent>
           <CardFooter className="flex justify-end">
-            <SubmitButton />
+            <SubmitButton isPending={isPending}/>
           </CardFooter>
         </form>
       </Card>
-      <SuggestedTags state={state} pending={pending} />
+      <SuggestedTags state={state} isPending={isPending} />
     </div>
   );
-}
-
-
-export default function SmartTaggingForm() {
-  const initialState: FormState = { message: '', tags: [] };
-  
-  // Wrap the form content to ensure hooks are used correctly.
-  return <SmartTaggingFormContent formAction={handleTagSuggestion} initialState={initialState} />;
 }
