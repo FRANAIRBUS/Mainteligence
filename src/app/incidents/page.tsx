@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection } from '@/lib/firebase';
-import type { Department } from '@/lib/firebase/models';
+import type { Ticket } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
@@ -39,13 +39,13 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
-import { AddDepartmentDialog } from '@/components/add-department-dialog';
+import { Badge } from '@/components/ui/badge';
 
-function DepartmentsTable({
-  departments,
+function IncidentsTable({
+  tickets,
   loading,
 }: {
-  departments: Department[];
+  tickets: Ticket[];
   loading: boolean;
 }) {
   if (loading) {
@@ -60,19 +60,31 @@ function DepartmentsTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Nombre</TableHead>
-          <TableHead>Código</TableHead>
+          <TableHead>ID</TableHead>
+          <TableHead>Título</TableHead>
+          <TableHead>Estado</TableHead>
+          <TableHead>Prioridad</TableHead>
+          <TableHead>Creado</TableHead>
           <TableHead>
             <span className="sr-only">Acciones</span>
           </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {departments.length > 0 ? (
-          departments.map((dept) => (
-            <TableRow key={dept.id}>
-              <TableCell className="font-medium">{dept.name}</TableCell>
-              <TableCell>{dept.code}</TableCell>
+        {tickets.length > 0 ? (
+          tickets.map((ticket) => (
+            <TableRow key={ticket.id}>
+              <TableCell className="font-medium">{ticket.displayId}</TableCell>
+              <TableCell>{ticket.title}</TableCell>
+               <TableCell>
+                <Badge variant="outline">{ticket.status}</Badge>
+              </TableCell>
+               <TableCell>
+                <Badge variant="secondary">{ticket.priority}</Badge>
+              </TableCell>
+              <TableCell>
+                {ticket.createdAt?.toDateString() || 'N/A'}
+              </TableCell>
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -87,8 +99,8 @@ function DepartmentsTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                    <DropdownMenuItem>Ver Detalles</DropdownMenuItem>
                     <DropdownMenuItem>Editar</DropdownMenuItem>
-                    <DropdownMenuItem>Eliminar</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -96,8 +108,8 @@ function DepartmentsTable({
           ))
         ) : (
           <TableRow>
-            <TableCell colSpan={3} className="h-24 text-center">
-              No se encontraron departamentos.
+            <TableCell colSpan={6} className="h-24 text-center">
+              No se encontraron incidencias.
             </TableCell>
           </TableRow>
         )}
@@ -106,14 +118,11 @@ function DepartmentsTable({
   );
 }
 
-export default function DepartmentsPage() {
+
+export default function IncidentsPage() {
   const { user, loading: userLoading } = useUser();
-  const {
-    data: departments,
-    loading: departmentsLoading,
-  } = useCollection<Department>('departments');
+    const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
   const router = useRouter();
-  const [isAddDepartmentOpen, setIsAddDepartmentOpen] = useState(false);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -152,28 +161,24 @@ export default function DepartmentsPage() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-          <Card>
+           <Card>
             <CardHeader>
-              <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>Departamentos</CardTitle>
-                    <CardDescription className="mt-2">
-                      Gestiona todos los departamentos de la empresa.
-                    </CardDescription>
-                  </div>
-                  <Button onClick={() => setIsAddDepartmentOpen(true)}>Añadir Departamento</Button>
+               <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle>Incidencias</CardTitle>
+                  <CardDescription className="mt-2">
+                    Visualiza y gestiona todas las incidencias correctivas.
+                  </CardDescription>
                 </div>
+                <Button>Crear Incidencia</Button>
+              </div>
             </CardHeader>
             <CardContent>
-              <DepartmentsTable departments={departments} loading={departmentsLoading} />
+              <IncidentsTable tickets={tickets} loading={ticketsLoading} />
             </CardContent>
           </Card>
         </main>
       </SidebarInset>
-       <AddDepartmentDialog
-        open={isAddDepartmentOpen}
-        onOpenChange={setIsAddDepartmentOpen}
-      />
     </SidebarProvider>
   );
 }

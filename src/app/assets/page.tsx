@@ -14,7 +14,7 @@ import { Icons } from '@/components/icons';
 import { useUser, useCollection } from '@/lib/firebase';
 import type { Asset, Site } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Table,
   TableBody,
@@ -40,6 +40,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { AddAssetDialog } from '@/components/add-asset-dialog';
 
 function AssetsTable({
   assets,
@@ -66,70 +67,60 @@ function AssetsTable({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Activos</CardTitle>
-        <CardDescription>
-          Una lista de todos los activos y equipos de la empresa.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Código</TableHead>
-              <TableHead>Ubicación</TableHead>
-              <TableHead>
-                <span className="sr-only">Acciones</span>
-              </TableHead>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Nombre</TableHead>
+          <TableHead>Código</TableHead>
+          <TableHead>Ubicación</TableHead>
+          <TableHead>
+            <span className="sr-only">Acciones</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {assets.length > 0 ? (
+          assets.map((asset) => (
+            <TableRow key={asset.id}>
+              <TableCell className="font-medium">{asset.name}</TableCell>
+              <TableCell>{asset.code}</TableCell>
+              <TableCell>
+                {sitesById[asset.siteId] ? (
+                  <Badge variant="outline">{sitesById[asset.siteId]}</Badge>
+                ) : (
+                  'N/A'
+                )}
+              </TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      aria-haspopup="true"
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Menú de acciones</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                    <DropdownMenuItem>Editar</DropdownMenuItem>
+                    <DropdownMenuItem>Eliminar</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {assets.length > 0 ? (
-              assets.map((asset) => (
-                <TableRow key={asset.id}>
-                  <TableCell className="font-medium">{asset.name}</TableCell>
-                  <TableCell>{asset.code}</TableCell>
-                  <TableCell>
-                    {sitesById[asset.siteId] ? (
-                      <Badge variant="outline">{sitesById[asset.siteId]}</Badge>
-                    ) : (
-                      'N/A'
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-haspopup="true"
-                          size="icon"
-                          variant="ghost"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Menú de acciones</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                        <DropdownMenuItem>Editar</DropdownMenuItem>
-                        <DropdownMenuItem>Eliminar</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center">
-                  No se encontraron activos.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          ))
+        ) : (
+          <TableRow>
+            <TableCell colSpan={4} className="h-24 text-center">
+              No se encontraron activos.
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -138,6 +129,7 @@ export default function AssetsPage() {
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const router = useRouter();
+  const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -154,7 +146,6 @@ export default function AssetsPage() {
       </div>
     );
   }
-
 
   return (
     <SidebarProvider>
@@ -179,22 +170,25 @@ export default function AssetsPage() {
           </div>
         </header>        
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
-                Activos
-              </h1>
-              <p className="mt-2 text-muted-foreground">
-                Gestiona todos los activos y equipos de la empresa.
-              </p>
-            </div>
-            <Button>Añadir Activo</Button>
-          </div>
-          <div className="mt-8">
-            <AssetsTable assets={assets} sites={sites} loading={isLoading} />
-          </div>
+          <Card>
+            <CardHeader>
+               <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle>Activos</CardTitle>
+                  <CardDescription className="mt-2">
+                    Gestiona todos los activos y equipos de la empresa.
+                  </CardDescription>
+                </div>
+                <Button onClick={() => setIsAddAssetOpen(true)}>Añadir Activo</Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <AssetsTable assets={assets} sites={sites} loading={isLoading} />
+            </CardContent>
+          </Card>
         </main>
       </SidebarInset>
+      <AddAssetDialog open={isAddAssetOpen} onOpenChange={setIsAddAssetOpen} sites={sites} />
     </SidebarProvider>
   );
 }

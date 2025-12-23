@@ -28,3 +28,24 @@ export type Asset = {
   code: string;
   siteId: string;
 };
+
+export type Ticket = {
+  id: string;
+  displayId: string;
+  type: 'correctivo' | 'preventivo';
+  status: 'Abierta' | 'En curso' | 'En espera' | 'Resuelta' | 'Cerrada';
+  priority: 'Baja' | 'Media' | 'Alta' | 'Crítica';
+  siteId: string;
+  departmentId: string;
+  assetId?: string;
+  title: string;
+  description: string;
+  createdBy: string;
+  assignedRole?: string;
+  assignedTo?: string;
+  photoUrls?: string[];
+  createdAt: any; // Timestamp
+  updatedAt: any; // Timestamp
+  closedAt?: any; // Timestamp
+  closedBy?: string;
+};

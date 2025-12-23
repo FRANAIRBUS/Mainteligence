@@ -39,6 +39,7 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
+import { AddLocationDialog } from '@/components/add-location-dialog';
 
 function LocationsTable({
   sites,
@@ -56,62 +57,52 @@ function LocationsTable({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Ubicaciones</CardTitle>
-        <CardDescription>
-          Una lista de todas las ubicaciones físicas.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Código</TableHead>
-              <TableHead>
-                <span className="sr-only">Acciones</span>
-              </TableHead>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Nombre</TableHead>
+          <TableHead>Código</TableHead>
+          <TableHead>
+            <span className="sr-only">Acciones</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sites.length > 0 ? (
+          sites.map((site) => (
+            <TableRow key={site.id}>
+              <TableCell className="font-medium">{site.name}</TableCell>
+              <TableCell>{site.code}</TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      aria-haspopup="true"
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Menú de acciones</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                    <DropdownMenuItem>Editar</DropdownMenuItem>
+                    <DropdownMenuItem>Eliminar</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sites.length > 0 ? (
-              sites.map((site) => (
-                <TableRow key={site.id}>
-                  <TableCell className="font-medium">{site.name}</TableCell>
-                  <TableCell>{site.code}</TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          aria-haspopup="true"
-                          size="icon"
-                          variant="ghost"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                          <span className="sr-only">Menú de acciones</span>
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                        <DropdownMenuItem>Editar</DropdownMenuItem>
-                        <DropdownMenuItem>Eliminar</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={3} className="h-24 text-center">
-                  No se encontraron ubicaciones.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+          ))
+        ) : (
+          <TableRow>
+            <TableCell colSpan={3} className="h-24 text-center">
+              No se encontraron ubicaciones.
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -120,9 +111,9 @@ export default function LocationsPage() {
   const {
     data: sites,
     loading: sitesLoading,
-    error,
   } = useCollection<Site>('sites');
   const router = useRouter();
+  const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -161,22 +152,28 @@ export default function LocationsPage() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
-                Ubicaciones
-              </h1>
-              <p className="mt-2 text-muted-foreground">
-                Gestiona todas las ubicaciones de la empresa.
-              </p>
-            </div>
-            <Button>Añadir Ubicación</Button>
-          </div>
-          <div className="mt-8">
-            <LocationsTable sites={sites} loading={sitesLoading} />
-          </div>
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <CardTitle>Ubicaciones</CardTitle>
+                    <CardDescription className="mt-2">
+                      Gestiona todas las ubicaciones físicas de la empresa.
+                    </CardDescription>
+                  </div>
+                  <Button onClick={() => setIsAddLocationOpen(true)}>Añadir Ubicación</Button>
+                </div>
+            </CardHeader>
+            <CardContent>
+              <LocationsTable sites={sites} loading={sitesLoading} />
+            </CardContent>
+          </Card>
         </main>
       </SidebarInset>
+      <AddLocationDialog
+        open={isAddLocationOpen}
+        onOpenChange={setIsAddLocationOpen}
+      />
     </SidebarProvider>
   );
 }
