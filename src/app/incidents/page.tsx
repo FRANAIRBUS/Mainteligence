@@ -43,7 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, query, where, or } from 'firebase/firestore';
 
 function IncidentsTable({
   tickets,
@@ -162,13 +162,17 @@ export default function IncidentsPage() {
   // Based on the profile, create the appropriate query for tickets.
   const ticketsQuery = useMemo(() => {
     if (!firestore || !userProfile || !user?.uid) return null;
+    const ticketsCollection = collection(firestore, 'tickets');
 
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
-      return query(collection(firestore, 'tickets'));
+      return query(ticketsCollection);
     }
     
-    // Default for 'operario'
-    return query(collection(firestore, 'tickets'), where('createdBy', '==', user.uid));
+    // Operario sees tickets they created OR are assigned to them.
+    return query(ticketsCollection, or(
+        where('createdBy', '==', user.uid),
+        where('assignedTo', '==', user.uid)
+    ));
 
   }, [firestore, userProfile, user?.uid]);
 
