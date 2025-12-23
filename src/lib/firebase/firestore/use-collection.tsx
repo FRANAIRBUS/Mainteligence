@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   collection,
   onSnapshot,
@@ -17,12 +17,15 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
 
+  const memoizedPath = typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path;
+
   useEffect(() => {
     if (!db || !pathOrRef) {
       setLoading(false);
-      setData([]);
+      setData([]); // Reset data when path is null
       return;
     }
+    
     setLoading(true);
 
     let collectionRef: CollectionReference;
@@ -41,6 +44,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
         })) as T[];
         setData(newData);
         setLoading(false);
+        setError(null);
       },
       (err) => {
         if (err.code === 'permission-denied') {
@@ -56,7 +60,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
     );
 
     return () => unsubscribe();
-  }, [db, typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path]);
+  }, [db, memoizedPath]);
 
   return { data, loading, error };
 }
@@ -65,6 +69,9 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  const queryPath = useMemo(() => query ? (query as any)._query.path.segments.join('/') : null, [query]);
+  const queryFilters = useMemo(() => query ? JSON.stringify((query as any)._query.filters) : null, [query]);
 
   useEffect(() => {
     if (query === null) {
@@ -99,9 +106,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
     );
 
     return () => unsubscribe();
-  // We stringify the query object to use it as a dependency.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query ? (query as any)._query.path.segments.join('/') : null, query ? JSON.stringify((query as any)._query.filters) : null]);
+  }, [query, queryPath, queryFilters]);
 
   return { data, loading, error };
 }
