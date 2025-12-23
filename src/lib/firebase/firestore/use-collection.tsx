@@ -23,6 +23,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
     if (!db || !memoizedPath) {
       setData([]);
       setLoading(false);
+      setError(null);
       return;
     }
     
@@ -82,6 +83,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
     if (query === null) {
       setLoading(false);
       setData([]);
+      setError(null);
       return;
     }
     
