@@ -1,4 +1,4 @@
-'use client';
+import SmartTaggingForm from '@/components/smart-tagging-form';
 import {
   Sidebar,
   SidebarContent,
@@ -10,28 +10,8 @@ import {
 import { MainNav } from '@/components/main-nav';
 import { UserNav } from '@/components/user-nav';
 import { Icons } from '@/components/icons';
-import { useUser } from '@/lib/firebase';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
 
-export default function Home() {
-  const { user, loading } = useUser();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login');
-    }
-  }, [user, loading, router]);
-
-  if (loading || !user) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
+export default function SmartTaggingPage() {
   return (
     <SidebarProvider>
       <Sidebar>
@@ -57,12 +37,15 @@ export default function Home() {
           <div className="mx-auto flex max-w-6xl flex-col gap-8">
             <div>
               <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
-                Dashboard
+                Smart Tagging Assistant
               </h1>
               <p className="mt-2 text-muted-foreground">
-                Welcome to Maintelligence. Here is an overview of the
-                maintenance tasks.
+                Automatically categorize your maintenance tasks. Enter a
+                description below to get AI-suggested tags.
               </p>
+            </div>
+            <div className="w-full">
+              <SmartTaggingForm />
             </div>
           </div>
         </main>

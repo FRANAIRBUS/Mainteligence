@@ -1,0 +1,39 @@
+rules_version = '2';
+ 
+service cloud.firestore {
+  match /databases/{database}/documents {
+ 
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+ 
+    match /users/{userId} {
+      allow read;
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+    }
+
+    match /sites/{siteId} {
+        allow read, write: if request.auth.token.role == 'admin';
+    }
+
+    match /departments/{departmentId} {
+        allow read, write: if request.auth.token.role == 'admin';
+    }
+
+    match /assets/{assetId} {
+        allow read, write: if request.auth.token.role == 'admin';
+    }
+
+    match /tickets/{ticketId} {
+        allow read: if request.auth.uid == resource.data.createdBy || request.auth.token.role in ['mantenimiento', 'admin'];
+        allow create: if request.auth.uid != null;
+        allow update: if request.auth.token.role in ['mantenimiento', 'admin'] || (request.auth.uid == resource.data.createdBy && !('status' in request.resource.data));
+    }
+
+    match /tickets/{ticketId}/comments/{commentId} {
+        allow read: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || request.auth.token.role in ['mantenimiento', 'admin'];
+        allow create: if get(/databases/$(database)/documents/tickets/$(ticketId)).data.createdBy == request.auth.uid || request.auth.token.role in ['mantenimiento', 'admin'];
+    }
+  }
+}

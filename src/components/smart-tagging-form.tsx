@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useActionState } from 'react';
+import { useEffect, useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -36,17 +36,26 @@ function SubmitButton() {
       {pending ? (
         <Loader2 className="animate-spin" />
       ) : (
-        <Sparkles />
+        <>
+          <Sparkles className="mr-2 h-4 w-4" />
+          Suggest Tags
+        </>
       )}
-      Suggest Tags
     </Button>
   );
 }
 
 function SuggestedTags({ state, pending }: { state: FormState, pending: boolean }) {
   const { toast } = useToast();
+  const [showResults, setShowResults] = useState(false);
 
-  if (!pending && !state.timestamp) {
+  useEffect(() => {
+    if(state.timestamp) {
+      setShowResults(true);
+    }
+  }, [state.timestamp]);
+
+  if (!showResults) {
     return null;
   }
 
@@ -98,9 +107,14 @@ function SuggestedTags({ state, pending }: { state: FormState, pending: boolean 
   );
 }
 
-function SmartTaggingFormContent() {
-  const initialState: FormState = { message: '', tags: [] };
-  const [state, formAction] = useActionState(handleTagSuggestion, initialState);
+function SmartTaggingFormContent({
+  formAction,
+  initialState,
+}: {
+  formAction: (payload: FormData) => void;
+  initialState: FormState;
+}) {
+  const [state, action] = useActionState(formAction, initialState);
   const { pending } = useFormStatus();
   const { toast } = useToast();
 
@@ -123,12 +137,12 @@ function SmartTaggingFormContent() {
 
   return (
     <div className="grid gap-6">
-      <Card>
+       <Card>
         <form
           action={(formData) => {
             form.trigger().then((isValid) => {
               if (isValid) {
-                formAction(formData);
+                action(formData);
               }
             });
           }}
@@ -171,7 +185,10 @@ function SmartTaggingFormContent() {
   );
 }
 
+
 export default function SmartTaggingForm() {
-  // This component now wraps the form content in a way that is more stable across server/client renders.
-  return <SmartTaggingFormContent />;
+  const initialState: FormState = { message: '', tags: [] };
+  
+  // Wrap the form content to ensure hooks are used correctly.
+  return <SmartTaggingFormContent formAction={handleTagSuggestion} initialState={initialState} />;
 }

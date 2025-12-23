@@ -1,0 +1,247 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application.",
+      "type": "object",
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "description": "The user's display name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The user's email address."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["operario", "mantenimiento", "admin"],
+          "description": "The user's role."
+        },
+        "isMaintenanceLead": {
+          "type": "boolean",
+          "description": "Whether the user is a maintenance lead."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the user account is active."
+        },
+        "siteIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional list of site IDs the user is associated with."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of user creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last user update."
+        }
+      },
+      "required": ["displayName", "email", "role", "active", "createdAt", "updatedAt"]
+    },
+    "Site": {
+      "title": "Site",
+      "description": "A physical location or site.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the site."
+        },
+        "code": {
+          "type": "string",
+          "description": "A short code for the site (e.g., 't1')."
+        }
+      },
+      "required": ["name", "code"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "A department within a site.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the department."
+        },
+        "code": {
+          "type": "string",
+          "description": "A short code for the department (e.g., 'frio')."
+        }
+      },
+      "required": ["name", "code"]
+    },
+    "Asset": {
+      "title": "Asset",
+      "description": "A piece of equipment or an asset.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the asset."
+        },
+        "code": {
+          "type": "string",
+          "description": "A unique code for the asset."
+        },
+        "siteId": {
+          "type": "string",
+          "description": "The ID of the site where the asset is located."
+        }
+      },
+      "required": ["name", "code", "siteId"]
+    },
+    "Ticket": {
+      "title": "Ticket",
+      "description": "A maintenance ticket, either corrective or preventive.",
+      "type": "object",
+      "properties": {
+        "displayId": {
+          "type": "string",
+          "description": "A user-friendly ID for the ticket."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["correctivo", "preventivo"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Abierta", "En curso", "En espera", "Resuelta", "Cerrada"]
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["Baja", "Media", "Alta", "Crítica"]
+        },
+        "siteId": {
+          "type": "string"
+        },
+        "departmentId": {
+          "type": "string"
+        },
+        "assetId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "assignedRole": {
+          "type": "string"
+        },
+        "assignedTo": {
+          "type": "string"
+        },
+        "photoUrls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "closedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "closedBy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "displayId",
+        "type",
+        "status",
+        "priority",
+        "siteId",
+        "departmentId",
+        "title",
+        "createdBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Comment": {
+        "title": "Comment",
+        "description": "A comment on a ticket.",
+        "type": "object",
+        "properties": {
+            "type": {
+                "type": "string",
+                "enum": ["comment", "status_change", "assignment"]
+            },
+            "text": {
+                "type": "string"
+            },
+            "createdBy": {
+                "type": "string"
+            },
+            "createdAt": {
+                "type": "string",
+                "format": "date-time"
+            }
+        },
+        "required": ["type", "text", "createdBy", "createdAt"]
+    }
+  },
+  "auth": {
+    "providers": ["email", "google"]
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "Stores user profile information."
+    },
+    "/sites/{siteId}": {
+      "schema": {
+        "$ref": "#/entities/Site"
+      },
+      "description": "Stores information about physical locations."
+    },
+    "/departments/{departmentId}": {
+      "schema": {
+        "$ref": "#/entities/Department"
+      },
+      "description": "Stores information about departments."
+    },
+    "/assets/{assetId}": {
+        "schema": {
+            "$ref": "#/entities/Asset"
+        },
+        "description": "Stores information about equipment and assets."
+    },
+    "/tickets/{ticketId}": {
+        "schema": {
+            "$ref": "#/entities/Ticket"
+        },
+        "description": "Stores maintenance tickets."
+    },
+    "/tickets/{ticketId}/comments/{commentId}": {
+        "schema": {
+            "$ref": "#/entities/Comment"
+        },
+        "description": "Stores comments for a specific ticket."
+    }
+  }
+}

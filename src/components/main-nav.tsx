@@ -18,6 +18,7 @@ import {
   UserCog,
   FileText,
   Settings,
+  Tags,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -30,21 +31,27 @@ export function MainNav() {
       label: "Overview",
       items: [
         { href: "/", label: "Dashboard", icon: LayoutGrid, active: pathname === "/" },
-        { href: "#", label: "Tasks", icon: Wrench },
-        { href: "#", label: "Preventive", icon: CalendarClock },
-        { href: "#", label: "Reports", icon: LineChart },
+        { href: "/tasks", label: "Tasks", icon: Wrench, active: pathname === "/tasks" },
+        { href: "/preventive", label: "Preventive", icon: CalendarClock, active: pathname === "/preventive" },
+        { href: "/reports", label: "Reports", icon: LineChart, active: pathname === "/reports" },
       ],
     },
     {
       label: "Admin",
       items: [
-        { href: "#", label: "Incidents", icon: FileText },
-        { href: "#", label: "Locations", icon: Building },
-        { href: "#", label: "Departments", icon: Archive },
-        { href: "#", label: "Users & Roles", icon: UserCog },
-        { href: "#", label: "Settings", icon: Settings },
+        { href: "/incidents", label: "Incidents", icon: FileText, active: pathname === "/incidents" },
+        { href: "/locations", label: "Locations", icon: Building, active: pathname === "/locations" },
+        { href: "/departments", label: "Departments", icon: Archive, active: pathname === "/departments" },
+        { href: "/users", label: "Users & Roles", icon: UserCog, active: pathname === "/users" },
+        { href: "/settings", label: "Settings", icon: Settings, active: pathname === "/settings" },
       ],
     },
+    {
+      label: "Tools",
+      items: [
+        { href: "/smart-tagging", label: "Smart Tagging", icon: Tags, active: pathname === "/smart-tagging" },
+      ],
+    }
   ];
 
   return (
