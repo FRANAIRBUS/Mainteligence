@@ -20,8 +20,6 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
   const memoizedPath = typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path;
 
   useEffect(() => {
-    // If the path is explicitly null or empty, or db is not available, do nothing.
-    // This is key to preventing calls with invalid paths and respecting conditional rendering of hooks.
     if (!db || !memoizedPath) {
       setData([]);
       setLoading(false);
@@ -33,10 +31,13 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
     let collectionRef: CollectionReference;
     if (typeof pathOrRef === 'string') {
       collectionRef = collection(db, pathOrRef);
-    } else {
-      // We know it's not null here because of the check above
-      // and TS is happy because pathOrRef is CollectionReference | null
+    } else if (pathOrRef) {
       collectionRef = pathOrRef; 
+    } else {
+       // This case should ideally not be hit due to the check above, but as a safeguard:
+      setData([]);
+      setLoading(false);
+      return;
     }
 
     const unsubscribe = onSnapshot(
@@ -64,6 +65,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
     );
 
     return () => unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, memoizedPath]);
 
   return { data, loading, error };
@@ -74,12 +76,10 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  // We stringify the query components to create a stable dependency for useEffect.
   const queryPath = useMemo(() => query ? (query as any)._query.path.segments.join('/') : null, [query]);
   const queryFilters = useMemo(() => query ? JSON.stringify((query as any)._query.filters) : null, [query]);
 
   useEffect(() => {
-    // If the query is null, do nothing. This is the key to conditional execution.
     if (query === null) {
       setLoading(false);
       setData([]);
@@ -112,7 +112,8 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
     );
 
     return () => unsubscribe();
-  }, [query, queryPath, queryFilters]); // Depend on the stable, stringified query parts.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, queryPath, queryFilters]);
 
   return { data, loading, error };
 }

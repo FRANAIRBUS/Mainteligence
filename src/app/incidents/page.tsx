@@ -167,10 +167,12 @@ export default function IncidentsPage() {
       return query(ticketsCollection, where('departmentId', '==', userProfile.departmentId));
     }
     
+    // Admin and Mantenimiento see all tickets
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(ticketsCollection);
     }
     
+    // Operario without department sees their own tickets
     if(userProfile.role === 'operario') {
        return query(ticketsCollection, where('createdBy', '==', user?.uid));
     }
