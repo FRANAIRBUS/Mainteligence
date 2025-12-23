@@ -8,6 +8,8 @@ import {
   CollectionReference,
 } from 'firebase/firestore';
 import { useFirestore } from '../provider';
+import { errorEmitter } from '../error-emitter';
+import { FirestorePermissionError } from '../errors';
 
 export function useCollection<T>(pathOrRef: string | CollectionReference) {
   const [data, setData] = useState<T[]>([]);
@@ -69,11 +71,18 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
         })) as T[];
         setData(newData);
         setLoading(false);
+        setError(null);
       },
       (err) => {
+        if (err.code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+            path: query.path,
+            operation: 'list',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        }
         setError(err);
         setLoading(false);
-        console.error(err);
       }
     );
 
