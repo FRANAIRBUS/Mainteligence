@@ -8,14 +8,18 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // Check the user's role from their document in the /users collection.
+      // Check the user's role from their existing document in the /users collection.
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
  
     match /users/{userId} {
       allow read;
-      // Allow write if the user is an admin or is modifying their own profile.
-      allow write: if isAdmin() || isOwner(userId);
+      // Admins can create any user.
+      allow create: if isAdmin();
+      // Users can update their own profile, and admins can update any profile.
+      allow update: if isOwner(userId) || isAdmin();
+      // Only admins should be able to delete users.
+      allow delete: if isAdmin();
     }
 
     match /sites/{siteId} {
