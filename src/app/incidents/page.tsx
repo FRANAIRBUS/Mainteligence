@@ -145,7 +145,17 @@ export default function IncidentsPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
   const firestore = useFirestore();
+  
+  const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
+  const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
+  const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
 
+  useEffect(() => {
+    if (!userLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, userLoading, router]);
+  
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
 
   const ticketsQuery = useMemo(() => {
@@ -161,9 +171,8 @@ export default function IncidentsPage() {
       return query(ticketsCollection);
     }
     
-    // Fallback for operario without department: show only their own tickets
     if(userProfile.role === 'operario') {
-       return query(ticketsCollection, where('createdBy', '==', user.uid));
+       return query(ticketsCollection, where('createdBy', '==', user?.uid));
     }
 
     return null; 
@@ -173,27 +182,13 @@ export default function IncidentsPage() {
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   
-  // Call hooks unconditionally
-  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(
-    (userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento') ? 'assets' : null
-  );
-  const { data: usersData, loading: usersLoading } = useCollection<User>(
-    (userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento') ? 'users' : null
-  );
+  const canLoadAdminData = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
-  // Safely initialize data
+  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
+  const { data: usersData, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
+
   const assets = useMemo(() => assetsData || [], [assetsData]);
   const users = useMemo(() => usersData || [], [usersData]);
-
-  const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
-  const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
-  const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
-
-  useEffect(() => {
-    if (!userLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, userLoading, router]);
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
@@ -207,7 +202,6 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
-  // The main page is loading if we don't have the user or their profile yet.
   const pageLoading = userLoading || profileLoading;
   
   if (pageLoading) {
@@ -218,7 +212,6 @@ export default function IncidentsPage() {
     );
   }
   
-  // Table loading state depends on tickets and catalogs.
   const tableIsLoading = ticketsLoading || sitesLoading || deptsLoading;
   const maintenanceUsers = useMemo(() => users.filter(u => u.role === 'mantenimiento' || u.role === 'admin'), [users]);
 
