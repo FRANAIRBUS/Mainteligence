@@ -43,64 +43,67 @@ function SubmitButton() {
   );
 }
 
-function SuggestedTags({ pending, state }: { pending: boolean; state: FormState }) {
-    const { toast } = useToast();
+function SuggestedTags({ state, pending }: { state: FormState, pending: boolean }) {
+  const { toast } = useToast();
 
-    if (!pending && (!state.timestamp || !state.tags)) {
-        return null;
-    }
+  if (!pending && !state.timestamp) {
+    return null;
+  }
 
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                    <Tags /> Suggested Tags
-                </CardTitle>
-                <CardDescription>
-                    Click on a tag to copy it. Use these to categorize the task.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                {pending ? (
-                    <div className="flex flex-wrap gap-2">
-                        <Skeleton className="h-6 w-20 rounded-full" />
-                        <Skeleton className="h-6 w-24 rounded-full" />
-                        <Skeleton className="h-6 w-16 rounded-full" />
-                        <Skeleton className="h-6 w-28 rounded-full" />
-                    </div>
-                ) : state.tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                        {state.tags.map((tag, index) => (
-                            <Badge
-                                key={index}
-                                variant="secondary"
-                                className="cursor-pointer text-sm"
-                                onClick={() => {
-                                    navigator.clipboard.writeText(tag);
-                                    toast({
-                                        title: "Copied!",
-                                        description: `Tag "${tag}" copied to clipboard.`,
-                                    });
-                                }}
-                            >
-                                {tag}
-                            </Badge>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                        <AlertCircle className="h-5 w-5" />
-                        <p>No tags were suggested. Please try a more detailed description.</p>
-                    </div>
-                )}
-            </CardContent>
-        </Card>
-    )
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Tags /> Suggested Tags
+        </CardTitle>
+        <CardDescription>
+          Click on a tag to copy it. Use these to categorize the task.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {pending ? (
+          <div className="flex flex-wrap gap-2">
+            <Skeleton className="h-6 w-20 rounded-full" />
+            <Skeleton className="h-6 w-24 rounded-full" />
+            <Skeleton className="h-6 w-16 rounded-full" />
+            <Skeleton className="h-6 w-28 rounded-full" />
+          </div>
+        ) : state.tags.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {state.tags.map((tag, index) => (
+              <Badge
+                key={index}
+                variant="secondary"
+                className="cursor-pointer text-sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(tag);
+                  toast({
+                    title: "Copied!",
+                    description: `Tag "${tag}" copied to clipboard.`,
+                  });
+                }}
+              >
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <AlertCircle className="h-5 w-5" />
+            <p>No tags were suggested. Please try a more detailed description.</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
-function SmartTaggingFormContent({ formAction }: { formAction: (payload: FormData) => void }) {
+function SmartTaggingFormContent() {
+  const initialState: FormState = { message: '', tags: [] };
+  const [state, formAction] = useActionState(handleTagSuggestion, initialState);
   const { pending } = useFormStatus();
-  
+  const { toast } = useToast();
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -108,73 +111,67 @@ function SmartTaggingFormContent({ formAction }: { formAction: (payload: FormDat
     },
   });
 
-  return (
-    <Card>
-      <form
-        action={(formData) => {
-          form.trigger().then((isValid) => {
-            if (isValid) {
-              formAction(formData);
-            }
-          });
-        }}
-      >
-        <CardHeader>
-          <CardTitle>New Maintenance Task</CardTitle>
-          <CardDescription>
-            Describe the task and our AI will suggest relevant tags to keep your work organized.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Task Description</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="e.g., 'The main conveyor belt is making a loud grinding noise and has stopped moving. Seems like a motor or bearing failure.'"
-                      className="min-h-[120px] resize-y"
-                      disabled={pending}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </Form>
-        </CardContent>
-        <CardFooter className="flex justify-end">
-          <SubmitButton />
-        </CardFooter>
-      </form>
-    </Card>
-  )
-}
-
-export default function SmartTaggingForm() {
-  const initialState: FormState = { message: '', tags: [] };
-  const [state, formAction] = useActionState(handleTagSuggestion, initialState);
-  const { pending } = useFormStatus();
-  const { toast } = useToast();
-
   useEffect(() => {
     if (state.message && state.message !== 'Success' && state.message !== 'Invalid form data.') {
-        toast({
-            variant: "destructive",
-            title: "Error",
-            description: state.message,
-        })
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: state.message,
+      });
     }
   }, [state, toast]);
 
   return (
     <div className="grid gap-6">
-      <SmartTaggingFormContent formAction={formAction} />
-      <SuggestedTags pending={pending} state={state} />
+      <Card>
+        <form
+          action={(formData) => {
+            form.trigger().then((isValid) => {
+              if (isValid) {
+                formAction(formData);
+              }
+            });
+          }}
+        >
+          <CardHeader>
+            <CardTitle>New Maintenance Task</CardTitle>
+            <CardDescription>
+              Describe the task and our AI will suggest relevant tags to keep your work organized.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Task Description</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="e.g., 'The main conveyor belt is making a loud grinding noise and has stopped moving. Seems like a motor or bearing failure.'"
+                        className="min-h-[120px] resize-y"
+                        disabled={pending}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </Form>
+          </CardContent>
+          <CardFooter className="flex justify-end">
+            <SubmitButton />
+          </CardFooter>
+        </form>
+      </Card>
+      <SuggestedTags state={state} pending={pending} />
     </div>
   );
+}
+
+export default function SmartTaggingForm() {
+  // This component now wraps the form content in a way that is more stable across server/client renders.
+  return <SmartTaggingFormContent />;
 }
