@@ -14,8 +14,8 @@ service cloud.firestore {
  
     match /users/{userId} {
       allow read;
-      // Admins can create any user.
-      allow create: if isAdmin();
+      // Allow a user to create their own profile, or allow an admin to create any user.
+      allow create: if isOwner(userId) || isAdmin();
       // Users can update their own profile, and admins can update any profile.
       allow update: if isOwner(userId) || isAdmin();
       // Only admins should be able to delete users.
