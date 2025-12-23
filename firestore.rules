@@ -20,7 +20,8 @@ service cloud.firestore {
     }
  
     match /users/{userId} {
-      allow get, list: if isMantenimiento();
+      allow get: if request.auth.uid == userId || isMantenimiento();
+      allow list: if isMantenimiento();
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || request.auth.uid == userId;
     }
@@ -41,8 +42,13 @@ service cloud.firestore {
     }
 
     match /tickets/{ticketId} {
-      allow get, list: if request.auth != null;
-      
+      allow get: if request.auth != null;
+      allow list: if isMantenimiento();
+
+      // Operarios can list tickets from their own department
+      allow list: if request.auth != null 
+                  && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.departmentId == resource.data.departmentId;
+
       allow create: if request.auth != null;
       allow delete: if isAdmin();
       
