@@ -202,7 +202,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Opcional" />
-                        </Trigger>
+                        </SelectTrigger>
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="">Ninguno</SelectItem>
