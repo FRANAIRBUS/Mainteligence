@@ -19,11 +19,9 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
   const db = useFirestore();
   const { user, loading: userLoading } = useUser();
 
-  // Use a stable reference for the path to avoid re-running the effect unnecessarily
   const memoizedPath = typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path;
 
   useEffect(() => {
-    // If the path/ref is null, user is not logged in, or firebase is not ready, we are not ready to fetch.
     if (!db || !memoizedPath || userLoading || !user) {
       setLoading(false); 
       setData([]);
@@ -65,7 +63,7 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
         }
         console.error(`Error fetching collection ${collectionRef.path}:`, err);
         setError(err);
-        setData([]); // Clear data on error
+        setData([]); 
         setLoading(false);
       }
     );
@@ -84,7 +82,6 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const { user, loading: userLoading } = useUser();
 
   useEffect(() => {
-    // If the query is null, or user not ready, we are not ready to fetch.
     if (query === null || userLoading || !user) {
       setLoading(false);
       setData([]);
@@ -114,13 +111,13 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
         }
         console.error(`Error executing query:`, err);
         setError(err);
-        setData([]); // Clear data on error
+        setData([]); 
         setLoading(false);
       }
     );
 
     return () => unsubscribe();
-  }, [query, user, userLoading]); // The query object itself is the dependency
+  }, [query, user, userLoading]); 
 
   return { data, loading, error };
 }
