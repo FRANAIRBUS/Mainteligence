@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection } from '@/lib/firebase';
+import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
 import type { User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -30,10 +30,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal } from 'lucide-react';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { MoreHorizontal, AlertTriangle, Loader2 } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -42,6 +42,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { AddUserDialog } from '@/components/add-user-dialog';
+import { useToast } from '@/hooks/use-toast';
 
 function UserTable({ users, loading }: { users: User[]; loading: boolean }) {
   if (loading) {
@@ -124,13 +125,78 @@ function UserTable({ users, loading }: { users: User[]; loading: boolean }) {
   );
 }
 
+function CreateAdminProfile() {
+  const { user } = useUser();
+  const firestore = useFirestore();
+  const { toast } = useToast();
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreateAdmin = async () => {
+    if (!user || !firestore) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'User or database not available.',
+      });
+      return;
+    }
+    setIsCreating(true);
+    try {
+      const userRef = doc(firestore, 'users', user.uid);
+      await setDoc(userRef, {
+        displayName: user.displayName || user.email,
+        email: user.email,
+        role: 'admin',
+        active: true,
+        isMaintenanceLead: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      toast({
+        title: 'Success!',
+        description: 'Your admin profile has been created.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Permission Error',
+        description:
+          'Could not create admin profile. Check Firestore security rules.',
+      });
+      console.error(error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  return (
+    <Card className="mb-8 border-amber-500/50 bg-amber-500/5">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <AlertTriangle className="text-amber-500" />
+          Complete Admin Setup
+        </CardTitle>
+        <CardDescription>
+          Your authenticated user does not have a profile in the database.
+          Create one now to gain admin permissions.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button onClick={handleCreateAdmin} disabled={isCreating}>
+          {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Create My Admin Profile
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function UsersPage() {
   const { user, loading: userLoading } = useUser();
-  const {
-    data: users,
-    loading: usersLoading,
-    error,
-  } = useCollection<User>('users');
+  const { data: users, loading: usersLoading } = useCollection<User>('users');
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(
+    user ? `users/${user.uid}` : ''
+  );
   const router = useRouter();
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
 
@@ -140,6 +206,9 @@ export default function UsersPage() {
     }
   }, [user, userLoading, router]);
 
+  const showCreateAdminProfile =
+    !userLoading && user && !profileLoading && !userProfile;
+
   if (userLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
@@ -148,8 +217,7 @@ export default function UsersPage() {
     );
   }
 
-  // TODO: Implement role-based access control. For now, only logged-in users can see this.
-  // if (user.role !== 'admin') { ... }
+  const isAdmin = userProfile?.role === 'admin';
 
   return (
     <SidebarProvider>
@@ -174,6 +242,8 @@ export default function UsersPage() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 md:p-8">
+          {showCreateAdminProfile && <CreateAdminProfile />}
+
           <div className="flex items-center justify-between">
             <div>
               <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">
@@ -183,10 +253,23 @@ export default function UsersPage() {
                 Manage all users and their permissions.
               </p>
             </div>
-            <Button onClick={() => setIsAddUserOpen(true)}>Add User</Button>
+            {isAdmin && (
+              <Button onClick={() => setIsAddUserOpen(true)}>Add User</Button>
+            )}
           </div>
           <div className="mt-8">
-            <UserTable users={users} loading={usersLoading} />
+            {isAdmin || users.length > 0 ? (
+               <UserTable users={users} loading={usersLoading} />
+            ) : (
+                <Card className="mt-8">
+                    <CardContent className="pt-6">
+                        <div className="text-center text-muted-foreground">
+                            <p>You do not have permission to view this page.</p>
+                            <p className="text-sm">Please contact an administrator.</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
           </div>
         </main>
       </SidebarInset>
