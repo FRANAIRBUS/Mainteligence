@@ -10,7 +10,7 @@ import {
 import { MainNav } from '@/components/main-nav';
 import { UserNav } from '@/components/user-nav';
 import { Icons } from '@/components/icons';
-import { ClientLogo } from '@/components/client-logo';
+import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 
 export default function SmartTaggingPage() {
   return (
@@ -18,7 +18,7 @@ export default function SmartTaggingPage() {
       <Sidebar>
         <SidebarHeader className="p-4 text-center">
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <ClientLogo />
+              <DynamicClientLogo />
             </div>
             <a href="/" className="flex flex-col items-center gap-2">
                 <span className="text-xl font-headline font-semibold text-sidebar-foreground">

@@ -42,7 +42,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
-import { ClientLogo } from '@/components/client-logo';
+import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 
 function IncidentsTable({
   tickets,
@@ -194,7 +194,7 @@ export default function IncidentsPage() {
       <Sidebar>
         <SidebarHeader className="p-4 text-center">
             <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <ClientLogo />
+              <DynamicClientLogo />
             </div>
             <a href="/" className="flex flex-col items-center gap-2">
                 <span className="text-xl font-headline font-semibold text-sidebar-foreground">

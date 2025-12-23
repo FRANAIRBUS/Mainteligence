@@ -29,7 +29,7 @@ import { Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
-import { ClientLogo } from '@/components/client-logo';
+import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 
 export default function SettingsPage() {
   const { user, loading } = useUser();
@@ -103,7 +103,7 @@ export default function SettingsPage() {
       <Sidebar>
         <SidebarHeader className="p-4 text-center">
           <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-            <ClientLogo />
+            <DynamicClientLogo />
           </div>
           <a href="/" className="flex flex-col items-center gap-2">
             <span className="text-xl font-headline font-semibold text-sidebar-foreground">
@@ -138,7 +138,7 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label>Logo Actual</Label>
                   <div className="flex items-center gap-4">
-                    <ClientLogo width={64} height={64} className="bg-muted p-1" />
+                    <DynamicClientLogo width={64} height={64} className="bg-muted p-1" />
                     <p className="text-sm text-muted-foreground">Este es el logo que se muestra en toda la aplicación.</p>
                   </div>
                 </div>
