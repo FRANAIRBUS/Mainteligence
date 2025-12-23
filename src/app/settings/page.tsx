@@ -30,6 +30,8 @@ import { useToast } from '@/hooks/use-toast';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { errorEmitter } from '@/lib/firebase/error-emitter';
+import { FirestorePermissionError } from '@/lib/firebase/errors';
 
 export default function SettingsPage() {
   const { user, loading: userLoading } = useUser();
@@ -84,11 +86,28 @@ export default function SettingsPage() {
 
     } catch (error: any) {
       console.error("Error uploading file: ", error);
-      toast({
-        variant: 'destructive',
-        title: 'Error al subir el logo',
-        description: error.message || 'Ocurrió un error inesperado. Revisa las reglas de seguridad.',
-      });
+      if (error.code === 'storage/unauthorized') {
+        // This is a generic way to handle storage errors, could be more specific
+        toast({
+            variant: 'destructive',
+            title: 'Error de Permiso de Storage',
+            description: 'No tienes permiso para subir archivos.',
+        });
+      } else if (error.code === 'permission-denied') {
+        const settingsRef = doc(firestore, 'settings', 'app');
+        const permissionError = new FirestorePermissionError({
+          path: settingsRef.path,
+          operation: 'update',
+          requestResourceData: { logoUrl: '[URL_OMITTED]' },
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      } else {
+        toast({
+            variant: 'destructive',
+            title: 'Error al subir el logo',
+            description: error.message || 'Ocurrió un error inesperado.',
+        });
+      }
     } finally {
       setIsPending(false);
     }

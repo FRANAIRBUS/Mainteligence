@@ -8,6 +8,8 @@ import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/lib/firebase';
 import type { Site, Department, Asset } from '@/lib/firebase/models';
+import { errorEmitter } from '@/lib/firebase/error-emitter';
+import { FirestorePermissionError } from '@/lib/firebase/errors';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -85,36 +87,48 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
       return;
     }
     setIsPending(true);
-    try {
-        const docData = {
-            ...data,
-            type: 'correctivo',
-            status: 'Abierta',
-            createdBy: user.uid,
-            assignedRole: 'maintenance',
-            assignedTo: null,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`
-        };
 
-      await addDoc(collection(firestore, "tickets"), docData);
+    const docData = {
+        ...data,
+        type: 'correctivo',
+        status: 'Abierta',
+        createdBy: user.uid,
+        assignedRole: 'maintenance',
+        assignedTo: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`
+    };
 
-      toast({
-        title: 'Éxito',
-        description: `Incidencia '${data.title}' creada correctamente.`,
+    const collectionRef = collection(firestore, "tickets");
+    addDoc(collectionRef, docData)
+      .then(() => {
+        toast({
+          title: 'Éxito',
+          description: `Incidencia '${data.title}' creada correctamente.`,
+        });
+        onOpenChange(false);
+        form.reset();
+      })
+      .catch((error) => {
+        if (error.code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+            path: collectionRef.path,
+            operation: 'create',
+            requestResourceData: docData,
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        } else {
+          toast({
+            variant: 'destructive',
+            title: 'Error al crear la incidencia',
+            description: error.message || 'Ocurrió un error inesperado.',
+          });
+        }
+      })
+      .finally(() => {
+        setIsPending(false);
       });
-      onOpenChange(false);
-      form.reset();
-    } catch (e: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error al crear la incidencia',
-        description: e.message || 'Ocurrió un error inesperado.',
-      });
-    } finally {
-      setIsPending(false);
-    }
   };
 
   const handleOpenChange = (isOpen: boolean) => {

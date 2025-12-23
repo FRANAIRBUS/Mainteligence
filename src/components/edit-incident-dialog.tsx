@@ -8,6 +8,8 @@ import { useToast } from '@/hooks/use-toast';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User } from '@/lib/firebase/models';
+import { errorEmitter } from '@/lib/firebase/error-emitter';
+import { FirestorePermissionError } from '@/lib/firebase/errors';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -86,32 +88,42 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
     }
 
     setIsPending(true);
-    try {
-      const ticketRef = doc(firestore, 'tickets', ticket.id);
-      
-      const updateData: Partial<Ticket> & { updatedAt: any } = {
-        status: data.status,
-        priority: data.priority,
-        assignedTo: data.assignedTo,
-        updatedAt: serverTimestamp(),
-      };
-      
-      await updateDoc(ticketRef, updateData);
-
-      toast({
-        title: 'Éxito',
-        description: `Incidencia '${ticket.title}' actualizada.`,
+    
+    const ticketRef = doc(firestore, 'tickets', ticket.id);
+    const updateData: Partial<Ticket> & { updatedAt: any } = {
+      status: data.status,
+      priority: data.priority,
+      assignedTo: data.assignedTo,
+      updatedAt: serverTimestamp(),
+    };
+    
+    updateDoc(ticketRef, updateData)
+      .then(() => {
+        toast({
+          title: 'Éxito',
+          description: `Incidencia '${ticket.title}' actualizada.`,
+        });
+        onOpenChange(false);
+      })
+      .catch((error) => {
+        if (error.code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+            path: ticketRef.path,
+            operation: 'update',
+            requestResourceData: updateData,
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        } else {
+          toast({
+            variant: 'destructive',
+            title: 'Error al actualizar',
+            description: error.message || 'Ocurrió un error inesperado.',
+          });
+        }
+      })
+      .finally(() => {
+        setIsPending(false);
       });
-      onOpenChange(false);
-    } catch (e: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error al actualizar',
-        description: e.message || 'Ocurrió un error inesperado.',
-      });
-    } finally {
-      setIsPending(false);
-    }
   };
 
   const handleOpenChange = (isOpen: boolean) => {

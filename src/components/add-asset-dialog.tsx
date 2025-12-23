@@ -8,6 +8,8 @@ import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc } from 'firebase/firestore';
 import { useFirestore } from '@/lib/firebase';
 import type { Site } from '@/lib/firebase/models';
+import { errorEmitter } from '@/lib/firebase/error-emitter';
+import { FirestorePermissionError } from '@/lib/firebase/errors';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -78,24 +80,36 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
       return;
     }
     setIsPending(true);
-    try {
-      await addDoc(collection(firestore, "assets"), data);
 
-      toast({
-        title: 'Éxito',
-        description: `Activo '${data.name}' creado correctamente.`,
+    const collectionRef = collection(firestore, 'assets');
+    addDoc(collectionRef, data)
+      .then(() => {
+        toast({
+          title: 'Éxito',
+          description: `Activo '${data.name}' creado correctamente.`,
+        });
+        onOpenChange(false);
+        form.reset();
+      })
+      .catch((error) => {
+        if (error.code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+            path: collectionRef.path,
+            operation: 'create',
+            requestResourceData: data,
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        } else {
+          toast({
+            variant: 'destructive',
+            title: 'Error al crear el activo',
+            description: error.message || 'Ocurrió un error inesperado.',
+          });
+        }
+      })
+      .finally(() => {
+        setIsPending(false);
       });
-      onOpenChange(false);
-      form.reset();
-    } catch (e: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error al crear el activo',
-        description: e.message || 'Ocurrió un error inesperado.',
-      });
-    } finally {
-      setIsPending(false);
-    }
   };
 
   const handleOpenChange = (isOpen: boolean) => {

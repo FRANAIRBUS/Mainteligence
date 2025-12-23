@@ -5,6 +5,7 @@ import type { FirebaseApp } from 'firebase/app';
 import type { Auth } from 'firebase/auth';
 import type { Firestore } from 'firebase/firestore';
 import type { FirebaseStorage } from 'firebase/storage';
+import { FirebaseErrorListener } from '@/components/firebase-error-listener';
 
 interface FirebaseContextType {
   app: FirebaseApp | null;
@@ -43,6 +44,7 @@ export function FirebaseProvider({
 }: FirebaseProviderProps) {
   return (
     <FirebaseContext.Provider value={{ app, auth, firestore, storage }}>
+      {process.env.NODE_ENV === 'development' && <FirebaseErrorListener />}
       {children}
     </FirebaseContext.Provider>
   );
