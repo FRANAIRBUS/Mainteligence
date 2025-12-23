@@ -95,7 +95,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
             assignedTo: null,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-            displayId: `INC-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+            displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`
         };
 
       await addDoc(collection(firestore, "tickets"), docData);
@@ -196,7 +196,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
                         <FormControl>
                         <SelectTrigger>
                             <SelectValue placeholder="Selecciona un departamento" />
-                        </SelectTrigger>
+                        </Trigger>
                         </FormControl>
                         <SelectContent>
                         {departments.map(dept => (
@@ -220,7 +220,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
                         <FormControl>
                         <SelectTrigger>
                             <SelectValue placeholder="Selecciona un activo" />
-                        </SelectTrigger>
+                        </Trigger>
                         </FormControl>
                         <SelectContent>
                         {assets.map(asset => (
@@ -242,7 +242,7 @@ export function AddIncidentDialog({ open, onOpenChange, sites, departments, asse
                         <FormControl>
                         <SelectTrigger>
                             <SelectValue placeholder="Selecciona una prioridad" />
-                        </SelectTrigger>
+                        </Trigger>
                         </FormControl>
                         <SelectContent>
                             <SelectItem value="Baja">Baja</SelectItem>
