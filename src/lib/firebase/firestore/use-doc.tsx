@@ -13,7 +13,7 @@ export function useDoc<T>(path: string | null) {
 
   useEffect(() => {
     // If path is null, user not ready, or db not ready, we wait.
-    if (!db || !path || userLoading) {
+    if (!db || !path || userLoading || !user) {
       setLoading(false);
       setData(null);
       setError(null);

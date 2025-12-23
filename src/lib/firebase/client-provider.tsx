@@ -21,14 +21,6 @@ let firebaseInstances: {
   storage: FirebaseStorage;
 } | null = null;
 
-async function getFirebaseInstances() {
-  if (!firebaseInstances) {
-    firebaseInstances = await initializeFirebase();
-  }
-  return firebaseInstances;
-}
-
-
 export function FirebaseClientProvider({
   children,
 }: FirebaseClientProviderProps) {
@@ -37,29 +29,26 @@ export function FirebaseClientProvider({
     auth: Auth;
     firestore: Firestore;
     storage: FirebaseStorage;
-  } | null>(firebaseInstances); // Initialize with memoized instances if they exist
+  } | null>(firebaseInstances);
 
   useEffect(() => {
-    // If firebase is already initialized (either from memoization or a previous run), don't do anything.
     if (firebase) return;
 
     let isMounted = true;
     
-    getFirebaseInstances().then(instances => {
+    initializeFirebase().then(instances => {
       if (isMounted) {
+        firebaseInstances = instances;
         setFirebase(instances);
       }
-    }).catch(console.error); // It's good practice to catch potential errors during initialization
+    }).catch(console.error);
 
     return () => {
       isMounted = false;
     };
-  }, [firebase]); // Only re-run if firebase state changes (which it shouldn't after the first load)
+  }, [firebase]);
 
   if (!firebase) {
-    // While firebase is initializing, show a full-screen loader.
-    // This prevents any child components from attempting to access Firebase services
-    // before they are ready, thus preventing the race condition.
     return (
        <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
