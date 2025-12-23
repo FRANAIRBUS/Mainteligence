@@ -94,6 +94,14 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
     }
   }
 
+  const onSubmit = form.handleSubmit((data) => {
+    const formData = new FormData();
+    Object.entries(data).forEach(([key, value]) => {
+      formData.append(key, value);
+    });
+    formAction(formData);
+  });
+
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -105,12 +113,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form action={formAction} className="space-y-4" onSubmit={(evt) => {
-              evt.preventDefault();
-              form.handleSubmit(() => {
-                  formAction(new FormData(evt.currentTarget));
-              })(evt);
-          }}>
+          <form action={formAction} className="space-y-4" onSubmit={onSubmit}>
             <FormField
               control={form.control}
               name="displayName"
