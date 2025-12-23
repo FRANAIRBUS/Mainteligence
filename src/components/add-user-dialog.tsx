@@ -94,15 +94,6 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
     }
   }
 
-  const onSubmit = form.handleSubmit((data) => {
-    const formData = new FormData();
-    Object.entries(data).forEach(([key, value]) => {
-      formData.append(key, value);
-    });
-    formAction(formData);
-  });
-
-
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
@@ -113,7 +104,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form action={formAction} className="space-y-4" onSubmit={onSubmit}>
+          <form action={formAction} className="space-y-4">
             <FormField
               control={form.control}
               name="displayName"
