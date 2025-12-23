@@ -1,4 +1,3 @@
-
 'use client';
 import { useEffect, useState, type ReactNode } from 'react';
 import { initializeFirebase } from '.';
@@ -37,10 +36,10 @@ export function FirebaseClientProvider({
     auth: Auth;
     firestore: Firestore;
     storage: FirebaseStorage;
-  } | null>(firebaseInstances);
+  } | null>(firebaseInstances); // Initialize with memoized instances if they exist
 
   useEffect(() => {
-    // If firebase is already initialized, don't do anything.
+    // If firebase is already initialized (either from memoization or a previous run), don't do anything.
     if (firebase) return;
 
     let isMounted = true;
@@ -49,19 +48,18 @@ export function FirebaseClientProvider({
       if (isMounted) {
         setFirebase(instances);
       }
-    });
+    }).catch(console.error); // It's good practice to catch potential errors during initialization
 
     return () => {
       isMounted = false;
     };
-  }, [firebase]);
+  }, [firebase]); // Only re-run if firebase state changes (which it shouldn't after the first load)
 
   if (!firebase) {
     // While firebase is initializing, you can show a loader or nothing.
-    // Returning children directly is one way to avoid content layout shifts
-    // but it might cause hydration errors if the server renders something different.
-    // For this case, returning children is safe because the server also renders children.
-    return <>{children}</>;
+    // Returning children might cause hydration errors if server/client mismatch.
+    // Returning null or a loader is safer.
+    return null; 
   }
 
   return (

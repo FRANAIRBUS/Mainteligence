@@ -12,12 +12,20 @@ const firebaseConfig: FirebaseOptions = {
   storageBucket: projectId ? `${projectId}.appspot.com` : undefined,
 };
 
+// Validate the config
+if (
+  !firebaseConfig.apiKey ||
+  !firebaseConfig.authDomain ||
+  !firebaseConfig.projectId ||
+  !firebaseConfig.storageBucket
+) {
+  throw new Error('Missing Firebase config. Please check your .env file and ensure all required variables are set.');
+}
+
+
 // Initialize Firebase
 let app;
 if (!getApps().length) {
-  if (!firebaseConfig.apiKey) {
-    throw new Error('Missing Firebase config. Please check your .env file.');
-  }
   app = initializeApp(firebaseConfig);
 } else {
   app = getApp();
