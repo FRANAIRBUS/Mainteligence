@@ -20,7 +20,8 @@ export function useDoc<T>(path: string | null) {
       return;
     }
     // If path relies on user.uid, but user is null, also wait.
-    if (path.includes('undefined') && !user) {
+    // This handles cases where the path is dynamically constructed with a user ID that isn't available yet.
+    if (path.includes('undefined')) {
       setLoading(false);
       setData(null);
       setError(null);

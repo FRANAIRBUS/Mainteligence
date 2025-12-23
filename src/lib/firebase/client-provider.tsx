@@ -6,6 +6,7 @@ import type { Auth } from 'firebase/auth';
 import type { Firestore } from 'firebase/firestore';
 import { FirebaseProvider } from './provider';
 import type { FirebaseStorage } from 'firebase/storage';
+import { Icons } from '@/components/icons';
 
 interface FirebaseClientProviderProps {
   children: ReactNode;
@@ -56,10 +57,14 @@ export function FirebaseClientProvider({
   }, [firebase]); // Only re-run if firebase state changes (which it shouldn't after the first load)
 
   if (!firebase) {
-    // While firebase is initializing, you can show a loader or nothing.
-    // Returning children might cause hydration errors if server/client mismatch.
-    // Returning null or a loader is safer.
-    return null; 
+    // While firebase is initializing, show a full-screen loader.
+    // This prevents any child components from attempting to access Firebase services
+    // before they are ready, thus preventing the race condition.
+    return (
+       <div className="flex h-screen w-screen items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
+    );
   }
 
   return (

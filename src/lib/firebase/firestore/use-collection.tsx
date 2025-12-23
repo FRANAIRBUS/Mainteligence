@@ -7,7 +7,7 @@ import {
   DocumentData,
   CollectionReference,
 } from 'firebase/firestore';
-import { useAuth, useFirestore } from '../provider';
+import { useFirestore } from '../provider';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 import { useUser } from '../auth/use-user';
