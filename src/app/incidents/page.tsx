@@ -152,14 +152,12 @@ export default function IncidentsPage() {
 
     switch (userProfile.role) {
       case 'admin':
-      case 'mantenimiento':
-        // Admins and maintenance see all tickets
         return query(ticketsCollection);
+      case 'mantenimiento':
+        return query(ticketsCollection, where('assignedTo', 'in', [null, user.uid]));
       case 'operario':
-        // Operarios only see tickets they created
         return query(ticketsCollection, where('createdBy', '==', user.uid));
       default:
-        // No role, no tickets
         return null;
     }
   }, [firestore, userProfile, user]);
