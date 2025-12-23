@@ -216,7 +216,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Sin asignar" />
-                      </T rigger>
+                      </SelectTrigger>
                     </FormControl>
                     <SelectContent>
                       <SelectItem value="null">Sin asignar</SelectItem>
