@@ -46,12 +46,14 @@ function SubmitButton({ isPending }: { isPending: boolean }) {
 function SuggestedTags({ state, isPending }: { state: TagFormState, isPending: boolean }) {
   const { toast } = useToast();
   const [showResults, setShowResults] = useState(false);
-
+  
   useEffect(() => {
-    if(state.timestamp) {
+    // Show results only when a new message is set after the initial state
+    if (state.message) {
       setShowResults(true);
     }
-  }, [state.timestamp]);
+  }, [state]);
+
 
   if (!showResults) {
     return null;
@@ -131,10 +133,10 @@ export default function SmartTaggingForm() {
     }
   }, [state, form, toast]);
   
-  const onSubmit = async (formData: FormData) => {
-    const valid = await form.trigger();
-    if (!valid) return;
-    
+  const onSubmit = (data: z.infer<typeof formSchema>) => {
+    const formData = new FormData();
+    formData.append('description', data.description);
+
     startTransition(async () => {
       const result = await handleTagSuggestion(state, formData);
       setState(result);
@@ -144,39 +146,41 @@ export default function SmartTaggingForm() {
   return (
     <div className="grid gap-6">
        <Card>
-        <form action={onSubmit}>
-          <CardHeader>
-            <CardTitle>Nueva Tarea de Mantenimiento</CardTitle>
-            <CardDescription>
-              Describe la tarea y nuestra IA sugerirá etiquetas relevantes para mantener tu trabajo organizado.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Form {...form}>
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Descripción de la Tarea</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Ej: 'La cinta transportadora principal hace un fuerte ruido de rechinamiento y se ha detenido. Parece una falla del motor o de un rodamiento.'"
-                        className="min-h-[120px] resize-y"
-                        disabled={isPending}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </Form>
-          </CardContent>
-          <CardFooter className="flex justify-end">
-            <SubmitButton isPending={isPending}/>
-          </CardFooter>
-        </form>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)}>
+            <CardHeader>
+              <CardTitle>Nueva Tarea de Mantenimiento</CardTitle>
+              <CardDescription>
+                Describe la tarea y nuestra IA sugerirá etiquetas relevantes para mantener tu trabajo organizado.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Descripción de la Tarea</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="Ej: 'La cinta transportadora principal hace un fuerte ruido de rechinamiento y se ha detenido. Parece una falla del motor o de un rodamiento.'"
+                          className="min-h-[120px] resize-y"
+                          disabled={isPending}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              
+            </CardContent>
+            <CardFooter className="flex justify-end">
+              <SubmitButton isPending={isPending}/>
+            </CardFooter>
+          </form>
+        </Form>
       </Card>
       <SuggestedTags state={state} isPending={isPending} />
     </div>

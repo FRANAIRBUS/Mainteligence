@@ -16,7 +16,7 @@ export type TagFormState = {
   errors?: {
     description?: string[];
   };
-  timestamp?: number;
+  // No more timestamp
 };
 
 export async function handleTagSuggestion(
@@ -45,14 +45,12 @@ export async function handleTagSuggestion(
       return {
         message: 'No se sugirieron etiquetas. Intente con una descripción más detallada.',
         tags: [],
-        timestamp: Date.now(),
       };
     }
     
     return {
       message: 'Éxito',
       tags: result.tags,
-      timestamp: Date.now(),
     };
   } catch (error) {
     console.error('Error en handleTagSuggestion:', error);
