@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { useFirestore, useUser } from '@/lib/firebase';
+import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User } from '@/lib/firebase/models';
 
 import { Button } from '@/components/ui/button';
@@ -53,7 +53,9 @@ interface EditIncidentDialogProps {
 export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIncidentDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
-  const { user: currentUser } = useUser();
+  const { user: currentUser, loading: userLoading } = useUser();
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(currentUser ? `users/${currentUser.uid}` : '');
+
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<EditIncidentFormValues>({
@@ -61,7 +63,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
     defaultValues: {
       status: ticket.status,
       priority: ticket.priority,
-      assignedTo: ticket.assignedTo || '',
+      assignedTo: ticket.assignedTo || null,
     },
   });
 
@@ -69,7 +71,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
     form.reset({
       status: ticket.status,
       priority: ticket.priority,
-      assignedTo: ticket.assignedTo || '',
+      assignedTo: ticket.assignedTo || null,
     });
   }, [ticket, form]);
 
@@ -87,8 +89,10 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
     try {
       const ticketRef = doc(firestore, 'tickets', ticket.id);
       
-      const updateData: Partial<Ticket> = {
-        ...data,
+      const updateData: Partial<Ticket> & { updatedAt: any } = {
+        status: data.status,
+        priority: data.priority,
+        assignedTo: data.assignedTo,
         updatedAt: serverTimestamp(),
       };
       
@@ -116,12 +120,17 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
     }
   };
   
-  const userRole = users.find(u => u.id === currentUser?.uid)?.role;
-  const isCreator = ticket.createdBy === currentUser?.uid;
+  if (userLoading || profileLoading) {
+    return null; // or a loader
+  }
 
-  const canEditStatus = userRole === 'admin' || userRole === 'mantenimiento';
-  const canEditPriority = userRole === 'admin' || userRole === 'mantenimiento' || isCreator;
-  const canEditAssignment = userRole === 'admin' || userRole === 'mantenimiento';
+  const isCreator = ticket.createdBy === currentUser?.uid;
+  const isAdmin = userProfile?.role === 'admin';
+  const isMantenimiento = userProfile?.role === 'mantenimiento';
+
+  const canEditStatus = isAdmin || isMantenimiento;
+  const canEditPriority = isAdmin || isMantenimiento || isCreator;
+  const canEditAssignment = isAdmin || isMantenimiento;
 
 
   return (
@@ -196,7 +205,6 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users }: EditIn
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">Sin asignar</SelectItem>
                       {users.map(user => (
                         <SelectItem key={user.id} value={user.id}>
                           {user.displayName}
