@@ -148,40 +148,40 @@ export default function IncidentsPage() {
 
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
 
-  // Unconditional hook calls, with `null` as the path when data is not needed.
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !userProfile) return null; // No query until profile is loaded
+    if (!firestore || !userProfile) return null;
     
     const ticketsCollection = collection(firestore, 'tickets');
     
-    // Operario only sees tickets from their department
     if (userProfile.role === 'operario' && userProfile.departmentId) {
       return query(ticketsCollection, where('departmentId', '==', userProfile.departmentId));
     }
     
-    // For admin and mantenimiento, get all tickets
     if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
       return query(ticketsCollection);
     }
     
     // Fallback for operario without department: show only their own tickets
-    if(userProfile.role === 'operario' && !userProfile.departmentId) {
-       return query(ticketsCollection, where('createdBy', '==', userProfile.id));
+    if(userProfile.role === 'operario') {
+       return query(ticketsCollection, where('createdBy', '==', user.uid));
     }
 
-    return null; // Return null if no condition is met
-
-  }, [firestore, userProfile]);
+    return null; 
+  }, [firestore, userProfile, user?.uid]);
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   
-  const canLoadAdminData = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
-  
-  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
-  const { data: usersData, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
+  // Call hooks unconditionally
+  const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(
+    (userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento') ? 'assets' : null
+  );
+  const { data: usersData, loading: usersLoading } = useCollection<User>(
+    (userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento') ? 'users' : null
+  );
 
+  // Safely initialize data
   const assets = useMemo(() => assetsData || [], [assetsData]);
   const users = useMemo(() => usersData || [], [usersData]);
 

@@ -34,7 +34,9 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
     if (typeof pathOrRef === 'string') {
       collectionRef = collection(db, pathOrRef);
     } else {
-      collectionRef = pathOrRef!; // We know it's not null here because of the check above
+      // We know it's not null here because of the check above
+      // and TS is happy because pathOrRef is CollectionReference | null
+      collectionRef = pathOrRef; 
     }
 
     const unsubscribe = onSnapshot(
