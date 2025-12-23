@@ -146,19 +146,26 @@ export default function IncidentsPage() {
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : '');
   
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !userProfile) return null;
     const ticketsCollection = collection(firestore, 'tickets');
+    
+    // Admin and Mantenimiento see all tickets. Operario used to see only their own.
+    // Based on user request, operario now also sees all tickets.
     return query(ticketsCollection);
-  }, [firestore, user]);
+
+  }, [firestore, userProfile]);
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
 
-  const canLoadCatalogs = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
+  const canLoadAdminCatalogs = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
-  const sitesQuery = useMemo(() => (firestore && canLoadCatalogs) ? collection(firestore, 'sites') : null, [firestore, canLoadCatalogs]);
-  const departmentsQuery = useMemo(() => (firestore && canLoadCatalogs) ? collection(firestore, 'departments') : null, [firestore, canLoadCatalogs]);
-  const assetsQuery = useMemo(() => (firestore && canLoadCatalogs) ? collection(firestore, 'assets') : null, [firestore, canLoadCatalogs]);
-  const usersQuery = useMemo(() => (firestore && canLoadCatalogs) ? collection(firestore, 'users') : null, [firestore, canLoadCatalogs]);
+  // Sites and Departments are needed by all roles to display names in the table.
+  const sitesQuery = useMemo(() => firestore && userProfile ? collection(firestore, 'sites') : null, [firestore, userProfile]);
+  const departmentsQuery = useMemo(() => firestore && userProfile ? collection(firestore, 'departments') : null, [firestore, userProfile]);
+
+  // Assets and Users are only needed for forms used by admin/mantenimiento.
+  const assetsQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? collection(firestore, 'assets') : null, [firestore, canLoadAdminCatalogs]);
+  const usersQuery = useMemo(() => (firestore && canLoadAdminCatalogs) ? query(collection(firestore, 'users'), where('role', 'in', ['admin', 'mantenimiento'])) : null, [firestore, canLoadAdminCatalogs]);
 
   const { data: sites, loading: sitesLoading } = useCollectionQuery<Site>(sitesQuery);
   const { data: departments, loading: departmentsLoading } = useCollectionQuery<Department>(departmentsQuery);
@@ -187,7 +194,8 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
 
-  const isLoading = userLoading || profileLoading || ticketsLoading || (canLoadCatalogs && (sitesLoading || departmentsLoading || assetsLoading || usersLoading));
+  const isLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || departmentsLoading || (canLoadAdminCatalogs && (assetsLoading || usersLoading));
+  const tableIsLoading = userLoading || profileLoading || ticketsLoading || sitesLoading || departmentsLoading;
 
   if (userLoading || profileLoading || !user) {
     return (
@@ -228,7 +236,7 @@ export default function IncidentsPage() {
                 <div>
                   <CardTitle>Incidencias</CardTitle>
                   <CardDescription className="mt-2">
-                    {userProfile?.role === 'operario' ? 'Visualiza aquí todas las incidencias.' : 'Visualiza y gestiona todas las incidencias correctivas.'}
+                    Visualiza y gestiona todas las incidencias correctivas.
                   </CardDescription>
                 </div>
                 <Button onClick={() => setIsAddIncidentOpen(true)}>Crear Incidencia</Button>
@@ -239,7 +247,7 @@ export default function IncidentsPage() {
                 tickets={tickets} 
                 sites={sitesMap}
                 departments={departmentsMap}
-                loading={isLoading} 
+                loading={tableIsLoading} 
                 onViewDetails={handleViewDetails}
                 onEdit={handleEditRequest}
                 userRole={userProfile?.role}
@@ -260,7 +268,7 @@ export default function IncidentsPage() {
           open={isEditIncidentOpen}
           onOpenChange={setIsEditIncidentOpen}
           ticket={editingTicket}
-          users={users.filter(u => u.role === 'mantenimiento' || u.role === 'admin')}
+          users={users}
         />
       )}
     </SidebarProvider>
