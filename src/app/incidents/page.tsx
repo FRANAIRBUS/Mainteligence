@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
+import { useUser, useCollection, useDoc, useFirestore, useCollectionQuery } from '@/lib/firebase';
 import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
@@ -43,6 +43,8 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { collection, query, where, CollectionReference } from 'firebase/firestore';
+
 
 function IncidentsTable({
   tickets,
@@ -143,7 +145,8 @@ function IncidentsTable({
 export default function IncidentsPage() {
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
-  
+  const firestore = useFirestore();
+
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
@@ -153,11 +156,29 @@ export default function IncidentsPage() {
       router.push('/login');
     }
   }, [user, userLoading, router]);
-  
+
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user?.uid ? `users/${user.uid}` : null);
 
-  // Unconditional hook calls
-  const { data: tickets, loading: ticketsLoading } = useCollection<Ticket>('tickets');
+  const ticketsQuery = useMemo(() => {
+    if (!firestore || !userProfile) return null;
+
+    const ticketsRef = collection(firestore, 'tickets') as CollectionReference<Ticket>;
+
+    if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
+      return query(ticketsRef);
+    }
+    
+    if (userProfile.role === 'operario' && userProfile.departmentId) {
+        return query(ticketsRef, where('departmentId', '==', userProfile.departmentId));
+    }
+    
+    // Fallback for operario without department or while profile is loading
+    // This query will return nothing, preventing unauthorized data access.
+    return query(ticketsRef, where('createdBy', '==', user?.uid || ''));
+
+  }, [firestore, userProfile, user?.uid]);
+
+  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   
@@ -166,17 +187,8 @@ export default function IncidentsPage() {
   const { data: assetsData, loading: assetsLoading } = useCollection<Asset>(canLoadAdminData ? 'assets' : null);
   const { data: usersData, loading: usersLoading } = useCollection<User>(canLoadAdminData ? 'users' : null);
   
-  // Safe initialization
   const assets = useMemo(() => assetsData || [], [assetsData]);
   const users = useMemo(() => usersData || [], [usersData]);
-
-  const filteredTickets = useMemo(() => {
-    if (!userProfile) return [];
-    if (userProfile.role === 'admin' || userProfile.role === 'mantenimiento') {
-      return tickets;
-    }
-    return tickets.filter(ticket => ticket.createdBy === user?.uid || ticket.departmentId === userProfile.departmentId);
-  }, [tickets, userProfile, user?.uid]);
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
@@ -242,7 +254,7 @@ export default function IncidentsPage() {
             </CardHeader>
             <CardContent>
               <IncidentsTable 
-                tickets={filteredTickets} 
+                tickets={tickets} 
                 sites={sitesMap}
                 departments={departmentsMap}
                 loading={tableIsLoading}
