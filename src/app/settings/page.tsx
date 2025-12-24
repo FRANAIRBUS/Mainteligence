@@ -79,7 +79,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleUpload = async () => {
+  const handleUpload = () => {
     if (!selectedFile || !storage || !firestore || !isAdmin) {
       toast({
         variant: 'destructive',
@@ -94,53 +94,55 @@ export default function SettingsPage() {
     const logoRef = ref(storage, 'branding/logo.png');
     const settingsRef = doc(firestore, 'settings', 'app');
     
-    try {
-      // Step 1: Upload to Storage
-      const uploadResult = await uploadBytes(logoRef, selectedFile);
-      
-      // Step 2: Get Download URL
-      const downloadURL = await getDownloadURL(uploadResult.ref);
-
-      // Step 3: Save to Firestore
-      const settingsData = { 
-        logoUrl: downloadURL,
-        updatedAt: serverTimestamp(),
-      };
-      await setDoc(settingsRef, settingsData, { merge: true });
-
-      toast({
-        title: 'Éxito',
-        description: 'El logo se ha actualizado correctamente.',
-      });
-      setSelectedFile(null);
-      // Force reload to ensure all components see the change.
-      window.location.reload();
-
-    } catch (error: any) {
-      // Enhanced Error Handling
-      if (error.code === 'storage/unauthorized') {
-        const permissionError = new StoragePermissionError({
-          path: logoRef.fullPath,
-          operation: 'write',
-        });
-        errorEmitter.emit('permission-error', permissionError);
-      } else if (error.code === 'permission-denied') {
-        const permissionError = new FirestorePermissionError({
-          path: settingsRef.path,
-          operation: 'update',
-          requestResourceData: { logoUrl: '...' }, // Don't log the full URL
-        });
-        errorEmitter.emit('permission-error', permissionError);
-      } else {
+    // Step 1: Upload to Storage
+    uploadBytes(logoRef, selectedFile)
+      .then(uploadResult => {
+        // Step 2: Get Download URL
+        return getDownloadURL(uploadResult.ref);
+      })
+      .then(downloadURL => {
+        // Step 3: Save to Firestore
+        const settingsData = { 
+          logoUrl: downloadURL,
+          updatedAt: serverTimestamp(),
+        };
+        return setDoc(settingsRef, settingsData, { merge: true });
+      })
+      .then(() => {
         toast({
-            variant: 'destructive',
-            title: 'Error al subir el logo',
-            description: error.message || 'Ocurrió un error inesperado.',
+          title: 'Éxito',
+          description: 'El logo se ha actualizado correctamente.',
         });
-      }
-    } finally {
-      setIsPending(false);
-    }
+        setSelectedFile(null);
+        // Force reload to ensure all components see the change.
+        window.location.reload();
+      })
+      .catch((error) => {
+        // Enhanced Error Handling
+        if (error.code === 'storage/unauthorized') {
+          const permissionError = new StoragePermissionError({
+            path: logoRef.fullPath,
+            operation: 'write',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        } else if (error.code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+            path: settingsRef.path,
+            operation: 'update',
+            requestResourceData: { logoUrl: '...' }, // Don't log the full URL
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        } else {
+          toast({
+              variant: 'destructive',
+              title: 'Error al subir el logo',
+              description: error.message || 'Ocurrió un error inesperado.',
+          });
+        }
+      })
+      .finally(() => {
+        setIsPending(false);
+      });
   }
 
   const initialLoading = userLoading || profileLoading;

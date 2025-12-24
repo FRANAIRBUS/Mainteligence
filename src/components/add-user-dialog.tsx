@@ -69,7 +69,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     },
   });
 
-  const onSubmit = async (data: AddUserFormValues) => {
+  const onSubmit = (data: AddUserFormValues) => {
     if (!firestore) {
         toast({
             variant: 'destructive',

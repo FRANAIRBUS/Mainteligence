@@ -59,7 +59,7 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
     },
   });
 
-  const onSubmit = async (data: AddLocationFormValues) => {
+  const onSubmit = (data: AddLocationFormValues) => {
     if (!firestore) {
       toast({
         variant: 'destructive',

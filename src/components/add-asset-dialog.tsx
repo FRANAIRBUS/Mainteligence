@@ -70,7 +70,7 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
     },
   });
 
-  const onSubmit = async (data: AddAssetFormValues) => {
+  const onSubmit = (data: AddAssetFormValues) => {
     if (!firestore) {
       toast({
         variant: 'destructive',

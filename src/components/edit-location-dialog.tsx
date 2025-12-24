@@ -5,9 +5,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { useFirestore } from '@/lib/firebase';
 import type { Site } from '@/lib/firebase/models';
+import { FirestorePermissionError } from '@/lib/firebase/errors';
+import { errorEmitter } from '@/lib/firebase/error-emitter';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -64,7 +66,7 @@ export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDia
     }
   }, [site, form]);
 
-  const onSubmit = async (data: EditLocationFormValues) => {
+  const onSubmit = (data: EditLocationFormValues) => {
     if (!firestore || !site) {
         toast({
             variant: 'destructive',
@@ -74,27 +76,35 @@ export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDia
         return;
     }
     setIsPending(true);
-    try {
-      const siteRef = doc(firestore, "sites", site.id);
-      await updateDoc(siteRef, {
-        ...data,
-      });
-      
-      toast({
-        title: 'Éxito',
-        description: `Ubicación '${data.name}' actualizada correctamente.`,
-      });
-      onOpenChange(false);
-
-    } catch (e: any) {
-       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: e.message || 'No se pudo actualizar la ubicación.',
-      });
-    } finally {
+    
+    const siteRef = doc(firestore, "sites", site.id);
+    updateDoc(siteRef, data)
+      .then(() => {
+        toast({
+          title: 'Éxito',
+          description: `Ubicación '${data.name}' actualizada correctamente.`,
+        });
+        onOpenChange(false);
+      })
+      .catch((error) => {
+        if (error.code === 'permission-denied') {
+            const permissionError = new FirestorePermissionError({
+                path: siteRef.path,
+                operation: 'update',
+                requestResourceData: data,
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        } else {
+            toast({
+                variant: 'destructive',
+                title: 'Error al actualizar',
+                description: error.message || 'No se pudo actualizar la ubicación.',
+            });
+        }
+      })
+      .finally(() => {
         setIsPending(false);
-    }
+      });
   };
   
   const handleOpenChange = (isOpen: boolean) => {
