@@ -28,12 +28,14 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { ClientLogo } from '@/components/client-logo';
+import { Progress } from '@/components/ui/progress';
+
 
 interface AppSettings {
   logoUrl?: string;
@@ -55,6 +57,8 @@ export default function SettingsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -90,35 +94,53 @@ export default function SettingsPage() {
     }
 
     setIsPending(true);
+    setUploadProgress(0);
     
     const logoRef = ref(storage, 'branding/logo.png');
     const settingsRef = doc(firestore, 'settings', 'app');
     
     try {
-      // Step 1: Upload to Storage
-      const uploadResult = await uploadBytes(logoRef, selectedFile);
-      
-      // Step 2: Get Download URL
-      const downloadURL = await getDownloadURL(uploadResult.ref);
-      
-      // Step 3: Save to Firestore
-      const settingsData = { 
-        logoUrl: downloadURL,
-        updatedAt: serverTimestamp(),
-      };
-      await setDoc(settingsRef, settingsData, { merge: true });
-      
-      toast({
-        title: 'Éxito',
-        description: 'El logo se ha actualizado correctamente.',
-      });
-      setSelectedFile(null);
-      
-      // Force reload to ensure all components see the change.
-      window.location.reload();
+      const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
 
+      await new Promise<void>((resolve, reject) => {
+        uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setUploadProgress(progress);
+          },
+          (error) => {
+            // Forward storage errors to the outer catch block
+            reject(error);
+          },
+          async () => {
+            // Upload complete, now get URL and save to Firestore
+            try {
+              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+              const settingsData = {
+                logoUrl: downloadURL,
+                updatedAt: serverTimestamp(),
+              };
+              await setDoc(settingsRef, settingsData, { merge: true });
+              
+              toast({
+                title: 'Éxito',
+                description: 'El logo se ha actualizado correctamente.',
+              });
+              setSelectedFile(null);
+              
+              // Force reload to ensure all components see the change.
+              window.location.reload();
+              resolve();
+            } catch (firestoreError) {
+              // Forward firestore errors to the outer catch block
+              reject(firestoreError);
+            }
+          }
+        );
+      });
     } catch (error: any) {
-      // Enhanced Error Handling
+      // Centralized error handling
       if (error.code === 'storage/unauthorized') {
         const permissionError = new StoragePermissionError({
           path: logoRef.fullPath,
@@ -129,7 +151,7 @@ export default function SettingsPage() {
         const permissionError = new FirestorePermissionError({
           path: settingsRef.path,
           operation: 'update',
-          requestResourceData: { logoUrl: '...' }, // Don't log the full URL
+          requestResourceData: { logoUrl: '...' },
         });
         errorEmitter.emit('permission-error', permissionError);
       } else {
@@ -141,6 +163,7 @@ export default function SettingsPage() {
       }
     } finally {
         setIsPending(false);
+        setUploadProgress(0);
     }
   }
 
@@ -214,16 +237,23 @@ export default function SettingsPage() {
                      </div>
                     <div className="space-y-2">
                     <Label htmlFor="logo-upload">Subir Nuevo Logo</Label>
-                    <Input id="logo-upload" type="file" onChange={handleFileChange} accept="image/png, image/jpeg, image/gif, image/webp" />
+                    <Input id="logo-upload" type="file" onChange={handleFileChange} accept="image/png, image/jpeg, image/gif, image/webp" disabled={isPending} />
                     {selectedFile && <p className="text-xs text-muted-foreground">Archivo seleccionado: {selectedFile.name}</p>}
                     </div>
+                     {isPending && (
+                        <div className="space-y-2">
+                            <Label>Progreso de la subida</Label>
+                            <Progress value={uploadProgress} className="w-full" />
+                            <p className="text-sm text-muted-foreground">{Math.round(uploadProgress)}% completado</p>
+                        </div>
+                     )}
                 </CardContent>
                 <CardFooter className="border-t px-6 py-4">
                     <Button onClick={handleUpload} disabled={isPending || !selectedFile}>
                     {isPending ? (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : null}
-                    Guardar Cambios
+                     {isPending ? 'Subiendo...' : 'Guardar Cambios'}
                     </Button>
                 </CardFooter>
                 </Card>
