@@ -67,12 +67,24 @@ export default function SettingsPage() {
         path: logoRefPath,
         operation: 'write',
       });
+      toast({
+        variant: 'destructive',
+        title: 'Permisos insuficientes en Storage',
+        description:
+          'No se pudo subir el logo porque tu usuario no tiene permisos de escritura en Firebase Storage. Verifica las reglas y tus credenciales.',
+      });
       errorEmitter.emit('permission-error', permissionError);
     } else if (error.code === 'permission-denied') {
       const permissionError = new FirestorePermissionError({
         path: settingsRefPath,
         operation: 'update',
         requestResourceData: { logoUrl: '...' },
+      });
+      toast({
+        variant: 'destructive',
+        title: 'Permisos insuficientes en Firestore',
+        description:
+          'No se pudo actualizar el logo en la configuración. Asegúrate de que tu usuario tenga rol de administrador en Firestore.',
       });
       errorEmitter.emit('permission-error', permissionError);
     } else {
@@ -148,6 +160,7 @@ export default function SettingsPage() {
         (error) => {
           handleUploadError(error, logoRef.fullPath, settingsRef.path);
           setIsPending(false);
+          setUploadProgress(0);
           uploadUnsubscribe.current = null;
         },
         async () => {
@@ -172,6 +185,7 @@ export default function SettingsPage() {
             handleUploadError(error, logoRef.fullPath, settingsRef.path);
           } finally {
             setIsPending(false);
+            setUploadProgress(0);
             uploadUnsubscribe.current = null;
           }
         }
@@ -179,6 +193,7 @@ export default function SettingsPage() {
     } catch (error: any) {
       handleUploadError(error, logoRef.fullPath, settingsRef.path);
       setIsPending(false);
+      setUploadProgress(0);
     }
 }
 
