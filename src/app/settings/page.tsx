@@ -28,7 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
@@ -85,43 +85,55 @@ export default function SettingsPage() {
 
   const handleUpload = async () => {
     if (!selectedFile || !storage || !firestore || !isAdmin) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
-      });
-      return;
+        toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
+        });
+        return;
     }
 
     setIsPending(true);
     setUploadProgress(0);
-    
+
     const logoRef = ref(storage, 'branding/logo.png');
     const settingsRef = doc(firestore, 'settings', 'app');
-    
+
     try {
-        // Step 1: Upload the file
-        const snapshot = await uploadBytes(logoRef, selectedFile);
-        setUploadProgress(50);
+        const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
 
-        // Step 2: Get the download URL
-        const downloadURL = await getDownloadURL(snapshot.ref);
-        setUploadProgress(75);
+        // Wait for the upload to complete while monitoring progress
+        await new Promise<void>((resolve, reject) => {
+            uploadTask.on(
+                'state_changed',
+                (snapshot) => {
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    setUploadProgress(progress);
+                },
+                (error) => {
+                    // This will catch storage-level errors (like permission denied)
+                    reject(error);
+                },
+                () => {
+                    // This is called on successful upload
+                    resolve();
+                }
+            );
+        });
+        
+        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
-        // Step 3: Update Firestore
         const settingsData = {
             logoUrl: downloadURL,
             updatedAt: serverTimestamp(),
         };
         await setDoc(settingsRef, settingsData, { merge: true });
-        setUploadProgress(100);
-        
+
         toast({
             title: 'Éxito',
             description: 'El logo se ha actualizado correctamente. La página se recargará.',
         });
 
-        // Use a small delay before reloading to allow the user to see the toast.
         setTimeout(() => {
             window.location.reload();
         }, 1500);
@@ -148,10 +160,11 @@ export default function SettingsPage() {
             });
         }
     } finally {
-        // This ensures the button is re-enabled even if an error occurs
+        // This GUARANTEES the pending state is reset
         setIsPending(false);
     }
-  }
+}
+
 
   const initialLoading = userLoading || profileLoading;
 
