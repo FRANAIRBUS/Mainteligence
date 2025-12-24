@@ -21,8 +21,8 @@ import {
 } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, useEffect } from 'react';
-import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { ClientLogo } from '@/components/client-logo';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -111,7 +111,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <div className="mb-4 flex justify-center">
-             <DynamicClientLogo />
+             <ClientLogo />
           </div>
           <CardTitle className="text-2xl">Maintelligence</CardTitle>
           <CardDescription>
