@@ -91,7 +91,6 @@ export default function SettingsPage() {
 
     setIsPending(true);
     
-    // Corrected storage path
     const logoRef = ref(storage, 'branding/logo.png');
     const settingsRef = doc(firestore, 'settings', 'app');
     
