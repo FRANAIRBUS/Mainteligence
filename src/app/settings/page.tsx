@@ -118,7 +118,6 @@ export default function SettingsPage() {
       window.location.reload();
 
     } catch (error: any) {
-      console.error("ERROR guardando logo:", error);
       // Enhanced Error Handling
       if (error.code === 'storage/unauthorized') {
         const permissionError = new StoragePermissionError({
