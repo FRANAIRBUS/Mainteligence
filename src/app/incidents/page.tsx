@@ -281,6 +281,7 @@ export default function IncidentsPage() {
           onOpenChange={setIsEditIncidentOpen}
           ticket={editingTicket}
           users={users}
+          departments={departments}
         />
       )}
     </SidebarProvider>

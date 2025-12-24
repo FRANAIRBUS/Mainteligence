@@ -226,6 +226,7 @@ export default function IncidentDetailPage() {
             onOpenChange={setIsEditDialogOpen}
             ticket={ticket}
             users={users}
+            departments={departments}
         />
       )}
     </SidebarProvider>

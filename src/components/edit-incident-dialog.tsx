@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useFirestore, useUser, useDoc } from '@/lib/firebase';
-import type { Ticket, User } from '@/lib/firebase/models';
+import type { Ticket, User, Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 
@@ -41,6 +41,7 @@ const formSchema = z.object({
   status: z.enum(['Abierta', 'En curso', 'En espera', 'Resuelta', 'Cerrada']),
   priority: z.enum(['Baja', 'Media', 'Alta', 'Crítica']),
   assignedTo: z.string().optional().nullable(),
+  departmentId: z.string().optional(),
 });
 
 type EditIncidentFormValues = z.infer<typeof formSchema>;
@@ -50,9 +51,10 @@ interface EditIncidentDialogProps {
   onOpenChange: (open: boolean) => void;
   ticket: Ticket;
   users: User[];
+  departments: Department[];
 }
 
-export function EditIncidentDialog({ open, onOpenChange, ticket, users = [] }: EditIncidentDialogProps) {
+export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], departments = [] }: EditIncidentDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
   const { user: currentUser, loading: userLoading } = useUser();
@@ -66,6 +68,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [] }: E
       status: ticket.status,
       priority: ticket.priority,
       assignedTo: ticket.assignedTo || null,
+      departmentId: ticket.departmentId || '',
     },
   });
 
@@ -74,6 +77,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [] }: E
       status: ticket.status,
       priority: ticket.priority,
       assignedTo: ticket.assignedTo || null,
+      departmentId: ticket.departmentId || '',
     });
   }, [ticket, form]);
 
@@ -93,6 +97,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [] }: E
     const updateData: Partial<Ticket> & { updatedAt: any } = {
       status: data.status,
       priority: data.priority,
+      departmentId: data.departmentId,
       // Convert "null" string back to actual null for Firestore
       assignedTo: data.assignedTo === 'null' ? null : data.assignedTo,
       updatedAt: serverTimestamp(),
@@ -144,6 +149,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [] }: E
   const canEditStatus = isAdmin || isMantenimiento;
   const canEditPriority = isAdmin || isMantenimiento || isCreator;
   const canEditAssignment = isAdmin || isMantenimiento;
+  const canEditDepartment = isAdmin;
 
 
   return (
@@ -224,6 +230,33 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [] }: E
                         {users.map(user => (
                           <SelectItem key={user.id} value={user.id}>
                             {user.displayName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {canEditDepartment && (
+              <FormField
+                control={form.control}
+                name="departmentId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Departamento</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value || ''} disabled={!canEditDepartment}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecciona un departamento" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {departments.map(dept => (
+                          <SelectItem key={dept.id} value={dept.id}>
+                            {dept.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
