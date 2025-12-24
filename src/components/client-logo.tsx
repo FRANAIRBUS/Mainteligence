@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { useEffect, useState } from 'react';
 
 export function ClientLogo({
   src,
@@ -13,27 +14,24 @@ export function ClientLogo({
   height?: number;
   className?: string;
 }) {
-  // Use the provided src, or fallback to a default local image
-  const logoSrc = src || '/default-logo.png';
+  const [imgSrc, setImgSrc] = useState(src || '/default-logo.png');
 
-  // Use a standard <img> tag to avoid Next.js Image component issues with external domains
-  // and to ensure it works without complex configuration.
+  useEffect(() => {
+    setImgSrc(src || '/default-logo.png');
+  }, [src]);
+
   return (
     <img
-      src={logoSrc}
+      src={imgSrc}
       alt="Logo del Cliente"
       width={width}
       height={height}
       className={cn('rounded-md object-contain', className)}
-      // Add a key to force re-render when the src changes
-      key={src || 'default-logo'}
-      // Handle potential loading errors for the remote image
-      onError={(e) => {
+      key={imgSrc}
+      onError={() => {
         // If the remote logo fails to load, fall back to the default logo
-        const target = e.target as HTMLImageElement;
-        if (target.src !== '/default-logo.png') {
-            target.onerror = null; // prevent infinite loop
-            target.src = '/default-logo.png';
+        if (imgSrc !== '/default-logo.png') {
+            setImgSrc('/default-logo.png');
         }
       }}
     />

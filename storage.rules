@@ -7,8 +7,8 @@ service firebase.storage {
       return get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Allow public read access to the company logo.
-    // Allow admins to write (upload/overwrite) the logo.
+    // Allow public read access to the company logo for display on login pages.
+    // Restrict write access to authenticated admin users only.
     match /branding/logo.png {
       allow read;
       allow write: if request.auth != null && isAdmin();
