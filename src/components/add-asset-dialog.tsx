@@ -70,7 +70,7 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
     },
   });
 
-  const onSubmit = (data: AddAssetFormValues) => {
+  const onSubmit = async (data: AddAssetFormValues) => {
     if (!firestore) {
       toast({
         variant: 'destructive',
@@ -81,35 +81,33 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
     }
     setIsPending(true);
 
-    const collectionRef = collection(firestore, 'assets');
-    addDoc(collectionRef, data)
-      .then(() => {
-        toast({
-          title: 'Éxito',
-          description: `Activo '${data.name}' creado correctamente.`,
-        });
-        onOpenChange(false);
-        form.reset();
-      })
-      .catch((error) => {
-        if (error.code === 'permission-denied') {
-          const permissionError = new FirestorePermissionError({
-            path: collectionRef.path,
-            operation: 'create',
-            requestResourceData: data,
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        } else {
-          toast({
-            variant: 'destructive',
-            title: 'Error al crear el activo',
-            description: error.message || 'Ocurrió un error inesperado.',
-          });
-        }
-      })
-      .finally(() => {
-        setIsPending(false);
+    try {
+      const collectionRef = collection(firestore, 'assets');
+      await addDoc(collectionRef, data);
+      toast({
+        title: 'Éxito',
+        description: `Activo '${data.name}' creado correctamente.`,
       });
+      onOpenChange(false);
+      form.reset();
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
+        const permissionError = new FirestorePermissionError({
+          path: 'assets',
+          operation: 'create',
+          requestResourceData: data,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error al crear el activo',
+          description: error.message || 'Ocurrió un error inesperado.',
+        });
+      }
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const handleOpenChange = (isOpen: boolean) => {

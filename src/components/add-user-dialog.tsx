@@ -69,7 +69,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     },
   });
 
-  const onSubmit = (data: AddUserFormValues) => {
+  const onSubmit = async (data: AddUserFormValues) => {
     if (!firestore) {
         toast({
             variant: 'destructive',
@@ -80,7 +80,6 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     }
     setIsPending(true);
 
-    const collectionRef = collection(firestore, "users");
     const docData = {
       ...data,
       active: true,
@@ -89,19 +88,19 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       updatedAt: serverTimestamp(),
     };
     
-    addDoc(collectionRef, docData)
-    .then(() => {
-        toast({
-            title: 'Éxito',
-            description: `Perfil para ${data.displayName} creado. El usuario ahora debe registrarse o iniciar sesión con el email ${data.email}.`,
-        });
-        onOpenChange(false);
-        form.reset();
-    })
-    .catch((error) => {
+    try {
+      const collectionRef = collection(firestore, "users");
+      await addDoc(collectionRef, docData);
+      toast({
+          title: 'Éxito',
+          description: `Perfil para ${data.displayName} creado. El usuario ahora debe registrarse o iniciar sesión con el email ${data.email}.`,
+      });
+      onOpenChange(false);
+      form.reset();
+    } catch (error: any) {
         if (error.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
-            path: collectionRef.path,
+            path: 'users',
             operation: 'create',
             requestResourceData: docData,
           });
@@ -113,10 +112,9 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                 description: error.message || 'No se pudo crear el perfil de usuario.',
             });
         }
-    })
-    .finally(() => {
+    } finally {
         setIsPending(false);
-    });
+    }
   };
   
   const handleOpenChange = (isOpen: boolean) => {

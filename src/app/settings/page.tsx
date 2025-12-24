@@ -28,7 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
@@ -58,31 +58,6 @@ export default function SettingsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-
-
-  const handleUploadError = (error: any, logoRefPath: string, settingsRefPath: string) => {
-    if (error.code === 'storage/unauthorized') {
-      const permissionError = new StoragePermissionError({
-        path: logoRefPath,
-        operation: 'write',
-      });
-      errorEmitter.emit('permission-error', permissionError);
-    } else if (error.code === 'permission-denied') {
-      const permissionError = new FirestorePermissionError({
-        path: settingsRefPath,
-        operation: 'update',
-        requestResourceData: { logoUrl: '...' },
-      });
-      errorEmitter.emit('permission-error', permissionError);
-    } else {
-      toast({
-        variant: 'destructive',
-        title: 'Error al subir el logo',
-        description: error.message || 'Ocurrió un error inesperado.',
-      });
-    }
-  };
-
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -118,48 +93,58 @@ export default function SettingsPage() {
     }
 
     setIsPending(true);
-    setUploadProgress(0);
+    setUploadProgress(0); // Reset progress
 
     const logoRef = ref(storage, 'branding/logo.png');
     const settingsRef = doc(firestore, 'settings', 'app');
 
-    const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
-
-    uploadTask.on(
-      'state_changed',
-      (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setUploadProgress(progress);
-      },
-      (error) => {
-        handleUploadError(error, logoRef.fullPath, settingsRef.path);
-        setIsPending(false);
-      },
-      async () => {
-        try {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-
-          const settingsData = {
+    try {
+        // Step 1: Upload the file
+        await uploadBytes(logoRef, selectedFile);
+        
+        // Step 2: Get the download URL
+        const downloadURL = await getDownloadURL(logoRef);
+        
+        // Step 3: Update Firestore
+        const settingsData = {
             logoUrl: downloadURL,
             updatedAt: serverTimestamp(),
-          };
-          await setDoc(settingsRef, settingsData, { merge: true });
+        };
+        await setDoc(settingsRef, settingsData, { merge: true });
 
-          toast({
+        toast({
             title: 'Éxito',
             description: 'El logo se ha actualizado correctamente. La página se recargará.',
-          });
+        });
 
-          setTimeout(() => {
+        setTimeout(() => {
             window.location.reload();
-          }, 1500);
-        } catch (error: any) {
-          handleUploadError(error, logoRef.fullPath, settingsRef.path);
-        } finally {
-          setIsPending(false);
+        }, 1500);
+
+    } catch (error: any) {
+        if (error.code === 'storage/unauthorized') {
+            const permissionError = new StoragePermissionError({
+                path: logoRef.fullPath,
+                operation: 'write',
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        } else if (error.code === 'permission-denied') {
+            const permissionError = new FirestorePermissionError({
+                path: settingsRef.path,
+                operation: 'update',
+                requestResourceData: { logoUrl: '...' },
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        } else {
+            toast({
+                variant: 'destructive',
+                title: 'Error al subir el logo',
+                description: error.message || 'Ocurrió un error inesperado.',
+            });
         }
-      }
-    );
+    } finally {
+        setIsPending(false);
+    }
 }
 
 
@@ -236,7 +221,7 @@ export default function SettingsPage() {
                     <Input id="logo-upload" type="file" onChange={handleFileChange} accept="image/png, image/jpeg, image/gif, image/webp" disabled={isPending} />
                     {selectedFile && <p className="text-xs text-muted-foreground">Archivo seleccionado: {selectedFile.name}</p>}
                     </div>
-                     {isPending && (
+                     {isPending && uploadProgress > 0 && (
                         <div className="space-y-2">
                             <Label>Progreso de la subida</Label>
                             <Progress value={uploadProgress} className="w-full" />

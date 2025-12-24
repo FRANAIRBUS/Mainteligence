@@ -94,24 +94,22 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     setIsPending(true);
     
     const ticketRef = doc(firestore, 'tickets', ticket.id);
-    const updateData: Partial<Ticket> & { updatedAt: any } = {
+    const updateData: any = {
       status: data.status,
       priority: data.priority,
       departmentId: data.departmentId,
-      // Convert "null" string back to actual null for Firestore
       assignedTo: data.assignedTo === 'null' ? null : data.assignedTo,
       updatedAt: serverTimestamp(),
     };
     
-    updateDoc(ticketRef, updateData)
-      .then(() => {
-        toast({
-          title: 'Éxito',
-          description: `Incidencia '${ticket.title}' actualizada.`,
-        });
-        onOpenChange(false);
-      })
-      .catch((error) => {
+    try {
+      await updateDoc(ticketRef, updateData);
+      toast({
+        title: 'Éxito',
+        description: `Incidencia '${ticket.title}' actualizada.`,
+      });
+      onOpenChange(false);
+    } catch(error: any) {
         if (error.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
             path: ticketRef.path,
@@ -126,10 +124,9 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
             description: error.message || 'Ocurrió un error inesperado.',
           });
         }
-      })
-      .finally(() => {
+    } finally {
         setIsPending(false);
-      });
+    }
   };
 
   const handleOpenChange = (isOpen: boolean) => {

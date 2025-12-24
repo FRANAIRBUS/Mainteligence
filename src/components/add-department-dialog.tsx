@@ -59,7 +59,7 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
     },
   });
 
-  const onSubmit = (data: AddDepartmentFormValues) => {
+  const onSubmit = async (data: AddDepartmentFormValues) => {
     if (!firestore) {
       toast({
         variant: 'destructive',
@@ -70,35 +70,33 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
     }
     setIsPending(true);
 
-    const collectionRef = collection(firestore, 'departments');
-    addDoc(collectionRef, data)
-      .then(() => {
-        toast({
-          title: 'Éxito',
-          description: `Departamento '${data.name}' creado correctamente.`,
-        });
-        onOpenChange(false);
-        form.reset();
-      })
-      .catch((error) => {
-        if (error.code === 'permission-denied') {
-          const permissionError = new FirestorePermissionError({
-            path: collectionRef.path,
-            operation: 'create',
-            requestResourceData: data,
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        } else {
-          toast({
-            variant: 'destructive',
-            title: 'Error al crear el departamento',
-            description: error.message || 'Ocurrió un error inesperado.',
-          });
-        }
-      })
-      .finally(() => {
-        setIsPending(false);
+    try {
+      const collectionRef = collection(firestore, 'departments');
+      await addDoc(collectionRef, data);
+      toast({
+        title: 'Éxito',
+        description: `Departamento '${data.name}' creado correctamente.`,
       });
+      onOpenChange(false);
+      form.reset();
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
+        const permissionError = new FirestorePermissionError({
+          path: 'departments',
+          operation: 'create',
+          requestResourceData: data,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error al crear el departamento',
+          description: error.message || 'Ocurrió un error inesperado.',
+        });
+      }
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const handleOpenChange = (isOpen: boolean) => {

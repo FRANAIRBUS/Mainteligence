@@ -59,7 +59,7 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
     },
   });
 
-  const onSubmit = (data: AddLocationFormValues) => {
+  const onSubmit = async (data: AddLocationFormValues) => {
     if (!firestore) {
       toast({
         variant: 'destructive',
@@ -70,35 +70,33 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
     }
     setIsPending(true);
     
-    const collectionRef = collection(firestore, "sites");
-    addDoc(collectionRef, data)
-      .then(() => {
-        toast({
-          title: 'Éxito',
-          description: `Ubicación '${data.name}' creada correctamente.`,
-        });
-        onOpenChange(false);
-        form.reset();
-      })
-      .catch((error) => {
-        if (error.code === 'permission-denied') {
-          const permissionError = new FirestorePermissionError({
-            path: collectionRef.path,
-            operation: 'create',
-            requestResourceData: data,
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        } else {
-          toast({
-            variant: 'destructive',
-            title: 'Error al crear la ubicación',
-            description: error.message || 'Ocurrió un error inesperado.',
-          });
-        }
-      })
-      .finally(() => {
-        setIsPending(false);
+    try {
+      const collectionRef = collection(firestore, "sites");
+      await addDoc(collectionRef, data);
+      toast({
+        title: 'Éxito',
+        description: `Ubicación '${data.name}' creada correctamente.`,
       });
+      onOpenChange(false);
+      form.reset();
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
+        const permissionError = new FirestorePermissionError({
+          path: 'sites',
+          operation: 'create',
+          requestResourceData: data,
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error al crear la ubicación',
+          description: error.message || 'Ocurrió un error inesperado.',
+        });
+      }
+    } finally {
+      setIsPending(false);
+    }
   };
 
   const handleOpenChange = (isOpen: boolean) => {

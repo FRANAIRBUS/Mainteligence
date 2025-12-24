@@ -71,7 +71,7 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
     },
   });
 
-  const onSubmit = (data: EditUserFormValues) => {
+  const onSubmit = async (data: EditUserFormValues) => {
     if (!firestore || !user) {
         toast({
             variant: 'destructive',
@@ -88,33 +88,31 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
         updatedAt: serverTimestamp(),
     };
 
-    updateDoc(userRef, updateData)
-        .then(() => {
-            toast({
-                title: 'Éxito',
-                description: `Usuario ${data.displayName} actualizado correctamente.`,
+    try {
+      await updateDoc(userRef, updateData);
+      toast({
+          title: 'Éxito',
+          description: `Usuario ${data.displayName} actualizado correctamente.`,
+      });
+      onOpenChange(false);
+    } catch(error: any) {
+        if (error.code === 'permission-denied') {
+            const permissionError = new FirestorePermissionError({
+                path: userRef.path,
+                operation: 'update',
+                requestResourceData: updateData,
             });
-            onOpenChange(false);
-        })
-        .catch((error) => {
-            if (error.code === 'permission-denied') {
-                const permissionError = new FirestorePermissionError({
-                    path: userRef.path,
-                    operation: 'update',
-                    requestResourceData: updateData,
-                });
-                errorEmitter.emit('permission-error', permissionError);
-            } else {
-                toast({
-                    variant: 'destructive',
-                    title: 'Error',
-                    description: error.message || 'No se pudo actualizar el usuario.',
-                });
-            }
-        })
-        .finally(() => {
-            setIsPending(false);
-        });
+            errorEmitter.emit('permission-error', permissionError);
+        } else {
+            toast({
+                variant: 'destructive',
+                title: 'Error',
+                description: error.message || 'No se pudo actualizar el usuario.',
+            });
+        }
+    } finally {
+        setIsPending(false);
+    }
   };
   
   const handleOpenChange = (isOpen: boolean) => {

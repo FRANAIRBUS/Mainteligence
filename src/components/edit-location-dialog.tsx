@@ -66,7 +66,7 @@ export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDia
     }
   }, [site, form]);
 
-  const onSubmit = (data: EditLocationFormValues) => {
+  const onSubmit = async (data: EditLocationFormValues) => {
     if (!firestore || !site) {
         toast({
             variant: 'destructive',
@@ -78,15 +78,15 @@ export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDia
     setIsPending(true);
     
     const siteRef = doc(firestore, "sites", site.id);
-    updateDoc(siteRef, data)
-      .then(() => {
-        toast({
-          title: 'Éxito',
-          description: `Ubicación '${data.name}' actualizada correctamente.`,
-        });
-        onOpenChange(false);
-      })
-      .catch((error) => {
+    
+    try {
+      await updateDoc(siteRef, data);
+      toast({
+        title: 'Éxito',
+        description: `Ubicación '${data.name}' actualizada correctamente.`,
+      });
+      onOpenChange(false);
+    } catch (error: any) {
         if (error.code === 'permission-denied') {
             const permissionError = new FirestorePermissionError({
                 path: siteRef.path,
@@ -101,10 +101,9 @@ export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDia
                 description: error.message || 'No se pudo actualizar la ubicación.',
             });
         }
-      })
-      .finally(() => {
-        setIsPending(false);
-      });
+    } finally {
+      setIsPending(false);
+    }
   };
   
   const handleOpenChange = (isOpen: boolean) => {

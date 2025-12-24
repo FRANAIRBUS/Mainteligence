@@ -103,32 +103,12 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
     try {
         const ticketId = `TICKET_${Date.now()}`; // Temporary ID for storage path
         const photoUrls: string[] = [];
-
-        for (const photo of photos) {
-            const photoRef = ref(storage, `tickets/${ticketId}/${photo.name}`);
-            try {
-                const snapshot = await uploadBytes(photoRef, photo);
-                const url = await getDownloadURL(snapshot.ref);
-                photoUrls.push(url);
-            } catch (storageError: any) {
-                 if (storageError.code === 'storage/unauthorized' || storageError.code === 'storage/object-not-found') {
-                    const permissionError = new StoragePermissionError({
-                      path: photoRef.fullPath,
-                      operation: 'write',
-                    });
-                    errorEmitter.emit('permission-error', permissionError);
-                } else {
-                     throw storageError;
-                }
-                setIsPending(false);
-                return;
-            }
-        }
         
+        const collectionRef = collection(firestore, 'tickets');
         const docData = {
             ...data,
-            type: 'correctivo',
-            status: 'Abierta',
+            type: 'correctivo' as const,
+            status: 'Abierta' as const,
             createdBy: user.uid,
             assignedRole: 'maintenance',
             assignedTo: null,
@@ -137,8 +117,14 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
             photoUrls,
             displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`
         };
-
-        const collectionRef = collection(firestore, "tickets");
+        
+        for (const photo of photos) {
+            const photoRef = ref(storage, `tickets/${ticketId}/${photo.name}`);
+            const snapshot = await uploadBytes(photoRef, photo);
+            const url = await getDownloadURL(snapshot.ref);
+            photoUrls.push(url);
+        }
+        
         await addDoc(collectionRef, docData);
 
         toast({
@@ -150,7 +136,13 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
         setPhotos([]);
 
     } catch (error: any) {
-        if (error.code === 'permission-denied') {
+        if (error.code === 'storage/unauthorized') {
+            const permissionError = new StoragePermissionError({
+                path: error.customData?.['path'] || 'tickets/photos',
+                operation: 'write',
+            });
+            errorEmitter.emit('permission-error', permissionError);
+        } else if (error.code === 'permission-denied') {
             const permissionError = new FirestorePermissionError({
                 path: 'tickets',
                 operation: 'create',
