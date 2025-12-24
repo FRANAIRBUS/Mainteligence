@@ -63,7 +63,8 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if isSignedIn(); // Allow any signed-in user to read settings (for the logo)
+      // Allow anyone to read settings (for the logo on the login page)
+      allow read: if true;
       allow write: if isAdmin(); // Only admins can change settings
     }
   }

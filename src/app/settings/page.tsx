@@ -33,7 +33,7 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
-import Image from 'next/image';
+import { ClientLogo } from '@/components/client-logo';
 
 interface AppSettings {
   logoUrl?: string;
@@ -79,7 +79,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleUpload = () => {
+  const handleUpload = async () => {
     if (!selectedFile || !storage || !firestore || !isAdmin) {
       toast({
         variant: 'destructive',
@@ -94,55 +94,55 @@ export default function SettingsPage() {
     const logoRef = ref(storage, 'branding/logo.png');
     const settingsRef = doc(firestore, 'settings', 'app');
     
-    // Step 1: Upload to Storage
-    uploadBytes(logoRef, selectedFile)
-      .then(uploadResult => {
-        // Step 2: Get Download URL
-        return getDownloadURL(uploadResult.ref);
-      })
-      .then(downloadURL => {
-        // Step 3: Save to Firestore
-        const settingsData = { 
-          logoUrl: downloadURL,
-          updatedAt: serverTimestamp(),
-        };
-        return setDoc(settingsRef, settingsData, { merge: true });
-      })
-      .then(() => {
-        toast({
-          title: 'Éxito',
-          description: 'El logo se ha actualizado correctamente.',
-        });
-        setSelectedFile(null);
-        // Force reload to ensure all components see the change.
-        window.location.reload();
-      })
-      .catch((error) => {
-        // Enhanced Error Handling
-        if (error.code === 'storage/unauthorized') {
-          const permissionError = new StoragePermissionError({
-            path: logoRef.fullPath,
-            operation: 'write',
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        } else if (error.code === 'permission-denied') {
-          const permissionError = new FirestorePermissionError({
-            path: settingsRef.path,
-            operation: 'update',
-            requestResourceData: { logoUrl: '...' }, // Don't log the full URL
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        } else {
-          toast({
-              variant: 'destructive',
-              title: 'Error al subir el logo',
-              description: error.message || 'Ocurrió un error inesperado.',
-          });
-        }
-      })
-      .finally(() => {
-        setIsPending(false);
+    try {
+      // Step 1: Upload to Storage
+      const uploadResult = await uploadBytes(logoRef, selectedFile);
+      
+      // Step 2: Get Download URL
+      const downloadURL = await getDownloadURL(uploadResult.ref);
+      
+      // Step 3: Save to Firestore
+      const settingsData = { 
+        logoUrl: downloadURL,
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(settingsRef, settingsData, { merge: true });
+      
+      toast({
+        title: 'Éxito',
+        description: 'El logo se ha actualizado correctamente.',
       });
+      setSelectedFile(null);
+      
+      // Force reload to ensure all components see the change.
+      window.location.reload();
+
+    } catch (error: any) {
+      console.error("ERROR guardando logo:", error);
+      // Enhanced Error Handling
+      if (error.code === 'storage/unauthorized') {
+        const permissionError = new StoragePermissionError({
+          path: logoRef.fullPath,
+          operation: 'write',
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      } else if (error.code === 'permission-denied') {
+        const permissionError = new FirestorePermissionError({
+          path: settingsRef.path,
+          operation: 'update',
+          requestResourceData: { logoUrl: '...' }, // Don't log the full URL
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      } else {
+        toast({
+            variant: 'destructive',
+            title: 'Error al subir el logo',
+            description: error.message || 'Ocurrió un error inesperado.',
+        });
+      }
+    } finally {
+        setIsPending(false);
+    }
   }
 
   const initialLoading = userLoading || profileLoading;
@@ -196,7 +196,7 @@ export default function SettingsPage() {
                     <div className="space-y-2">
                     <Label>Logo Actual</Label>
                     <div className="flex items-center gap-4">
-                        {settingsLoading ? <Icons.spinner className='animate-spin' /> : <DynamicClientLogo width={64} height={64} className="bg-muted p-1" />}
+                        {settingsLoading ? <Icons.spinner className='animate-spin' /> : <DynamicClientLogo width={64} height={64} className="bg-muted p-1 rounded-md" />}
                         <p className="text-sm text-muted-foreground">Este es el logo que se muestra en toda la aplicación.</p>
                     </div>
                     </div>
@@ -204,7 +204,7 @@ export default function SettingsPage() {
                       <Label>Previsualización</Label>
                        <div className="flex items-center gap-4">
                          {previewUrl ? (
-                           <Image src={previewUrl} alt="Previsualización del logo" width={64} height={64} className="bg-muted p-1 rounded-md" />
+                           <ClientLogo src={previewUrl} alt="Previsualización del logo" width={64} height={64} className="bg-muted p-1 rounded-md" />
                          ) : (
                            <div className="flex h-[64px] w-[64px] items-center justify-center rounded-md bg-muted text-xs text-muted-foreground">
                              Sin previsualización

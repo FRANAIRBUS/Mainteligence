@@ -18,6 +18,7 @@ export function DynamicClientLogo({
   height?: number;
   className?: string;
 }) {
+  // We make settings readable by anyone, so no need to wait for user auth
   const { data: settings, loading } = useDoc<AppSettings>('settings/app');
 
   if (loading) {
@@ -29,7 +30,6 @@ export function DynamicClientLogo({
     );
   }
 
-  // Pass the loaded URL to the ClientLogo component
   return (
     <ClientLogo
       src={settings?.logoUrl}

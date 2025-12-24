@@ -4,14 +4,15 @@ service firebase.storage {
   match /b/{bucket}/o {
     // Helper function to check if the user is an admin by reading their role from Firestore.
     function isAdmin() {
-      return get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      // Ensure the user is signed in before trying to read their role.
+      return request.auth != null && get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     // Allow public read access to the company logo for display on login pages.
     // Restrict write access to authenticated admin users only.
     match /branding/logo.png {
-      allow read;
-      allow write: if request.auth != null && isAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
     
     // Allow authenticated users to write to their own ticket folders for photo evidence.
