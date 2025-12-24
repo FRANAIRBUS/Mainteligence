@@ -28,7 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
@@ -82,70 +82,69 @@ export default function SettingsPage() {
     }
   };
 
-  const handleUpload = async () => {
+ const handleUpload = async () => {
     if (!selectedFile || !storage || !firestore || !isAdmin) {
-        toast({
-            variant: 'destructive',
-            title: 'Error',
-            description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
-        });
-        return;
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
+      });
+      return;
     }
 
     setIsPending(true);
-    setUploadProgress(0); // Reset progress
+    setUploadProgress(0);
 
     const logoRef = ref(storage, 'branding/logo.png');
     const settingsRef = doc(firestore, 'settings', 'app');
 
-    try {
-        // Step 1: Upload the file
-        await uploadBytes(logoRef, selectedFile);
-        
-        // Step 2: Get the download URL
-        const downloadURL = await getDownloadURL(logoRef);
-        
-        // Step 3: Update Firestore
-        const settingsData = {
-            logoUrl: downloadURL,
-            updatedAt: serverTimestamp(),
-        };
-        await setDoc(settingsRef, settingsData, { merge: true });
+    const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
 
-        toast({
+    uploadTask.on(
+      'state_changed',
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setUploadProgress(progress);
+      },
+      (error) => {
+        // Handle unsuccessful uploads
+        if (error.code === 'storage/unauthorized') {
+          const permissionError = new StoragePermissionError({ path: logoRef.fullPath, operation: 'write' });
+          errorEmitter.emit('permission-error', permissionError);
+        } else {
+           toast({ variant: 'destructive', title: 'Error de subida', description: error.message });
+        }
+        setIsPending(false);
+        setUploadProgress(0);
+      },
+      async () => {
+        // Handle successful uploads on complete
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          const settingsData = { logoUrl: downloadURL, updatedAt: serverTimestamp() };
+          
+          await setDoc(settingsRef, settingsData, { merge: true });
+
+          toast({
             title: 'Éxito',
             description: 'El logo se ha actualizado correctamente. La página se recargará.',
-        });
+          });
 
-        setTimeout(() => {
-            window.location.reload();
-        }, 1500);
+          setTimeout(() => { window.location.reload(); }, 1500);
 
-    } catch (error: any) {
-        if (error.code === 'storage/unauthorized') {
-            const permissionError = new StoragePermissionError({
-                path: logoRef.fullPath,
-                operation: 'write',
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        } else if (error.code === 'permission-denied') {
-            const permissionError = new FirestorePermissionError({
-                path: settingsRef.path,
-                operation: 'update',
-                requestResourceData: { logoUrl: '...' },
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        } else {
-            toast({
-                variant: 'destructive',
-                title: 'Error al subir el logo',
-                description: error.message || 'Ocurrió un error inesperado.',
-            });
+        } catch (error: any) {
+           if (error.code === 'permission-denied') {
+              const permissionError = new FirestorePermissionError({ path: settingsRef.path, operation: 'update', requestResourceData: { logoUrl: '...' }});
+              errorEmitter.emit('permission-error', permissionError);
+           } else {
+              toast({ variant: 'destructive', title: 'Error al guardar', description: error.message });
+           }
+        } finally {
+            setIsPending(false);
         }
-    } finally {
-        setIsPending(false);
-    }
-}
+      }
+    );
+  };
 
 
   const initialLoading = userLoading || profileLoading;
@@ -221,7 +220,7 @@ export default function SettingsPage() {
                     <Input id="logo-upload" type="file" onChange={handleFileChange} accept="image/png, image/jpeg, image/gif, image/webp" disabled={isPending} />
                     {selectedFile && <p className="text-xs text-muted-foreground">Archivo seleccionado: {selectedFile.name}</p>}
                     </div>
-                     {isPending && uploadProgress > 0 && (
+                     {isPending && (
                         <div className="space-y-2">
                             <Label>Progreso de la subida</Label>
                             <Progress value={uploadProgress} className="w-full" />
@@ -231,10 +230,8 @@ export default function SettingsPage() {
                 </CardContent>
                 <CardFooter className="border-t px-6 py-4">
                     <Button onClick={handleUpload} disabled={isPending || !selectedFile}>
-                    {isPending ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : null}
-                     {isPending ? 'Subiendo...' : 'Guardar Cambios'}
+                    {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isPending ? 'Subiendo...' : 'Guardar Cambios'}
                     </Button>
                 </CardFooter>
                 </Card>

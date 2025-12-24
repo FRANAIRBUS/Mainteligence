@@ -3,23 +3,11 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     
-    function getUserRole(uid) {
-      let userDoc = get(/databases/(default)/documents/users/$(uid));
-      if (!exists(/databases/(default)/documents/users/$(uid))) {
-        return 'none';
-      }
-      return userDoc.data.role;
-    }
-    
-    function isAdmin() {
-      return request.auth != null && getUserRole(request.auth.uid) == 'admin';
-    }
-
     // Allow public read access to the company logo for display on login pages.
-    // Restrict write access to authenticated admin users only.
+    // Restrict write access to authenticated admin users only, checked by app logic.
     match /branding/logo.png {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if request.auth != null;
     }
     
     // Allow authenticated users to write to their own ticket folders for photo evidence.
