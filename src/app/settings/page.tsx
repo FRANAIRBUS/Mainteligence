@@ -59,6 +59,29 @@ export default function SettingsPage() {
   const [isPending, setIsPending] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  const handleUploadError = (error: any, logoRefPath: string, settingsRefPath: string) => {
+    if (error.code === 'storage/unauthorized') {
+      const permissionError = new StoragePermissionError({
+        path: logoRefPath,
+        operation: 'write',
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    } else if (error.code === 'permission-denied') {
+      const permissionError = new FirestorePermissionError({
+        path: settingsRefPath,
+        operation: 'update',
+        requestResourceData: { logoUrl: '...' },
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Error al subir el logo',
+        description: error.message || 'Ocurrió un error inesperado.',
+      });
+    }
+  };
+
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
@@ -82,14 +105,14 @@ export default function SettingsPage() {
     }
   };
 
- const handleUpload = async () => {
+  const handleUpload = async () => {
     if (!selectedFile || !storage || !firestore || !isAdmin) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
-      });
-      return;
+        toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
+        });
+        return;
     }
 
     setIsPending(true);
@@ -107,22 +130,17 @@ export default function SettingsPage() {
         setUploadProgress(progress);
       },
       (error) => {
-        // Handle unsuccessful uploads
-        if (error.code === 'storage/unauthorized') {
-          const permissionError = new StoragePermissionError({ path: logoRef.fullPath, operation: 'write' });
-          errorEmitter.emit('permission-error', permissionError);
-        } else {
-           toast({ variant: 'destructive', title: 'Error de subida', description: error.message });
-        }
+        handleUploadError(error, logoRef.fullPath, settingsRef.path);
         setIsPending(false);
-        setUploadProgress(0);
       },
       async () => {
-        // Handle successful uploads on complete
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          const settingsData = { logoUrl: downloadURL, updatedAt: serverTimestamp() };
-          
+
+          const settingsData = {
+            logoUrl: downloadURL,
+            updatedAt: serverTimestamp(),
+          };
           await setDoc(settingsRef, settingsData, { merge: true });
 
           toast({
@@ -130,22 +148,17 @@ export default function SettingsPage() {
             description: 'El logo se ha actualizado correctamente. La página se recargará.',
           });
 
-          setTimeout(() => { window.location.reload(); }, 1500);
-
+          setTimeout(() => {
+            window.location.reload();
+          }, 1500);
         } catch (error: any) {
-           if (error.code === 'permission-denied') {
-              const permissionError = new FirestorePermissionError({ path: settingsRef.path, operation: 'update', requestResourceData: { logoUrl: '...' }});
-              errorEmitter.emit('permission-error', permissionError);
-           } else {
-              toast({ variant: 'destructive', title: 'Error al guardar', description: error.message });
-           }
+          handleUploadError(error, logoRef.fullPath, settingsRef.path);
         } finally {
-            setIsPending(false);
+          setIsPending(false);
         }
       }
     );
-  };
-
+  }
 
   const initialLoading = userLoading || profileLoading;
 

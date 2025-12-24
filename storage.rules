@@ -4,7 +4,7 @@ service firebase.storage {
   match /b/{bucket}/o {
     
     // Allow public read access to the company logo for display on login pages.
-    // Restrict write access to authenticated admin users only, checked by app logic.
+    // Restrict write access to authenticated users. The app logic ensures only admins can trigger the upload.
     match /branding/logo.png {
       allow read: if true;
       allow write: if request.auth != null;
