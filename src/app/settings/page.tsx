@@ -28,7 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, type UploadTask } from 'firebase/storage';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
@@ -59,6 +59,29 @@ export default function SettingsPage() {
   const [isPending, setIsPending] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const uploadUnsubscribe = useRef<(() => void) | null>(null);
+  const uploadTaskRef = useRef<UploadTask | null>(null);
+  const uploadStallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearStallTimer = () => {
+    if (uploadStallTimer.current) {
+      clearTimeout(uploadStallTimer.current);
+      uploadStallTimer.current = null;
+    }
+  };
+
+  const resetUploadState = () => {
+    setIsPending(false);
+    setUploadProgress(0);
+    clearStallTimer();
+    if (uploadUnsubscribe.current) {
+      uploadUnsubscribe.current();
+      uploadUnsubscribe.current = null;
+    }
+    if (uploadTaskRef.current) {
+      uploadTaskRef.current.cancel();
+      uploadTaskRef.current = null;
+    }
+  };
 
 
   const handleUploadError = (error: any, logoRefPath: string, settingsRefPath: string) => {
@@ -115,9 +138,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     return () => {
-      if (uploadUnsubscribe.current) {
-        uploadUnsubscribe.current();
-      }
+      resetUploadState();
     };
   }, []);
 
@@ -130,12 +151,12 @@ export default function SettingsPage() {
 
   const handleUpload = async () => {
     if (!selectedFile || !storage || !firestore || !isAdmin) {
-        toast({
-            variant: 'destructive',
-            title: 'Error',
-            description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
-        });
-        return;
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
+      });
+      return;
     }
 
     setIsPending(true);
@@ -147,23 +168,44 @@ export default function SettingsPage() {
       uploadUnsubscribe.current();
       uploadUnsubscribe.current = null;
     }
+    clearStallTimer();
 
     try {
       const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
+      uploadTaskRef.current = uploadTask;
+
+      uploadStallTimer.current = setTimeout(() => {
+        toast({
+          variant: 'destructive',
+          title: 'La subida está tardando demasiado',
+          description: 'Verifica tu conexión o los permisos de Firebase Storage y vuelve a intentarlo.',
+        });
+        resetUploadState();
+      }, 15000);
 
       uploadUnsubscribe.current = uploadTask.on(
         'state_changed',
         (snapshot) => {
           const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
           setUploadProgress(progress);
+          if (uploadStallTimer.current) {
+            clearTimeout(uploadStallTimer.current);
+          }
+          uploadStallTimer.current = setTimeout(() => {
+            toast({
+              variant: 'destructive',
+              title: 'La subida está tardando demasiado',
+              description: 'No se detectó progreso en la carga. Revisa tu conexión o permisos en Firebase Storage.',
+            });
+            resetUploadState();
+          }, 15000);
         },
         (error) => {
           handleUploadError(error, logoRef.fullPath, settingsRef.path);
-          setIsPending(false);
-          setUploadProgress(0);
-          uploadUnsubscribe.current = null;
+          resetUploadState();
         },
         async () => {
+          clearStallTimer();
           try {
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
@@ -184,16 +226,13 @@ export default function SettingsPage() {
           } catch (error: any) {
             handleUploadError(error, logoRef.fullPath, settingsRef.path);
           } finally {
-            setIsPending(false);
-            setUploadProgress(0);
-            uploadUnsubscribe.current = null;
+            resetUploadState();
           }
         }
       );
     } catch (error: any) {
       handleUploadError(error, logoRef.fullPath, settingsRef.path);
-      setIsPending(false);
-      setUploadProgress(0);
+      resetUploadState();
     }
 }
 
