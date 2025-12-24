@@ -2,10 +2,17 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Helper function to check if the user is an admin by reading their role from Firestore.
+    
+    function getUserRole(uid) {
+      let userDoc = get(/databases/(default)/documents/users/$(uid));
+      if (!exists(/databases/(default)/documents/users/$(uid))) {
+        return 'none';
+      }
+      return userDoc.data.role;
+    }
+    
     function isAdmin() {
-      // Ensure the user is signed in before trying to read their role.
-      return request.auth != null && get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return request.auth != null && getUserRole(request.auth.uid) == 'admin';
     }
 
     // Allow public read access to the company logo for display on login pages.

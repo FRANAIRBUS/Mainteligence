@@ -7,16 +7,26 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // A more robust way to check for a role, especially for 'admin'.
+    // It safely checks if the user document and role exist.
+    function getUserRole(uid) {
+      let userDoc = get(/databases/$(database)/documents/users/$(uid));
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
+        return 'none';
+      }
+      return userDoc.data.role;
+    }
+
     function isOperario() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'operario';
+      return isSignedIn() && getUserRole(request.auth.uid) == 'operario';
     }
 
     function isMantenimiento() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['mantenimiento', 'admin'];
+      return isSignedIn() && getUserRole(request.auth.uid) in ['mantenimiento', 'admin'];
     }
 
     function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isSignedIn() && getUserRole(request.auth.uid) == 'admin';
     }
 
     function isOwner(userId) {

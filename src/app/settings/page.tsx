@@ -102,7 +102,6 @@ export default function SettingsPage() {
     try {
         const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
 
-        // Wait for the upload to complete while monitoring progress
         await new Promise<void>((resolve, reject) => {
             uploadTask.on(
                 'state_changed',
@@ -111,11 +110,9 @@ export default function SettingsPage() {
                     setUploadProgress(progress);
                 },
                 (error) => {
-                    // This will catch storage-level errors (like permission denied)
                     reject(error);
                 },
                 () => {
-                    // This is called on successful upload
                     resolve();
                 }
             );
@@ -160,7 +157,6 @@ export default function SettingsPage() {
             });
         }
     } finally {
-        // This GUARANTEES the pending state is reset
         setIsPending(false);
     }
 }
