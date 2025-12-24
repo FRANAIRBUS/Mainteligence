@@ -14,7 +14,7 @@ import { Icons } from '@/components/icons';
 import { useUser, useFirestore, useStorage, useDoc } from '@/lib/firebase';
 import type { User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Card,
   CardContent,
@@ -58,6 +58,8 @@ export default function SettingsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadUnsubscribe = useRef<(() => void) | null>(null);
+
 
   const handleUploadError = (error: any, logoRefPath: string, settingsRefPath: string) => {
     if (error.code === 'storage/unauthorized') {
@@ -82,6 +84,7 @@ export default function SettingsPage() {
     }
   };
 
+
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
@@ -97,6 +100,14 @@ export default function SettingsPage() {
       setPreviewUrl(null);
     }
   }, [selectedFile]);
+
+  useEffect(() => {
+    return () => {
+      if (uploadUnsubscribe.current) {
+        uploadUnsubscribe.current();
+      }
+    };
+  }, []);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -120,45 +131,57 @@ export default function SettingsPage() {
 
     const logoRef = ref(storage, 'branding/logo.png');
     const settingsRef = doc(firestore, 'settings', 'app');
+    if (uploadUnsubscribe.current) {
+      uploadUnsubscribe.current();
+      uploadUnsubscribe.current = null;
+    }
 
-    const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
+    try {
+      const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
 
-    uploadTask.on(
-      'state_changed',
-      (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setUploadProgress(progress);
-      },
-      (error) => {
-        handleUploadError(error, logoRef.fullPath, settingsRef.path);
-        setIsPending(false);
-      },
-      async () => {
-        try {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-
-          const settingsData = {
-            logoUrl: downloadURL,
-            updatedAt: serverTimestamp(),
-          };
-          await setDoc(settingsRef, settingsData, { merge: true });
-
-          toast({
-            title: 'Éxito',
-            description: 'El logo se ha actualizado correctamente. La página se recargará.',
-          });
-
-          setTimeout(() => {
-            window.location.reload();
-          }, 1500);
-        } catch (error: any) {
+      uploadUnsubscribe.current = uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          setUploadProgress(progress);
+        },
+        (error) => {
           handleUploadError(error, logoRef.fullPath, settingsRef.path);
-        } finally {
           setIsPending(false);
+          uploadUnsubscribe.current = null;
+        },
+        async () => {
+          try {
+            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+            const settingsData = {
+              logoUrl: downloadURL,
+              updatedAt: serverTimestamp(),
+            };
+            await setDoc(settingsRef, settingsData, { merge: true });
+
+            toast({
+              title: 'Éxito',
+              description: 'El logo se ha actualizado correctamente. La página se recargará.',
+            });
+
+            setTimeout(() => {
+              window.location.reload();
+            }, 1500);
+          } catch (error: any) {
+            handleUploadError(error, logoRef.fullPath, settingsRef.path);
+          } finally {
+            setIsPending(false);
+            uploadUnsubscribe.current = null;
+          }
         }
-      }
-    );
-  }
+      );
+    } catch (error: any) {
+      handleUploadError(error, logoRef.fullPath, settingsRef.path);
+      setIsPending(false);
+    }
+}
+
 
   const initialLoading = userLoading || profileLoading;
 
@@ -243,8 +266,10 @@ export default function SettingsPage() {
                 </CardContent>
                 <CardFooter className="border-t px-6 py-4">
                     <Button onClick={handleUpload} disabled={isPending || !selectedFile}>
-                    {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {isPending ? 'Subiendo...' : 'Guardar Cambios'}
+                    {isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                     {isPending ? 'Subiendo...' : 'Guardar Cambios'}
                     </Button>
                 </CardFooter>
                 </Card>
