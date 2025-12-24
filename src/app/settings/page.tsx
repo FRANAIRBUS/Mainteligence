@@ -60,6 +60,30 @@ export default function SettingsPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
 
 
+  const handleUploadError = (error: any, logoRefPath: string, settingsRefPath: string) => {
+    if (error.code === 'storage/unauthorized') {
+      const permissionError = new StoragePermissionError({
+        path: logoRefPath,
+        operation: 'write',
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    } else if (error.code === 'permission-denied') {
+      const permissionError = new FirestorePermissionError({
+        path: settingsRefPath,
+        operation: 'update',
+        requestResourceData: { logoUrl: '...' },
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Error al subir el logo',
+        description: error.message || 'Ocurrió un error inesperado.',
+      });
+    }
+  };
+
+
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login');
@@ -99,66 +123,43 @@ export default function SettingsPage() {
     const logoRef = ref(storage, 'branding/logo.png');
     const settingsRef = doc(firestore, 'settings', 'app');
 
-    try {
-        const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
+    const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
 
-        await new Promise<void>((resolve, reject) => {
-            uploadTask.on(
-                'state_changed',
-                (snapshot) => {
-                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                    setUploadProgress(progress);
-                },
-                (error) => {
-                    reject(error);
-                },
-                () => {
-                    resolve();
-                }
-            );
-        });
-        
-        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+    uploadTask.on(
+      'state_changed',
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setUploadProgress(progress);
+      },
+      (error) => {
+        handleUploadError(error, logoRef.fullPath, settingsRef.path);
+        setIsPending(false);
+      },
+      async () => {
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
-        const settingsData = {
+          const settingsData = {
             logoUrl: downloadURL,
             updatedAt: serverTimestamp(),
-        };
-        await setDoc(settingsRef, settingsData, { merge: true });
+          };
+          await setDoc(settingsRef, settingsData, { merge: true });
 
-        toast({
+          toast({
             title: 'Éxito',
             description: 'El logo se ha actualizado correctamente. La página se recargará.',
-        });
+          });
 
-        setTimeout(() => {
+          setTimeout(() => {
             window.location.reload();
-        }, 1500);
-
-    } catch (error: any) {
-        if (error.code === 'storage/unauthorized') {
-            const permissionError = new StoragePermissionError({
-                path: logoRef.fullPath,
-                operation: 'write',
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        } else if (error.code === 'permission-denied') {
-            const permissionError = new FirestorePermissionError({
-                path: settingsRef.path,
-                operation: 'update',
-                requestResourceData: { logoUrl: '...' },
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        } else {
-            toast({
-                variant: 'destructive',
-                title: 'Error al subir el logo',
-                description: error.message || 'Ocurrió un error inesperado.',
-            });
+          }, 1500);
+        } catch (error: any) {
+          handleUploadError(error, logoRef.fullPath, settingsRef.path);
+        } finally {
+          setIsPending(false);
         }
-    } finally {
-        setIsPending(false);
-    }
+      }
+    );
 }
 
 
