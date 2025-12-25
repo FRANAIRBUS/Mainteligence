@@ -1,5 +1,5 @@
 // src/firebase/config.ts
-import { FirebaseOptions, getApp, getApps, initializeApp } from 'firebase/app';
+import { FirebaseOptions, getApp, getApps, initializeApp } from "firebase/app";
 
 const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
@@ -12,23 +12,28 @@ const firebaseConfig: FirebaseOptions = {
   storageBucket: projectId ? `${projectId}.appspot.com` : undefined,
 };
 
-// Validate the config
-if (
-  !firebaseConfig.apiKey ||
-  !firebaseConfig.authDomain ||
-  !firebaseConfig.projectId ||
-  !firebaseConfig.storageBucket
-) {
-  throw new Error('Missing Firebase config. Please check your .env file and ensure all required variables are set.');
-}
+// Validate the config (pero NO rompas el build en SSR/prerender)
+const isConfigValid =
+  !!firebaseConfig.apiKey &&
+  !!firebaseConfig.authDomain &&
+  !!firebaseConfig.projectId &&
+  !!firebaseConfig.storageBucket;
 
+// Initialize Firebase SOLO en cliente.
+// En server/build-time devolvemos undefined para evitar crashes en prerender.
+let app: ReturnType<typeof initializeApp> | undefined;
 
-// Initialize Firebase
-let app;
-if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApp();
+if (typeof window !== "undefined") {
+  if (!isConfigValid) {
+    // No lanzamos error (evita que CI/SSR caiga). Aviso solo en dev.
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[firebase] Missing NEXT_PUBLIC_FIREBASE_* env vars. Firebase not initialized."
+      );
+    }
+  } else {
+    app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+  }
 }
 
 export { app };
