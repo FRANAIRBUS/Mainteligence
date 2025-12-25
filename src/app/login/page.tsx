@@ -115,7 +115,7 @@ export default function LoginPage() {
           </div>
           <CardTitle className="text-2xl">Maintelligence</CardTitle>
           <CardDescription>
-            {isLoginView ? 'Inicia sesión para continuar' : 'Crea una cuenta para empezar'}
+            {isLoginView ? 'Inicia sesión para entrar' : 'Crea una cuenta para empezar'}
           </CardDescription>
         </CardHeader>
         <CardContent>
