@@ -28,7 +28,13 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { ref, uploadBytesResumable, getDownloadURL, type UploadTask } from 'firebase/storage';
+import {
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+  type UploadTask,
+  type UploadTaskSnapshot,
+} from 'firebase/storage';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
@@ -174,67 +180,66 @@ export default function SettingsPage() {
       const uploadTask = uploadBytesResumable(logoRef, selectedFile, { contentType: selectedFile.type });
       uploadTaskRef.current = uploadTask;
 
-      uploadStallTimer.current = setTimeout(() => {
+      const uploadPromise = new Promise<UploadTaskSnapshot>((resolve, reject) => {
+        uploadStallTimer.current = setTimeout(() => {
+          uploadTask.cancel();
+          reject(new Error('upload-timeout'));
+        }, 15000);
+
+        uploadUnsubscribe.current = uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setUploadProgress(progress);
+            if (uploadStallTimer.current) {
+              clearTimeout(uploadStallTimer.current);
+            }
+            uploadStallTimer.current = setTimeout(() => {
+              uploadTask.cancel();
+              reject(new Error('upload-timeout'));
+            }, 15000);
+          },
+          (error) => reject(error),
+          () => resolve(uploadTask.snapshot)
+        );
+      });
+
+      const uploadSnapshot = await uploadPromise;
+      clearStallTimer();
+
+      const downloadURL = await getDownloadURL(uploadSnapshot.ref);
+
+      const settingsData = {
+        logoUrl: downloadURL,
+        updatedAt: serverTimestamp(),
+      };
+      await setDoc(settingsRef, settingsData, { merge: true });
+
+      toast({
+        title: 'Éxito',
+        description: 'El logo se ha actualizado correctamente. La página se recargará.',
+      });
+
+      setSelectedFile(null);
+      setPreviewUrl(null);
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (error: any) {
+      if (error?.message === 'upload-timeout') {
         toast({
           variant: 'destructive',
           title: 'La subida está tardando demasiado',
-          description: 'Verifica tu conexión o los permisos de Firebase Storage y vuelve a intentarlo.',
+          description: 'No se detectó progreso en la carga. Revisa tu conexión o permisos en Firebase Storage.',
         });
-        resetUploadState();
-      }, 15000);
-
-      uploadUnsubscribe.current = uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          setUploadProgress(progress);
-          if (uploadStallTimer.current) {
-            clearTimeout(uploadStallTimer.current);
-          }
-          uploadStallTimer.current = setTimeout(() => {
-            toast({
-              variant: 'destructive',
-              title: 'La subida está tardando demasiado',
-              description: 'No se detectó progreso en la carga. Revisa tu conexión o permisos en Firebase Storage.',
-            });
-            resetUploadState();
-          }, 15000);
-        },
-        (error) => {
-          handleUploadError(error, logoRef.fullPath, settingsRef.path);
-          resetUploadState();
-        },
-        async () => {
-          clearStallTimer();
-          try {
-            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-
-            const settingsData = {
-              logoUrl: downloadURL,
-              updatedAt: serverTimestamp(),
-            };
-            await setDoc(settingsRef, settingsData, { merge: true });
-
-            toast({
-              title: 'Éxito',
-              description: 'El logo se ha actualizado correctamente. La página se recargará.',
-            });
-
-            setTimeout(() => {
-              window.location.reload();
-            }, 1500);
-          } catch (error: any) {
-            handleUploadError(error, logoRef.fullPath, settingsRef.path);
-          } finally {
-            resetUploadState();
-          }
-        }
-      );
-    } catch (error: any) {
-      handleUploadError(error, logoRef.fullPath, settingsRef.path);
+      } else {
+        handleUploadError(error, logoRef.fullPath, settingsRef.path);
+      }
+    } finally {
       resetUploadState();
     }
-}
+  };
 
 
   const initialLoading = userLoading || profileLoading;
