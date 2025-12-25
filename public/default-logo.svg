@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-label="Logo predeterminado">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="65%">
+      <stop offset="0%" stop-color="#9aa0a6" />
+      <stop offset="70%" stop-color="#7f7f7f" />
+      <stop offset="100%" stop-color="#666" />
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#2a87ff" stop-opacity="0.75" />
+      <stop offset="60%" stop-color="#2a87ff" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#2a87ff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="shieldBase" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2b8dff" />
+      <stop offset="100%" stop-color="#1767d8" />
+    </linearGradient>
+    <linearGradient id="shieldCut" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f61c4" />
+      <stop offset="100%" stop-color="#0a4b9d" />
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="1000" fill="url(#bg)" />
+  <rect width="1600" height="1000" fill="url(#glow)" />
+  <g transform="translate(760 500)">
+    <g id="gear" transform="translate(-180 0)">
+      <circle cx="0" cy="0" r="170" fill="#1e74d8" opacity="0.95" />
+      <circle cx="0" cy="0" r="130" fill="#1b6ad0" />
+      <g fill="#3295ff" opacity="0.85">
+        <g transform="rotate(0)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+        <g transform="rotate(36)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+        <g transform="rotate(72)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+        <g transform="rotate(108)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+        <g transform="rotate(144)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+        <g transform="rotate(180)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+        <g transform="rotate(216)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+        <g transform="rotate(252)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+        <g transform="rotate(288)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+        <g transform="rotate(324)">
+          <rect x="-18" y="-215" width="36" height="70" rx="8" />
+        </g>
+      </g>
+    </g>
+    <g id="shield" transform="translate(200 -220)">
+      <path d="M40 40 L340 60 L340 320 L190 420 L40 320 Z" fill="url(#shieldBase)" opacity="0.96" />
+      <path d="M195 40 L235 40 L235 420 L195 420 Z" fill="url(#shieldCut)" opacity="0.9" />
+      <path d="M235 60 L280 60 L280 360 L235 420 Z" fill="url(#shieldCut)" opacity="0.7" />
+      <g fill="#cde4ff" opacity="0.9">
+        <circle cx="130" cy="140" r="14" />
+        <circle cx="190" cy="190" r="14" />
+        <circle cx="250" cy="120" r="14" />
+        <rect x="124" y="150" width="12" height="150" rx="6" />
+        <rect x="184" y="200" width="12" height="110" rx="6" />
+        <rect x="244" y="130" width="12" height="180" rx="6" />
+      </g>
+    </g>
+  </g>
+</svg>

@@ -3,7 +3,10 @@
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 
-const DEFAULT_LOGO_URL = 'https://firebasestorage.googleapis.com/v0/b/studio-4350140400-a3f8f.appspot.com/o/ChatGPT%20Image%2023%20dic%202025%2C%2004_01_32.png?alt=media&token=f6749fd6-7d15-47ca-b2b6-9e672b175bb4';
+const FALLBACK_LOGO_URL = '/default-logo.svg';
+
+const getDefaultLogoUrl = () =>
+  process.env.NEXT_PUBLIC_DEFAULT_LOGO_PATH?.trim() || FALLBACK_LOGO_URL;
 
 
 export function ClientLogo({
@@ -19,11 +22,11 @@ export function ClientLogo({
   height?: number;
   className?: string;
 }) {
-  const [imgSrc, setImgSrc] = useState(src || DEFAULT_LOGO_URL);
+  const [imgSrc, setImgSrc] = useState(src || getDefaultLogoUrl());
 
   useEffect(() => {
     // When the src prop changes, update the image source
-    setImgSrc(src || DEFAULT_LOGO_URL);
+    setImgSrc(src || getDefaultLogoUrl());
   }, [src]);
 
   return (
@@ -37,8 +40,10 @@ export function ClientLogo({
       key={imgSrc} 
       onError={() => {
         // If the custom logo fails to load, fall back to the default
-        if (imgSrc !== DEFAULT_LOGO_URL) {
-            setImgSrc(DEFAULT_LOGO_URL);
+        const fallbackLogo = getDefaultLogoUrl();
+
+        if (imgSrc !== fallbackLogo) {
+            setImgSrc(fallbackLogo);
         }
       }}
     />
