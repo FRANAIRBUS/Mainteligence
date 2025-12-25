@@ -1,0 +1,26 @@
+name: Firebase App Hosting - PR
+
+on:
+  pull_request:
+
+jobs:
+  build_and_deploy_preview:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Deploy to Firebase App Hosting
+        run: npx firebase-tools@latest deploy --only apphosting --project studio-4350140400-a3f8f
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
