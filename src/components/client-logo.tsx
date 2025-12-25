@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 
-const DEFAULT_LOGO_URL = 'https://firebasestorage.googleapis.com/v0/b/studio-4350140400-a3f8f.appspot.com/o/ChatGPT%20Image%2023%20dic%202025%2C%2004_01_32.png?alt=media&token=f6749fd6-7d15-47ca-b2b6-9e672b175bb4';
+const DEFAULT_LOGO_URL = '/default-logo.svg';
 
 
 export function ClientLogo({
