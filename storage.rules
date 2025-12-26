@@ -2,18 +2,68 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUser(uid) {
+      return get(/databases/(default)/documents/users/$(uid));
+    }
+
+    function getUserRole(uid) {
+      let userDoc = getUser(uid);
+      if (!exists(/databases/(default)/documents/users/$(uid))) {
+        return 'none';
+      }
+      return userDoc.data.role;
+    }
+
+    function getUserDepartmentId(uid) {
+      let userDoc = getUser(uid);
+      if (!exists(/databases/(default)/documents/users/$(uid))) {
+        return null;
+      }
+      return userDoc.data.departmentId;
+    }
+
+    function isOperario() {
+      return isSignedIn() && getUserRole(request.auth.uid) == 'operario';
+    }
+
+    function isMantenimiento() {
+      return isSignedIn() && getUserRole(request.auth.uid) in ['mantenimiento', 'admin'];
+    }
+
+    function isAdmin() {
+      return isSignedIn() && getUserRole(request.auth.uid) == 'admin';
+    }
+
+    function canAccessTicket(ticketId) {
+      if (!isSignedIn()) return false;
+
+      let ticketDoc = get(/databases/(default)/documents/tickets/$(ticketId));
+      if (!exists(/databases/(default)/documents/tickets/$(ticketId))) return false;
+
+      let ticketData = ticketDoc.data;
+
+      return isMantenimiento() ||
+        ticketData.createdBy == request.auth.uid ||
+        ticketData.assignedTo == request.auth.uid ||
+        (ticketData.departmentId != null && ticketData.departmentId == getUserDepartmentId(request.auth.uid));
+    }
+
     // Allow public read access to the company logo for display on login pages.
     // Restrict write access to authenticated users. The app logic ensures only admins can trigger the upload.
     match /branding/logo.png {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if isAdmin();
     }
-    
+
     // Allow authenticated users to write to their own ticket folders for photo evidence.
     match /tickets/{ticketId}/{allPaths=**} {
-        allow read: if request.auth != null; // Allow authenticated users to read ticket images
-        allow write: if request.auth != null; // Allow any authenticated user to upload images to a ticket folder
+        allow read: if canAccessTicket(ticketId);
+        allow write: if canAccessTicket(ticketId);
     }
   }
 }
