@@ -104,7 +104,14 @@ export default function IncidentDetailPage() {
     )
   }
 
-  const canEdit = userProfile.role === 'admin' || userProfile.role === 'mantenimiento' || ticket.createdBy === user.uid;
+  if (!ticket) {
+    return null;
+  }
+
+  const canEdit =
+    userProfile.role === 'admin' ||
+    userProfile.role === 'mantenimiento' ||
+    (user ? ticket.createdBy === user.uid : false);
 
   return (
     <SidebarProvider>
