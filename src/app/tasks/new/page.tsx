@@ -1,0 +1,76 @@
+"use client";
+
+import { useState } from "react";
+import { Timestamp } from "firebase/firestore";
+import { useRouter } from "next/navigation";
+import { AppShell } from "@/components/app-shell";
+import { TaskForm, type TaskFormValues } from "@/components/task-form";
+import { useFirestore } from "@/lib/firebase";
+import { createTask } from "@/lib/firestore-tasks";
+import type { MaintenanceTaskInput } from "@/types/maintenance-task";
+
+const emptyValues: TaskFormValues = {
+  title: "",
+  description: "",
+  priority: "media",
+  status: "pendiente",
+  dueDate: "",
+  assignedTo: "",
+  location: "",
+  category: "",
+};
+
+export default function NewTaskPage() {
+  const firestore = useFirestore();
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleSubmit = async (values: TaskFormValues) => {
+    if (!firestore) {
+      setErrorMessage("No se pudo inicializar la base de datos.");
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage(null);
+
+    const payload: MaintenanceTaskInput = {
+      title: values.title.trim(),
+      description: values.description.trim(),
+      priority: values.priority,
+      status: values.status,
+      dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
+      assignedTo: values.assignedTo.trim(),
+      location: values.location.trim(),
+      category: values.category.trim(),
+    };
+
+    try {
+      await createTask(firestore, payload);
+      router.push("/tasks");
+    } catch (error) {
+      console.error("Error al crear la tarea", error);
+      setErrorMessage("No se pudo crear la tarea. Inténtalo de nuevo.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <AppShell
+      title="Nueva tarea"
+      description="Crear una tarea de mantenimiento en Firestore"
+    >
+      <div className="rounded-lg border bg-card p-6 shadow-sm">
+        <TaskForm
+          defaultValues={emptyValues}
+          onSubmit={handleSubmit}
+          submitting={submitting}
+          errorMessage={errorMessage}
+          submitLabel="Crear tarea"
+        />
+      </div>
+    </AppShell>
+  );
+}
