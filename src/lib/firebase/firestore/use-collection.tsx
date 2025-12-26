@@ -22,13 +22,27 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
   const memoizedPath = typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path;
 
   useEffect(() => {
-    if (!db || !memoizedPath || userLoading || !user) {
-      setLoading(false); 
+    if (!memoizedPath) {
+      setLoading(false);
       setData([]);
       setError(null);
       return;
     }
-    
+
+    if (!db || userLoading) {
+      setLoading(true);
+      setData([]);
+      setError(null);
+      return;
+    }
+
+    if (!user) {
+      setLoading(false);
+      setData([]);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
 
     let collectionRef: CollectionReference;

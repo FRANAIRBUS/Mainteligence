@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Edit, CalendarIcon, User as UserIcon, Building, Archive, HardHat } from 'lucide-react';
+import { ArrowLeft, Edit, CalendarIcon, User as UserIcon, Building, Archive, HardHat, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
@@ -53,7 +53,7 @@ export default function IncidentDetailPage() {
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   const isMantenimiento = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
-  const { data: ticket, loading: ticketLoading } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
+  const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
   
   // Fetch all collections needed for display unconditionally
   const { data: createdByUser, loading: createdByLoading } = useDoc<User>(ticket ? `users/${ticket.createdBy}` : null);
@@ -94,7 +94,30 @@ export default function IncidentDetailPage() {
       </div>
     );
   }
-  
+
+  if (ticketError) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center px-4">
+        <Card className="max-w-lg">
+          <CardHeader className="flex flex-col items-center gap-3 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <CardTitle>No se pudo cargar la incidencia</CardTitle>
+            <CardDescription className="text-balance">
+              {ticketError.message || 'Ocurrió un error inesperado al consultar la incidencia.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center pb-6">
+            <Button variant="outline" onClick={() => router.push('/incidents')}>
+              Volver al listado
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // After loading, if ticket is not found (and not loading), show not found message
   if (!ticket && !ticketLoading) {
     return (
