@@ -5,8 +5,9 @@ import { Timestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { TaskForm, type TaskFormValues } from "@/components/task-form";
-import { useFirestore } from "@/lib/firebase";
+import { useCollection, useFirestore } from "@/lib/firebase";
 import { createTask } from "@/lib/firestore-tasks";
+import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
 
 const emptyValues: TaskFormValues = {
@@ -22,6 +23,8 @@ const emptyValues: TaskFormValues = {
 
 export default function NewTaskPage() {
   const firestore = useFirestore();
+  const { data: users } = useCollection<User>("users");
+  const { data: departments } = useCollection<Department>("departments");
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -68,6 +71,8 @@ export default function NewTaskPage() {
           onSubmit={handleSubmit}
           submitting={submitting}
           errorMessage={errorMessage}
+          users={users}
+          departments={departments}
           submitLabel="Crear tarea"
         />
       </div>

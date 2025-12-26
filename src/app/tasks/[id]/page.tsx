@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { AppShell } from "@/components/app-shell";
 import { TaskForm, type TaskFormValues } from "@/components/task-form";
 import { Icons } from "@/components/icons";
-import { useDoc, useFirestore } from "@/lib/firebase";
+import { useCollection, useDoc, useFirestore } from "@/lib/firebase";
 import { updateTask } from "@/lib/firestore-tasks";
+import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 
 interface TaskPageProps {
@@ -20,6 +21,8 @@ interface TaskPageProps {
 export default function TaskDetailPage({ params }: TaskPageProps) {
   const firestore = useFirestore();
   const router = useRouter();
+  const { data: users } = useCollection<User>("users");
+  const { data: departments } = useCollection<Department>("departments");
   const { data: task, loading } = useDoc<MaintenanceTask>(
     params.id ? `tasks/${params.id}` : null
   );
@@ -101,6 +104,8 @@ export default function TaskDetailPage({ params }: TaskPageProps) {
         onSubmit={handleSubmit}
         submitting={submitting}
         errorMessage={errorMessage}
+        users={users}
+        departments={departments}
         submitLabel="Guardar cambios"
       />
     );
