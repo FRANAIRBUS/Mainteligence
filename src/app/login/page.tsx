@@ -115,7 +115,9 @@ export default function LoginPage() {
           </div>
           <CardTitle className="text-2xl">Maintelligence</CardTitle>
           <CardDescription>
-            {isLoginView ? 'Inicia sesión para continuar' : 'Crea una cuenta para empezar'}
+            {isLoginView
+              ? 'Inicia sesión para entrar en app'
+              : 'Crea una cuenta para empezar'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -163,7 +165,7 @@ export default function LoginPage() {
             className="w-full"
             onClick={handleGoogleSignIn}
           >
-            Continuar con Google
+            Entrar en app con Google
           </Button>
         </CardContent>
         <CardFooter className="flex justify-center text-sm">
