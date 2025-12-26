@@ -1,0 +1,34 @@
+name: Firebase App Hosting
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: Deploy to Firebase App Hosting
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            npx firebase-tools@latest deploy --only apphosting:my-web-app --project studio-4350140400-a3f8f --non-interactive
+          else
+            npx firebase-tools@latest deploy --only apphosting:my-web-app-staging --project studio-4350140400-a3f8f --non-interactive
+          fi
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
