@@ -3,7 +3,6 @@
 import { suggestTags } from '@/ai/flows/smart-tagging-assistant';
 import { z } from 'zod';
 import { revalidatePath } from 'next/cache';
-import { initializeFirebase } from '@/lib/firebase/server';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
 const tagFormSchema = z.object({

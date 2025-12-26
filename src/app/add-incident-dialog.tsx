@@ -39,7 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
-import { Icons } from './icons';
+import { Icons } from '@/components/icons';
 
 const formSchema = z.object({
   title: z
