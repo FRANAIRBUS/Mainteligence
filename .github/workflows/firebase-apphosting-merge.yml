@@ -21,7 +21,7 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      - name: Deploy to Firebase App Hosting (debug)
-        run: npx firebase-tools@latest deploy --only apphosting --project studio-4350140400-a3f8f --debug
+      - name: Deploy to Firebase App Hosting (prod)
+        run: npx firebase-tools@latest deploy --only apphosting:my-web-app --project studio-4350140400-a3f8f --non-interactive
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
