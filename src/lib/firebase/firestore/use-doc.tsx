@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { doc, onSnapshot, DocumentReference } from 'firebase/firestore';
 import { useFirestore } from '../provider';
 import { useUser } from '..';
+import { errorEmitter } from '../error-emitter';
+import { FirestorePermissionError } from '../errors';
 
 export function useDoc<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
@@ -13,21 +15,28 @@ export function useDoc<T>(path: string | null) {
 
   useEffect(() => {
     // If path is null, user not ready, or db not ready, we wait.
-    if (!db || !path || userLoading) {
-        setLoading(false);
-        setData(null);
-        setError(null);
-        return;
+    if (!path) {
+      setLoading(false);
+      setData(null);
+      setError(null);
+      return;
+    }
+
+    if (!db || userLoading) {
+      setLoading(true);
+      setData(null);
+      setError(null);
+      return;
     }
 
     // A special case: if the path is supposed to contain a user ID but the user is logged out,
     // we shouldn't even attempt the query. This prevents errors for paths like `users/${user?.uid}`
     // when user is null. We also check for 'undefined' to catch dynamic paths that aren't ready.
     if (!user || path.includes('undefined')) {
-        setLoading(false);
-        setData(null);
-        setError(null);
-        return;
+      setLoading(false);
+      setData(null);
+      setError(null);
+      return;
     }
 
     setLoading(true);
@@ -46,6 +55,14 @@ export function useDoc<T>(path: string | null) {
       },
       (err) => {
         // Handle errors, including permission errors
+        if ((err as { code?: string }).code === 'permission-denied') {
+          const permissionError = new FirestorePermissionError({
+            path,
+            operation: 'get',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+        }
+
         console.error(`Error fetching document ${path}:`, err);
         setError(err);
         setData(null);

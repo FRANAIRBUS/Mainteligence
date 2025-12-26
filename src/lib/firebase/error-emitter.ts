@@ -1,9 +1,11 @@
 import { EventEmitter } from 'events';
-import type { FirestorePermissionError } from './errors';
+import type { FirestorePermissionError, StoragePermissionError } from './errors';
+
+type PermissionError = FirestorePermissionError | StoragePermissionError;
 
 // Type-safe event emitter for permission errors.
 interface PermissionErrorEvents {
-  'permission-error': (error: FirestorePermissionError) => void;
+  'permission-error': (error: PermissionError) => void;
 }
 
 declare interface PermissionEventEmitter {

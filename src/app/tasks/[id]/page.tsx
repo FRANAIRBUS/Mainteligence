@@ -2,26 +2,27 @@
 
 import { useMemo, useState } from "react";
 import { Timestamp } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { AppShell } from "@/components/app-shell";
 import { TaskForm, type TaskFormValues } from "@/components/task-form";
 import { Icons } from "@/components/icons";
-import { useDoc, useFirestore } from "@/lib/firebase";
+import { useCollection, useDoc, useFirestore } from "@/lib/firebase";
 import { updateTask } from "@/lib/firestore-tasks";
+import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 
-interface TaskPageProps {
-  params: { id: string };
-}
-
-export default function TaskDetailPage({ params }: TaskPageProps) {
+export default function TaskDetailPage() {
   const firestore = useFirestore();
   const router = useRouter();
+  const params = useParams();
+  const taskId = Array.isArray(params.id) ? params.id[0] : params.id;
+  const { data: users } = useCollection<User>("users");
+  const { data: departments } = useCollection<Department>("departments");
   const { data: task, loading } = useDoc<MaintenanceTask>(
-    params.id ? `tasks/${params.id}` : null
+    taskId ? `tasks/${taskId}` : null
   );
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -101,6 +102,8 @@ export default function TaskDetailPage({ params }: TaskPageProps) {
         onSubmit={handleSubmit}
         submitting={submitting}
         errorMessage={errorMessage}
+        users={users}
+        departments={departments}
         submitLabel="Guardar cambios"
       />
     );

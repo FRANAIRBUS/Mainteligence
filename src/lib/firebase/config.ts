@@ -2,6 +2,9 @@
 import { FirebaseOptions, getApp, getApps, initializeApp } from "firebase/app";
 
 const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+const storageBucket =
+  process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+  (projectId ? `${projectId}.appspot.com` : undefined);
 
 const firebaseConfig: FirebaseOptions = {
   projectId: projectId,
@@ -9,15 +12,18 @@ const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  storageBucket: projectId ? `${projectId}.appspot.com` : undefined,
 };
+
+if (storageBucket) {
+  firebaseConfig.storageBucket = storageBucket;
+}
 
 // Validate the config (pero NO rompas el build en SSR/prerender)
 const isConfigValid =
   !!firebaseConfig.apiKey &&
   !!firebaseConfig.authDomain &&
   !!firebaseConfig.projectId &&
-  !!firebaseConfig.storageBucket;
+  !!firebaseConfig.appId;
 
 // Initialize Firebase SOLO en cliente.
 // En server/build-time devolvemos undefined para evitar crashes en prerender.
