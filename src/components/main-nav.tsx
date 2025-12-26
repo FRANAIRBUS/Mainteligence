@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/sidebar";
 import {
   LayoutGrid,
+  ClipboardList,
   Wrench,
   CalendarClock,
   LineChart,
@@ -18,12 +19,27 @@ import {
   Settings,
   Tags,
   HardHat,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useDoc, useUser } from "@/lib/firebase";
 import type { User } from "@/lib/firebase/models";
 import { useMemo } from "react";
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  active: boolean;
+  roles?: string[];
+};
+
+type NavGroup = {
+  label: string;
+  items: NavItem[];
+  roles?: string[];
+};
 
 export function MainNav() {
   const pathname = usePathname();
@@ -32,11 +48,12 @@ export function MainNav() {
     user ? `users/${user.uid}` : ''
   );
 
-  const allMenuItems = useMemo(() => [
+  const allMenuItems: NavGroup[] = useMemo(() => [
     {
       label: "General",
       items: [
         { href: "/", label: "Panel", icon: LayoutGrid, active: pathname === "/" },
+        { href: "/tasks", label: "Tareas", icon: ClipboardList, active: pathname.startsWith("/tasks") },
         { href: "/incidents", label: "Incidencias", icon: Wrench, active: pathname.startsWith("/incidents") },
         { href: "/preventive", label: "Preventivos", icon: CalendarClock, active: pathname.startsWith("/preventive"), roles: ['admin', 'mantenimiento'] },
         { href: "/reports", label: "Informes", icon: LineChart, active: pathname.startsWith("/reports"), roles: ['admin', 'mantenimiento', 'operario'] },

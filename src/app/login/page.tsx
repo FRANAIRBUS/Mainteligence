@@ -11,13 +11,12 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth, useFirestore } from '@/lib/firebase';
+import { useAuth, useFirestore, useUser } from '@/lib/firebase';
 import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   signInWithPopup,
   createUserWithEmailAndPassword,
-  updateProfile,
 } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, useEffect } from 'react';
@@ -28,10 +27,18 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [isLoginView, setIsLoginView] = useState(true);
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
+  const { user } = useUser();
+
+  useEffect(() => {
+    if (user) {
+      router.replace('/');
+    }
+  }, [router, user]);
 
   // Reset form when switching views
   useEffect(() => {
@@ -44,6 +51,13 @@ export default function LoginPage() {
     e.preventDefault();
     if (!auth) return;
     setError(null);
+    setLoading(true);
+
+    if (password.length < 6) {
+      setError('La contraseña debe tener al menos 6 caracteres.');
+      setLoading(false);
+      return;
+    }
 
     if (isLoginView) {
       // Login logic
@@ -51,7 +65,7 @@ export default function LoginPage() {
         await signInWithEmailAndPassword(auth, email, password);
         router.push('/');
       } catch (err: any) {
-        setError(err.message);
+        setError(getFriendlyMessage(err));
       }
     } else {
       // Register logic
@@ -74,14 +88,16 @@ export default function LoginPage() {
         }
         router.push('/');
       } catch (err: any) {
-        setError(err.message);
+        setError(getFriendlyMessage(err));
       }
     }
+    setLoading(false);
   };
 
   const handleGoogleSignIn = async () => {
     if (!auth || !firestore) return;
     setError(null);
+    setLoading(true);
     const provider = new GoogleAuthProvider();
     try {
       const result = await signInWithPopup(auth, provider);
@@ -102,8 +118,25 @@ export default function LoginPage() {
       router.push('/');
 
     } catch (err: any) {
-      setError(err.message);
+      setError(getFriendlyMessage(err));
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const getFriendlyMessage = (err: { code?: string; message?: string }) => {
+    const messages: Record<string, string> = {
+      'auth/invalid-credential': 'Correo o contraseña incorrectos.',
+      'auth/user-not-found': 'No existe un usuario con este correo.',
+      'auth/wrong-password': 'La contraseña es incorrecta.',
+      'auth/email-already-in-use': 'Ya existe una cuenta con este correo.',
+      'auth/popup-closed-by-user': 'Se cerró la ventana de inicio de sesión.',
+    };
+
+    if (err.code && messages[err.code]) {
+      return messages[err.code];
+    }
+    return err.message || 'Ocurrió un error. Inténtalo nuevamente.';
   };
 
   return (
@@ -146,8 +179,12 @@ export default function LoginPage() {
             {error && (
               <p className="text-sm text-destructive">{error}</p>
             )}
-            <Button type="submit" className="w-full">
-              {isLoginView ? 'Iniciar Sesión' : 'Registrarse'}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading
+                ? 'Procesando...'
+                : isLoginView
+                  ? 'Iniciar Sesión'
+                  : 'Registrarse'}
             </Button>
           </form>
           <div className="relative my-4">
@@ -164,6 +201,7 @@ export default function LoginPage() {
             variant="outline"
             className="w-full"
             onClick={handleGoogleSignIn}
+            disabled={loading}
           >
             Entrar en app con Google
           </Button>
