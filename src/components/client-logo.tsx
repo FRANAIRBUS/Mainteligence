@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
 
-const FALLBACK_LOGO_URL = '/default-logo.svg';
+const FALLBACK_LOGO_URL = '/branding/logo.png';
 
 const getDefaultLogoUrl = () =>
   process.env.NEXT_PUBLIC_DEFAULT_LOGO_PATH?.trim() || FALLBACK_LOGO_URL;
