@@ -96,13 +96,27 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
   const { user, loading: userLoading } = useUser();
 
   useEffect(() => {
-    if (query === null || userLoading || !user) {
+    if (query === null) {
       setLoading(false);
       setData([]);
       setError(null);
       return;
     }
-    
+
+    if (userLoading) {
+      setLoading(true);
+      setData([]);
+      setError(null);
+      return;
+    }
+
+    if (!user) {
+      setLoading(false);
+      setData([]);
+      setError(null);
+      return;
+    }
+
     setLoading(true);
     const unsubscribe = onSnapshot(
       query,
