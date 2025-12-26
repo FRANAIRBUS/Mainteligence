@@ -5,6 +5,10 @@
 - **Visibilidad y filtros limitados**: la vista de incidencias usa una única tabla sin filtros avanzados y permite a operarios ver tickets por departamento y asignados, además de los creados por ellos. Esta visibilidad ampliada se mantendrá de forma controlada según lo solicitado.【F:src/app/incidents/page.tsx†L48-L270】
 - **Ausencia de flujos preventivos y auditoría**: no existen pantallas ni modelos para plantillas preventivas, generación automática, timeline de eventos, partes de horas, repuestos, checklist instanciados, PDF/email de cierre o notificaciones push.
 
+## Ajustes aplicados en esta iteración
+- **Endurecimiento de reglas de Firestore**: la lectura de tickets ahora se alinea con la visibilidad de la UI (mantenimiento ve todo; operarios solo los creados por ellos, asignados o de su departamento). Solo se permiten creaciones si `createdBy` coincide con el usuario autenticado.【F:firestore.rules†L8-L67】
+- **Control de acceso en Storage**: las fotos de tickets y la subida del logo corporativo ahora exigen que el usuario tenga permiso sobre el ticket o rol de administrador para el logo. Se evita que usuarios autenticados escriban en tickets ajenos.【F:storage.rules†L1-L53】
+
 ## Recomendaciones priorizadas
 1. **Mantener visibilidad ampliada con controles claros**
    - Conservar que el operario pueda ver incidencias creadas por él, las de su departamento y las que tenga asignadas, pero reflejar en la UI qué acciones están permitidas (solo mantenimiento cambia estado/asignaciones, operario solo cambia prioridad).【F:src/app/incidents/page.tsx†L171-L188】
