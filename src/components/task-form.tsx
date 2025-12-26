@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import type { Department, User } from "@/lib/firebase/models";
 import type { TaskPriority, TaskStatus } from "@/types/maintenance-task";
 
 export interface TaskFormValues {
@@ -31,6 +32,8 @@ interface TaskFormProps {
   submitting?: boolean;
   submitLabel?: string;
   errorMessage?: string | null;
+  users?: User[];
+  departments?: Department[];
 }
 
 export function TaskForm({
@@ -39,9 +42,31 @@ export function TaskForm({
   submitting = false,
   submitLabel = "Guardar",
   errorMessage,
+  users,
+  departments,
 }: TaskFormProps) {
   const [values, setValues] = useState<TaskFormValues>(defaultValues);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  const userOptions = useMemo(
+    () =>
+      (users ?? [])
+        .filter((user) => user.displayName || user.email)
+        .map((user) => ({
+          id: user.id,
+          label: user.displayName || user.email,
+        })),
+    [users]
+  );
+
+  const departmentOptions = useMemo(
+    () =>
+      (departments ?? []).map((department) => ({
+        id: department.id,
+        label: department.name,
+      })),
+    [departments]
+  );
 
   useEffect(() => {
     setValues(defaultValues);
@@ -93,21 +118,59 @@ export function TaskForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="assignedTo">Asignado a</Label>
-          <Input
-            id="assignedTo"
-            value={values.assignedTo}
-            onChange={(e) => handleChange("assignedTo", e.target.value)}
-            placeholder="Nombre o equipo"
-          />
+          {userOptions.length > 0 ? (
+            <Select
+              value={values.assignedTo}
+              onValueChange={(value) => handleChange("assignedTo", value)}
+            >
+              <SelectTrigger id="assignedTo">
+                <SelectValue placeholder="Selecciona un usuario" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Sin asignar</SelectItem>
+                {userOptions.map((user) => (
+                  <SelectItem key={user.id} value={user.label}>
+                    {user.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              id="assignedTo"
+              value={values.assignedTo}
+              onChange={(e) => handleChange("assignedTo", e.target.value)}
+              placeholder="Nombre o equipo"
+            />
+          )}
         </div>
         <div className="space-y-2">
           <Label htmlFor="location">Ubicación</Label>
-          <Input
-            id="location"
-            value={values.location}
-            onChange={(e) => handleChange("location", e.target.value)}
-            placeholder="Área o activo"
-          />
+          {departmentOptions.length > 0 ? (
+            <Select
+              value={values.location}
+              onValueChange={(value) => handleChange("location", value)}
+            >
+              <SelectTrigger id="location">
+                <SelectValue placeholder="Selecciona un departamento" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Todos</SelectItem>
+                {departmentOptions.map((department) => (
+                  <SelectItem key={department.id} value={department.label}>
+                    {department.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              id="location"
+              value={values.location}
+              onChange={(e) => handleChange("location", e.target.value)}
+              placeholder="Área o activo"
+            />
+          )}
         </div>
       </div>
 
