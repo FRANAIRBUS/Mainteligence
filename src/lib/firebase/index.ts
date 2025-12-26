@@ -11,6 +11,12 @@ export const initializeFirebase = async (): Promise<{
   firestore: Firestore;
   storage: FirebaseStorage;
 }> => {
+  if (!app) {
+    throw new Error(
+      'Firebase no pudo inicializarse. Revisa que las variables NEXT_PUBLIC_FIREBASE_* estén configuradas y que el dominio esté autorizado en Firebase Auth.'
+    );
+  }
+
   const auth = getAuth(app);
   const firestore = getFirestore(app);
   const storage = getStorage(app);
