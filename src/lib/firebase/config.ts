@@ -6,6 +6,17 @@ const storageBucket =
   process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
   (projectId ? `${projectId}.appspot.com` : undefined);
 
+const requiredFirebaseEnvVars: Record<string, string | undefined> = {
+  NEXT_PUBLIC_FIREBASE_API_KEY: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: projectId,
+  NEXT_PUBLIC_FIREBASE_APP_ID: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+};
+
+export const missingFirebaseEnvVars = Object.entries(requiredFirebaseEnvVars)
+  .filter(([, value]) => !value)
+  .map(([key]) => key);
+
 const firebaseConfig: FirebaseOptions = {
   projectId: projectId,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
