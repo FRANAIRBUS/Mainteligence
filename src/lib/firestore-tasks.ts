@@ -16,6 +16,7 @@ import {
   type QueryConstraint,
   type Unsubscribe,
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import type {
   MaintenanceTask,
   MaintenanceTaskInput,
@@ -73,11 +74,18 @@ export const createTask = async (
   db: Firestore,
   payload: MaintenanceTaskInput
 ): Promise<string> => {
-  if (!payload.createdBy) {
-    throw new Error("Missing creator for task creation");
+  const user = getAuth().currentUser;
+
+  if (!user) {
+    throw new Error("Usuario no autenticado");
   }
 
-  const docRef = await addDoc(tasksCollection(db), payload);
+  const docRef = await addDoc(tasksCollection(db), {
+    ...payload,
+    createdBy: user.uid,
+    status: payload.status || "pendiente",
+    priority: payload.priority || "media",
+  });
   return docRef.id;
 };
 

@@ -102,7 +102,14 @@ service cloud.firestore {
     // Basic maintenance tasks collection permissions
     match /tasks/{taskId} {
       allow get, list: if isSignedIn();
-      allow create: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasAll([
+          'title',
+          'status',
+          'priority',
+          'createdBy',
+        ])
+        && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isMantenimiento();
     }
 
