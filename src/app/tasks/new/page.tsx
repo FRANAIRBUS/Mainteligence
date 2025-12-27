@@ -5,7 +5,7 @@ import { Timestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { TaskForm, type TaskFormValues } from "@/components/task-form";
-import { useCollection, useFirestore } from "@/lib/firebase";
+import { useCollection, useFirestore, useUser } from "@/lib/firebase";
 import { createTask } from "@/lib/firestore-tasks";
 import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
@@ -25,6 +25,7 @@ export default function NewTaskPage() {
   const firestore = useFirestore();
   const { data: users } = useCollection<User>("users");
   const { data: departments } = useCollection<Department>("departments");
+  const { user } = useUser();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -32,6 +33,11 @@ export default function NewTaskPage() {
   const handleSubmit = async (values: TaskFormValues) => {
     if (!firestore) {
       setErrorMessage("No se pudo inicializar la base de datos.");
+      return;
+    }
+
+    if (!user) {
+      setErrorMessage("No se pudo identificar al usuario actual.");
       return;
     }
 
@@ -47,6 +53,7 @@ export default function NewTaskPage() {
       assignedTo: values.assignedTo.trim(),
       location: values.location.trim(),
       category: values.category.trim(),
+      createdBy: user.uid,
     };
 
     try {

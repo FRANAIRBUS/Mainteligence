@@ -73,6 +73,10 @@ export const createTask = async (
   db: Firestore,
   payload: MaintenanceTaskInput
 ): Promise<string> => {
+  if (!payload.createdBy) {
+    throw new Error("Missing creator for task creation");
+  }
+
   const docRef = await addDoc(tasksCollection(db), payload);
   return docRef.id;
 };
