@@ -1,9 +1,9 @@
-// src/firebase/index.ts
-import { getAuth, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
-import { getStorage, type FirebaseStorage } from 'firebase/storage';
-import { app, missingFirebaseEnvVars } from './config';
-import type { FirebaseApp } from 'firebase/app';
+// src/lib/firebase/index.ts
+import { getAuth, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
+import { app, missingFirebaseEnvVars } from "./config";
+import type { FirebaseApp } from "firebase/app";
 
 export const initializeFirebase = async (): Promise<{
   app: FirebaseApp;
@@ -11,16 +11,15 @@ export const initializeFirebase = async (): Promise<{
   firestore: Firestore;
   storage: FirebaseStorage;
 }> => {
+  // Si por lo que sea no se inicializa en SSR, no petes: avisa y sigue.
   if (!app) {
-    const missingVarsMessage = missingFirebaseEnvVars.length
-      ? `Faltan variables de entorno: ${missingFirebaseEnvVars.join(', ')}`
-      :
-          'Revisa que el dominio esté autorizado en Firebase Auth y ' +
-          'que las variables estén definidas en el backend de App Hosting (staging o prod).';
-
+    console.warn(
+      `[Firebase] app not initialized yet. Missing env vars: ${
+        missingFirebaseEnvVars.length ? missingFirebaseEnvVars.join(", ") : "none"
+      }`
+    );
     throw new Error(
-      `Firebase no pudo inicializarse. ${missingVarsMessage} ` +
-        'Asegúrate de definir todas las NEXT_PUBLIC_FIREBASE_* en el entorno correcto y redeployar.'
+      "Firebase no está disponible todavía (SSR/prerender). Reintenta en cliente."
     );
   }
 
@@ -38,8 +37,8 @@ export {
   useFirestore,
   useAuth,
   useStorage,
-} from './provider';
-export { FirebaseClientProvider } from './client-provider';
-export { useUser } from './auth/use-user';
-export { useCollection, useCollectionQuery } from './firestore/use-collection';
-export { useDoc, useDocRef } from './firestore/use-doc';
+} from "./provider";
+export { FirebaseClientProvider } from "./client-provider";
+export { useUser } from "./auth/use-user";
+export { useCollection, useCollectionQuery } from "./firestore/use-collection";
+export { useDoc, useDocRef } from "./firestore/use-doc";
