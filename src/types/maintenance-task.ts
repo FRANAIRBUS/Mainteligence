@@ -13,6 +13,7 @@ export interface MaintenanceTask {
   assignedTo?: string;
   location?: string;
   category?: string;
+  createdBy?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
 }
