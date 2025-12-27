@@ -12,7 +12,7 @@ async function getUserEmail(userId: string): Promise<string | undefined> {
   return snapshot.data()?.email;
 }
 
-// --- Trigger para TAREAS ---
+// --- Trigger para TAREAS (Tasks) ---
 export const onTaskAssign = functions.firestore
   .document("tasks/{taskId}")
   .onWrite(async (change, context) => {
@@ -40,7 +40,8 @@ export const onTaskAssign = functions.firestore
 
       try {
         await resend.emails.send({
-          from: "Mainteligence <onboarding@resend.dev>", // Cambia esto cuando verifiques tu dominio
+          // 👇 AQUÍ HEMOS PUESTO TU DOMINIO REAL
+          from: "Mainteligence <avisos@maintelligence.app>", 
           to: email,
           subject: subject,
           html: `
@@ -48,8 +49,9 @@ export const onTaskAssign = functions.firestore
               <h2 style="color: #2563EB;">${subject}</h2>
               <p>Hola,</p>
               <p>Se te ha asignado la tarea: <strong>${newData.title}</strong></p>
+              <p>Prioridad: ${newData.priority || 'Normal'}</p>
               <br/>
-              <a href="https://maintelligence.web.app/tasks/${context.params.taskId}" 
+              <a href="https://maintelligence.app/tasks/${context.params.taskId}" 
                  style="background: #2563EB; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
                  Ver Tarea
               </a>
@@ -63,7 +65,7 @@ export const onTaskAssign = functions.firestore
     }
   });
 
-// --- Trigger para INCIDENCIAS ---
+// --- Trigger para INCIDENCIAS (Tickets) ---
 export const onTicketAssign = functions.firestore
   .document("tickets/{ticketId}")
   .onWrite(async (change, context) => {
@@ -81,7 +83,8 @@ export const onTicketAssign = functions.firestore
 
       try {
         await resend.emails.send({
-          from: "Mainteligence <onboarding@resend.dev>", 
+          // 👇 DOMINIO ACTUALIZADO
+          from: "Mainteligence <avisos@maintelligence.app>", 
           to: email,
           subject: `🚨 Incidencia Asignada: ${newData.title}`,
           html: `
@@ -90,7 +93,7 @@ export const onTicketAssign = functions.firestore
               <p>Incidencia: <strong>${newData.title}</strong></p>
               <p>Descripción: ${newData.description}</p>
               <br/>
-              <a href="https://maintelligence.web.app/incidents/${context.params.ticketId}" 
+              <a href="https://maintelligence.app/incidents/${context.params.ticketId}" 
                  style="background: #DC2626; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
                  Ver Incidencia
               </a>
