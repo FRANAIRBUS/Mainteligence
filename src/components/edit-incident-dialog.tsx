@@ -10,6 +10,7 @@ import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
+import { sendAssignmentEmail } from '@/lib/assignment-email';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -94,16 +95,34 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     setIsPending(true);
     
     const ticketRef = doc(firestore, 'tickets', ticket.id);
+    const newAssignee = data.assignedTo === 'null' ? null : data.assignedTo;
+
     const updateData: any = {
       status: data.status,
       priority: data.priority,
       departmentId: data.departmentId,
-      assignedTo: data.assignedTo === 'null' ? null : data.assignedTo,
+      assignedTo: newAssignee,
       updatedAt: serverTimestamp(),
     };
     
     try {
+      const previousAssignee = ticket.assignedTo ?? null;
+
       await updateDoc(ticketRef, updateData);
+
+      if (newAssignee && newAssignee !== previousAssignee) {
+        await sendAssignmentEmail({
+          firestore,
+          users,
+          departments,
+          assignedTo: newAssignee,
+          departmentId: ticket.departmentId,
+          title: ticket.title,
+          identifier: ticket.displayId,
+          link: `${window.location.origin}/incidents/${ticket.id}`,
+          type: 'incidencia',
+        });
+      }
       toast({
         title: 'Éxito',
         description: `Incidencia '${ticket.title}' actualizada.`,
