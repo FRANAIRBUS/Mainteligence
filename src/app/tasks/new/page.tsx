@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FirebaseError } from "firebase/app";
 import { Timestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
@@ -25,7 +26,7 @@ export default function NewTaskPage() {
   const firestore = useFirestore();
   const { data: users } = useCollection<User>("users");
   const { data: departments } = useCollection<Department>("departments");
-  const { user } = useUser();
+  const { user, loading: userLoading } = useUser();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -36,8 +37,15 @@ export default function NewTaskPage() {
       return;
     }
 
+    if (userLoading) {
+      setErrorMessage("Cargando sesión, intenta de nuevo en un momento.");
+      return;
+    }
+
     if (!user) {
-      setErrorMessage("No se pudo identificar al usuario actual.");
+      setErrorMessage(
+        "No se pudo identificar al usuario actual. Inicia sesión nuevamente."
+      );
       return;
     }
 
@@ -61,7 +69,20 @@ export default function NewTaskPage() {
       router.push("/tasks");
     } catch (error) {
       console.error("Error al crear la tarea", error);
-      setErrorMessage("No se pudo crear la tarea. Inténtalo de nuevo.");
+
+      if (error instanceof FirebaseError && error.code === "permission-denied") {
+        setErrorMessage(
+          "No tienes permisos para crear tareas. Verifica tu sesión e inténtalo de nuevo."
+        );
+        return;
+      }
+
+      const fallbackMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : "No se pudo crear la tarea. Inténtalo de nuevo.";
+
+      setErrorMessage(fallbackMessage);
     } finally {
       setSubmitting(false);
     }
@@ -76,7 +97,7 @@ export default function NewTaskPage() {
         <TaskForm
           defaultValues={emptyValues}
           onSubmit={handleSubmit}
-          submitting={submitting}
+          submitting={submitting || userLoading}
           errorMessage={errorMessage}
           users={users}
           departments={departments}
