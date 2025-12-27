@@ -122,6 +122,7 @@ export function TaskForm({
           <Label htmlFor="assignedTo">Asignado a</Label>
           {userOptions.length > 0 ? (
             <Select
+              name="assignedTo"
               value={values.assignedTo || UNASSIGNED_VALUE}
               onValueChange={(value) =>
                 handleChange(
@@ -155,6 +156,7 @@ export function TaskForm({
           <Label htmlFor="location">Ubicación</Label>
           {departmentOptions.length > 0 ? (
             <Select
+              name="location"
               value={values.location || ALL_DEPARTMENTS_VALUE}
               onValueChange={(value) =>
                 handleChange("location", value === ALL_DEPARTMENTS_VALUE ? "" : value)
@@ -187,6 +189,7 @@ export function TaskForm({
         <div className="space-y-2">
           <Label htmlFor="status">Estado</Label>
           <Select
+            name="status"
             value={values.status}
             onValueChange={(value) => handleChange("status", value as TaskStatus)}
           >
@@ -203,6 +206,7 @@ export function TaskForm({
         <div className="space-y-2">
           <Label htmlFor="priority">Prioridad</Label>
           <Select
+            name="priority"
             value={values.priority}
             onValueChange={(value) => handleChange("priority", value as TaskPriority)}
           >
