@@ -20,3 +20,7 @@ npm run dev
 ```
 
 Si ves el mensaje “No se pudo conectar con Firebase”, revisa que todas las variables `NEXT_PUBLIC_FIREBASE_*` estén definidas y que el dominio actual esté autorizado en Firebase Auth.
+
+### Variables en Firebase App Hosting
+
+Cuando despliegues en Firebase App Hosting, define las mismas variables `NEXT_PUBLIC_FIREBASE_*` en el backend correspondiente (staging o producción) desde **App Hosting → Environment variables** y vuelve a desplegar para que apliquen.

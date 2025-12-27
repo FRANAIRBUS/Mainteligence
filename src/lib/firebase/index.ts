@@ -14,11 +14,13 @@ export const initializeFirebase = async (): Promise<{
   if (!app) {
     const missingVarsMessage = missingFirebaseEnvVars.length
       ? `Faltan variables de entorno: ${missingFirebaseEnvVars.join(', ')}`
-      : 'Revisa que el dominio esté autorizado en Firebase Auth.';
+      :
+          'Revisa que el dominio esté autorizado en Firebase Auth y ' +
+          'que las variables estén definidas en el backend de App Hosting (staging o prod).';
 
     throw new Error(
       `Firebase no pudo inicializarse. ${missingVarsMessage} ` +
-        'Asegúrate de definir todas las NEXT_PUBLIC_FIREBASE_*.'
+        'Asegúrate de definir todas las NEXT_PUBLIC_FIREBASE_* en el entorno correcto y redeployar.'
     );
   }
 
