@@ -2,7 +2,7 @@
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
-import { app } from './config';
+import { app, missingFirebaseEnvVars } from './config';
 import type { FirebaseApp } from 'firebase/app';
 
 export const initializeFirebase = async (): Promise<{
@@ -12,8 +12,13 @@ export const initializeFirebase = async (): Promise<{
   storage: FirebaseStorage;
 }> => {
   if (!app) {
+    const missingVarsMessage = missingFirebaseEnvVars.length
+      ? `Faltan variables de entorno: ${missingFirebaseEnvVars.join(', ')}`
+      : 'Revisa que el dominio esté autorizado en Firebase Auth.';
+
     throw new Error(
-      'Firebase no pudo inicializarse. Revisa que las variables NEXT_PUBLIC_FIREBASE_* estén configuradas y que el dominio esté autorizado en Firebase Auth.'
+      `Firebase no pudo inicializarse. ${missingVarsMessage} ` +
+        'Asegúrate de definir todas las NEXT_PUBLIC_FIREBASE_*.'
     );
   }
 
