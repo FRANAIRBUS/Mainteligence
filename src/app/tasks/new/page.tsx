@@ -69,16 +69,20 @@ export default function NewTaskPage() {
       const id = await createTask(firestore, payload);
 
       if (values.assignedTo.trim()) {
-        await sendAssignmentEmail({
-          firestore,
-          users,
-          departments,
-          assignedTo: values.assignedTo.trim(),
-          departmentId: payload.location,
-          title: payload.title,
-          link: `${window.location.origin}/tasks/${id}`,
-          type: "tarea",
-        });
+        try {
+          await sendAssignmentEmail({
+            firestore,
+            users,
+            departments,
+            assignedTo: values.assignedTo.trim(),
+            departmentId: payload.location,
+            title: payload.title,
+            link: `${window.location.origin}/tasks/${id}`,
+            type: "tarea",
+          });
+        } catch (emailError) {
+          console.error("No se pudo enviar la notificación de asignación", emailError);
+        }
       }
 
       router.push("/tasks");
