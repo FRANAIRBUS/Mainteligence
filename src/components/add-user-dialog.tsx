@@ -196,7 +196,11 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Departamento</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select
+                      name={field.name}
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Opcional" />

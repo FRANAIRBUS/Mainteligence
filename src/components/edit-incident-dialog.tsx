@@ -185,7 +185,12 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Estado</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canEditStatus}>
+                  <Select
+                    name={field.name}
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    disabled={!canEditStatus}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecciona un estado" />
@@ -209,7 +214,12 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Prioridad</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!canEditPriority}>
+                  <Select
+                    name={field.name}
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    disabled={!canEditPriority}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Selecciona una prioridad" />
@@ -235,7 +245,12 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
                   <FormItem>
                     <FormLabel>Asignado A</FormLabel>
                     {/* The value passed to the Select should be a string. We use 'null' as a string to represent the null value. */}
-                    <Select onValueChange={field.onChange} value={field.value || 'null'} disabled={!canEditAssignment}>
+                    <Select
+                      name={field.name}
+                      onValueChange={field.onChange}
+                      value={field.value || 'null'}
+                      disabled={!canEditAssignment}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Sin asignar" />
@@ -263,7 +278,12 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Departamento</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || ''} disabled={!canEditDepartment}>
+                    <Select
+                      name={field.name}
+                      onValueChange={field.onChange}
+                      value={field.value || ''}
+                      disabled={!canEditDepartment}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecciona un departamento" />
