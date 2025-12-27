@@ -9,6 +9,7 @@ import { useCollection, useFirestore, useUser } from "@/lib/firebase";
 import { createTask } from "@/lib/firestore-tasks";
 import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
+import { sendAssignmentEmail } from "@/lib/assignment-email";
 
 const emptyValues: TaskFormValues = {
   title: "",
@@ -57,7 +58,21 @@ export default function NewTaskPage() {
     };
 
     try {
-      await createTask(firestore, payload);
+      const id = await createTask(firestore, payload);
+
+      if (values.assignedTo.trim()) {
+        await sendAssignmentEmail({
+          firestore,
+          users,
+          departments,
+          assignedTo: values.assignedTo.trim(),
+          departmentId: payload.location,
+          title: payload.title,
+          link: `${window.location.origin}/tasks/${id}`,
+          type: "tarea",
+        });
+      }
+
       router.push("/tasks");
     } catch (error) {
       console.error("Error al crear la tarea", error);

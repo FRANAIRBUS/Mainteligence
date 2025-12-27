@@ -13,6 +13,7 @@ import { useCollection, useDoc, useFirestore } from "@/lib/firebase";
 import { updateTask } from "@/lib/firestore-tasks";
 import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
+import { sendAssignmentEmail } from "@/lib/assignment-email";
 
 export default function TaskDetailPage() {
   const firestore = useFirestore();
@@ -61,7 +62,23 @@ export default function TaskDetailPage() {
     };
 
     try {
+      const previousAssignee = task.assignedTo?.trim() ?? "";
+
       await updateTask(firestore, task.id, updates);
+
+      if (updates.assignedTo && updates.assignedTo !== previousAssignee) {
+        await sendAssignmentEmail({
+          firestore,
+          users,
+          departments,
+          assignedTo: updates.assignedTo,
+          departmentId: updates.location,
+          title: updates.title,
+          link: `${window.location.origin}/tasks/${task.id}`,
+          type: "tarea",
+        });
+      }
+
       router.push("/tasks");
     } catch (error) {
       console.error("Error al actualizar la tarea", error);
