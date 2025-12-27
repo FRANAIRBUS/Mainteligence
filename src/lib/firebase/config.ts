@@ -1,39 +1,48 @@
-// src/firebase/config.ts
+// src/lib/firebase/config.ts
 import { FirebaseOptions, getApp, getApps, initializeApp } from "firebase/app";
 
-const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-
-const firebaseConfig: FirebaseOptions = {
-  projectId: projectId,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+const requiredEnvVars = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  storageBucket: projectId ? `${projectId}.appspot.com` : undefined,
-};
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+} as const;
 
-// Validate the config (pero NO rompas el build en SSR/prerender)
-const isConfigValid =
-  !!firebaseConfig.apiKey &&
-  !!firebaseConfig.authDomain &&
-  !!firebaseConfig.projectId &&
-  !!firebaseConfig.storageBucket;
+export const missingFirebaseEnvVars = (
+  Object.entries(requiredEnvVars)
+    .filter(([, value]) => !value)
+    .map(([key]) => key)
+);
 
-// Initialize Firebase SOLO en cliente.
-// En server/build-time devolvemos undefined para evitar crashes en prerender.
-let app: ReturnType<typeof initializeApp> | undefined;
+const firebaseConfig: FirebaseOptions | null = missingFirebaseEnvVars.length
+  ? null
+  : {
+      projectId: requiredEnvVars.projectId!,
+      appId: requiredEnvVars.appId!,
+      apiKey: requiredEnvVars.apiKey!,
+      authDomain: requiredEnvVars.authDomain!,
+      messagingSenderId: requiredEnvVars.messagingSenderId!,
+      storageBucket: requiredEnvVars.storageBucket!,
+    };
 
-if (typeof window !== "undefined") {
-  if (!isConfigValid) {
-    // No lanzamos error (evita que CI/SSR caiga). Aviso solo en dev.
-    if (process.env.NODE_ENV !== "production") {
-      console.warn(
-        "[firebase] Missing NEXT_PUBLIC_FIREBASE_* env vars. Firebase not initialized."
-      );
-    }
-  } else {
-    app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+let app: ReturnType<typeof getApp> | undefined = undefined;
+
+export const getClientFirebaseApp = () => {
+  if (typeof window === "undefined") {
+    throw new Error("[Firebase] La SDK cliente no puede inicializarse en el servidor.");
   }
-}
 
-export { app };
+  if (!firebaseConfig) {
+    throw new Error(
+      `[Firebase] Faltan variables de entorno: ${missingFirebaseEnvVars.join(", ")}`
+    );
+  }
+
+  if (!app) {
+    app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+  }
+
+  return app;
+};

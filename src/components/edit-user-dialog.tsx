@@ -191,7 +191,11 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Departamento</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select
+                      name={field.name}
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecciona un departamento" />

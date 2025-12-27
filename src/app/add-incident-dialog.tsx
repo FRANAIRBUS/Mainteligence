@@ -39,7 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
-import { Icons } from './icons';
+import { Icons } from '@/components/icons';
 
 const formSchema = z.object({
   title: z
@@ -207,7 +207,11 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
             render={({ field }) => (
                 <FormItem>
                 <FormLabel>Ubicación</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select
+                  name={field.name}
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
                     <FormControl>
                     <SelectTrigger>
                         <SelectValue placeholder="Selecciona una ubicación" />
@@ -229,7 +233,11 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
             render={({ field }) => (
                 <FormItem>
                 <FormLabel>Departamento</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select
+                  name={field.name}
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
                     <FormControl>
                     <SelectTrigger>
                         <SelectValue placeholder="Selecciona un departamento" />
@@ -253,7 +261,11 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
             render={({ field }) => (
                 <FormItem>
                 <FormLabel>Activo (Opcional)</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select
+                  name={field.name}
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
                     <FormControl>
                     <SelectTrigger>
                         <SelectValue placeholder="Selecciona un activo" />
@@ -275,7 +287,11 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
             render={({ field }) => (
                 <FormItem>
                 <FormLabel>Prioridad</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select
+                  name={field.name}
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
                     <FormControl>
                     <SelectTrigger>
                         <SelectValue placeholder="Selecciona una prioridad" />
