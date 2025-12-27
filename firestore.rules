@@ -93,24 +93,23 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // 👇👇👇 AQUÍ ESTÁ EL BLOQUE NUEVO QUE TE FALTABA 👇👇👇
+    match /tasks/{taskId} {
+      // Permite leer y crear tareas a cualquier usuario logueado
+      allow read, create: if isSignedIn();
+      
+      // Permite actualizar si estás logueado (puedes restringirlo más si quieres)
+      allow update: if isSignedIn();
+      
+      // Solo admins pueden borrar
+      allow delete: if isAdmin();
+    }
+    // 👆👆👆 FIN DEL BLOQUE NUEVO 👆👆👆
+
     match /settings/{settingId} {
       // Allow anyone to read settings (for the logo on the login page)
       allow read: if true;
       allow write: if isAdmin(); // Only admins can change settings
-    }
-
-    // Basic maintenance tasks collection permissions
-    match /tasks/{taskId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn()
-        && request.resource.data.keys().hasAll([
-          'title',
-          'status',
-          'priority',
-          'createdBy',
-        ])
-        && request.resource.data.createdBy == request.auth.uid;
-      allow update, delete: if isMantenimiento();
     }
 
     // Allow authenticated users to enqueue emails for the Firebase Extension
