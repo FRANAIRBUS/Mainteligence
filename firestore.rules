@@ -105,5 +105,10 @@ service cloud.firestore {
       allow create: if isSignedIn();
       allow update, delete: if isMantenimiento();
     }
+
+    // Allow authenticated users to enqueue emails for the Firebase Extension
+    match /mail/{mailId} {
+      allow create: if isSignedIn();
+    }
   }
 }
