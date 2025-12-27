@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { AppShell } from "@/components/app-shell";
 import { TaskForm, type TaskFormValues } from "@/components/task-form";
 import { Icons } from "@/components/icons";
-import { useCollection, useDoc, useFirestore } from "@/lib/firebase";
+import { useAuth, useCollection, useDoc, useFirestore, useUser } from "@/lib/firebase";
 import { updateTask } from "@/lib/firestore-tasks";
 import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
@@ -17,11 +17,13 @@ import { sendAssignmentEmail } from "@/lib/assignment-email";
 
 export default function TaskDetailPage() {
   const firestore = useFirestore();
+  const auth = useAuth();
   const router = useRouter();
   const params = useParams();
   const taskId = Array.isArray(params.id) ? params.id[0] : params.id;
   const { data: users } = useCollection<User>("users");
   const { data: departments } = useCollection<Department>("departments");
+  const { user, loading: userLoading } = useUser();
   const { data: task, loading } = useDoc<MaintenanceTask>(
     taskId ? `tasks/${taskId}` : null
   );
@@ -47,6 +49,21 @@ export default function TaskDetailPage() {
       return;
     }
 
+    if (!auth) {
+      setErrorMessage("No se pudo inicializar la autenticación.");
+      return;
+    }
+
+    if (userLoading) {
+      setErrorMessage("Cargando sesión, intenta nuevamente en unos segundos.");
+      return;
+    }
+
+    if (!user) {
+      setErrorMessage("Inicia sesión para actualizar la tarea.");
+      return;
+    }
+
     setSubmitting(true);
     setErrorMessage(null);
 
@@ -64,7 +81,7 @@ export default function TaskDetailPage() {
     try {
       const previousAssignee = task.assignedTo?.trim() ?? "";
 
-      await updateTask(firestore, task.id, updates);
+      await updateTask(firestore, auth, task.id, updates);
 
       if (updates.assignedTo && updates.assignedTo !== previousAssignee) {
         await sendAssignmentEmail({

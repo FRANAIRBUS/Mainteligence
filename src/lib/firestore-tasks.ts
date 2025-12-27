@@ -16,13 +16,24 @@ import {
   type QueryConstraint,
   type Unsubscribe,
 } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import type { Auth } from "firebase/auth";
 import type {
   MaintenanceTask,
   MaintenanceTaskInput,
 } from "@/types/maintenance-task";
 
 const TASKS_COLLECTION = "tasks";
+
+const ensureAuthenticatedUser = async (auth: Auth) => {
+  await auth.authStateReady?.();
+  const user = auth.currentUser;
+
+  if (!user) {
+    throw new Error("Usuario no autenticado");
+  }
+
+  return user;
+};
 
 const taskConverter: FirestoreDataConverter<MaintenanceTask> = {
   toFirestore(task: MaintenanceTaskInput): DocumentData {
@@ -72,13 +83,10 @@ export const getTask = async (db: Firestore, id: string) => {
 
 export const createTask = async (
   db: Firestore,
+  auth: Auth,
   payload: MaintenanceTaskInput
 ): Promise<string> => {
-  const user = getAuth().currentUser;
-
-  if (!user) {
-    throw new Error("Usuario no autenticado");
-  }
+  const user = await ensureAuthenticatedUser(auth);
 
   const docRef = await addDoc(tasksCollection(db), {
     ...payload,
@@ -91,9 +99,11 @@ export const createTask = async (
 
 export const upsertTask = async (
   db: Firestore,
+  auth: Auth,
   id: string,
   payload: MaintenanceTaskInput
 ) => {
+  await ensureAuthenticatedUser(auth);
   const docRef = doc(db, TASKS_COLLECTION, id).withConverter(taskConverter);
   await setDoc(docRef, payload, { merge: true });
   return id;
@@ -101,15 +111,18 @@ export const upsertTask = async (
 
 export const updateTask = async (
   db: Firestore,
+  auth: Auth,
   id: string,
   updates: Partial<MaintenanceTaskInput>
 ) => {
+  await ensureAuthenticatedUser(auth);
   const docRef = doc(db, TASKS_COLLECTION, id);
   await updateDoc(docRef, { ...updates, updatedAt: serverTimestamp() });
   return id;
 };
 
-export const deleteTask = async (db: Firestore, id: string) => {
+export const deleteTask = async (db: Firestore, auth: Auth, id: string) => {
+  await ensureAuthenticatedUser(auth);
   const docRef = doc(db, TASKS_COLLECTION, id);
   await deleteDoc(docRef);
 };

@@ -6,7 +6,7 @@ import { Timestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { TaskForm, type TaskFormValues } from "@/components/task-form";
-import { useCollection, useFirestore, useUser } from "@/lib/firebase";
+import { useAuth, useCollection, useFirestore, useUser } from "@/lib/firebase";
 import { createTask } from "@/lib/firestore-tasks";
 import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
@@ -25,6 +25,7 @@ const emptyValues: TaskFormValues = {
 
 export default function NewTaskPage() {
   const firestore = useFirestore();
+  const auth = useAuth();
   const { data: users } = useCollection<User>("users");
   const { data: departments } = useCollection<Department>("departments");
   const { user, loading: userLoading } = useUser();
@@ -35,6 +36,11 @@ export default function NewTaskPage() {
   const handleSubmit = async (values: TaskFormValues) => {
     if (!firestore) {
       setErrorMessage("No se pudo inicializar la base de datos.");
+      return;
+    }
+
+    if (!auth) {
+      setErrorMessage("No se pudo inicializar la autenticación.");
       return;
     }
 
@@ -66,7 +72,7 @@ export default function NewTaskPage() {
     };
 
     try {
-      const id = await createTask(firestore, payload);
+      const id = await createTask(firestore, auth, payload);
 
       if (values.assignedTo.trim()) {
         try {
