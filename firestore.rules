@@ -98,5 +98,12 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin(); // Only admins can change settings
     }
+
+    // Basic maintenance tasks collection permissions
+    match /tasks/{taskId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isMantenimiento();
+    }
   }
 }

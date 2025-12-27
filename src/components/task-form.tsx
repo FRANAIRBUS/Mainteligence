@@ -45,6 +45,8 @@ export function TaskForm({
   users,
   departments,
 }: TaskFormProps) {
+  const UNASSIGNED_VALUE = "__unassigned";
+  const ALL_DEPARTMENTS_VALUE = "__all";
   const [values, setValues] = useState<TaskFormValues>(defaultValues);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -120,14 +122,19 @@ export function TaskForm({
           <Label htmlFor="assignedTo">Asignado a</Label>
           {userOptions.length > 0 ? (
             <Select
-              value={values.assignedTo}
-              onValueChange={(value) => handleChange("assignedTo", value)}
+              value={values.assignedTo || UNASSIGNED_VALUE}
+              onValueChange={(value) =>
+                handleChange(
+                  "assignedTo",
+                  value === UNASSIGNED_VALUE ? "" : value
+                )
+              }
             >
               <SelectTrigger id="assignedTo">
                 <SelectValue placeholder="Selecciona un usuario" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Sin asignar</SelectItem>
+                <SelectItem value={UNASSIGNED_VALUE}>Sin asignar</SelectItem>
                 {userOptions.map((user) => (
                   <SelectItem key={user.id} value={user.label}>
                     {user.label}
@@ -148,14 +155,16 @@ export function TaskForm({
           <Label htmlFor="location">Ubicación</Label>
           {departmentOptions.length > 0 ? (
             <Select
-              value={values.location}
-              onValueChange={(value) => handleChange("location", value)}
+              value={values.location || ALL_DEPARTMENTS_VALUE}
+              onValueChange={(value) =>
+                handleChange("location", value === ALL_DEPARTMENTS_VALUE ? "" : value)
+              }
             >
               <SelectTrigger id="location">
                 <SelectValue placeholder="Selecciona un departamento" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todos</SelectItem>
+                <SelectItem value={ALL_DEPARTMENTS_VALUE}>Todos</SelectItem>
                 {departmentOptions.map((department) => (
                   <SelectItem key={department.id} value={department.label}>
                     {department.label}
