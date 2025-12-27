@@ -2,7 +2,7 @@
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
-import { app, missingFirebaseEnvVars } from "./config";
+import { getClientFirebaseApp } from "./config";
 import type { FirebaseApp } from "firebase/app";
 
 export const initializeFirebase = async (): Promise<{
@@ -11,17 +11,8 @@ export const initializeFirebase = async (): Promise<{
   firestore: Firestore;
   storage: FirebaseStorage;
 }> => {
-  // Si por lo que sea no se inicializa en SSR, no petes: avisa y sigue.
-  if (!app) {
-    console.warn(
-      `[Firebase] app not initialized yet. Missing env vars: ${
-        missingFirebaseEnvVars.length ? missingFirebaseEnvVars.join(", ") : "none"
-      }`
-    );
-    throw new Error(
-      "Firebase no está disponible todavía (SSR/prerender). Reintenta en cliente."
-    );
-  }
+  // Garantiza que la inicialización ocurre solo en cliente y con configuración válida.
+  const app = getClientFirebaseApp();
 
   const auth = getAuth(app);
   const firestore = getFirestore(app);
