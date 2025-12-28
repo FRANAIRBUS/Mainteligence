@@ -63,12 +63,22 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // --- REGLAS PARA TAREAS (Tasks) ---
+    // Reglas para la colección de tareas
     match /tasks/{taskId} {
-      // Permitimos leer y crear a cualquier usuario autenticado 
-      // para que el formulario que creamos funcione
-      allow read, create, update: if isSignedIn();
-      allow delete: if isAdmin();
+      // Permite leer y crear tareas a cualquier usuario autenticado
+      allow read, create: if isSignedIn();
+      
+      // Permite actualizar si estás autenticado (puedes refinar esto para que solo el dueño o un admin pueda)
+      allow update: if isSignedIn();
+      
+      // Solo permite borrar si es admin (usando tu función de ayuda existente)
+      allow delete: if getUserRole(request.auth.uid) == 'admin';
+    }
+    
+    // Si tu sistema envía correos automáticamente al crear/editar tareas (usando la extensión "Trigger Email"),
+    // necesitas dar permiso a la colección 'mail':
+    match /mail/{mailId} {
+      allow create: if isSignedIn();
     }
 
     // --- REGLAS PARA INCIDENCIAS (Tickets) ---
