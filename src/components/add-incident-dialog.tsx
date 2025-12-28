@@ -14,23 +14,32 @@ import { useCollection } from "@/lib/firebase/firestore/use-collection"
 
 export function AddIncidentDialog() {
   const [open, setOpen] = useState(false)
+  const [assignedTo, setAssignedTo] = useState("")
   const { toast } = useToast()
   const { data: users } = useCollection("users")
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    
+    const title = formData.get("title")?.toString() ?? ""
+    const description = formData.get("description")?.toString() ?? ""
+
+    if (!assignedTo) {
+      toast({ title: "Asignar Responsable", description: "Selecciona un responsable.", variant: "destructive" })
+      return
+    }
+
     try {
       await addDoc(collection(db, "tickets"), {
-        title: formData.get("title"),
-        description: formData.get("description"),
-        assignedTo: formData.get("assignedTo"),
+        title,
+        description,
+        assignedTo,
         status: "open",
         createdAt: serverTimestamp(),
       })
 
       toast({ title: "Incidencia reportada", description: "Se ha enviado aviso al responsable." })
+      setAssignedTo("")
       setOpen(false)
     } catch (error) {
       toast({ title: "Error", description: "No se pudo reportar.", variant: "destructive" })
@@ -53,7 +62,7 @@ export function AddIncidentDialog() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="assignedTo">Asignar Responsable</Label>
-            <Select name="assignedTo" required>
+            <Select value={assignedTo} onValueChange={setAssignedTo}>
               <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
               <SelectContent>
                 {users?.map((user: any) => (
