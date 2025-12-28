@@ -91,6 +91,12 @@ export default function TaskDetailPage() {
           assignedTo: updates.assignedTo,
           departmentId: updates.location,
           title: updates.title,
+          description: updates.description,
+          priority: updates.priority,
+          status: updates.status,
+          dueDate: values.dueDate || null,
+          location: updates.location,
+          category: updates.category,
           link: `${window.location.origin}/tasks/${task.id}`,
           type: "tarea",
         });
