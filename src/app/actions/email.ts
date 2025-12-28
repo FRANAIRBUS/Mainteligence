@@ -1,9 +1,6 @@
 'use server'
 
-import { Resend } from 'resend';
-
-// Inicializa Resend con la API Key del entorno
-const resend = new Resend(process.env.RESEND_API_KEY);
+const RESEND_API_URL = 'https://api.resend.com/emails';
 
 interface EmailPayload {
   to: string[];
@@ -20,16 +17,30 @@ export async function sendEmailAction({ to, subject, html, text }: EmailPayload)
   }
 
   try {
-    const data = await resend.emails.send({
-      // ⚠️ IMPORTANTE: 'onboarding@resend.dev' solo funciona si envías a tu propio email de registro.
-      // Para producción, debes verificar tu dominio en Resend y cambiar esto (ej: 'avisos@tudominio.com').
-      from: 'Mainteligence <onboarding@resend.dev>', 
-      to: to,
-      subject: subject,
-      html: html,
-      text: text,
+    const response = await fetch(RESEND_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        // ⚠️ IMPORTANTE: 'onboarding@resend.dev' solo funciona si envías a tu propio email de registro.
+        // Para producción, debes verificar tu dominio en Resend y cambiar esto (ej: 'avisos@tudominio.com').
+        from: 'Mainteligence <onboarding@resend.dev>',
+        to,
+        subject,
+        html,
+        text,
+      }),
     });
 
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("❌ Resend API error:", response.status, errorBody);
+      return { success: false, error: `Resend API error: ${response.status}` };
+    }
+
+    const data = await response.json();
     console.log("✅ Email enviado:", data);
     return { success: true, data };
   } catch (error) {
