@@ -8,6 +8,8 @@ body {
 
 @layer base {
   :root {
+    --font-inter: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-space-grotesk: 'Space Grotesk', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     --background: 210 40% 98%;
     --foreground: 220 24% 15%;
     --card: 0 0% 100%;
