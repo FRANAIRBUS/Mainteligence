@@ -10,7 +10,6 @@ interface RecipientOptions {
   departmentId?: string | null;
 }
 
-// Nota: Hemos eliminado 'firestore' de esta interfaz
 interface AssignmentEmailInput extends RecipientOptions {
   title: string;
   link: string;
@@ -59,7 +58,6 @@ export const collectRecipients = ({
     if (resolvedDepartmentId && user.departmentId === resolvedDepartmentId) {
       recipients.add(user.email);
     }
-
     if (user.isMaintenanceLead) {
       recipients.add(user.email);
     }
@@ -89,7 +87,6 @@ export const sendAssignmentEmail = async ({
   });
 
   if (!recipients.length) {
-    console.log("No hay destinatarios para enviar correo.");
     return;
   }
 
@@ -102,19 +99,18 @@ export const sendAssignmentEmail = async ({
   const text = `${introLine}\n\nVer ${typeLabel}: ${link}`;
   
   const html = `
-    <div style="font-family: sans-serif; padding: 20px;">
-      <h2>${subject}</h2>
-      <p>${introLine}</p>
+    <div style="font-family: sans-serif; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+      <h2 style="color: #111;">${subject}</h2>
+      <p style="font-size: 16px; color: #444;">${introLine}</p>
       <p><strong>${typeLabel === "tarea" ? "Tarea" : "Incidencia"}:</strong> ${title}</p>
-      <div style="margin-top: 20px;">
-        <a href="${link}" style="background-color: #000; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+      <div style="margin-top: 24px;">
+        <a href="${link}" style="background-color: #000; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
           Ver ${typeLabel}
         </a>
       </div>
     </div>
   `;
 
-  // Llamada directa a la Server Action (sin pasar por Firestore)
   await sendEmailAction({
     to: recipients,
     subject,
