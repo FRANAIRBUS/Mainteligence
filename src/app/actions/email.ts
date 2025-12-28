@@ -2,7 +2,7 @@
 
 import { Resend } from 'resend';
 
-// Asegúrate de tener RESEND_API_KEY en tu archivo .env
+// Inicializa Resend con la API Key del entorno
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface EmailPayload {
@@ -13,24 +13,27 @@ interface EmailPayload {
 }
 
 export async function sendEmailAction({ to, subject, html, text }: EmailPayload) {
+  // Verificación básica de seguridad
   if (!process.env.RESEND_API_KEY) {
-    console.error("Falta la RESEND_API_KEY en las variables de entorno");
+    console.error("❌ ERROR: Falta RESEND_API_KEY en las variables de entorno.");
     return { success: false, error: "Configuration Error" };
   }
 
   try {
     const data = await resend.emails.send({
-      from: 'Mainteligence <onboarding@resend.dev>', // ⚠️ IMPORTANTE: Cámbialo por tu dominio verificado cuando pases a producción (ej: avisos@tuempresa.com)
+      // ⚠️ IMPORTANTE: 'onboarding@resend.dev' solo funciona si envías a tu propio email de registro.
+      // Para producción, debes verificar tu dominio en Resend y cambiar esto (ej: 'avisos@tudominio.com').
+      from: 'Mainteligence <onboarding@resend.dev>', 
       to: to,
       subject: subject,
       html: html,
       text: text,
     });
 
-    console.log("Email enviado con éxito:", data);
+    console.log("✅ Email enviado:", data);
     return { success: true, data };
   } catch (error) {
-    console.error("Error enviando email vía Resend:", error);
+    console.error("❌ Error enviando email:", error);
     return { success: false, error };
   }
 }
