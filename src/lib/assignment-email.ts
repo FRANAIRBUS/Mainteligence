@@ -15,6 +15,12 @@ interface AssignmentEmailInput extends RecipientOptions {
   link: string;
   type: AssignmentType;
   identifier?: string;
+  description?: string;
+  priority?: string;
+  status?: string;
+  dueDate?: string | Date | null;
+  location?: string;
+  category?: string;
 }
 
 const resolveAssignedUser = (
@@ -78,6 +84,12 @@ export const sendAssignmentEmail = async ({
   link,
   type,
   identifier,
+  description,
+  priority,
+  status,
+  dueDate,
+  location,
+  category,
 }: AssignmentEmailInput) => {
   const { recipients, assignedUser } = collectRecipients({
     users,
@@ -96,19 +108,76 @@ export const sendAssignmentEmail = async ({
     ? `Has sido asignado a la ${typeLabel} ${identifier ? `${identifier} - ` : ""}${title}.`
     : `Se ha asignado la ${typeLabel} ${identifier ? `${identifier} - ` : ""}${title}.`;
 
-  const text = `${introLine}\n\nVer ${typeLabel}: ${link}`;
-  
+  const formatDate = (value: AssignmentEmailInput["dueDate"]) => {
+    if (!value) return "Sin fecha";
+    const parsedDate =
+      value instanceof Date ? value : typeof value === "string" ? new Date(value) : null;
+    if (!parsedDate || Number.isNaN(parsedDate.getTime())) return "Sin fecha";
+    return new Intl.DateTimeFormat("es-ES", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(parsedDate);
+  };
+
+  const details: { label: string; value: string }[] = [
+    { label: "Título", value: title || "(sin título)" },
+    { label: "ID", value: identifier || "No especificado" },
+    { label: "Estado", value: status || "pendiente" },
+    { label: "Prioridad", value: priority || "media" },
+    { label: "Fecha límite", value: formatDate(dueDate) },
+    { label: "Ubicación / Departamento", value: location || "No especificado" },
+    { label: "Categoría", value: category || "No especificada" },
+    { label: "Descripción", value: description || "Sin descripción" },
+  ];
+
+  const detailRows = details
+    .map(
+      (item) =>
+        `<tr><td style="padding: 8px 12px; font-weight: 600; color: #111827;">${item.label}</td><td style="padding: 8px 12px; color: #374151;">${item.value}</td></tr>`
+    )
+    .join("");
+
+  const text = [
+    introLine,
+    `Título: ${title || "(sin título)"}`,
+    `ID: ${identifier || "No especificado"}`,
+    `Estado: ${status || "pendiente"}`,
+    `Prioridad: ${priority || "media"}`,
+    `Fecha límite: ${formatDate(dueDate)}`,
+    `Ubicación / Departamento: ${location || "No especificado"}`,
+    `Categoría: ${category || "No especificada"}`,
+    `Descripción: ${description || "Sin descripción"}`,
+    `Ver ${typeLabel}: ${link}`,
+  ].join("\n");
+
   const html = `
-    <div style="font-family: sans-serif; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
-      <h2 style="color: #111;">${subject}</h2>
-      <p style="font-size: 16px; color: #444;">${introLine}</p>
-      <p><strong>${typeLabel === "tarea" ? "Tarea" : "Incidencia"}:</strong> ${title}</p>
-      <div style="margin-top: 24px;">
-        <a href="${link}" style="background-color: #000; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
-          Ver ${typeLabel}
-        </a>
-      </div>
-    </div>
+    <table style="width:100%; max-width:640px; margin:0 auto; font-family: 'Inter', system-ui, -apple-system, sans-serif; border:1px solid #e5e7eb; border-radius: 12px; overflow:hidden;">
+      <tr>
+        <td style="background:linear-gradient(135deg, #111827, #1f2937); padding:24px 24px; color:#f9fafb;">
+          <div style="font-size:14px; letter-spacing:0.5px; text-transform:uppercase; opacity:0.8;">Nueva ${typeLabel} asignada</div>
+          <div style="font-size:22px; font-weight:700; margin-top:4px;">${identifier ? `${identifier} · ` : ""}${title}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:24px 24px 8px; color:#111827;">
+          <p style="margin:0 0 12px; font-size:16px;">${introLine}</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 16px 8px;">
+          <table style="width:100%; border-collapse:collapse;">
+            <tbody>${detailRows}</tbody>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:16px 24px 24px;">
+          <a href="${link}" style="display:inline-block; background:#111827; color:#f9fafb; padding:12px 18px; border-radius:10px; text-decoration:none; font-weight:600;">Ver ${typeLabel}</a>
+          <p style="margin:12px 0 0; font-size:12px; color:#6b7280;">Si el botón no funciona, copia y pega este enlace en tu navegador:<br/>${link}</p>
+        </td>
+      </tr>
+    </table>
   `;
 
   await sendEmailAction({

@@ -83,6 +83,12 @@ export default function NewTaskPage() {
             assignedTo: values.assignedTo.trim(),
             departmentId: payload.location,
             title: payload.title,
+            description: payload.description,
+            priority: payload.priority,
+            status: payload.status,
+            dueDate: values.dueDate || null,
+            location: payload.location,
+            category: payload.category,
             link: `${window.location.origin}/tasks/${id}`,
             type: "tarea",
           });
