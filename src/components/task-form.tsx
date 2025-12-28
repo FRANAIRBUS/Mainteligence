@@ -1,110 +1,249 @@
 "use client"
 
+import { useEffect } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useToast } from "@/hooks/use-toast"
-import { db } from "@/lib/firebase"
-import { collection, addDoc, serverTimestamp } from "firebase/firestore"
-import { useCollection } from "@/lib/firebase/firestore/use-collection"
+import { Textarea } from "@/components/ui/textarea"
 
 const taskSchema = z.object({
   title: z.string().min(2, "El título debe tener al menos 2 caracteres"),
-  priority: z.enum(["low", "medium", "high"]),
-  userId: z.string().min(1, "Debe seleccionar un usuario"),
+  description: z
+    .string()
+    .optional()
+    .transform((value) => value ?? ""),
+  priority: z.enum(["alta", "media", "baja"]),
+  status: z.enum(["pendiente", "en_progreso", "completada"]),
+  dueDate: z
+    .string()
+    .optional()
+    .transform((value) => value ?? ""),
+  assignedTo: z
+    .string()
+    .optional()
+    .transform((value) => value ?? ""),
+  location: z
+    .string()
+    .optional()
+    .transform((value) => value ?? ""),
+  category: z
+    .string()
+    .optional()
+    .transform((value) => value ?? ""),
 })
 
-type TaskFormValues = z.infer<typeof taskSchema>
+export type TaskFormValues = z.infer<typeof taskSchema>
 
-export function TaskForm({ onSuccess }: { onSuccess?: () => void }) {
-  const { toast } = useToast()
-  const { data: users } = useCollection("users")
+type TaskFormProps = {
+  defaultValues: TaskFormValues
+  onSubmit: (values: TaskFormValues) => Promise<void> | void
+  submitting?: boolean
+  errorMessage?: string | null
+  users?: { id: string; displayName?: string; email?: string }[]
+  departments?: { id: string; name?: string }[]
+  submitLabel?: string
+  onSuccess?: () => void
+}
 
+export function TaskForm({
+  defaultValues,
+  onSubmit,
+  submitting = false,
+  errorMessage,
+  users = [],
+  departments = [],
+  submitLabel = "Guardar",
+  onSuccess,
+}: TaskFormProps) {
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskSchema),
-    defaultValues: {
-      title: "",
-      priority: "medium",
-      userId: "",
-    },
+    defaultValues,
   })
 
-  async function onSubmit(values: TaskFormValues) {
-    try {
-      // GUARDADO EN FIRESTORE (Dispara la función de email)
-      await addDoc(collection(db, "tasks"), {
-        ...values,
-        status: "pending",
-        createdAt: serverTimestamp(),
-      })
+  useEffect(() => {
+    form.reset(defaultValues)
+  }, [defaultValues, form])
 
-      toast({ title: "Tarea creada", description: "El operario recibirá una notificación." })
-      form.reset()
-      onSuccess?.()
-    } catch (error) {
-      toast({ 
-        title: "Error", 
-        description: "No se pudo guardar la tarea.", 
-        variant: "destructive" 
-      })
-    }
+  const handleSubmit = async (values: TaskFormValues) => {
+    await onSubmit(values)
+    onSuccess?.()
   }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+        {errorMessage ? (
+          <Alert variant="destructive">
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
+        ) : null}
+
         <FormField
           control={form.control}
           name="title"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Título de la Tarea</FormLabel>
-              <FormControl><Input placeholder="Ej: Revisión motor A1" {...field} /></FormControl>
+              <FormLabel>Título de la tarea</FormLabel>
+              <FormControl>
+                <Input placeholder="Ej: Revisión motor A1" {...field} />
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
+
         <FormField
           control={form.control}
-          name="priority"
+          name="description"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Prioridad</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  <SelectItem value="low">Baja</SelectItem>
-                  <SelectItem value="medium">Media</SelectItem>
-                  <SelectItem value="high">Alta</SelectItem>
-                </SelectContent>
-              </Select>
+              <FormLabel>Descripción</FormLabel>
+              <FormControl>
+                <Textarea placeholder="Detalles de la tarea" {...field} />
+              </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <FormField
-          control={form.control}
-          name="userId"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Asignar a</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar usuario" /></SelectTrigger></FormControl>
-                <SelectContent>
-                  {users?.map((user: any) => (
-                    <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <Button type="submit" className="w-full">Crear Tarea</Button>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="priority"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Prioridad</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="alta">Alta</SelectItem>
+                    <SelectItem value="media">Media</SelectItem>
+                    <SelectItem value="baja">Baja</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="status"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Estado</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="pendiente">Pendiente</SelectItem>
+                    <SelectItem value="en_progreso">En progreso</SelectItem>
+                    <SelectItem value="completada">Completada</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="dueDate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Fecha límite</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="assignedTo"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Asignar a</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar usuario" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.displayName || user.email || user.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="location"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Departamento / ubicación</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {departments.map((department) => (
+                      <SelectItem key={department.id} value={department.id}>
+                        {department.name || department.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Categoría</FormLabel>
+                <FormControl>
+                  <Input placeholder="Categoría opcional" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitLabel}
+        </Button>
       </form>
     </Form>
   )
