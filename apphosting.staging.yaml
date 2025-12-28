@@ -1,0 +1,22 @@
+runConfig:
+  minInstances: 0 # Ahorro de costes en staging
+  memoryMiB: 1024
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: AIzaSyBrEI-QvGZGEAoOM4Qrf3Y8d0Sjro71vko
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: studio-4350140400-a3f8f.firebaseapp.com
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: studio-4350140400-a3f8f
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: studio-4350140400-a3f8f.firebasestorage.app
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "975118694386"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:975118694386:web:0cb5222ba248bf85a4dd6b"
+    availability: [BUILD, RUNTIME]
