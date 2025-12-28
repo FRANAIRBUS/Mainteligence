@@ -10,7 +10,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Cambiado de read a write para que pueda generar archivos si es necesario
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -19,19 +19,18 @@ jobs:
         with:
           node-version: 20
 
-      # FORZAMOS LA CREACIÓN DEL LOCK FILE SI NO EXISTE
-      - name: Install Dependencies
+      - name: Clean Install
         run: |
-          npm install --package-lock-only
+          rm -f package-lock.json
           npm install
-
+          
       - name: Build
         run: npm run build
 
       - name: Deploy to Firebase App Hosting
         run: |
           if [ "${GITHUB_REF_NAME}" = "main" ]; then
-            npx firebase-tools@latest deploy --only apphosting:my-web-app --project TU_PROYECTO_PROD --non-interactive
+            npx firebase-tools@latest deploy --only apphosting:my-web-app --project studio-4350140400-a3f8f --non-interactive
           else
             npx firebase-tools@latest deploy --only apphosting:my-web-app-staging --project studio-4350140400-a3f8f --non-interactive
           fi
