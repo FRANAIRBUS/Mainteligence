@@ -1,6 +1,14 @@
+runtime: nodejs20
+
 runConfig:
-  minInstances: 0 # Ahorro de costes en staging
+  minInstances: 0
+  cpu: 1
   memoryMiB: 1024
+
+# FORZAMOS EL COMANDO DE INSTALACIÓN
+scripts:
+  install: npm install # Esto sustituye al 'npm ci' que está fallando
+
 env:
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: AIzaSyBrEI-QvGZGEAoOM4Qrf3Y8d0Sjro71vko
