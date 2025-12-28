@@ -1,12 +1,11 @@
-# Settings for Backend (on Cloud Run).
+runtime: nodejs20
+
 runConfig:
   minInstances: 0
   cpu: 1
-  memoryMiB: 1024 # Aumentamos a 1GB para evitar errores de memoria en el build de Next.js
+  memoryMiB: 1024
 
-# Environment variables and secrets.
 env:
-  # Variables para Firebase (Visibles en cliente y servidor)
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: AIzaSyBrEI-QvGZGEAoOM4Qrf3Y8d0Sjro71vko
     availability: [BUILD, RUNTIME]
@@ -25,8 +24,6 @@ env:
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:975118694386:web:0cb5222ba248bf85a4dd6b"
     availability: [BUILD, RUNTIME]
-
-  # Forzamos a Next.js a saber que está en producción
   - variable: NODE_ENV
     value: production
     availability: [BUILD, RUNTIME]
