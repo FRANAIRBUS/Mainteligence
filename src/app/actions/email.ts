@@ -17,6 +17,8 @@ export async function sendEmailAction({ to, subject, html, text }: EmailPayload)
   }
 
   try {
+    const fromAddress = process.env.RESEND_FROM ?? 'Mainteligence <no-reply@mainteligence.app>';
+
     const response = await fetch(RESEND_API_URL, {
       method: 'POST',
       headers: {
@@ -26,7 +28,7 @@ export async function sendEmailAction({ to, subject, html, text }: EmailPayload)
       body: JSON.stringify({
         // ⚠️ IMPORTANTE: 'onboarding@resend.dev' solo funciona si envías a tu propio email de registro.
         // Para producción, debes verificar tu dominio en Resend y cambiar esto (ej: 'avisos@tudominio.com').
-        from: 'Mainteligence <onboarding@resend.dev>',
+        from: fromAddress,
         to,
         subject,
         html,
