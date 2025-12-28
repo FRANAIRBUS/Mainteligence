@@ -5,6 +5,10 @@ import { Resend } from "resend";
 admin.initializeApp();
 
 const resendApiKey = functions.config().resend?.apikey;
+const resendFrom =
+  functions.config().resend?.from ||
+  process.env.RESEND_FROM ||
+  "Maintelligence <noreply@maintelligence.app>";
 
 async function getUserEmail(userId: string): Promise<string | undefined> {
   const snapshot = await admin.firestore().collection("users").doc(userId).get();
@@ -29,7 +33,7 @@ export const onTaskAssign = functions.firestore
 
       try {
         await resend.emails.send({
-          from: "Mainteligence <avisos@maintelligence.app>", 
+          from: resendFrom,
           to: email,
           subject: `🆕 Tarea Asignada: ${newData.title}`,
           html: `<p>Se te ha asignado la tarea: <strong>${newData.title}</strong></p>
@@ -53,7 +57,7 @@ export const onTicketAssign = functions.firestore
       if (!email) return;
       try {
         await resend.emails.send({
-          from: "Mainteligence <avisos@maintelligence.app>", 
+          from: resendFrom,
           to: email,
           subject: `🚨 Incidencia Asignada: ${newData.title}`,
           html: `<p>Nueva incidencia: <strong>${newData.title}</strong></p>`
