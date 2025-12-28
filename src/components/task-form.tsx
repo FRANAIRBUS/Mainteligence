@@ -137,7 +137,7 @@ export function TaskForm({
               <SelectContent>
                 <SelectItem value={UNASSIGNED_VALUE}>Sin asignar</SelectItem>
                 {userOptions.map((user) => (
-                  <SelectItem key={user.id} value={user.label}>
+                  <SelectItem key={user.id} value={user.id}>
                     {user.label}
                   </SelectItem>
                 ))}
@@ -168,7 +168,7 @@ export function TaskForm({
               <SelectContent>
                 <SelectItem value={ALL_DEPARTMENTS_VALUE}>Todos</SelectItem>
                 {departmentOptions.map((department) => (
-                  <SelectItem key={department.id} value={department.label}>
+                  <SelectItem key={department.id} value={department.id}>
                     {department.label}
                   </SelectItem>
                 ))}
