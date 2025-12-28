@@ -3,32 +3,28 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
+    // --- FUNCIONES DE AYUDA (Mantenemos las tuyas) ---
     function isSignedIn() {
       return request.auth != null;
     }
 
     function getUser(uid) {
-      return get(/databases/(default)/documents/users/$(uid));
+      // Nota: He cambiado (default) por $(database) para mayor compatibilidad
+      return get(/databases/$(database)/documents/users/$(uid));
     }
 
     function getUserRole(uid) {
-      let userDoc = getUser(uid);
-      if (!exists(/databases/(default)/documents/users/$(uid))) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
         return 'none';
       }
-      return userDoc.data.role;
+      return get(/databases/$(database)/documents/users/$(uid)).data.role;
     }
 
     function getUserDepartmentId(uid) {
-      let userDoc = getUser(uid);
-      if (!exists(/databases/(default)/documents/users/$(uid))) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
         return null;
       }
-      return userDoc.data.departmentId;
-    }
-
-    function isOperario() {
-      return isSignedIn() && getUserRole(request.auth.uid) == 'operario';
+      return get(/databases/$(database)/documents/users/$(uid)).data.departmentId;
     }
 
     function isMantenimiento() {
@@ -41,11 +37,10 @@ service firebase.storage {
 
     function canAccessTicket(ticketId) {
       if (!isSignedIn()) return false;
+      let path = /databases/$(database)/documents/tickets/$(ticketId);
+      if (!exists(path)) return false;
 
-      let ticketDoc = get(/databases/(default)/documents/tickets/$(ticketId));
-      if (!exists(/databases/(default)/documents/tickets/$(ticketId))) return false;
-
-      let ticketData = ticketDoc.data;
+      let ticketData = get(path).data;
 
       return isMantenimiento() ||
         ticketData.createdBy == request.auth.uid ||
@@ -53,17 +48,31 @@ service firebase.storage {
         (ticketData.departmentId != null && ticketData.departmentId == getUserDepartmentId(request.auth.uid));
     }
 
-    // Allow public read access to the company logo for display on login pages.
-    // Restrict write access to authenticated users. The app logic ensures only admins can trigger the upload.
+    // --- REGLAS DE CARPETAS ---
+
+    // 1. Logo de la empresa (Público para lectura)
     match /branding/logo.png {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // Allow authenticated users to write to their own ticket folders for photo evidence.
+    // 2. Fotos de Incidencias (Tickets)
     match /tickets/{ticketId}/{allPaths=**} {
-        allow read: if canAccessTicket(ticketId);
-        allow write: if canAccessTicket(ticketId);
+        allow read, write: if canAccessTicket(ticketId);
+    }
+
+    // 👇👇👇 NUEVO: Fotos de Tareas (Tasks) 👇👇👇
+    match /tasks/{taskId}/{allPaths=**} {
+        // Por ahora permitimos a cualquier usuario logueado subir/ver fotos de tareas
+        // Puedes restringirlo más adelante si quieres que solo el asignado pueda subir fotos
+        allow read, write: if isSignedIn();
+    }
+    // 👆👆👆 FIN DEL BLOQUE NUEVO 👆👆👆
+
+    // 3. Avatares de usuario
+    match /users/{userId}/avatar.png {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
     }
   }
 }
