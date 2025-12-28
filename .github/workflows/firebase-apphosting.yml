@@ -18,10 +18,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          # Quitamos 'cache: npm' temporalmente para forzar una limpieza total
+          # cache: npm 
 
-      - run: npm install
-      - run: npm run build
+      - name: Install dependencies from scratch
+        run: |
+          rm -rf node_modules
+          npm install --no-package-lock
+
+      - name: Build Next.js App
+        run: npm run build
 
       - name: Deploy to Firebase App Hosting
         run: |
