@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -8,46 +8,69 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
-import { db } from "@/lib/firebase"
 import { collection, addDoc, serverTimestamp } from "firebase/firestore"
 import { useCollection } from "@/lib/firebase/firestore/use-collection"
+import { useFirestore, useUser } from "@/lib/firebase"
+import type { User } from "@/lib/firebase/models"
 
-export function AddIncidentDialog() {
-  const [open, setOpen] = useState(false)
-  const [assignedTo, setAssignedTo] = useState("")
+interface AddIncidentDialogProps {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}
+
+export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps) {
   const { toast } = useToast()
-  const { data: users } = useCollection("users")
+  const firestore = useFirestore()
+  const { user } = useUser()
+  const { data: users } = useCollection<User>("users")
+
+  const [internalOpen, setInternalOpen] = useState(false)
+  const dialogOpen = useMemo(() => open ?? internalOpen, [open, internalOpen])
+  const setDialogOpen = onOpenChange ?? setInternalOpen
+  const [assignedTo, setAssignedTo] = useState("")
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    const title = formData.get("title")?.toString() ?? ""
-    const description = formData.get("description")?.toString() ?? ""
+    const title = formData.get("title")?.toString().trim() ?? ""
+    const description = formData.get("description")?.toString().trim() ?? ""
+
+    if (!firestore) {
+      toast({ title: "Error", description: "Firestore no está disponible.", variant: "destructive" })
+      return
+    }
+
+    if (!user) {
+      toast({ title: "Inicia sesión", description: "Debes iniciar sesión para crear incidencias.", variant: "destructive" })
+      return
+    }
 
     if (!assignedTo) {
-      toast({ title: "Asignar Responsable", description: "Selecciona un responsable.", variant: "destructive" })
+      toast({ title: "Asignar responsable", description: "Selecciona un responsable.", variant: "destructive" })
       return
     }
 
     try {
-      await addDoc(collection(db, "tickets"), {
+      await addDoc(collection(firestore, "tickets"), {
         title,
         description,
         assignedTo,
         status: "open",
         createdAt: serverTimestamp(),
+        createdBy: user.uid,
       })
 
       toast({ title: "Incidencia reportada", description: "Se ha enviado aviso al responsable." })
       setAssignedTo("")
-      setOpen(false)
+      setDialogOpen(false)
+      event.currentTarget.reset()
     } catch (error) {
       toast({ title: "Error", description: "No se pudo reportar.", variant: "destructive" })
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
       <DialogTrigger asChild><Button>Nueva Incidencia</Button></DialogTrigger>
       <DialogContent>
         <DialogHeader><DialogTitle>Reportar Incidencia</DialogTitle></DialogHeader>
@@ -65,8 +88,8 @@ export function AddIncidentDialog() {
             <Select value={assignedTo} onValueChange={setAssignedTo}>
               <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
               <SelectContent>
-                {users?.map((user: any) => (
-                  <SelectItem key={user.id} value={user.id}>{user.name || user.email}</SelectItem>
+                {users?.map((user) => (
+                  <SelectItem key={user.id} value={user.id}>{user.displayName || user.email}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
