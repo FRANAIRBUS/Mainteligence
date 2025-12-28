@@ -30,5 +30,5 @@ env:
   - variable: NODE_ENV
     value: production
     availability: [BUILD, RUNTIME]
-   - variable: RESEND_API_KEY
+  - variable: RESEND_API_KEY
     value: "re_J5wZymJq_2Kk9UbUSK9NzrNpFeJMfTeeb" 
