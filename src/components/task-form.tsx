@@ -74,7 +74,7 @@ export function TaskForm({ onSuccess }: { onSuccess?: () => void }) {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Prioridad</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <Select onValueChange={field.onChange} value={field.value}>
                 <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger></FormControl>
                 <SelectContent>
                   <SelectItem value="low">Baja</SelectItem>
@@ -82,6 +82,7 @@ export function TaskForm({ onSuccess }: { onSuccess?: () => void }) {
                   <SelectItem value="high">Alta</SelectItem>
                 </SelectContent>
               </Select>
+              <FormMessage />
             </FormItem>
           )}
         />
@@ -91,7 +92,7 @@ export function TaskForm({ onSuccess }: { onSuccess?: () => void }) {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Asignar a</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <Select onValueChange={field.onChange} value={field.value}>
                 <FormControl><SelectTrigger><SelectValue placeholder="Seleccionar usuario" /></SelectTrigger></FormControl>
                 <SelectContent>
                   {users?.map((user: any) => (
@@ -99,6 +100,7 @@ export function TaskForm({ onSuccess }: { onSuccess?: () => void }) {
                   ))}
                 </SelectContent>
               </Select>
+              <FormMessage />
             </FormItem>
           )}
         />
