@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, useUser, useStorage, useCollection } from '@/lib/firebase';
-import type { Site, Department, Asset } from '@/lib/firebase/models';
+import type { Asset, Department, Site, User } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -48,8 +48,15 @@ const formSchema = z.object({
   description: z
     .string()
     .min(10, { message: 'La descripción debe tener al menos 10 caracteres.' }),
-  siteId: z.string({ required_error: 'Debe seleccionar una ubicación.' }),
-  departmentId: z.string({ required_error: 'Debe seleccionar un departamento.' }),
+  siteId: z
+    .string({ required_error: 'Debe seleccionar una ubicación.' })
+    .min(1, { message: 'Debe seleccionar una ubicación.' }),
+  departmentId: z
+    .string({ required_error: 'Debe seleccionar un departamento.' })
+    .min(1, { message: 'Debe seleccionar un departamento.' }),
+  assignedTo: z
+    .string({ required_error: 'Debe asignar un responsable.' })
+    .min(1, { message: 'Debe asignar un responsable.' }),
   assetId: z.string().optional(),
   priority: z.enum(['Baja', 'Media', 'Alta', 'Crítica'], { required_error: 'Debe seleccionar una prioridad.' }),
 });
@@ -73,6 +80,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: users, loading: usersLoading } = useCollection<User>('users');
 
   const form = useForm<AddIncidentFormValues>({
     resolver: zodResolver(formSchema),
@@ -80,6 +88,10 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
       title: '',
       description: '',
       priority: 'Media',
+      siteId: '',
+      departmentId: '',
+      assetId: '',
+      assignedTo: '',
     },
   });
 
@@ -88,6 +100,11 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
       setPhotos(Array.from(e.target.files));
     }
   };
+
+  const siteOptions = sites ?? [];
+  const departmentOptions = departments ?? [];
+  const assetOptions = assets ?? [];
+  const userOptions = users ?? [];
 
   const onSubmit = async (data: AddIncidentFormValues) => {
     if (!firestore || !user || !storage) {
@@ -127,11 +144,12 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
         
         const docData = {
             ...data,
+            assetId: data.assetId || null,
             type: 'correctivo',
             status: 'Abierta',
             createdBy: user.uid,
             assignedRole: 'maintenance',
-            assignedTo: null,
+            assignedTo: data.assignedTo,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             photoUrls,
@@ -146,7 +164,15 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
             description: `Incidencia '${data.title}' creada correctamente.`,
         });
         onOpenChange(false);
-        form.reset();
+        form.reset({
+          title: '',
+          description: '',
+          siteId: '',
+          departmentId: '',
+          assetId: '',
+          priority: 'Media',
+          assignedTo: '',
+        });
         setPhotos([]);
 
     } catch (error: any) {
@@ -169,7 +195,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
     }
   };
 
-  const isLoading = sitesLoading || deptsLoading || assetsLoading;
+  const isLoading = sitesLoading || deptsLoading || assetsLoading || usersLoading;
   
   if(isLoading) {
     return (
@@ -218,7 +244,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
                 <Select
                   name={field.name}
                   onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  value={field.value}
                 >
                     <FormControl>
                     <SelectTrigger>
@@ -226,7 +252,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
                     </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                    {sites.map(site => (
+                    {siteOptions.map(site => (
                         <SelectItem key={site.id} value={site.id}>{site.name}</SelectItem>
                     ))}
                     </SelectContent>
@@ -244,7 +270,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
                 <Select
                   name={field.name}
                   onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  value={field.value}
                 >
                     <FormControl>
                     <SelectTrigger>
@@ -252,7 +278,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
                     </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                    {departments.map(dept => (
+                    {departmentOptions.map(dept => (
                         <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
                     ))}
                     </SelectContent>
@@ -262,6 +288,34 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
             )}
             />
         </div>
+        <FormField
+          control={form.control}
+          name="assignedTo"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Asignar responsable</FormLabel>
+              <Select
+                name={field.name}
+                onValueChange={field.onChange}
+                value={field.value}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona un usuario" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {userOptions.map((assignedUser) => (
+                    <SelectItem key={assignedUser.id} value={assignedUser.id}>
+                      {assignedUser.displayName || assignedUser.email || assignedUser.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
             control={form.control}
@@ -272,7 +326,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
                 <Select
                   name={field.name}
                   onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  value={field.value}
                 >
                     <FormControl>
                     <SelectTrigger>
@@ -280,7 +334,8 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
                     </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                    {assets.map(asset => (
+                    <SelectItem value="">Sin activo</SelectItem>
+                    {assetOptions.map(asset => (
                         <SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>
                     ))}
                     </SelectContent>
@@ -298,7 +353,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
                 <Select
                   name={field.name}
                   onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  value={field.value}
                 >
                     <FormControl>
                     <SelectTrigger>
