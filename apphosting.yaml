@@ -1,48 +1,32 @@
 # Settings for Backend (on Cloud Run).
-# See https://firebase.google.com/docs/app-hosting/configure#cloud-run
 runConfig:
   minInstances: 0
-  # maxInstances: 100
-  # concurrency: 80
-  # cpu: 1
-  # memoryMiB: 512
+  cpu: 1
+  memoryMiB: 1024 # Aumentamos a 1GB para evitar errores de memoria en el build de Next.js
 
 # Environment variables and secrets.
 env:
-  # Configure environment variables.
-  # See https://firebase.google.com/docs/app-hosting/configure#user-defined-environment
+  # Variables para Firebase (Visibles en cliente y servidor)
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: AIzaSyBrEI-QvGZGEAoOM4Qrf3Y8d0Sjro71vko
-    availability:
-      - BUILD
-      - RUNTIME
+    availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
     value: studio-4350140400-a3f8f.firebaseapp.com
-    availability:
-      - BUILD
-      - RUNTIME
+    availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
     value: studio-4350140400-a3f8f
-    availability:
-      - BUILD
-      - RUNTIME
+    availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
     value: studio-4350140400-a3f8f.firebasestorage.app
-    availability:
-      - BUILD
-      - RUNTIME
+    availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
     value: "975118694386"
-    availability:
-      - BUILD
-      - RUNTIME
+    availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
-    value: 1:975118694386:web:0cb5222ba248bf85a4dd6b
-    availability:
-      - BUILD
-      - RUNTIME
+    value: "1:975118694386:web:0cb5222ba248bf85a4dd6b"
+    availability: [BUILD, RUNTIME]
 
-  # Grant access to secrets in Cloud Secret Manager.
-  # See https://firebase.google.com/docs/app-hosting/configure#secret-parameters
-  # - variable: MY_SECRET
-  #   secret: mySecretRef
+  # Forzamos a Next.js a saber que está en producción
+  - variable: NODE_ENV
+    value: production
+    availability: [BUILD, RUNTIME]
