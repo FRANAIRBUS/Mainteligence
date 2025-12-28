@@ -17,7 +17,7 @@ const taskSchema = z.object({
   priority: z.enum(["alta", "media", "baja"]),
   status: z.enum(["pendiente", "en_progreso", "completada"]),
   dueDate: z.string().optional().default(""),
-  userId: z.string().min(1, "Debe seleccionar un usuario"), // CAMBIADO de assignedTo a userId
+  assignedTo: z.string().optional().default(""),
   location: z.string().optional().default(""),
   category: z.string().optional().default(""),
 })
@@ -161,7 +161,7 @@ export function TaskForm({
 
           <FormField
             control={form.control}
-            name="userId" // CAMBIADO de assignedTo a userId
+            name="assignedTo"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Asignar a</FormLabel>
