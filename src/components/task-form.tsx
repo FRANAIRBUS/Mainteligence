@@ -13,28 +13,13 @@ import { Textarea } from "@/components/ui/textarea"
 
 const taskSchema = z.object({
   title: z.string().min(2, "El título debe tener al menos 2 caracteres"),
-  description: z
-    .string()
-    .optional()
-    .transform((value) => value ?? ""),
+  description: z.string().optional().default(""),
   priority: z.enum(["alta", "media", "baja"]),
   status: z.enum(["pendiente", "en_progreso", "completada"]),
-  dueDate: z
-    .string()
-    .optional()
-    .transform((value) => value ?? ""),
-  assignedTo: z
-    .string()
-    .optional()
-    .transform((value) => value ?? ""),
-  location: z
-    .string()
-    .optional()
-    .transform((value) => value ?? ""),
-  category: z
-    .string()
-    .optional()
-    .transform((value) => value ?? ""),
+  dueDate: z.string().optional().default(""),
+  userId: z.string().min(1, "Debe seleccionar un usuario"), // CAMBIADO de assignedTo a userId
+  location: z.string().optional().default(""),
+  category: z.string().optional().default(""),
 })
 
 export type TaskFormValues = z.infer<typeof taskSchema>
@@ -176,7 +161,7 @@ export function TaskForm({
 
           <FormField
             control={form.control}
-            name="assignedTo"
+            name="userId" // CAMBIADO de assignedTo a userId
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Asignar a</FormLabel>
