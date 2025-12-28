@@ -20,8 +20,8 @@ export const onTaskAssign = functions.firestore
     if (!newData || !resendApiKey) return;
 
     const resend = new Resend(resendApiKey);
-    const newAssignee = newData.userId; 
-    const oldAssignee = oldData?.userId;
+    const newAssignee = newData.assignedTo;
+    const oldAssignee = oldData?.assignedTo;
 
     if (newAssignee && newAssignee !== oldAssignee) {
       const email = await getUserEmail(newAssignee);
