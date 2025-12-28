@@ -17,7 +17,8 @@ export async function sendEmailAction({ to, subject, html, text }: EmailPayload)
   }
 
   try {
-    const fromAddress = process.env.RESEND_FROM ?? 'Mainteligence <no-reply@mainteligence.app>';
+    const fromAddress =
+      process.env.RESEND_FROM ?? 'Maintelligence <noreply@maintelligence.app>';
 
     const response = await fetch(RESEND_API_URL, {
       method: 'POST',
