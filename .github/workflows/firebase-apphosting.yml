@@ -10,7 +10,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # Cambiado de read a write para que pueda generar archivos si es necesario
 
     steps:
       - uses: actions/checkout@v4
@@ -18,21 +18,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          # Quitamos 'cache: npm' temporalmente para forzar una limpieza total
-          # cache: npm 
 
-      - name: Install dependencies from scratch
+      # FORZAMOS LA CREACIÓN DEL LOCK FILE SI NO EXISTE
+      - name: Install Dependencies
         run: |
-          rm -rf node_modules
-          npm install --no-package-lock
+          npm install --package-lock-only
+          npm install
 
-      - name: Build Next.js App
+      - name: Build
         run: npm run build
 
       - name: Deploy to Firebase App Hosting
         run: |
           if [ "${GITHUB_REF_NAME}" = "main" ]; then
-            npx firebase-tools@latest deploy --only apphosting:my-web-app --project studio-4350140400-a3f8f --non-interactive
+            npx firebase-tools@latest deploy --only apphosting:my-web-app --project TU_PROYECTO_PROD --non-interactive
           else
             npx firebase-tools@latest deploy --only apphosting:my-web-app-staging --project studio-4350140400-a3f8f --non-interactive
           fi
