@@ -1,8 +1,5 @@
-import { FirebaseError } from "firebase/app";
-import { addDoc, collection, type Firestore } from "firebase/firestore";
 import type { Department, User } from "@/lib/firebase/models";
-import { errorEmitter } from "@/lib/firebase/error-emitter";
-import { FirestorePermissionError } from "@/lib/firebase/errors";
+import { sendEmailAction } from "@/app/actions/email";
 
 type AssignmentType = "tarea" | "incidencia";
 
@@ -13,8 +10,8 @@ interface RecipientOptions {
   departmentId?: string | null;
 }
 
+// Nota: Hemos eliminado 'firestore' de esta interfaz
 interface AssignmentEmailInput extends RecipientOptions {
-  firestore: Firestore;
   title: string;
   link: string;
   type: AssignmentType;
@@ -75,7 +72,6 @@ export const collectRecipients = ({
 };
 
 export const sendAssignmentEmail = async ({
-  firestore,
   users,
   departments,
   assignedTo,
@@ -92,7 +88,10 @@ export const sendAssignmentEmail = async ({
     departmentId,
   });
 
-  if (!recipients.length) return;
+  if (!recipients.length) {
+    console.log("No hay destinatarios para enviar correo.");
+    return;
+  }
 
   const typeLabel = type === "tarea" ? "tarea" : "incidencia";
   const subject = `Nueva ${typeLabel} asignada: ${title}`;
@@ -100,41 +99,26 @@ export const sendAssignmentEmail = async ({
     ? `Has sido asignado a la ${typeLabel} ${identifier ? `${identifier} - ` : ""}${title}.`
     : `Se ha asignado la ${typeLabel} ${identifier ? `${identifier} - ` : ""}${title}.`;
 
-  const text = `${introLine}
-
-Ver ${typeLabel}: ${link}`;
+  const text = `${introLine}\n\nVer ${typeLabel}: ${link}`;
+  
   const html = `
-    <p>${introLine}</p>
-    <p><strong>${typeLabel === "tarea" ? "Tarea" : "Incidencia"}:</strong> ${title}</p>
-    <p><a href="${link}" target="_blank" rel="noopener noreferrer">Ver ${typeLabel}</a></p>
+    <div style="font-family: sans-serif; padding: 20px;">
+      <h2>${subject}</h2>
+      <p>${introLine}</p>
+      <p><strong>${typeLabel === "tarea" ? "Tarea" : "Incidencia"}:</strong> ${title}</p>
+      <div style="margin-top: 20px;">
+        <a href="${link}" style="background-color: #000; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+          Ver ${typeLabel}
+        </a>
+      </div>
+    </div>
   `;
 
-  const mailCollection = collection(firestore, "mail");
-
-  try {
-    await addDoc(mailCollection, {
-      to: recipients,
-      message: {
-        subject,
-        text,
-        html,
-      },
-    });
-  } catch (error) {
-    if (error instanceof FirebaseError && error.code === "permission-denied") {
-      const permissionError = new FirestorePermissionError({
-        path: mailCollection.path,
-        operation: "create",
-        requestResourceData: {
-          to: recipients,
-          message: { subject },
-        },
-      });
-
-      errorEmitter.emit("permission-error", permissionError);
-      return;
-    }
-
-    throw error;
-  }
+  // Llamada directa a la Server Action (sin pasar por Firestore)
+  await sendEmailAction({
+    to: recipients,
+    subject,
+    html,
+    text
+  });
 };
