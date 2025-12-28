@@ -1,5 +1,8 @@
+import { FirebaseError } from "firebase/app";
 import { addDoc, collection, type Firestore } from "firebase/firestore";
 import type { Department, User } from "@/lib/firebase/models";
+import { errorEmitter } from "@/lib/firebase/error-emitter";
+import { FirestorePermissionError } from "@/lib/firebase/errors";
 
 type AssignmentType = "tarea" | "incidencia";
 
@@ -106,12 +109,32 @@ Ver ${typeLabel}: ${link}`;
     <p><a href="${link}" target="_blank" rel="noopener noreferrer">Ver ${typeLabel}</a></p>
   `;
 
-  await addDoc(collection(firestore, "mail"), {
-    to: recipients,
-    message: {
-      subject,
-      text,
-      html,
-    },
-  });
+  const mailCollection = collection(firestore, "mail");
+
+  try {
+    await addDoc(mailCollection, {
+      to: recipients,
+      message: {
+        subject,
+        text,
+        html,
+      },
+    });
+  } catch (error) {
+    if (error instanceof FirebaseError && error.code === "permission-denied") {
+      const permissionError = new FirestorePermissionError({
+        path: mailCollection.path,
+        operation: "create",
+        requestResourceData: {
+          to: recipients,
+          message: { subject },
+        },
+      });
+
+      errorEmitter.emit("permission-error", permissionError);
+      return;
+    }
+
+    throw error;
+  }
 };
