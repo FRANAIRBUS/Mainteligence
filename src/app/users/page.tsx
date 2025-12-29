@@ -237,9 +237,11 @@ export default function UsersPage() {
     isAdmin ? 'users' : null
   );
   
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(
-    isAdmin ? 'departments' : null
-  );
+  const {
+    data: departments,
+    loading: deptsLoading,
+    error: departmentsError,
+  } = useCollection<Department>(isAdmin ? 'departments' : null);
 
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
@@ -300,6 +302,16 @@ export default function UsersPage() {
   const showCreateAdminProfile = !profileLoading && !userProfile;
   const tableIsLoading = isAdmin && (usersLoading || deptsLoading);
 
+  useEffect(() => {
+    if (departmentsError) {
+      toast({
+        variant: 'destructive',
+        title: 'Error al cargar departamentos',
+        description: 'No se pudieron obtener los departamentos para asignar el usuario.',
+      });
+    }
+  }, [departmentsError, toast]);
+
   return (
     <SidebarProvider>
       <Sidebar>
@@ -337,7 +349,12 @@ export default function UsersPage() {
                       Gestiona todos los usuarios y sus permisos.
                     </CardDescription>
                   </div>
-                    <Button onClick={() => setIsAddUserOpen(true)}>Añadir Usuario</Button>
+                    <Button
+                      onClick={() => setIsAddUserOpen(true)}
+                      disabled={deptsLoading || !!departmentsError}
+                    >
+                      Añadir Usuario
+                    </Button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -362,7 +379,13 @@ export default function UsersPage() {
           )}
         </main>
       </SidebarInset>
-      {isAdmin && departments && <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} departments={departments} />}
+      {isAdmin && (
+        <AddUserDialog
+          open={isAddUserOpen}
+          onOpenChange={setIsAddUserOpen}
+          departments={departments}
+        />
+      )}
       {editingUser && isAdmin && departments && (
         <EditUserDialog
           key={editingUser.id}
