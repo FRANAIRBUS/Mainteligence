@@ -249,6 +249,16 @@ export default function UsersPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (departmentsError) {
+      toast({
+        variant: 'destructive',
+        title: 'Error al cargar departamentos',
+        description: 'No se pudieron obtener los departamentos para asignar el usuario.',
+      });
+    }
+  }, [departmentsError, toast]);
+
   const handleEditUser = (userToEdit: User) => {
     setEditingUser(userToEdit);
     setIsEditUserOpen(true);
@@ -301,16 +311,6 @@ export default function UsersPage() {
   // This is a specific state: user is authenticated but has no profile document.
   const showCreateAdminProfile = !profileLoading && !userProfile;
   const tableIsLoading = isAdmin && (usersLoading || deptsLoading);
-
-  useEffect(() => {
-    if (departmentsError) {
-      toast({
-        variant: 'destructive',
-        title: 'Error al cargar departamentos',
-        description: 'No se pudieron obtener los departamentos para asignar el usuario.',
-      });
-    }
-  }, [departmentsError, toast]);
 
   return (
     <SidebarProvider>
