@@ -118,7 +118,9 @@ export default function TasksPage() {
   }, [user, userProfile?.displayName, users]);
 
   const filteredTasks = useMemo(() => {
-    const sortedTasks = [...tasks].sort((a, b) => {
+    const openTasks = tasks.filter((task) => task.status !== "completada");
+
+    const sortedTasks = [...openTasks].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
         ?? a.createdAt?.toDate?.().getTime()
         ?? 0;
@@ -208,7 +210,6 @@ export default function TasksPage() {
                 <SelectItem value="todas">Todos los estados</SelectItem>
                 <SelectItem value="pendiente">Pendientes</SelectItem>
                 <SelectItem value="en_progreso">En progreso</SelectItem>
-                <SelectItem value="completada">Completadas</SelectItem>
               </SelectContent>
             </Select>
             <Select

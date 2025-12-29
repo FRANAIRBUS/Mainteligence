@@ -18,6 +18,9 @@ export interface MaintenanceTask {
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   reports?: ReportEntry[];
+  reopened?: boolean;
+  reopenedBy?: string;
+  reopenedAt?: Timestamp;
 }
 
 export type MaintenanceTaskInput = Omit<MaintenanceTask, "id" | "createdAt" | "updatedAt">;

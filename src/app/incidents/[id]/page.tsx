@@ -82,6 +82,7 @@ export default function IncidentDetailPage() {
     });
   }, [ticket?.reports]);
   const isClosed = ticket?.status === 'Cerrada';
+  const isOperario = userProfile?.role === 'operario';
 
   // Memoize derived data
   const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
@@ -95,12 +96,16 @@ export default function IncidentDetailPage() {
     }
      // Authorization check after data has loaded
      if (!ticketLoading && !userLoading && !profileLoading && ticket && user && userProfile) {
-      const canView = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento' || ticket.createdBy === user.uid;
+      const canView =
+        userProfile?.role === 'admin' ||
+        userProfile?.role === 'mantenimiento' ||
+        ticket.createdBy === user.uid ||
+        (isOperario && isClosed && userProfile.departmentId === ticket.departmentId);
       if (!canView) {
         router.push('/incidents');
       }
     }
-  }, [user, userLoading, router, ticket, ticketLoading, userProfile, profileLoading]);
+  }, [user, userLoading, router, ticket, ticketLoading, userProfile, profileLoading, isClosed, isOperario]);
 
   const handleAddReport = async () => {
     if (!firestore || !ticket?.id) {
@@ -211,7 +216,7 @@ export default function IncidentDetailPage() {
   const canEdit =
     userProfile.role === 'admin' ||
     userProfile.role === 'mantenimiento' ||
-    (user ? ticket.createdBy === user.uid : false);
+    (user ? ticket.createdBy === user.uid && !isClosed && !isOperario : false);
 
   return (
     <SidebarProvider>
