@@ -88,12 +88,17 @@ export default function TaskDetailPage() {
   const isTaskClosed = task?.status === "completada";
 
   const defaultValues = useMemo<TaskFormValues>(() => {
+    const dueDate =
+      task?.dueDate && typeof task.dueDate.toDate === "function"
+        ? task.dueDate.toDate().toISOString().slice(0, 10)
+        : "";
+
     return {
       title: task?.title ?? "",
       description: task?.description ?? "",
       priority: task?.priority ?? "media",
       status: task?.status ?? "pendiente",
-      dueDate: task?.dueDate ? task.dueDate.toDate().toISOString().slice(0, 10) : "",
+      dueDate,
       assignedTo: task?.assignedTo ?? "",
       location: task?.location ?? "",
       category: task?.category ?? "",
