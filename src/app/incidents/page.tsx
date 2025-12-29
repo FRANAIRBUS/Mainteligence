@@ -45,6 +45,13 @@ import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { collection, query, where, or } from 'firebase/firestore';
 
+const incidentPriorityOrder: Record<Ticket['priority'], number> = {
+  Crítica: 3,
+  Alta: 2,
+  Media: 1,
+  Baja: 0,
+};
+
 function IncidentsTable({
   tickets,
   sites,
@@ -197,7 +204,24 @@ export default function IncidentsPage() {
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
-  
+
+  const sortedTickets = useMemo(() => {
+    return [...tickets].sort((a, b) => {
+      const aCreatedAt = a.createdAt?.toMillis?.()
+        ?? a.createdAt?.toDate?.().getTime()
+        ?? 0;
+      const bCreatedAt = b.createdAt?.toMillis?.()
+        ?? b.createdAt?.toDate?.().getTime()
+        ?? 0;
+
+      if (bCreatedAt !== aCreatedAt) {
+        return bCreatedAt - aCreatedAt;
+      }
+
+      return incidentPriorityOrder[b.priority] - incidentPriorityOrder[a.priority];
+    });
+  }, [tickets]);
+
   const handleViewDetails = (ticketId: string) => {
     router.push(`/incidents/${ticketId}`);
   };
@@ -257,8 +281,8 @@ export default function IncidentsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <IncidentsTable 
-                tickets={tickets} 
+              <IncidentsTable
+                tickets={sortedTickets}
                 sites={sitesMap}
                 departments={departmentsMap}
                 loading={tableDataIsLoading}
