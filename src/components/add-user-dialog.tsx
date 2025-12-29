@@ -52,7 +52,7 @@ type AddUserFormValues = z.infer<typeof formSchema>;
 interface AddUserDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  departments: Department[];
+  departments?: Department[];
 }
 
 export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialogProps) {
@@ -125,6 +125,8 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
         }
     }
   }
+
+  const departmentOptions = departments ?? [];
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -208,7 +210,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="">Ninguno</SelectItem>
-                        {departments.map((dept) => (
+                        {departmentOptions.map((dept) => (
                           <SelectItem key={dept.id} value={dept.id}>
                             {dept.name}
                           </SelectItem>
