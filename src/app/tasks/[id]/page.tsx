@@ -74,6 +74,10 @@ export default function TaskDetailPage() {
     user ? `users/${user.uid}` : null
   );
   const { data: task, loading } = useDoc<MaintenanceTask>(taskId ? `tasks/${taskId}` : null);
+  const { data: assignedUser, loading: assignedUserLoading } = useDoc<User>(
+    task?.assignedTo ? `users/${task.assignedTo}` : null
+  );
+  const { data: createdByUser } = useDoc<User>(task ? `users/${task.createdBy}` : null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reportDescription, setReportDescription] = useState("");
@@ -93,7 +97,7 @@ export default function TaskDetailPage() {
   const isPrivileged =
     userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
   const canEdit = isPrivileged || (!!task && task.createdBy === user?.uid);
-  const isLoading = userLoading || profileLoading || loading;
+  const isLoading = userLoading || profileLoading || loading || assignedUserLoading;
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -135,10 +139,39 @@ export default function TaskDetailPage() {
     };
   }, [task]);
 
+  const userNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+
+    users.forEach((item) => {
+      map[item.id] = item.displayName || item.email || item.id;
+    });
+
+    if (user && userProfile) {
+      map[user.uid] = userProfile.displayName || user.email || user.uid;
+    }
+
+    if (assignedUser) {
+      map[assignedUser.id] =
+        assignedUser.displayName || assignedUser.email || assignedUser.id;
+    }
+
+    if (createdByUser) {
+      map[createdByUser.id] =
+        createdByUser.displayName || createdByUser.email || createdByUser.id;
+    }
+
+    return map;
+  }, [assignedUser, createdByUser, user, userProfile, users]);
+
   const assignedUserName = useMemo(() => {
     if (!task?.assignedTo) return "No asignada";
-    return users.find((item) => item.id === task.assignedTo)?.displayName || task.assignedTo;
-  }, [task?.assignedTo, users]);
+    return (
+      userNameMap[task.assignedTo] ||
+      assignedUser?.displayName ||
+      assignedUser?.email ||
+      task.assignedTo
+    );
+  }, [assignedUser?.displayName, assignedUser?.email, task?.assignedTo, userNameMap]);
 
   const departmentName = useMemo(() => {
     if (!task?.location) return "Sin departamento";
@@ -362,11 +395,15 @@ export default function TaskDetailPage() {
                   {sortedReports.length ? (
                     sortedReports.map((report, index) => {
                       const date = report.createdAt?.toDate?.() ?? new Date();
+                      const reporterName = report.createdBy
+                        ? userNameMap[report.createdBy] || report.createdBy
+                        : "";
+
                       return (
                         <div key={index} className="rounded-lg border bg-muted/40 p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                             <span>{format(date, "PPPp", { locale: es })}</span>
-                            {report.createdBy ? <span>Por {report.createdBy}</span> : null}
+                            {reporterName ? <span>Por {reporterName}</span> : null}
                           </div>
                           <p className="mt-2 text-sm whitespace-pre-line text-foreground">{report.description}</p>
                         </div>
