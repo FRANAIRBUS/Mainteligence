@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  Timestamp,
   type DocumentData,
   type Firestore,
   type FirestoreDataConverter,
@@ -187,7 +188,7 @@ export const addTaskReport = async (
 
   const reportEntry = {
     description: report.description,
-    createdAt: serverTimestamp(),
+    createdAt: Timestamp.now(),
     createdBy: report.createdBy || user.uid,
   };
 

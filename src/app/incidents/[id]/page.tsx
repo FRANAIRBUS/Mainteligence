@@ -31,7 +31,7 @@ import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { arrayUnion, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { arrayUnion, doc, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
 
 function InfoCard({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value: string | React.ReactNode }) {
     return (
@@ -139,7 +139,7 @@ export default function IncidentDetailPage() {
       await updateDoc(ticketRef, {
         reports: arrayUnion({
           description,
-          createdAt: serverTimestamp(),
+          createdAt: Timestamp.now(),
           createdBy: user.uid,
         }),
         updatedAt: serverTimestamp(),
