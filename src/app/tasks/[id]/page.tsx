@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState, type ElementType } from "react";
+import { useEffect, useMemo, useState, type ElementType } from "react";
 import { Timestamp } from "firebase/firestore";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -64,11 +64,15 @@ function InfoRow({ icon: Icon, label, value }: { icon: ElementType; label: strin
 export default function TaskDetailPage() {
   const firestore = useFirestore();
   const auth = useAuth();
+  const router = useRouter();
   const params = useParams();
   const taskId = Array.isArray(params.id) ? params.id[0] : params.id;
   const { data: users } = useCollection<User>("users");
   const { data: departments } = useCollection<Department>("departments");
   const { user, loading: userLoading } = useUser();
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(
+    user ? `users/${user.uid}` : null
+  );
   const { data: task, loading } = useDoc<MaintenanceTask>(taskId ? `tasks/${taskId}` : null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -86,6 +90,32 @@ export default function TaskDetailPage() {
   }, [task?.reports]);
 
   const isTaskClosed = task?.status === "completada";
+  const isPrivileged =
+    userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
+  const canEdit = isPrivileged || (!!task && task.createdBy === user?.uid);
+  const isLoading = userLoading || profileLoading || loading;
+
+  useEffect(() => {
+    if (!userLoading && !user) {
+      router.push("/login");
+    }
+
+    if (!loading && !userLoading && !profileLoading && task && user && userProfile) {
+      const canView = isPrivileged || task.createdBy === user.uid;
+      if (!canView) {
+        router.push("/tasks");
+      }
+    }
+  }, [
+    isPrivileged,
+    loading,
+    profileLoading,
+    router,
+    task,
+    user,
+    userLoading,
+    userProfile,
+  ]);
 
   const defaultValues = useMemo<TaskFormValues>(() => {
     const dueDate =
@@ -123,6 +153,11 @@ export default function TaskDetailPage() {
 
     if (!auth) {
       setErrorMessage("No se pudo inicializar la autenticación.");
+      return;
+    }
+
+    if (!canEdit) {
+      setErrorMessage("No tienes permiso para editar esta tarea.");
       return;
     }
 
@@ -197,6 +232,15 @@ export default function TaskDetailPage() {
       return;
     }
 
+    if (!userProfile) {
+      toast({
+        title: "No tienes permiso",
+        description: "Debes iniciar sesión para informar esta tarea.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!user) {
       toast({
         title: "Inicia sesión",
@@ -242,7 +286,7 @@ export default function TaskDetailPage() {
   };
 
   const renderContent = () => {
-    if (loading) {
+    if (isLoading || !userProfile) {
       return (
         <div className="flex items-center gap-2 text-muted-foreground">
           <Icons.spinner className="h-4 w-4 animate-spin" /> Cargando tarea...
@@ -286,7 +330,7 @@ export default function TaskDetailPage() {
             <Button variant="outline" asChild>
               <Link href="/tasks">Volver</Link>
             </Button>
-            <Button onClick={() => setIsEditDialogOpen(true)}>
+            <Button onClick={() => setIsEditDialogOpen(true)} disabled={!canEdit}>
               <Icons.edit className="mr-2 h-4 w-4" />
               Editar tarea
             </Button>
@@ -347,7 +391,10 @@ export default function TaskDetailPage() {
                       La tarea está completada. No se pueden agregar más informes.
                     </p>
                   )}
-                  <Button onClick={handleAddReport} disabled={reportSubmitting || isTaskClosed}>
+                  <Button
+                    onClick={handleAddReport}
+                    disabled={reportSubmitting || isTaskClosed || !userProfile}
+                  >
                     {reportSubmitting && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
                     Informar
                   </Button>
@@ -424,6 +471,7 @@ export default function TaskDetailPage() {
             departments={departments}
             submitLabel="Guardar cambios"
             onSuccess={() => setIsEditDialogOpen(false)}
+            disabled={!canEdit}
           />
         </DialogContent>
       </Dialog>
