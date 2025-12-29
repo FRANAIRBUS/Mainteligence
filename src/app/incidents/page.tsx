@@ -80,7 +80,7 @@ function IncidentsTable({
   }
 
   return (
-    <Table>
+    <Table className="min-w-[760px]">
       <TableHeader>
         <TableRow>
           <TableHead>ID</TableHead>
@@ -272,27 +272,31 @@ export default function IncidentsPage() {
         <main className="flex-1 p-4 sm:p-6 md:p-8">
            <Card>
             <CardHeader>
-               <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <CardTitle>Incidencias</CardTitle>
                   <CardDescription className="mt-2">
                     Visualiza y gestiona todas las incidencias correctivas.
                   </CardDescription>
                 </div>
-                <Button onClick={() => setIsAddIncidentOpen(true)}>Crear Incidencia</Button>
+                <Button className="w-full sm:w-auto" onClick={() => setIsAddIncidentOpen(true)}>
+                  Crear Incidencia
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
-              <IncidentsTable
-                tickets={sortedTickets}
-                sites={sitesMap}
-                departments={departmentsMap}
-                loading={tableDataIsLoading}
-                onViewDetails={handleViewDetails}
-                onEdit={handleEditRequest}
-                userRole={userProfile?.role}
-                userId={user?.uid}
+              <div className="overflow-x-auto">
+                <IncidentsTable
+                  tickets={sortedTickets}
+                  sites={sitesMap}
+                  departments={departmentsMap}
+                  loading={tableDataIsLoading}
+                  onViewDetails={handleViewDetails}
+                  onEdit={handleEditRequest}
+                  userRole={userProfile?.role}
+                  userId={user?.uid}
                 />
+              </div>
             </CardContent>
           </Card>
         </main>

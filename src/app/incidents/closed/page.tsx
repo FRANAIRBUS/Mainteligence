@@ -250,8 +250,8 @@ export default function ClosedIncidentsPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
+        <div className="overflow-x-auto rounded-lg border">
+          <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Título</TableHead>
