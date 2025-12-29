@@ -167,14 +167,18 @@ export function TaskForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Asignar a</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value} disabled={disabled}>
+                <Select
+                  onValueChange={(value) => field.onChange(value === "unassigned" ? "" : value)}
+                  value={field.value || "unassigned"}
+                  disabled={disabled}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar usuario" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="">Sin asignar</SelectItem>
+                    <SelectItem value="unassigned">Sin asignar</SelectItem>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.displayName || user.email || user.id}
