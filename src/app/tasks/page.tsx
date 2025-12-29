@@ -68,7 +68,7 @@ export default function TasksPage() {
     userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
 
   const tasksQuery = useMemo(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !userProfile) return null;
 
     const tasksCollection = collection(firestore, "tasks");
 
@@ -148,7 +148,7 @@ export default function TasksPage() {
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
   const isLoading = loading || usersLoading || userLoading || profileLoading;
 
-  if (!firestore || !user || userLoading || profileLoading) {
+  if (!firestore || !user || userLoading || profileLoading || !userProfile) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

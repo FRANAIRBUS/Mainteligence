@@ -33,6 +33,7 @@ type TaskFormProps = {
   departments?: { id: string; name?: string }[]
   submitLabel?: string
   onSuccess?: () => void
+  disabled?: boolean
 }
 
 export function TaskForm({
@@ -44,6 +45,7 @@ export function TaskForm({
   departments = [],
   submitLabel = "Guardar",
   onSuccess,
+  disabled = false,
 }: TaskFormProps) {
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskSchema),
@@ -75,7 +77,7 @@ export function TaskForm({
             <FormItem>
               <FormLabel>Título de la tarea</FormLabel>
               <FormControl>
-                <Input placeholder="Ej: Revisión motor A1" {...field} />
+                <Input placeholder="Ej: Revisión motor A1" disabled={disabled} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -89,7 +91,7 @@ export function TaskForm({
             <FormItem>
               <FormLabel>Descripción</FormLabel>
               <FormControl>
-                <Textarea placeholder="Detalles de la tarea" {...field} />
+                <Textarea placeholder="Detalles de la tarea" disabled={disabled} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -103,7 +105,7 @@ export function TaskForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Prioridad</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={field.onChange} value={field.value} disabled={disabled}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar" />
@@ -126,7 +128,7 @@ export function TaskForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Estado</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={field.onChange} value={field.value} disabled={disabled}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar" />
@@ -150,13 +152,13 @@ export function TaskForm({
             name="dueDate"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Fecha límite</FormLabel>
-                <FormControl>
-                  <Input type="date" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+              <FormLabel>Fecha límite</FormLabel>
+              <FormControl>
+                  <Input type="date" disabled={disabled} {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
           />
 
           <FormField
@@ -165,7 +167,7 @@ export function TaskForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Asignar a</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={field.onChange} value={field.value} disabled={disabled}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar usuario" />
@@ -192,7 +194,7 @@ export function TaskForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Departamento / ubicación</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <Select onValueChange={field.onChange} value={field.value} disabled={disabled}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Seleccionar" />
@@ -218,7 +220,7 @@ export function TaskForm({
               <FormItem>
                 <FormLabel>Categoría</FormLabel>
                 <FormControl>
-                  <Input placeholder="Categoría opcional" {...field} />
+                  <Input placeholder="Categoría opcional" disabled={disabled} {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -226,7 +228,7 @@ export function TaskForm({
           />
         </div>
 
-        <Button type="submit" className="w-full" disabled={submitting}>
+        <Button type="submit" className="w-full" disabled={submitting || disabled}>
           {submitLabel}
         </Button>
       </form>
