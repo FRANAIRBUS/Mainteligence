@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -173,6 +174,27 @@ export const updateTask = async (
   }
 
   return id;
+};
+
+export const addTaskReport = async (
+  db: Firestore,
+  auth: Auth,
+  id: string,
+  report: { description: string; createdBy?: string }
+) => {
+  const user = await ensureAuthenticatedUser(auth);
+  const docRef = doc(db, TASKS_COLLECTION, id);
+
+  const reportEntry = {
+    description: report.description,
+    createdAt: serverTimestamp(),
+    createdBy: report.createdBy || user.uid,
+  };
+
+  await updateDoc(docRef, {
+    reports: arrayUnion(reportEntry),
+    updatedAt: serverTimestamp(),
+  });
 };
 
 export const deleteTask = async (db: Firestore, auth: Auth, id: string) => {
