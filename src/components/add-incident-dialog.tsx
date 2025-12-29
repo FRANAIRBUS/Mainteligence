@@ -25,6 +25,7 @@ export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps
   const { data: users } = useCollection<User>("users")
 
   const [internalOpen, setInternalOpen] = useState(false)
+  const isControlled = open !== undefined || onOpenChange !== undefined
   const dialogOpen = useMemo(() => open ?? internalOpen, [open, internalOpen])
   const setDialogOpen = onOpenChange ?? setInternalOpen
   const [assignedTo, setAssignedTo] = useState("")
@@ -69,9 +70,15 @@ export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps
     }
   }
 
+  const shouldRenderTrigger = !isControlled
+
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-      <DialogTrigger asChild><Button>Nueva Incidencia</Button></DialogTrigger>
+      {shouldRenderTrigger && (
+        <DialogTrigger asChild>
+          <Button>Nueva Incidencia</Button>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader><DialogTitle>Reportar Incidencia</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
