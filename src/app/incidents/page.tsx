@@ -206,7 +206,9 @@ export default function IncidentsPage() {
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
 
   const sortedTickets = useMemo(() => {
-    return [...tickets].sort((a, b) => {
+    const openTickets = tickets.filter((ticket) => ticket.status !== 'Cerrada');
+
+    return [...openTickets].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
         ?? a.createdAt?.toDate?.().getTime()
         ?? 0;

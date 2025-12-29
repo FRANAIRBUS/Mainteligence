@@ -70,4 +70,7 @@ export type Ticket = {
     checklist: any[];
   };
   reports?: ReportEntry[];
+  reopened?: boolean;
+  reopenedBy?: string;
+  reopenedAt?: any; // Timestamp
 };
