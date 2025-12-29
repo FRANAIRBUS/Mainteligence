@@ -218,7 +218,7 @@ export default function TasksPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">
-                        <Link href={`/tasks/${task.id}`}>Editar</Link>
+                        <Link href={`/tasks/${task.id}`}>Ver</Link>
                       </Button>
                     </TableCell>
                   </TableRow>

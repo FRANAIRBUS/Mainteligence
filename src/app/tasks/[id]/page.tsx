@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ElementType } from "react";
 import { Timestamp } from "firebase/firestore";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,6 +15,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/app-shell";
@@ -26,23 +33,48 @@ import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { useToast } from "@/hooks/use-toast";
+import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
+
+const statusCopy: Record<MaintenanceTask["status"], string> = {
+  pendiente: "Pendiente",
+  en_progreso: "En progreso",
+  completada: "Completada",
+};
+
+const priorityCopy: Record<MaintenanceTask["priority"], string> = {
+  alta: "Alta",
+  media: "Media",
+  baja: "Baja",
+};
+
+function InfoRow({ icon: Icon, label, value }: { icon: ElementType; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+        <Icon className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <div>
+        <p className="text-sm font-medium text-muted-foreground">{label}</p>
+        <p className="text-base font-semibold text-foreground">{value}</p>
+      </div>
+    </div>
+  );
+}
 
 export default function TaskDetailPage() {
   const firestore = useFirestore();
   const auth = useAuth();
-  const router = useRouter();
   const params = useParams();
   const taskId = Array.isArray(params.id) ? params.id[0] : params.id;
   const { data: users } = useCollection<User>("users");
   const { data: departments } = useCollection<Department>("departments");
   const { user, loading: userLoading } = useUser();
-  const { data: task, loading } = useDoc<MaintenanceTask>(
-    taskId ? `tasks/${taskId}` : null
-  );
+  const { data: task, loading } = useDoc<MaintenanceTask>(taskId ? `tasks/${taskId}` : null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reportDescription, setReportDescription] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const { toast } = useToast();
 
   const sortedReports = useMemo(() => {
@@ -67,6 +99,16 @@ export default function TaskDetailPage() {
       category: task?.category ?? "",
     };
   }, [task]);
+
+  const assignedUserName = useMemo(() => {
+    if (!task?.assignedTo) return "No asignada";
+    return users.find((item) => item.id === task.assignedTo)?.displayName || task.assignedTo;
+  }, [task?.assignedTo, users]);
+
+  const departmentName = useMemo(() => {
+    if (!task?.location) return "Sin departamento";
+    return departments.find((item) => item.id === task.location)?.name || task.location;
+  }, [departments, task?.location]);
 
   const handleSubmit = async (values: TaskFormValues) => {
     if (!firestore || !task?.id) {
@@ -127,7 +169,11 @@ export default function TaskDetailPage() {
         });
       }
 
-      router.push("/tasks");
+      toast({
+        title: "Tarea actualizada",
+        description: "Se guardaron los cambios de la tarea.",
+      });
+      setIsEditDialogOpen(false);
     } catch (error) {
       console.error("Error al actualizar la tarea", error);
       setErrorMessage("No se pudo guardar la tarea. Inténtalo de nuevo.");
@@ -201,100 +247,181 @@ export default function TaskDetailPage() {
 
     if (!task) {
       return (
-        <Alert variant="destructive">
-          <AlertTitle>No encontrada</AlertTitle>
-          <AlertDescription>
-            No pudimos localizar esta tarea. Revisa el enlace o crea una nueva.
-          </AlertDescription>
-          <div className="mt-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Tarea no encontrada</CardTitle>
+            <CardDescription>No pudimos localizar esta tarea. Revisa el enlace o crea una nueva.</CardDescription>
+          </CardHeader>
+          <CardContent>
             <Button asChild>
               <Link href="/tasks/new">Crear tarea</Link>
             </Button>
-          </div>
-        </Alert>
+          </CardContent>
+        </Card>
       );
     }
 
     return (
-      <div className="space-y-6">
-        <TaskForm
-          defaultValues={defaultValues}
-          onSubmit={handleSubmit}
-          submitting={submitting}
-          errorMessage={errorMessage}
-          users={users}
-          departments={departments}
-          submitLabel="Guardar cambios"
-        />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Informes</CardTitle>
-            <CardDescription>
-              Registra los avisos e informes asociados a la tarea. Cada envío se guardará con la fecha y hora.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              {sortedReports.length ? (
-                sortedReports.map((report, index) => {
-                  const date = report.createdAt?.toDate?.() ?? new Date();
-                  return (
-                    <div key={index} className="rounded-lg border bg-muted/40 p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                        <span>{format(date, "PPPp", { locale: es })}</span>
-                        {report.createdBy ? <span>Por {report.createdBy}</span> : null}
-                      </div>
-                      <p className="mt-2 text-sm whitespace-pre-line text-foreground">{report.description}</p>
-                    </div>
-                  );
-                })
-              ) : (
-                <p className="text-sm text-muted-foreground">Aún no hay informes para esta tarea.</p>
-              )}
+      <div className="space-y-8">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="font-headline text-2xl font-bold tracking-tight md:text-3xl">{task.title}</h1>
+              <Badge variant="outline">{statusCopy[task.status]}</Badge>
+              <Badge variant={task.priority === "alta" ? "destructive" : "secondary"}>
+                {priorityCopy[task.priority]}
+              </Badge>
             </div>
+            <p className="text-sm text-muted-foreground">ID de Tarea: {task.id}</p>
+            {task.category && (
+              <p className="text-sm text-muted-foreground">Categoría: {task.category}</p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/tasks">Volver</Link>
+            </Button>
+            <Button onClick={() => setIsEditDialogOpen(true)}>
+              <Icons.edit className="mr-2 h-4 w-4" />
+              Editar tarea
+            </Button>
+          </div>
+        </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="task-report">Nuevo informe</Label>
-              <Textarea
-                id="task-report"
-                placeholder="Describe el avance o el aviso que quieres registrar"
-                value={reportDescription}
-                onChange={(event) => setReportDescription(event.target.value)}
-                disabled={reportSubmitting || isTaskClosed}
-              />
-              {isTaskClosed && (
-                <p className="text-xs text-muted-foreground">
-                  La tarea está completada. No se pueden agregar más informes.
+        <div className="grid gap-8 md:grid-cols-3">
+          <div className="space-y-6 md:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Descripción de la tarea</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-foreground/80 whitespace-pre-line">
+                  {task.description || "Sin descripción"}
                 </p>
-              )}
-              <Button
-                onClick={handleAddReport}
-                disabled={reportSubmitting || isTaskClosed}
-              >
-                {reportSubmitting && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
-                Informar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Informes</CardTitle>
+                <CardDescription>
+                  Registra los avisos e informes asociados a la tarea. Cada envío se guardará con la fecha y hora.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  {sortedReports.length ? (
+                    sortedReports.map((report, index) => {
+                      const date = report.createdAt?.toDate?.() ?? new Date();
+                      return (
+                        <div key={index} className="rounded-lg border bg-muted/40 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                            <span>{format(date, "PPPp", { locale: es })}</span>
+                            {report.createdBy ? <span>Por {report.createdBy}</span> : null}
+                          </div>
+                          <p className="mt-2 text-sm whitespace-pre-line text-foreground">{report.description}</p>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Aún no hay informes para esta tarea.</p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="task-report">Nuevo informe</Label>
+                  <Textarea
+                    id="task-report"
+                    placeholder="Describe el avance o el aviso que quieres registrar"
+                    value={reportDescription}
+                    onChange={(event) => setReportDescription(event.target.value)}
+                    disabled={reportSubmitting || isTaskClosed}
+                  />
+                  {isTaskClosed && (
+                    <p className="text-xs text-muted-foreground">
+                      La tarea está completada. No se pueden agregar más informes.
+                    </p>
+                  )}
+                  <Button onClick={handleAddReport} disabled={reportSubmitting || isTaskClosed}>
+                    {reportSubmitting && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
+                    Informar
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-6 md:col-span-1">
+            <Card>
+              <CardHeader>
+                <CardTitle>Detalles</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <InfoRow
+                  icon={ClipboardList}
+                  label="Estado"
+                  value={statusCopy[task.status]}
+                />
+                <InfoRow
+                  icon={Tag}
+                  label="Prioridad"
+                  value={priorityCopy[task.priority]}
+                />
+                <InfoRow
+                  icon={CalendarIcon}
+                  label="Fecha límite"
+                  value={
+                    task.dueDate?.toDate
+                      ? format(task.dueDate.toDate(), "dd/MM/yyyy")
+                      : "Sin fecha"
+                  }
+                />
+                <InfoRow icon={UserIcon} label="Responsable" value={assignedUserName} />
+                <InfoRow icon={MapPin} label="Departamento" value={departmentName} />
+                <InfoRow
+                  icon={CalendarIcon}
+                  label="Creada"
+                  value={
+                    task.createdAt?.toDate
+                      ? format(task.createdAt.toDate(), "dd/MM/yyyy HH:mm")
+                      : "Sin fecha"
+                  }
+                />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     );
   };
 
   return (
-    <AppShell
-      title={task?.title || "Editar tarea"}
-      description="Actualiza el estado y los detalles de la tarea."
-      action={
-        !loading && task ? (
-          <Button variant="outline" asChild>
-            <Link href="/tasks">Volver</Link>
-          </Button>
-        ) : null
-      }
-    >
-      <div className="rounded-lg border bg-card p-6 shadow-sm">{renderContent()}</div>
-    </AppShell>
+    <>
+      <AppShell
+        title={task?.title || "Detalle de tarea"}
+        description="Consulta y gestiona la tarea, agrega informes y edita la información."
+      >
+        <div className="rounded-lg border bg-card p-6 shadow-sm">{renderContent()}</div>
+      </AppShell>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Editar tarea</DialogTitle>
+            <DialogDescription>Actualiza el estado y los detalles de la tarea.</DialogDescription>
+          </DialogHeader>
+          <TaskForm
+            defaultValues={defaultValues}
+            onSubmit={handleSubmit}
+            submitting={submitting}
+            errorMessage={errorMessage}
+            users={users}
+            departments={departments}
+            submitLabel="Guardar cambios"
+            onSuccess={() => setIsEditDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
