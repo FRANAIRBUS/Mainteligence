@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useDoc, useUser, useCollection } from '@/lib/firebase';
+import { useDoc, useUser, useCollection, useFirestore } from '@/lib/firebase';
 import type { Ticket, User, Site, Department, Asset } from '@/lib/firebase/models';
 import {
   Sidebar,
@@ -28,6 +28,10 @@ import { ArrowLeft, Edit, CalendarIcon, User as UserIcon, Building, Archive, Har
 import { format } from 'date-fns';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { useToast } from '@/hooks/use-toast';
+import { arrayUnion, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 function InfoCard({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value: string | React.ReactNode }) {
     return (
@@ -48,6 +52,7 @@ export default function IncidentDetailPage() {
   const params = useParams();
   const { id } = params;
   const ticketId = Array.isArray(id) ? id[0] : id;
+  const firestore = useFirestore();
 
   const { user, loading: userLoading } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
@@ -65,6 +70,18 @@ export default function IncidentDetailPage() {
   const { data: users, loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [reportDescription, setReportDescription] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const { toast } = useToast();
+
+  const sortedReports = useMemo(() => {
+    return [...(ticket?.reports ?? [])].sort((a, b) => {
+      const dateA = a.createdAt?.toDate?.() ?? new Date(0);
+      const dateB = b.createdAt?.toDate?.() ?? new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+  }, [ticket?.reports]);
+  const isClosed = ticket?.status === 'Cerrada';
 
   // Memoize derived data
   const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
@@ -84,6 +101,66 @@ export default function IncidentDetailPage() {
       }
     }
   }, [user, userLoading, router, ticket, ticketLoading, userProfile, profileLoading]);
+
+  const handleAddReport = async () => {
+    if (!firestore || !ticket?.id) {
+      toast({
+        title: 'No se pudo registrar el informe',
+        description: 'Inténtalo nuevamente en unos instantes.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!user) {
+      toast({
+        title: 'Inicia sesión',
+        description: 'Debes iniciar sesión para informar la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const description = reportDescription.trim();
+
+    if (!description) {
+      toast({
+        title: 'Agrega una descripción',
+        description: 'Describe el informe antes de enviarlo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setReportSubmitting(true);
+
+    try {
+      const ticketRef = doc(firestore, 'tickets', ticket.id);
+      await updateDoc(ticketRef, {
+        reports: arrayUnion({
+          description,
+          createdAt: serverTimestamp(),
+          createdBy: user.uid,
+        }),
+        updatedAt: serverTimestamp(),
+      });
+
+      setReportDescription('');
+      toast({
+        title: 'Informe agregado',
+        description: 'Se registró el seguimiento de la incidencia.',
+      });
+    } catch (error) {
+      console.error('Error al agregar informe de incidencia', error);
+      toast({
+        title: 'No se pudo guardar el informe',
+        description: 'Vuelve a intentarlo en unos segundos.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
 
   const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading || sitesLoading || deptsLoading || assetsLoading || (isMantenimiento && usersLoading) || assignedToLoading;
 
@@ -199,6 +276,59 @@ export default function IncidentDetailPage() {
                             <CardContent>
                                 <p className="text-sm text-foreground/80">{ticket.description}</p>
                             </CardContent>
+                        </Card>
+                        <Card>
+                          <CardHeader>
+                            <CardTitle>Informes</CardTitle>
+                            <CardDescription>
+                              Registra los avisos o seguimientos de esta incidencia. Cada informe se agrega con fecha y descripción.
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            <div className="space-y-3">
+                              {sortedReports.length ? (
+                                sortedReports.map((report, index) => {
+                                  const date = report.createdAt?.toDate?.() ?? new Date();
+                                  return (
+                                    <div key={index} className="rounded-lg border bg-muted/40 p-3">
+                                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                                        <span>{format(date, 'PPPp')}</span>
+                                        {report.createdBy ? <span>Por {report.createdBy}</span> : null}
+                                      </div>
+                                      <p className="mt-2 text-sm whitespace-pre-line text-foreground">{report.description}</p>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <p className="text-sm text-muted-foreground">Aún no hay informes para esta incidencia.</p>
+                              )}
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="incident-report">Nuevo informe</Label>
+                              <Textarea
+                                id="incident-report"
+                                placeholder="Describe el informe o avance que deseas registrar"
+                                value={reportDescription}
+                                onChange={(event) => setReportDescription(event.target.value)}
+                                disabled={reportSubmitting || isClosed}
+                              />
+                              {isClosed && (
+                                <p className="text-xs text-muted-foreground">
+                                  La incidencia está cerrada. No se pueden agregar más informes.
+                                </p>
+                              )}
+                              <Button
+                                onClick={handleAddReport}
+                                disabled={reportSubmitting || isClosed}
+                              >
+                                {reportSubmitting && (
+                                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                                )}
+                                Informar
+                              </Button>
+                            </div>
+                          </CardContent>
                         </Card>
                     </div>
 

@@ -1,4 +1,5 @@
 import type { Timestamp } from "firebase/firestore";
+import type { ReportEntry } from "./report-entry";
 
 export type TaskStatus = "pendiente" | "en_progreso" | "completada";
 export type TaskPriority = "alta" | "media" | "baja";
@@ -16,6 +17,7 @@ export interface MaintenanceTask {
   createdBy?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+  reports?: ReportEntry[];
 }
 
 export type MaintenanceTaskInput = Omit<MaintenanceTask, "id" | "createdAt" | "updatedAt">;

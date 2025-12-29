@@ -1,3 +1,5 @@
+import type { ReportEntry } from "@/types/report-entry";
+
 export type User = {
   id: string;
   displayName: string;
@@ -67,4 +69,5 @@ export type Ticket = {
     scheduledFor: any; // Timestamp
     checklist: any[];
   };
+  reports?: ReportEntry[];
 };
