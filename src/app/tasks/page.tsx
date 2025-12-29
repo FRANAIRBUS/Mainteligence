@@ -94,7 +94,7 @@ export default function TasksPage() {
   );
   const [statusFilter, setStatusFilter] = useState<string>("todas");
   const [priorityFilter, setPriorityFilter] = useState<string>("todas");
-  const [query, setQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 6;
 
@@ -137,12 +137,12 @@ export default function TasksPage() {
         ? userNameMap[task.assignedTo] || task.assignedTo
         : "";
       const matchesQuery =
-        !query ||
-        task.title.toLowerCase().includes(query.toLowerCase()) ||
-        assignedName.toLowerCase().includes(query.toLowerCase());
+        !searchQuery ||
+        task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        assignedName.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesStatus && matchesPriority && matchesQuery;
     });
-  }, [priorityFilter, query, statusFilter, tasks, userNameMap]);
+  }, [priorityFilter, searchQuery, statusFilter, tasks, userNameMap]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
@@ -171,9 +171,9 @@ export default function TasksPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <Input
             placeholder="Buscar por título o responsable"
-            value={query}
+            value={searchQuery}
             onChange={(e) => {
-              setQuery(e.target.value);
+              setSearchQuery(e.target.value);
               setPage(1);
             }}
             className="md:max-w-xs"
