@@ -5,6 +5,7 @@ runConfig:
   cpu: 1
   memoryMiB: 1024
 
+# FORZAMOS EL COMANDO DE INSTALACIÓN
 scripts:
   install: npm install # Esto sustituye al 'npm ci' que está fallando
 
@@ -27,8 +28,5 @@ env:
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:975118694386:web:0cb5222ba248bf85a4dd6b"
     availability: [BUILD, RUNTIME]
-  - variable: NODE_ENV
-    value: production
-    availability: [BUILD, RUNTIME]
   - variable: RESEND_API_KEY
-    value: "re_J5wZymJq_2Kk9UbUSK9NzrNpFeJMfTeeb" 
+    value: "re_J5wZymJq_2Kk9UbUSK9NzrNpFeJMfTeeb"

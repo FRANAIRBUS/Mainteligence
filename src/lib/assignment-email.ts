@@ -1,5 +1,5 @@
-import { addDoc, collection, type Firestore } from "firebase/firestore";
 import type { Department, User } from "@/lib/firebase/models";
+import { sendEmailAction } from "@/app/actions/email";
 
 type AssignmentType = "tarea" | "incidencia";
 
@@ -11,11 +11,16 @@ interface RecipientOptions {
 }
 
 interface AssignmentEmailInput extends RecipientOptions {
-  firestore: Firestore;
   title: string;
   link: string;
   type: AssignmentType;
   identifier?: string;
+  description?: string;
+  priority?: string;
+  status?: string;
+  dueDate?: string | Date | null;
+  location?: string;
+  category?: string;
 }
 
 const resolveAssignedUser = (
@@ -59,7 +64,6 @@ export const collectRecipients = ({
     if (resolvedDepartmentId && user.departmentId === resolvedDepartmentId) {
       recipients.add(user.email);
     }
-
     if (user.isMaintenanceLead) {
       recipients.add(user.email);
     }
@@ -72,7 +76,6 @@ export const collectRecipients = ({
 };
 
 export const sendAssignmentEmail = async ({
-  firestore,
   users,
   departments,
   assignedTo,
@@ -81,6 +84,12 @@ export const sendAssignmentEmail = async ({
   link,
   type,
   identifier,
+  description,
+  priority,
+  status,
+  dueDate,
+  location,
+  category,
 }: AssignmentEmailInput) => {
   const { recipients, assignedUser } = collectRecipients({
     users,
@@ -89,7 +98,9 @@ export const sendAssignmentEmail = async ({
     departmentId,
   });
 
-  if (!recipients.length) return;
+  if (!recipients.length) {
+    return;
+  }
 
   const typeLabel = type === "tarea" ? "tarea" : "incidencia";
   const subject = `Nueva ${typeLabel} asignada: ${title}`;
@@ -97,21 +108,82 @@ export const sendAssignmentEmail = async ({
     ? `Has sido asignado a la ${typeLabel} ${identifier ? `${identifier} - ` : ""}${title}.`
     : `Se ha asignado la ${typeLabel} ${identifier ? `${identifier} - ` : ""}${title}.`;
 
-  const text = `${introLine}
+  const formatDate = (value: AssignmentEmailInput["dueDate"]) => {
+    if (!value) return "Sin fecha";
+    const parsedDate =
+      value instanceof Date ? value : typeof value === "string" ? new Date(value) : null;
+    if (!parsedDate || Number.isNaN(parsedDate.getTime())) return "Sin fecha";
+    return new Intl.DateTimeFormat("es-ES", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }).format(parsedDate);
+  };
 
-Ver ${typeLabel}: ${link}`;
+  const details: { label: string; value: string }[] = [
+    { label: "Título", value: title || "(sin título)" },
+    { label: "ID", value: identifier || "No especificado" },
+    { label: "Estado", value: status || "pendiente" },
+    { label: "Prioridad", value: priority || "media" },
+    { label: "Fecha límite", value: formatDate(dueDate) },
+    { label: "Ubicación / Departamento", value: location || "No especificado" },
+    { label: "Categoría", value: category || "No especificada" },
+    { label: "Descripción", value: description || "Sin descripción" },
+  ];
+
+  const detailRows = details
+    .map(
+      (item) =>
+        `<tr><td style="padding: 8px 12px; font-weight: 600; color: #111827;">${item.label}</td><td style="padding: 8px 12px; color: #374151;">${item.value}</td></tr>`
+    )
+    .join("");
+
+  const text = [
+    introLine,
+    `Título: ${title || "(sin título)"}`,
+    `ID: ${identifier || "No especificado"}`,
+    `Estado: ${status || "pendiente"}`,
+    `Prioridad: ${priority || "media"}`,
+    `Fecha límite: ${formatDate(dueDate)}`,
+    `Ubicación / Departamento: ${location || "No especificado"}`,
+    `Categoría: ${category || "No especificada"}`,
+    `Descripción: ${description || "Sin descripción"}`,
+    `Ver ${typeLabel}: ${link}`,
+  ].join("\n");
+
   const html = `
-    <p>${introLine}</p>
-    <p><strong>${typeLabel === "tarea" ? "Tarea" : "Incidencia"}:</strong> ${title}</p>
-    <p><a href="${link}" target="_blank" rel="noopener noreferrer">Ver ${typeLabel}</a></p>
+    <table style="width:100%; max-width:640px; margin:0 auto; font-family: 'Inter', system-ui, -apple-system, sans-serif; border:1px solid #e5e7eb; border-radius: 12px; overflow:hidden;">
+      <tr>
+        <td style="background:linear-gradient(135deg, #111827, #1f2937); padding:24px 24px; color:#f9fafb;">
+          <div style="font-size:14px; letter-spacing:0.5px; text-transform:uppercase; opacity:0.8;">Nueva ${typeLabel} asignada</div>
+          <div style="font-size:22px; font-weight:700; margin-top:4px;">${identifier ? `${identifier} · ` : ""}${title}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:24px 24px 8px; color:#111827;">
+          <p style="margin:0 0 12px; font-size:16px;">${introLine}</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 16px 8px;">
+          <table style="width:100%; border-collapse:collapse;">
+            <tbody>${detailRows}</tbody>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:16px 24px 24px;">
+          <a href="${link}" style="display:inline-block; background:#111827; color:#f9fafb; padding:12px 18px; border-radius:10px; text-decoration:none; font-weight:600;">Ver ${typeLabel}</a>
+          <p style="margin:12px 0 0; font-size:12px; color:#6b7280;">Si el botón no funciona, copia y pega este enlace en tu navegador:<br/>${link}</p>
+        </td>
+      </tr>
+    </table>
   `;
 
-  await addDoc(collection(firestore, "mail"), {
+  await sendEmailAction({
     to: recipients,
-    message: {
-      subject,
-      text,
-      html,
-    },
+    subject,
+    html,
+    text
   });
 };

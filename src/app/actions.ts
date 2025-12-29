@@ -2,8 +2,7 @@
 
 import { suggestTags } from '@/ai/flows/smart-tagging-assistant';
 import { z } from 'zod';
-import { revalidatePath } from 'next/cache';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+// Eliminamos imports de firebase/firestore y revalidatePath porque no se usan aquí
 
 const tagFormSchema = z.object({
   description: z.string().min(10, { message: "La descripción debe tener al menos 10 caracteres." }),
@@ -15,7 +14,6 @@ export type TagFormState = {
   errors?: {
     description?: string[];
   };
-  // No more timestamp
 };
 
 export async function handleTagSuggestion(

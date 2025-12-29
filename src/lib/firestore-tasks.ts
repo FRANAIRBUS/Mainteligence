@@ -1,5 +1,6 @@
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -10,6 +11,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  Timestamp,
   type DocumentData,
   type Firestore,
   type FirestoreDataConverter,
@@ -21,6 +23,8 @@ import type {
   MaintenanceTask,
   MaintenanceTaskInput,
 } from "@/types/maintenance-task";
+import type { User, Department } from "@/lib/firebase/models";
+import { sendAssignmentEmail } from "@/lib/assignment-email";
 
 const TASKS_COLLECTION = "tasks";
 
@@ -84,7 +88,8 @@ export const getTask = async (db: Firestore, id: string) => {
 export const createTask = async (
   db: Firestore,
   auth: Auth,
-  payload: MaintenanceTaskInput
+  payload: MaintenanceTaskInput,
+  options?: { users: User[]; departments: Department[] }
 ): Promise<string> => {
   const user = await ensureAuthenticatedUser(auth);
 
@@ -94,6 +99,30 @@ export const createTask = async (
     status: payload.status || "pendiente",
     priority: payload.priority || "media",
   });
+
+  if (options && (payload.assignedTo || payload.departmentId)) {
+    try {
+      await sendAssignmentEmail({
+        users: options.users,
+        departments: options.departments,
+        assignedTo: payload.assignedTo,
+        departmentId: payload.departmentId,
+        title: payload.title,
+        description: payload.description,
+        priority: payload.priority,
+        status: payload.status,
+        dueDate: payload.dueDate ? payload.dueDate.toDate?.() ?? payload.dueDate : null,
+        location: payload.location,
+        category: payload.category,
+        link: typeof window !== 'undefined' ? `${window.location.origin}/tasks/${docRef.id}` : '',
+        type: "tarea",
+        identifier: payload.identifier
+      });
+    } catch (e) {
+      console.error("Error intentando enviar email:", e);
+    }
+  }
+
   return docRef.id;
 };
 
@@ -113,12 +142,60 @@ export const updateTask = async (
   db: Firestore,
   auth: Auth,
   id: string,
-  updates: Partial<MaintenanceTaskInput>
+  updates: Partial<MaintenanceTaskInput>,
+  options?: { users: User[]; departments: Department[] }
 ) => {
   await ensureAuthenticatedUser(auth);
   const docRef = doc(db, TASKS_COLLECTION, id);
   await updateDoc(docRef, { ...updates, updatedAt: serverTimestamp() });
+
+  if (options && (updates.assignedTo || updates.departmentId)) {
+    try {
+      const title = updates.title || "Tarea Actualizada"; 
+      
+      await sendAssignmentEmail({
+        users: options.users,
+        departments: options.departments,
+        assignedTo: updates.assignedTo,
+        departmentId: updates.departmentId,
+        title: title,
+        description: updates.description,
+        priority: updates.priority,
+        status: updates.status,
+        dueDate: updates.dueDate ? updates.dueDate.toDate?.() ?? updates.dueDate : null,
+        location: updates.location,
+        category: updates.category,
+        link: typeof window !== 'undefined' ? `${window.location.origin}/tasks/${id}` : '',
+        type: "tarea",
+        identifier: updates.identifier
+      });
+    } catch (e) {
+       console.error("Error intentando enviar email en update:", e);
+    }
+  }
+
   return id;
+};
+
+export const addTaskReport = async (
+  db: Firestore,
+  auth: Auth,
+  id: string,
+  report: { description: string; createdBy?: string }
+) => {
+  const user = await ensureAuthenticatedUser(auth);
+  const docRef = doc(db, TASKS_COLLECTION, id);
+
+  const reportEntry = {
+    description: report.description,
+    createdAt: Timestamp.now(),
+    createdBy: report.createdBy || user.uid,
+  };
+
+  await updateDoc(docRef, {
+    reports: arrayUnion(reportEntry),
+    updatedAt: serverTimestamp(),
+  });
 };
 
 export const deleteTask = async (db: Firestore, auth: Auth, id: string) => {

@@ -1,373 +1,102 @@
-'use client';
+"use client"
 
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { useToast } from '@/hooks/use-toast';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useFirestore, useUser, useStorage, useCollection } from '@/lib/firebase';
-import type { Site, Department, Asset } from '@/lib/firebase/models';
-import { errorEmitter } from '@/lib/firebase/error-emitter';
-import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Loader2 } from 'lucide-react';
-import { Icons } from './icons';
-
-const formSchema = z.object({
-  title: z
-    .string()
-    .min(5, { message: 'El título debe tener al menos 5 caracteres.' }),
-  description: z
-    .string()
-    .min(10, { message: 'La descripción debe tener al menos 10 caracteres.' }),
-  siteId: z.string({ required_error: 'Debe seleccionar una ubicación.' }),
-  departmentId: z.string({ required_error: 'Debe seleccionar un departamento.' }),
-  assetId: z.string().optional(),
-  priority: z.enum(['Baja', 'Media', 'Alta', 'Crítica'], { required_error: 'Debe seleccionar una prioridad.' }),
-});
-
-type AddIncidentFormValues = z.infer<typeof formSchema>;
+import { useMemo, useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
+import { collection, addDoc, serverTimestamp } from "firebase/firestore"
+import { useCollection } from "@/lib/firebase/firestore/use-collection"
+import { useFirestore, useUser } from "@/lib/firebase"
+import type { User } from "@/lib/firebase/models"
 
 interface AddIncidentDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
-  const { toast } = useToast();
-  const firestore = useFirestore();
-  const storage = useStorage();
-  const { user } = useUser();
-  const [isPending, setIsPending] = useState(false);
-  const [photos, setPhotos] = useState<File[]>([]);
+export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps) {
+  const { toast } = useToast()
+  const firestore = useFirestore()
+  const { user } = useUser()
+  const { data: users } = useCollection<User>("users")
 
-  // These hooks are now safe because they wait for user auth internally
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
-  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const [internalOpen, setInternalOpen] = useState(false)
+  const dialogOpen = useMemo(() => open ?? internalOpen, [open, internalOpen])
+  const setDialogOpen = onOpenChange ?? setInternalOpen
+  const [assignedTo, setAssignedTo] = useState("")
 
-  const form = useForm<AddIncidentFormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      title: '',
-      description: '',
-      priority: 'Media',
-    },
-  });
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const title = formData.get("title")?.toString().trim() ?? ""
+    const description = formData.get("description")?.toString().trim() ?? ""
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      setPhotos(Array.from(e.target.files));
+    if (!firestore) {
+      toast({ title: "Error", description: "Firestore no está disponible.", variant: "destructive" })
+      return
     }
-  };
 
-  const onSubmit = async (data: AddIncidentFormValues) => {
-    if (!firestore || !user || !storage) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'No autenticado o servicios de Firebase no disponibles.',
-      });
-      return;
+    if (!user) {
+      toast({ title: "Inicia sesión", description: "Debes iniciar sesión para crear incidencias.", variant: "destructive" })
+      return
     }
-    setIsPending(true);
+
+    if (!assignedTo) {
+      toast({ title: "Asignar responsable", description: "Selecciona un responsable.", variant: "destructive" })
+      return
+    }
 
     try {
-        const ticketId = `TICKET_${Date.now()}`; // Temporary ID for storage path
-        const photoUrls: string[] = [];
+      await addDoc(collection(firestore, "tickets"), {
+        title,
+        description,
+        assignedTo,
+        status: "open",
+        createdAt: serverTimestamp(),
+        createdBy: user.uid,
+      })
 
-        for (const photo of photos) {
-            const photoRef = ref(storage, `tickets/${ticketId}/${photo.name}`);
-            try {
-                const snapshot = await uploadBytes(photoRef, photo);
-                const url = await getDownloadURL(snapshot.ref);
-                photoUrls.push(url);
-            } catch (storageError: any) {
-                 if (storageError.code === 'storage/unauthorized' || storageError.code === 'storage/object-not-found') {
-                    const permissionError = new StoragePermissionError({
-                      path: photoRef.fullPath,
-                      operation: 'write',
-                    });
-                    errorEmitter.emit('permission-error', permissionError);
-                } else {
-                     throw storageError;
-                }
-                setIsPending(false);
-                return;
-            }
-        }
-        
-        const docData = {
-            ...data,
-            type: 'correctivo',
-            status: 'Abierta',
-            createdBy: user.uid,
-            assignedRole: 'maintenance',
-            assignedTo: null,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            photoUrls,
-            displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`
-        };
-
-        const collectionRef = collection(firestore, "tickets");
-        await addDoc(collectionRef, docData);
-
-        toast({
-            title: 'Éxito',
-            description: `Incidencia '${data.title}' creada correctamente.`,
-        });
-        onOpenChange(false);
-        form.reset();
-        setPhotos([]);
-
-    } catch (error: any) {
-        if (error.code === 'permission-denied') {
-            const permissionError = new FirestorePermissionError({
-                path: 'tickets',
-                operation: 'create',
-                requestResourceData: data,
-            });
-            errorEmitter.emit('permission-error', permissionError);
-        } else {
-            toast({
-                variant: 'destructive',
-                title: 'Error al crear la incidencia',
-                description: error.message || 'Ocurrió un error inesperado.',
-            });
-        }
-    } finally {
-        setIsPending(false);
+      toast({ title: "Incidencia reportada", description: "Se ha enviado aviso al responsable." })
+      setAssignedTo("")
+      setDialogOpen(false)
+      event.currentTarget.reset()
+    } catch (error) {
+      toast({ title: "Error", description: "No se pudo reportar.", variant: "destructive" })
     }
-  };
-
-  const isLoading = sitesLoading || deptsLoading || assetsLoading;
-  
-  if(isLoading) {
-    return (
-        <div className="flex h-96 items-center justify-center">
-            <Icons.spinner className="h-8 w-8 animate-spin" />
-        </div>
-    )
   }
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="title"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Título</FormLabel>
-              <FormControl>
-                <Input placeholder="Ej: Fuga de agua en el baño" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-         <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Descripción</FormLabel>
-              <FormControl>
-                <Textarea placeholder="Describe el problema en detalle..." {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField
-            control={form.control}
-            name="siteId"
-            render={({ field }) => (
-                <FormItem>
-                <FormLabel>Ubicación</FormLabel>
-                <Select
-                  name={field.name}
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
-                    <FormControl>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Selecciona una ubicación" />
-                    </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                    {sites.map(site => (
-                        <SelectItem key={site.id} value={site.id}>{site.name}</SelectItem>
-                    ))}
-                    </SelectContent>
-                </Select>
-                <FormMessage />
-                </FormItem>
-            )}
-            />
-            <FormField
-            control={form.control}
-            name="departmentId"
-            render={({ field }) => (
-                <FormItem>
-                <FormLabel>Departamento</FormLabel>
-                <Select
-                  name={field.name}
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
-                    <FormControl>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Selecciona un departamento" />
-                    </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                    {departments.map(dept => (
-                        <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
-                    ))}
-                    </SelectContent>
-                </Select>
-                <FormMessage />
-                </FormItem>
-            )}
-            />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField
-            control={form.control}
-            name="assetId"
-            render={({ field }) => (
-                <FormItem>
-                <FormLabel>Activo (Opcional)</FormLabel>
-                <Select
-                  name={field.name}
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
-                    <FormControl>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Selecciona un activo" />
-                    </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                    {assets.map(asset => (
-                        <SelectItem key={asset.id} value={asset.id}>{asset.name}</SelectItem>
-                    ))}
-                    </SelectContent>
-                </Select>
-                <FormMessage />
-                </FormItem>
-            )}
-            />
-            <FormField
-            control={form.control}
-            name="priority"
-            render={({ field }) => (
-                <FormItem>
-                <FormLabel>Prioridad</FormLabel>
-                <Select
-                  name={field.name}
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
-                    <FormControl>
-                    <SelectTrigger>
-                        <SelectValue placeholder="Selecciona una prioridad" />
-                    </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                        <SelectItem value="Baja">Baja</SelectItem>
-                        <SelectItem value="Media">Media</SelectItem>
-                        <SelectItem value="Alta">Alta</SelectItem>
-                        <SelectItem value="Crítica">Crítica</SelectItem>
-                    </SelectContent>
-                </Select>
-                <FormMessage />
-                </FormItem>
-            )}
-            />
-        </div>
-        
-        <FormItem>
-          <FormLabel>Fotos (Opcional)</FormLabel>
-          <FormControl>
-            <Input 
-              type="file" 
-              multiple 
-              onChange={handlePhotoChange} 
-              accept="image/*"
-            />
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-        {photos.length > 0 && (
-            <div className="text-xs text-muted-foreground">
-                {photos.length} archivo(s) seleccionado(s).
-            </div>
-        )}
-        
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>Cancelar</Button>
-          <Button type="submit" disabled={isPending}>
-            {isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Crear Incidencia
-          </Button>
-        </DialogFooter>
-      </form>
-    </Form>
-  );
-}
-
-
-export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps) {
-  
-  const handleOpenChange = (isOpen: boolean) => {
-    onOpenChange(isOpen);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Crear Nueva Incidencia</DialogTitle>
-          <DialogDescription>
-            Describe el problema para que el equipo de mantenimiento pueda solucionarlo.
-          </DialogDescription>
-        </DialogHeader>
-        {open && <AddIncidentForm onOpenChange={onOpenChange} />}
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <DialogTrigger asChild><Button>Nueva Incidencia</Button></DialogTrigger>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Reportar Incidencia</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="title">Título</Label>
+            <Input id="title" name="title" required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="description">Descripción</Label>
+            <Textarea id="description" name="description" required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="assignedTo">Asignar Responsable</Label>
+            <Select value={assignedTo} onValueChange={setAssignedTo}>
+              <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+              <SelectContent>
+                {users?.map((user) => (
+                  <SelectItem key={user.id} value={user.id}>{user.displayName || user.email}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="submit" className="w-full">Enviar Reporte</Button>
+        </form>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

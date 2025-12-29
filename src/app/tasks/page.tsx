@@ -26,6 +26,7 @@ import { AppShell } from "@/components/app-shell";
 import { Icons } from "@/components/icons";
 import { useCollection } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
+import type { User } from "@/lib/firebase/models";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -39,30 +40,63 @@ const priorityCopy: Record<MaintenanceTask["priority"], string> = {
   baja: "Baja",
 };
 
+const priorityOrder: Record<MaintenanceTask["priority"], number> = {
+  alta: 2,
+  media: 1,
+  baja: 0,
+};
+
 export default function TasksPage() {
   const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
+  const { data: users, loading: usersLoading } = useCollection<User>("users");
   const [statusFilter, setStatusFilter] = useState<string>("todas");
   const [priorityFilter, setPriorityFilter] = useState<string>("todas");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 6;
 
+  const userNameMap = useMemo(() => {
+    return users.reduce<Record<string, string>>((map, user) => {
+      map[user.id] = user.displayName || user.email || user.id;
+      return map;
+    }, {});
+  }, [users]);
+
   const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
+    const sortedTasks = [...tasks].sort((a, b) => {
+      const aCreatedAt = a.createdAt?.toMillis?.()
+        ?? a.createdAt?.toDate?.().getTime()
+        ?? 0;
+      const bCreatedAt = b.createdAt?.toMillis?.()
+        ?? b.createdAt?.toDate?.().getTime()
+        ?? 0;
+
+      if (bCreatedAt !== aCreatedAt) {
+        return bCreatedAt - aCreatedAt;
+      }
+
+      return priorityOrder[b.priority] - priorityOrder[a.priority];
+    });
+
+    return sortedTasks.filter((task) => {
       const matchesStatus =
         statusFilter === "todas" || task.status === statusFilter;
       const matchesPriority =
         priorityFilter === "todas" || task.priority === priorityFilter;
+      const assignedName = task.assignedTo
+        ? userNameMap[task.assignedTo] || task.assignedTo
+        : "";
       const matchesQuery =
         !query ||
         task.title.toLowerCase().includes(query.toLowerCase()) ||
-        (task.assignedTo?.toLowerCase().includes(query.toLowerCase()) ?? false);
+        assignedName.toLowerCase().includes(query.toLowerCase());
       return matchesStatus && matchesPriority && matchesQuery;
     });
-  }, [priorityFilter, query, statusFilter, tasks]);
+  }, [priorityFilter, query, statusFilter, tasks, userNameMap]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
+  const isLoading = loading || usersLoading;
 
   return (
     <AppShell
@@ -136,7 +170,7 @@ export default function TasksPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && (
+              {isLoading && (
                 <TableRow>
                   <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                     <div className="flex items-center justify-center gap-2">
@@ -177,7 +211,11 @@ export default function TasksPage() {
                         ? format(task.dueDate.toDate(), "PPP", { locale: es })
                         : "Sin fecha"}
                     </TableCell>
-                    <TableCell>{task.assignedTo || "No asignada"}</TableCell>
+                    <TableCell>
+                      {task.assignedTo
+                        ? userNameMap[task.assignedTo] || task.assignedTo
+                        : "No asignada"}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button asChild variant="outline" size="sm">
                         <Link href={`/tasks/${task.id}`}>Editar</Link>

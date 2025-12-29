@@ -119,6 +119,11 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
           departmentId: ticket.departmentId,
           title: ticket.title,
           identifier: ticket.displayId,
+          description: ticket.description,
+          priority: data.priority,
+          status: data.status,
+          location: ticket.departmentId,
+          category: ticket.type,
           link: `${window.location.origin}/incidents/${ticket.id}`,
           type: 'incidencia',
         });

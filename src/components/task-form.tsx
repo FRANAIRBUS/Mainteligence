@@ -1,252 +1,235 @@
-"use client";
+"use client"
 
-import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import type { Department, User } from "@/lib/firebase/models";
-import type { TaskPriority, TaskStatus } from "@/types/maintenance-task";
+import { useEffect } from "react"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm } from "react-hook-form"
+import * as z from "zod"
+import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 
-export interface TaskFormValues {
-  title: string;
-  description: string;
-  priority: TaskPriority;
-  status: TaskStatus;
-  dueDate: string;
-  assignedTo: string;
-  location: string;
-  category: string;
-}
+const taskSchema = z.object({
+  title: z.string().min(2, "El título debe tener al menos 2 caracteres"),
+  description: z.string().optional().default(""),
+  priority: z.enum(["alta", "media", "baja"]),
+  status: z.enum(["pendiente", "en_progreso", "completada"]),
+  dueDate: z.string().optional().default(""),
+  assignedTo: z.string().optional().default(""),
+  location: z.string().optional().default(""),
+  category: z.string().optional().default(""),
+})
 
-interface TaskFormProps {
-  defaultValues: TaskFormValues;
-  onSubmit: (values: TaskFormValues) => Promise<void>;
-  submitting?: boolean;
-  submitLabel?: string;
-  errorMessage?: string | null;
-  users?: User[];
-  departments?: Department[];
+export type TaskFormValues = z.infer<typeof taskSchema>
+
+type TaskFormProps = {
+  defaultValues: TaskFormValues
+  onSubmit: (values: TaskFormValues) => Promise<void> | void
+  submitting?: boolean
+  errorMessage?: string | null
+  users?: { id: string; displayName?: string; email?: string }[]
+  departments?: { id: string; name?: string }[]
+  submitLabel?: string
+  onSuccess?: () => void
 }
 
 export function TaskForm({
   defaultValues,
   onSubmit,
   submitting = false,
-  submitLabel = "Guardar",
   errorMessage,
-  users,
-  departments,
+  users = [],
+  departments = [],
+  submitLabel = "Guardar",
+  onSuccess,
 }: TaskFormProps) {
-  const UNASSIGNED_VALUE = "__unassigned";
-  const ALL_DEPARTMENTS_VALUE = "__all";
-  const [values, setValues] = useState<TaskFormValues>(defaultValues);
-  const [localError, setLocalError] = useState<string | null>(null);
-
-  const userOptions = useMemo(
-    () =>
-      (users ?? [])
-        .filter((user) => user.displayName || user.email)
-        .map((user) => ({
-          id: user.id,
-          label: user.displayName || user.email,
-        })),
-    [users]
-  );
-
-  const departmentOptions = useMemo(
-    () =>
-      (departments ?? []).map((department) => ({
-        id: department.id,
-        label: department.name,
-      })),
-    [departments]
-  );
+  const form = useForm<TaskFormValues>({
+    resolver: zodResolver(taskSchema),
+    defaultValues,
+  })
 
   useEffect(() => {
-    setValues(defaultValues);
-  }, [defaultValues]);
+    form.reset(defaultValues)
+  }, [defaultValues, form])
 
-  const handleChange = <K extends keyof TaskFormValues>(key: K, value: TaskFormValues[K]) => {
-    setValues((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setLocalError(null);
-
-    if (!values.title.trim()) {
-      setLocalError("El título es obligatorio");
-      return;
-    }
-
-    await onSubmit(values);
-  };
+  const handleSubmit = async (values: TaskFormValues) => {
+    await onSubmit(values)
+    onSuccess?.()
+  }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {(localError || errorMessage) && (
-        <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-          {localError || errorMessage}
-        </div>
-      )}
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+        {errorMessage ? (
+          <Alert variant="destructive">
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
+        ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="title">Título</Label>
-          <Input
-            id="title"
-            value={values.title}
-            onChange={(e) => handleChange("title", e.target.value)}
-            placeholder="Sustituir filtro de aire"
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="category">Categoría</Label>
-          <Input
-            id="category"
-            value={values.category}
-            onChange={(e) => handleChange("category", e.target.value)}
-            placeholder="Mecánica, eléctrica, etc."
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="assignedTo">Asignado a</Label>
-          {userOptions.length > 0 ? (
-            <Select
-              name="assignedTo"
-              value={values.assignedTo || UNASSIGNED_VALUE}
-              onValueChange={(value) =>
-                handleChange(
-                  "assignedTo",
-                  value === UNASSIGNED_VALUE ? "" : value
-                )
-              }
-            >
-              <SelectTrigger id="assignedTo">
-                <SelectValue placeholder="Selecciona un usuario" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={UNASSIGNED_VALUE}>Sin asignar</SelectItem>
-                {userOptions.map((user) => (
-                  <SelectItem key={user.id} value={user.label}>
-                    {user.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              id="assignedTo"
-              value={values.assignedTo}
-              onChange={(e) => handleChange("assignedTo", e.target.value)}
-              placeholder="Nombre o equipo"
-            />
+        <FormField
+          control={form.control}
+          name="title"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Título de la tarea</FormLabel>
+              <FormControl>
+                <Input placeholder="Ej: Revisión motor A1" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
           )}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="location">Ubicación</Label>
-          {departmentOptions.length > 0 ? (
-            <Select
-              name="location"
-              value={values.location || ALL_DEPARTMENTS_VALUE}
-              onValueChange={(value) =>
-                handleChange("location", value === ALL_DEPARTMENTS_VALUE ? "" : value)
-              }
-            >
-              <SelectTrigger id="location">
-                <SelectValue placeholder="Selecciona un departamento" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_DEPARTMENTS_VALUE}>Todos</SelectItem>
-                {departmentOptions.map((department) => (
-                  <SelectItem key={department.id} value={department.label}>
-                    {department.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              id="location"
-              value={values.location}
-              onChange={(e) => handleChange("location", e.target.value)}
-              placeholder="Área o activo"
-            />
-          )}
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="space-y-2">
-          <Label htmlFor="status">Estado</Label>
-          <Select
-            name="status"
-            value={values.status}
-            onValueChange={(value) => handleChange("status", value as TaskStatus)}
-          >
-            <SelectTrigger id="status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="pendiente">Pendiente</SelectItem>
-              <SelectItem value="en_progreso">En progreso</SelectItem>
-              <SelectItem value="completada">Completada</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="priority">Prioridad</Label>
-          <Select
-            name="priority"
-            value={values.priority}
-            onValueChange={(value) => handleChange("priority", value as TaskPriority)}
-          >
-            <SelectTrigger id="priority">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="alta">Alta</SelectItem>
-              <SelectItem value="media">Media</SelectItem>
-              <SelectItem value="baja">Baja</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="dueDate">Fecha límite</Label>
-          <Input
-            id="dueDate"
-            type="date"
-            value={values.dueDate}
-            onChange={(e) => handleChange("dueDate", e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="description">Descripción</Label>
-        <Textarea
-          id="description"
-          value={values.description}
-          onChange={(e) => handleChange("description", e.target.value)}
-          placeholder="Añade contexto, pasos o checklist"
-          rows={5}
         />
-      </div>
 
-      <div className="flex items-center justify-end gap-3">
-        <Button type="submit" disabled={submitting}>
-          {submitting ? "Guardando..." : submitLabel}
+        <FormField
+          control={form.control}
+          name="description"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Descripción</FormLabel>
+              <FormControl>
+                <Textarea placeholder="Detalles de la tarea" {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="priority"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Prioridad</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="alta">Alta</SelectItem>
+                    <SelectItem value="media">Media</SelectItem>
+                    <SelectItem value="baja">Baja</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="status"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Estado</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="pendiente">Pendiente</SelectItem>
+                    <SelectItem value="en_progreso">En progreso</SelectItem>
+                    <SelectItem value="completada">Completada</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="dueDate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Fecha límite</FormLabel>
+                <FormControl>
+                  <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="assignedTo"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Asignar a</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar usuario" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.displayName || user.email || user.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FormField
+            control={form.control}
+            name="location"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Departamento / ubicación</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {departments.map((department) => (
+                      <SelectItem key={department.id} value={department.id}>
+                        {department.name || department.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Categoría</FormLabel>
+                <FormControl>
+                  <Input placeholder="Categoría opcional" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitLabel}
         </Button>
-      </div>
-    </form>
-  );
+      </form>
+    </Form>
+  )
 }

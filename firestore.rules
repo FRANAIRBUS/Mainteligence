@@ -3,34 +3,27 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
  
+    // --- FUNCIONES DE AYUDA ---
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // A more robust way to check for a role, especially for 'admin'.
-    // It safely checks if the user document and role exist.
     function getUser(uid) {
       return get(/databases/$(database)/documents/users/$(uid));
     }
 
     function getUserRole(uid) {
-      let userDoc = getUser(uid);
       if (!exists(/databases/$(database)/documents/users/$(uid))) {
         return 'none';
       }
-      return userDoc.data.role;
+      return getUser(uid).data.role;
     }
 
     function getUserDepartmentId(uid) {
-      let userDoc = getUser(uid);
       if (!exists(/databases/$(database)/documents/users/$(uid))) {
         return null;
       }
-      return userDoc.data.departmentId;
-    }
-
-    function isOperario() {
-      return isSignedIn() && getUserRole(request.auth.uid) == 'operario';
+      return getUser(uid).data.departmentId;
     }
 
     function isMantenimiento() {
@@ -45,10 +38,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
  
+    // --- REGLAS DE COLECCIONES ---
+
     match /users/{userId} {
       allow get: if isOwner(userId) || isMantenimiento();
       allow list: if isMantenimiento();
-      allow create: if isSignedIn(); // Allow any signed-in user to create their own user doc (on first sign-in)
+      allow create: if isSignedIn(); 
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin() && !isOwner(userId);
     }
@@ -68,51 +63,48 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    function canReadTicket(ticketData) {
-      if (!isSignedIn()) return false;
-      if (ticketData == null) return false;
-
-      return isMantenimiento() ||
-        ticketData.createdBy == request.auth.uid ||
-        ticketData.assignedTo == request.auth.uid ||
-        (ticketData.departmentId != null && ticketData.departmentId == getUserDepartmentId(request.auth.uid));
+    // Reglas para la colección de tareas
+    match /tasks/{taskId} {
+      // Permite leer y crear tareas a cualquier usuario autenticado
+      allow read, create: if isSignedIn();
+      
+      // Permite actualizar si estás autenticado (puedes refinar esto para que solo el dueño o un admin pueda)
+      allow update: if isSignedIn();
+      
+      // Solo permite borrar si es admin (usando tu función de ayuda existente)
+      allow delete: if getUserRole(request.auth.uid) == 'admin';
+    }
+    
+    // Si tu sistema envía correos automáticamente al crear/editar tareas (usando la extensión "Trigger Email"),
+    // necesitas dar permiso a la colección 'mail':
+    match /mail/{mailId} {
+      allow create: if isSignedIn();
     }
 
+    // --- REGLAS PARA INCIDENCIAS (Tickets) ---
     match /tickets/{ticketId} {
-      allow get, list: if canReadTicket(resource.data);
-      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      // Permitimos crear a cualquier usuario logueado
+      allow create: if isSignedIn();
+      // Permitimos leer si es admin, mantenimiento o si está involucrado
+      allow read: if isSignedIn() && (
+        isMantenimiento() || 
+        resource.data.assignedTo == request.auth.uid || 
+        resource.data.createdBy == request.auth.uid
+      );
+      allow update: if isSignedIn();
       allow delete: if isAdmin();
-      allow update: if
-        isMantenimiento() ||
-        (isOperario() && resource.data.createdBy == request.auth.uid &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['priority', 'updatedAt']));
     }
 
     match /tickets/{ticketId}/comments/{commentId} {
-      allow read, create: if canReadTicket(get(/databases/$(database)/documents/tickets/$(ticketId)).data);
+      allow read, create: if isSignedIn();
       allow update, delete: if isAdmin();
     }
 
-    // 👇👇👇 AQUÍ ESTÁ EL BLOQUE NUEVO QUE TE FALTABA 👇👇👇
-    match /tasks/{taskId} {
-      // Permite leer y crear tareas a cualquier usuario logueado
-      allow read, create: if isSignedIn();
-      
-      // Permite actualizar si estás logueado (puedes restringirlo más si quieres)
-      allow update: if isSignedIn();
-      
-      // Solo admins pueden borrar
-      allow delete: if isAdmin();
-    }
-    // 👆👆👆 FIN DEL BLOQUE NUEVO 👆👆👆
-
     match /settings/{settingId} {
-      // Allow anyone to read settings (for the logo on the login page)
       allow read: if true;
-      allow write: if isAdmin(); // Only admins can change settings
+      allow write: if isAdmin(); 
     }
 
-    // Allow authenticated users to enqueue emails for the Firebase Extension
     match /mail/{mailId} {
       allow create: if isSignedIn();
     }
