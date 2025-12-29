@@ -148,6 +148,14 @@ export default function TasksPage() {
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
   const isLoading = loading || usersLoading || userLoading || profileLoading;
 
+  if (!firestore || !user || !userProfile) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
   const formatDueDate = (task: MaintenanceTask) => {
     const dueDate = task.dueDate as unknown as { toDate?: () => Date } | null;
     const date = dueDate?.toDate?.();
