@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
@@ -25,9 +25,17 @@ import {
 } from "@/components/ui/table";
 import { AppShell } from "@/components/app-shell";
 import { Icons } from "@/components/icons";
-import { useCollection } from "@/lib/firebase";
+import {
+  useAuth,
+  useCollection,
+  useCollectionQuery,
+  useDoc,
+  useFirestore,
+  useUser,
+} from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { User } from "@/lib/firebase/models";
+import { collection, or, query, where } from "firebase/firestore";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -48,14 +56,54 @@ const priorityOrder: Record<MaintenanceTask["priority"], number> = {
 };
 
 export default function TasksPage() {
+  const auth = useAuth();
+  const firestore = useFirestore();
+  const { user, loading: userLoading } = useUser();
   const router = useRouter();
-  const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
-  const { data: users, loading: usersLoading } = useCollection<User>("users");
+  const { data: userProfile, loading: profileLoading } = useDoc<User>(
+    user ? `users/${user.uid}` : null
+  );
+
+  const canViewAllTasks =
+    userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
+
+  const tasksQuery = useMemo(() => {
+    if (!firestore || !user || !userProfile) return null;
+
+    const tasksCollection = collection(firestore, "tasks");
+
+    if (canViewAllTasks) {
+      return query(tasksCollection);
+    }
+
+    const conditions = [
+      where("createdBy", "==", user.uid),
+      where("assignedTo", "==", user.uid),
+    ];
+
+    if (userProfile.departmentId) {
+      conditions.push(where("location", "==", userProfile.departmentId));
+    }
+
+    return query(tasksCollection, or(...conditions));
+  }, [canViewAllTasks, firestore, user, userProfile]);
+
+  const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(tasksQuery);
+  const { data: users, loading: usersLoading } = useCollection<User>(
+    canViewAllTasks ? "users" : null
+  );
   const [statusFilter, setStatusFilter] = useState<string>("todas");
   const [priorityFilter, setPriorityFilter] = useState<string>("todas");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 6;
+
+  useEffect(() => {
+    if (!auth) return;
+    if (!userLoading && !user) {
+      router.push("/login");
+    }
+  }, [auth, router, user, userLoading]);
 
   const userNameMap = useMemo(() => {
     return users.reduce<Record<string, string>>((map, user) => {
@@ -98,7 +146,7 @@ export default function TasksPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
-  const isLoading = loading || usersLoading;
+  const isLoading = loading || usersLoading || userLoading || profileLoading;
 
   const formatDueDate = (task: MaintenanceTask) => {
     const dueDate = task.dueDate as unknown as { toDate?: () => Date } | null;
