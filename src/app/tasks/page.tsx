@@ -39,6 +39,12 @@ const priorityCopy: Record<MaintenanceTask["priority"], string> = {
   baja: "Baja",
 };
 
+const priorityOrder: Record<MaintenanceTask["priority"], number> = {
+  alta: 2,
+  media: 1,
+  baja: 0,
+};
+
 export default function TasksPage() {
   const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
   const [statusFilter, setStatusFilter] = useState<string>("todas");
@@ -48,7 +54,22 @@ export default function TasksPage() {
   const perPage = 6;
 
   const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
+    const sortedTasks = [...tasks].sort((a, b) => {
+      const aCreatedAt = a.createdAt?.toMillis?.()
+        ?? a.createdAt?.toDate?.().getTime()
+        ?? 0;
+      const bCreatedAt = b.createdAt?.toMillis?.()
+        ?? b.createdAt?.toDate?.().getTime()
+        ?? 0;
+
+      if (bCreatedAt !== aCreatedAt) {
+        return bCreatedAt - aCreatedAt;
+      }
+
+      return priorityOrder[b.priority] - priorityOrder[a.priority];
+    });
+
+    return sortedTasks.filter((task) => {
       const matchesStatus =
         statusFilter === "todas" || task.status === statusFilter;
       const matchesPriority =
