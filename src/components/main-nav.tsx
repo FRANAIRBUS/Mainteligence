@@ -80,8 +80,13 @@ export function MainNav() {
   ], [pathname]);
 
   const menuItems = useMemo(() => {
+    const isAdmin = userProfile?.role === 'admin';
     // If profile is loading, default to operario role to show base menu
-    const userRole = userProfile?.role || 'operario';
+    const userRole = isAdmin ? 'admin' : userProfile?.role || 'operario';
+
+    if (isAdmin) {
+      return allMenuItems;
+    }
 
     return allMenuItems
       .map(group => ({
