@@ -233,7 +233,7 @@ export default function TasksPage() {
         </div>
 
         <div className="overflow-x-auto rounded-lg border">
-          <Table className="min-w-[720px]">
+          <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Tarea</TableHead>

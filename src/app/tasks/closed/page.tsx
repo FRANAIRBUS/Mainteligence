@@ -243,7 +243,7 @@ export default function ClosedTasksPage() {
         </div>
 
         <div className="overflow-x-auto rounded-lg border">
-          <Table className="min-w-[760px]">
+          <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Tarea</TableHead>

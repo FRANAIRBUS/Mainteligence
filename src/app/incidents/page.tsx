@@ -80,7 +80,7 @@ function IncidentsTable({
   }
 
   return (
-    <Table className="min-w-[760px]">
+    <Table>
       <TableHeader>
         <TableRow>
           <TableHead>ID</TableHead>
