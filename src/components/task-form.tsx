@@ -152,13 +152,13 @@ export function TaskForm({
             name="dueDate"
             render={({ field }) => (
               <FormItem>
-              <FormLabel>Fecha límite</FormLabel>
-              <FormControl>
+                <FormLabel>Fecha límite</FormLabel>
+                <FormControl>
                   <Input type="date" disabled={disabled} {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
 
           <FormField
@@ -174,6 +174,7 @@ export function TaskForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
+                    <SelectItem value="">Sin asignar</SelectItem>
                     {users.map((user) => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.displayName || user.email || user.id}
