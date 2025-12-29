@@ -232,8 +232,8 @@ export default function TasksPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
+        <div className="overflow-x-auto rounded-lg border">
+          <Table className="min-w-[720px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Tarea</TableHead>
@@ -309,11 +309,11 @@ export default function TasksPage() {
           </Table>
         </div>
 
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <div className="flex flex-col gap-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>
             Mostrando {paginated.length} de {filteredTasks.length} tareas
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
