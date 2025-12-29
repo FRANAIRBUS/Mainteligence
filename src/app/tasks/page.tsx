@@ -138,13 +138,15 @@ export default function TasksPage() {
         statusFilter === "todas" || task.status === statusFilter;
       const matchesPriority =
         priorityFilter === "todas" || task.priority === priorityFilter;
-      const assignedName = task.assignedTo
-        ? userNameMap[task.assignedTo] || task.assignedTo
-        : "";
+      const assignedName =
+        task.assignedTo && userNameMap[task.assignedTo]
+          ? userNameMap[task.assignedTo]
+          : "";
       const matchesQuery =
         !searchQuery ||
         task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        assignedName.toLowerCase().includes(searchQuery.toLowerCase());
+        assignedName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        "no asignada".includes(searchQuery.toLowerCase());
       return matchesStatus && matchesPriority && matchesQuery;
     });
   }, [priorityFilter, searchQuery, statusFilter, tasks, userNameMap]);
@@ -286,8 +288,8 @@ export default function TasksPage() {
                       {formatDueDate(task)}
                     </TableCell>
                     <TableCell>
-                      {task.assignedTo
-                        ? userNameMap[task.assignedTo] || task.assignedTo
+                      {task.assignedTo && userNameMap[task.assignedTo]
+                        ? userNameMap[task.assignedTo]
                         : "No asignada"}
                     </TableCell>
                     <TableCell className="text-right">

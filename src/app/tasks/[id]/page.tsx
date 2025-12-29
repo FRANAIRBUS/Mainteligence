@@ -82,6 +82,7 @@ export default function TaskDetailPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reportDescription, setReportDescription] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [assignmentChecked, setAssignmentChecked] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const { toast } = useToast();
 
@@ -127,17 +128,21 @@ export default function TaskDetailPage() {
         ? task.dueDate.toDate().toISOString().slice(0, 10)
         : "";
 
+    const isAssigneeValid = task?.assignedTo
+      ? users.some((item) => item.id === task.assignedTo)
+      : false;
+
     return {
       title: task?.title ?? "",
       description: task?.description ?? "",
       priority: task?.priority ?? "media",
       status: task?.status ?? "pendiente",
       dueDate,
-      assignedTo: task?.assignedTo ?? "",
+      assignedTo: isAssigneeValid ? task.assignedTo : "",
       location: task?.location ?? "",
       category: task?.category ?? "",
     };
-  }, [task]);
+  }, [task, users]);
 
   const userNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -165,12 +170,9 @@ export default function TaskDetailPage() {
 
   const assignedUserName = useMemo(() => {
     if (!task?.assignedTo) return "No asignada";
-    return (
-      userNameMap[task.assignedTo] ||
-      assignedUser?.displayName ||
-      assignedUser?.email ||
-      task.assignedTo
-    );
+    const name =
+      userNameMap[task.assignedTo] || assignedUser?.displayName || assignedUser?.email;
+    return name ?? "No asignada";
   }, [assignedUser?.displayName, assignedUser?.email, task?.assignedTo, userNameMap]);
 
   const departmentName = useMemo(() => {
@@ -254,6 +256,48 @@ export default function TaskDetailPage() {
       setSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (
+      !firestore ||
+      !auth ||
+      !task?.id ||
+      !task.assignedTo ||
+      assignedUserLoading ||
+      assignmentChecked ||
+      !canEdit
+    ) {
+      return;
+    }
+
+    const assigneeExists = users.some((item) => item.id === task.assignedTo);
+
+    if (assigneeExists || assignedUser) {
+      setAssignmentChecked(true);
+      return;
+    }
+
+    const unassign = async () => {
+      try {
+        await updateTask(firestore, auth, task.id, { assignedTo: "" });
+      } catch (error) {
+        console.error("No se pudo desasignar la tarea automáticamente", error);
+      } finally {
+        setAssignmentChecked(true);
+      }
+    };
+
+    void unassign();
+  }, [
+    assignedUser,
+    assignedUserLoading,
+    assignmentChecked,
+    auth,
+    canEdit,
+    firestore,
+    task,
+    users,
+  ]);
 
   const handleAddReport = async () => {
     if (!firestore || !auth || !task?.id) {
