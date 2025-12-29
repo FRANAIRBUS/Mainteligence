@@ -89,9 +89,7 @@ export default function TasksPage() {
   }, [canViewAllTasks, firestore, user, userProfile]);
 
   const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(tasksQuery);
-  const { data: users, loading: usersLoading } = useCollection<User>(
-    canViewAllTasks ? "users" : null
-  );
+  const { data: users, loading: usersLoading } = useCollection<User>("users");
   const [statusFilter, setStatusFilter] = useState<string>("todas");
   const [priorityFilter, setPriorityFilter] = useState<string>("todas");
   const [searchQuery, setSearchQuery] = useState("");
@@ -106,11 +104,18 @@ export default function TasksPage() {
   }, [auth, router, user, userLoading]);
 
   const userNameMap = useMemo(() => {
-    return users.reduce<Record<string, string>>((map, user) => {
+    const map: Record<string, string> = {};
+
+    users.forEach((user) => {
       map[user.id] = user.displayName || user.email || user.id;
-      return map;
-    }, {});
-  }, [users]);
+    });
+
+    if (user) {
+      map[user.uid] = userProfile?.displayName || user.email || user.uid;
+    }
+
+    return map;
+  }, [user, userProfile?.displayName, users]);
 
   const filteredTasks = useMemo(() => {
     const sortedTasks = [...tasks].sort((a, b) => {
