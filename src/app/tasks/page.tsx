@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,7 @@ const priorityOrder: Record<MaintenanceTask["priority"], number> = {
 };
 
 export default function TasksPage() {
+  const router = useRouter();
   const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
   const { data: users, loading: usersLoading } = useCollection<User>("users");
   const [statusFilter, setStatusFilter] = useState<string>("todas");
@@ -97,6 +99,15 @@ export default function TasksPage() {
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
   const isLoading = loading || usersLoading;
+
+  const formatDueDate = (task: MaintenanceTask) => {
+    const dueDate = task.dueDate as unknown as { toDate?: () => Date } | null;
+    const date = dueDate?.toDate?.();
+    if (date instanceof Date && !isNaN(date.getTime())) {
+      return format(date, "PPP", { locale: es });
+    }
+    return "Sin fecha";
+  };
 
   return (
     <AppShell
@@ -189,7 +200,11 @@ export default function TasksPage() {
               )}
               {!loading &&
                 paginated.map((task) => (
-                  <TableRow key={task.id}>
+                  <TableRow
+                    key={task.id}
+                    className="cursor-pointer hover:bg-muted/40"
+                    onClick={() => router.push(`/tasks/${task.id}`)}
+                  >
                     <TableCell className="font-medium">
                       <div className="space-y-1">
                         <p>{task.title}</p>
@@ -207,9 +222,7 @@ export default function TasksPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {task.dueDate
-                        ? format(task.dueDate.toDate(), "PPP", { locale: es })
-                        : "Sin fecha"}
+                      {formatDueDate(task)}
                     </TableCell>
                     <TableCell>
                       {task.assignedTo
@@ -217,7 +230,12 @@ export default function TasksPage() {
                         : "No asignada"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button asChild variant="outline" size="sm">
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         <Link href={`/tasks/${task.id}`}>Ver</Link>
                       </Button>
                     </TableCell>
