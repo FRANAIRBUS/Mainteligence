@@ -28,7 +28,7 @@ export default function NewTaskPage() {
   const auth = useAuth();
   const { data: users } = useCollection<User>("users");
   const { data: departments } = useCollection<Department>("departments");
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -56,6 +56,13 @@ export default function NewTaskPage() {
       return;
     }
 
+    if (!organizationId) {
+      setErrorMessage(
+        "No encontramos un organizationId válido. Vuelve a iniciar sesión o contáctanos."
+      );
+      return;
+    }
+
     setSubmitting(true);
     setErrorMessage(null);
 
@@ -69,6 +76,7 @@ export default function NewTaskPage() {
       location: values.location.trim(),
       category: values.category.trim(),
       createdBy: user.uid,
+      organizationId,
     };
 
     try {

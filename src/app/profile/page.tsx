@@ -51,7 +51,7 @@ const profileFormSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 export default function ProfilePage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
   
   useEffect(() => {
@@ -83,11 +83,11 @@ export default function ProfilePage() {
   }, [user, form]);
   
   const onSubmit = async (data: ProfileFormValues) => {
-    if (!user || !firestore || !auth?.currentUser) {
+    if (!user || !firestore || !auth?.currentUser || !organizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No estás autenticado.',
+        description: 'No estás autenticado o falta el organizationId de tu sesión.',
       });
       return;
     }
@@ -98,6 +98,7 @@ export default function ProfilePage() {
       const userDocRef = doc(firestore, 'users', user.uid);
       await setDoc(userDocRef, {
         displayName: data.displayName,
+        organizationId,
         updatedAt: serverTimestamp(),
       }, { merge: true });
       

@@ -58,7 +58,7 @@ interface EditIncidentDialogProps {
 export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], departments = [] }: EditIncidentDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
-  const { user: currentUser, loading: userLoading } = useUser();
+  const { user: currentUser, loading: userLoading, organizationId } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(currentUser ? `users/${currentUser.uid}` : null);
 
   const [isPending, setIsPending] = useState(false);
@@ -83,11 +83,11 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
   }, [ticket, form]);
 
   const onSubmit = async (data: EditIncidentFormValues) => {
-    if (!firestore || !currentUser) {
+    if (!firestore || !currentUser || !organizationId || ticket.organizationId !== organizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No autenticado o base de datos no disponible.',
+        description: 'No autenticado, falta organizationId o la incidencia pertenece a otra organización.',
       });
       return;
     }
@@ -102,6 +102,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       priority: data.priority,
       departmentId: data.departmentId,
       assignedTo: newAssignee,
+      organizationId,
       updatedAt: serverTimestamp(),
     };
     
