@@ -26,6 +26,29 @@ service cloud.firestore {
       return getUser(uid).data.departmentId;
     }
 
+    function getUserOrganizationId(uid) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
+        return null;
+      }
+      return getUser(uid).data.organizationId;
+    }
+
+    function isMemberOfOrg(orgId) {
+      return isSignedIn() && getUserOrganizationId(request.auth.uid) == orgId;
+    }
+
+    function organizationIdMatchesResource() {
+      return resource.data.organizationId != null && isMemberOfOrg(resource.data.organizationId);
+    }
+
+    function organizationIdMatchesRequest() {
+      return request.resource != null && request.resource.data.organizationId != null && isMemberOfOrg(request.resource.data.organizationId);
+    }
+
+    function organizationIdUnchanged() {
+      return request.resource != null && request.resource.data.organizationId == resource.data.organizationId;
+    }
+
     function isMantenimiento() {
       return isSignedIn() && getUserRole(request.auth.uid) in ['mantenimiento', 'admin'];
     }
@@ -41,38 +64,45 @@ service cloud.firestore {
     // --- REGLAS DE COLECCIONES ---
 
     match /users/{userId} {
-      allow get: if isOwner(userId) || isMantenimiento();
-      allow list: if isMantenimiento();
-      allow create: if isSignedIn(); 
-      allow update: if isOwner(userId) || isAdmin();
-      allow delete: if isAdmin() && !isOwner(userId);
+      allow get: if (isOwner(userId) || isMantenimiento()) && organizationIdMatchesResource();
+      allow list: if isMantenimiento() && organizationIdMatchesResource();
+      allow create: if isSignedIn() && organizationIdMatchesRequest();
+      allow update: if (isOwner(userId) || isAdmin()) && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && !isOwner(userId) && organizationIdMatchesResource();
     }
 
     match /sites/{siteId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
     match /departments/{departmentId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
     match /assets/{assetId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
     // Reglas para la colección de tareas
     match /tasks/{taskId} {
       // Permite leer y crear tareas a cualquier usuario autenticado
-      allow read, create: if isSignedIn();
-      
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isSignedIn() && organizationIdMatchesRequest();
+
       // Permite actualizar si estás autenticado (puedes refinar esto para que solo el dueño o un admin pueda)
-      allow update: if isSignedIn();
-      
+      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged();
+
       // Solo permite borrar si es admin (usando tu función de ayuda existente)
-      allow delete: if getUserRole(request.auth.uid) == 'admin';
+      allow delete: if getUserRole(request.auth.uid) == 'admin' && organizationIdMatchesResource();
     }
     
     // Si tu sistema envía correos automáticamente al crear/editar tareas (usando la extensión "Trigger Email"),
@@ -84,25 +114,26 @@ service cloud.firestore {
     // --- REGLAS PARA INCIDENCIAS (Tickets) ---
     match /tickets/{ticketId} {
       // Permitimos crear a cualquier usuario logueado
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() && organizationIdMatchesRequest();
       // Permitimos leer si es admin, mantenimiento o si está involucrado
-      allow read: if isSignedIn() && (
-        isMantenimiento() || 
-        resource.data.assignedTo == request.auth.uid || 
+      allow read: if isSignedIn() && organizationIdMatchesResource() && (
+        isMantenimiento() ||
+        resource.data.assignedTo == request.auth.uid ||
         resource.data.createdBy == request.auth.uid
       );
-      allow update: if isSignedIn();
-      allow delete: if isAdmin();
+      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
     match /tickets/{ticketId}/comments/{commentId} {
-      allow read, create: if isSignedIn();
-      allow update, delete: if isAdmin();
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isSignedIn() && organizationIdMatchesRequest();
+      allow update, delete: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
     }
 
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if isAdmin(); 
+      allow write: if isAdmin();
     }
 
     match /mail/{mailId} {
