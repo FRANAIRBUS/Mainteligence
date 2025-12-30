@@ -64,7 +64,10 @@ export default function ClosedIncidentsPage() {
       return query(ticketsCollection, statusCondition);
     }
 
-    const conditions = [where("createdBy", "==", user.uid)];
+    const conditions = [
+      where("createdBy", "==", user.uid),
+      where("assignedTo", "==", user.uid),
+    ];
 
     if (userProfile.departmentId) {
       conditions.push(where("departmentId", "==", userProfile.departmentId));
