@@ -97,7 +97,10 @@ export default function TaskDetailPage() {
   const isTaskClosed = task?.status === "completada";
   const isPrivileged =
     userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
-  const canEdit = isPrivileged || (!!task && task.createdBy === user?.uid);
+  const isOperario = userProfile?.role === "operario";
+  const canEdit =
+    isPrivileged ||
+    (!!task && task.createdBy === user?.uid && !isTaskClosed && !isOperario);
   const isLoading = userLoading || profileLoading || loading || assignedUserLoading;
 
   useEffect(() => {
@@ -106,7 +109,10 @@ export default function TaskDetailPage() {
     }
 
     if (!loading && !userLoading && !profileLoading && task && user && userProfile) {
-      const canView = isPrivileged || task.createdBy === user.uid;
+      const canView =
+        isPrivileged ||
+        task.createdBy === user.uid ||
+        (isOperario && isTaskClosed && userProfile?.departmentId === task.location);
       if (!canView) {
         router.push("/tasks");
       }

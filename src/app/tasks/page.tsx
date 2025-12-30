@@ -118,7 +118,9 @@ export default function TasksPage() {
   }, [user, userProfile?.displayName, users]);
 
   const filteredTasks = useMemo(() => {
-    const sortedTasks = [...tasks].sort((a, b) => {
+    const openTasks = tasks.filter((task) => task.status !== "completada");
+
+    const sortedTasks = [...openTasks].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
         ?? a.createdAt?.toDate?.().getTime()
         ?? 0;
@@ -208,7 +210,6 @@ export default function TasksPage() {
                 <SelectItem value="todas">Todos los estados</SelectItem>
                 <SelectItem value="pendiente">Pendientes</SelectItem>
                 <SelectItem value="en_progreso">En progreso</SelectItem>
-                <SelectItem value="completada">Completadas</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -231,7 +232,7 @@ export default function TasksPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border">
           <Table>
             <TableHeader>
               <TableRow>
@@ -308,11 +309,11 @@ export default function TasksPage() {
           </Table>
         </div>
 
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <div className="flex flex-col gap-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>
             Mostrando {paginated.length} de {filteredTasks.length} tareas
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
