@@ -54,8 +54,7 @@ export default function IncidentDetailPage() {
   const ticketId = Array.isArray(id) ? id[0] : id;
   const firestore = useFirestore();
 
-  const { user, loading: userLoading } = useUser();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
   const isMantenimiento = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
   const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
@@ -91,11 +90,11 @@ export default function IncidentDetailPage() {
 
 
   useEffect(() => {
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push('/login');
     }
-     // Authorization check after data has loaded
-     if (!ticketLoading && !userLoading && !profileLoading && ticket && user && userProfile) {
+    // Authorization check after data has loaded
+    if (isLoaded && !ticketLoading && ticket && user && userProfile) {
       const canView =
         userProfile?.role === 'admin' ||
         userProfile?.role === 'mantenimiento' ||
@@ -105,7 +104,7 @@ export default function IncidentDetailPage() {
         router.push('/incidents');
       }
     }
-  }, [user, userLoading, router, ticket, ticketLoading, userProfile, profileLoading, isClosed, isOperario]);
+  }, [isClosed, isLoaded, isOperario, router, ticket, ticketLoading, user, userProfile]);
 
   const handleAddReport = async () => {
     if (!firestore || !ticket?.id) {
@@ -167,7 +166,15 @@ export default function IncidentDetailPage() {
     }
   };
 
-  const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading || sitesLoading || deptsLoading || assetsLoading || (isMantenimiento && usersLoading) || assignedToLoading;
+  const isLoading =
+    !isLoaded ||
+    ticketLoading ||
+    createdByLoading ||
+    sitesLoading ||
+    deptsLoading ||
+    assetsLoading ||
+    (isMantenimiento && usersLoading) ||
+    assignedToLoading;
 
   if (isLoading || !userProfile) { // Also check for userProfile, since it's needed for auth
     return (

@@ -58,9 +58,6 @@ export default function TasksPage() {
   const auth = useAuth();
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(
-    user ? `users/${user.uid}` : null
-  );
 
   const canViewAllTasks =
     userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
@@ -73,6 +70,7 @@ export default function TasksPage() {
     }
 
     const conditions = [
+      where("organizationId", "==", organizationId),
       where("createdBy", "==", user.uid),
       where("assignedTo", "==", user.uid),
     ];
@@ -97,10 +95,10 @@ export default function TasksPage() {
 
   useEffect(() => {
     if (!auth) return;
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push("/login");
     }
-  }, [auth, router, user, userLoading]);
+  }, [auth, isLoaded, router, user]);
 
   const userNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -154,7 +152,7 @@ export default function TasksPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
-  const isLoading = loading || usersLoading || userLoading || profileLoading;
+  const isLoading = loading || usersLoading || !isLoaded;
 
   if (!user || userLoading || profileLoading || !userProfile) {
     return (

@@ -12,6 +12,7 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore"
 import { useCollection } from "@/lib/firebase/firestore/use-collection"
 import { useFirestore, useUser } from "@/lib/firebase"
 import type { User } from "@/lib/firebase/models"
+import { DEFAULT_ORGANIZATION_ID } from "@/lib/organization"
 
 interface AddIncidentDialogProps {
   open?: boolean
@@ -21,7 +22,7 @@ interface AddIncidentDialogProps {
 export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps) {
   const { toast } = useToast()
   const firestore = useFirestore()
-  const { user } = useUser()
+  const { user, organizationId } = useUser()
   const { data: users } = useCollection<User>("users")
 
   const [internalOpen, setInternalOpen] = useState(false)
@@ -46,6 +47,10 @@ export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps
       return
     }
 
+    if (!organizationId) {
+      throw new Error("Critical: Missing organizationId in transaction")
+    }
+
     if (!assignedTo) {
       toast({ title: "Asignar responsable", description: "Selecciona un responsable.", variant: "destructive" })
       return
@@ -57,8 +62,11 @@ export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps
         description,
         assignedTo,
         status: "open",
+        organizationId: DEFAULT_ORGANIZATION_ID,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         createdBy: user.uid,
+        organizationId,
       })
 
       toast({ title: "Incidencia reportada", description: "Se ha enviado aviso al responsable." })

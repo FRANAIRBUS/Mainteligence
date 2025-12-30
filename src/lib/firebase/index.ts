@@ -30,6 +30,6 @@ export {
   useStorage,
 } from "./provider";
 export { FirebaseClientProvider } from "./client-provider";
-export { useUser } from "./auth/use-user";
+export { useUser, UserProvider } from "./auth/use-user";
 export { useCollection, useCollectionQuery } from "./firestore/use-collection";
 export { useDoc, useDocRef } from "./firestore/use-doc";

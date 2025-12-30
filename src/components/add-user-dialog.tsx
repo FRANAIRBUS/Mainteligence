@@ -6,8 +6,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useFirestore } from '@/lib/firebase';
+import { useFirestore, useUser } from '@/lib/firebase';
 import type { Department } from '@/lib/firebase/models';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 
@@ -58,6 +59,7 @@ interface AddUserDialogProps {
 export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
+  const { user: currentUser, organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<AddUserFormValues>({
@@ -71,12 +73,25 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
 
   const onSubmit = async (data: AddUserFormValues) => {
     if (!firestore) {
-        toast({
-            variant: 'destructive',
-            title: 'Error',
-            description: 'Firestore no está disponible. Por favor, intente de nuevo más tarde.',
-        });
-        return;
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Firestore no está disponible. Por favor, intente de nuevo más tarde.',
+      });
+      return;
+    }
+
+    if (!currentUser) {
+      toast({
+        variant: 'destructive',
+        title: 'Error de autenticación',
+        description: 'No se ha encontrado una sesión válida.',
+      });
+      return;
+    }
+
+    if (!organizationId) {
+      throw new Error('Critical: Missing organizationId in transaction');
     }
     setIsPending(true);
 
@@ -84,8 +99,10 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       ...data,
       active: true,
       isMaintenanceLead: data.role === 'admin' || data.role === 'mantenimiento', // Default lead status
+      organizationId: DEFAULT_ORGANIZATION_ID,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      organizationId,
     };
     
     try {

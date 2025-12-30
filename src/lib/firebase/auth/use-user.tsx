@@ -4,7 +4,25 @@ import type { User } from 'firebase/auth';
 import { getIdTokenResult, onAuthStateChanged } from 'firebase/auth';
 import { useAuth } from '../provider';
 
-export const useUser = () => {
+type UserContextValue = {
+  user: AuthUser | null;
+  profile: (UserProfile & { organizationId?: string | null }) | null;
+  organizationId: string | null;
+  isLoaded: boolean;
+  loading: boolean;
+};
+
+const UserContext = createContext<UserContextValue>({
+  user: null,
+  profile: null,
+  organizationId: null,
+  isLoaded: false,
+  loading: true,
+});
+
+const PUBLIC_ROUTES = ['/login', '/onboarding', '/error'];
+
+export function UserProvider({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -14,7 +32,8 @@ export const useUser = () => {
 
   useEffect(() => {
     if (!auth) {
-      setLoading(false);
+      setUser(null);
+      setAuthReady(true);
       return;
     }
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -38,6 +57,7 @@ export const useUser = () => {
         setLoading(false);
       }
     });
+
     return () => unsubscribe();
   }, [auth]);
 

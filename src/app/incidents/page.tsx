@@ -149,7 +149,7 @@ function IncidentsTable({
 
 
 export default function IncidentsPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
   const router = useRouter();
 
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
@@ -158,13 +158,10 @@ export default function IncidentsPage() {
 
   // Phase 1: Wait for user authentication to complete.
   useEffect(() => {
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push('/login');
     }
-  }, [user, userLoading, router]);
-
-  // Phase 2: Once user is authenticated, load their profile.
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  }, [isLoaded, user, router]);
   
   const isMantenimiento = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
@@ -223,7 +220,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  const initialLoading = userLoading || profileLoading;
+  const initialLoading = !isLoaded;
   
   if (initialLoading) {
     return (

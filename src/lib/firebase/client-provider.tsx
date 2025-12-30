@@ -5,6 +5,7 @@ import type { FirebaseApp } from 'firebase/app';
 import type { Auth } from 'firebase/auth';
 import type { Firestore } from 'firebase/firestore';
 import { FirebaseProvider } from './provider';
+import { UserProvider } from './auth/use-user';
 import type { FirebaseStorage } from 'firebase/storage';
 import { Icons } from '@/components/icons';
 import { AlertTriangle } from 'lucide-react';
@@ -88,7 +89,7 @@ export function FirebaseClientProvider({
       firestore={firebase.firestore}
       storage={firebase.storage}
     >
-      {children}
+      <UserProvider>{children}</UserProvider>
     </FirebaseProvider>
   );
 }

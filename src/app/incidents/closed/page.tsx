@@ -25,11 +25,10 @@ import { AppShell } from "@/components/app-shell";
 import {
   useCollection,
   useCollectionQuery,
-  useDoc,
   useFirestore,
   useUser,
 } from "@/lib/firebase";
-import type { Department, Site, Ticket, User } from "@/lib/firebase/models";
+import type { Department, Site, Ticket } from "@/lib/firebase/models";
 import {
   addDoc,
   and,
@@ -42,6 +41,7 @@ import {
   where,
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
+import { DEFAULT_ORGANIZATION_ID } from "@/lib/organization";
 import { format } from "date-fns";
 
 const statusLabels: Record<Ticket["status"], string> = {
@@ -57,8 +57,7 @@ type DateFilter = "todas" | "hoy" | "semana" | "mes";
 export default function ClosedIncidentsPage() {
   const router = useRouter();
   const firestore = useFirestore();
-  const { user, loading: userLoading } = useUser();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
   const { toast } = useToast();
 
   const canViewAll = userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
@@ -96,10 +95,10 @@ export default function ClosedIncidentsPage() {
   const [userFilter, setUserFilter] = useState("todas");
 
   useEffect(() => {
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push("/login");
     }
-  }, [router, user, userLoading]);
+  }, [isLoaded, router, user]);
 
   const filteredTickets = useMemo(() => {
     const now = new Date();
@@ -160,6 +159,9 @@ export default function ClosedIncidentsPage() {
     if (!firestore || !isAdmin || !user) return;
 
     try {
+      if (!organizationId) {
+        throw new Error("Critical: Missing organizationId in transaction");
+      }
       await addDoc(collection(firestore, "tickets"), {
         title: ticket.title,
         description: ticket.description,
@@ -172,9 +174,11 @@ export default function ClosedIncidentsPage() {
         assignedRole: ticket.assignedRole ?? null,
         assignedTo: ticket.assignedTo ?? null,
         createdBy: user.uid,
+        organizationId: DEFAULT_ORGANIZATION_ID,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         reopened: false,
+        organizationId,
       });
       toast({ title: "Incidencia duplicada", description: "Se creó una nueva incidencia a partir de la cerrada." });
     } catch (error) {
@@ -187,7 +191,7 @@ export default function ClosedIncidentsPage() {
     }
   };
 
-  const isLoading = loading || userLoading || profileLoading;
+  const isLoading = loading || !isLoaded;
   const totalColumns = isAdmin ? 7 : 6;
 
   return (
