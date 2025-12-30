@@ -44,6 +44,7 @@ import {
 import { AddUserDialog } from '@/components/add-user-dialog';
 import { EditUserDialog } from '@/components/edit-user-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -166,6 +167,7 @@ function CreateAdminProfile() {
         role: 'admin',
         active: true,
         isMaintenanceLead: true,
+        organizationId: DEFAULT_ORGANIZATION_ID,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });

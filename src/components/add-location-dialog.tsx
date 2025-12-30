@@ -9,6 +9,7 @@ import { collection, addDoc } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/lib/firebase';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -70,7 +71,7 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
       return;
     }
     setIsPending(true);
-    
+
     try {
       if (!organizationId) {
         throw new Error('Critical: Missing organizationId in transaction');

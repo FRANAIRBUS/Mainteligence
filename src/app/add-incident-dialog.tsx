@@ -11,6 +11,7 @@ import type { Site, Department, Asset } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -112,6 +113,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
             createdBy: user.uid,
             assignedRole: 'maintenance',
             assignedTo: null,
+            organizationId: DEFAULT_ORGANIZATION_ID,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             photoUrls,

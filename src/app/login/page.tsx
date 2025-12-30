@@ -22,6 +22,7 @@ import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, useEffect } from 'react';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { ClientLogo } from '@/components/client-logo';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -82,6 +83,7 @@ export default function LoginPage() {
                 role: 'operario', // Default role for new sign-ups
                 active: true,
                 isMaintenanceLead: false,
+                organizationId: DEFAULT_ORGANIZATION_ID,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
             }, { merge: true }); // Use merge to be safe
@@ -108,10 +110,11 @@ export default function LoginPage() {
       await setDoc(userDocRef, {
         displayName: user.displayName,
         email: user.email,
-        // If the document doesn't exist, default to 'operario'. 
+        // If the document doesn't exist, default to 'operario'.
         // If it exists, this merge will not overwrite the existing role.
         role: 'operario',
         active: true,
+        organizationId: DEFAULT_ORGANIZATION_ID,
         updatedAt: serverTimestamp(),
       }, { merge: true });
       

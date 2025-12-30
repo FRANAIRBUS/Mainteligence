@@ -1,7 +1,28 @@
 import type { ReportEntry } from "@/types/report-entry";
+import type { Timestamp } from "firebase/firestore";
 
-export type User = {
+export interface BaseEntity {
   id: string;
+  organizationId: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Organization extends BaseEntity {
+  name: string;
+  plan: {
+    name: string;
+    seats?: number;
+    expiresAt?: Timestamp;
+  };
+  settings: {
+    locale?: string;
+    timezone?: string;
+    logoUrl?: string;
+  };
+}
+
+export interface User extends BaseEntity {
   displayName: string;
   email: string;
   role: 'operario' | 'mantenimiento' | 'admin';
@@ -10,35 +31,29 @@ export type User = {
   isMaintenanceLead: boolean;
   active: boolean;
   siteIds?: string[];
-  createdAt: any; // Timestamp
-  updatedAt: any; // Timestamp
-};
+}
 
-export type Site = {
-  id: string;
+export interface Site extends BaseEntity {
   name: string;
   code: string;
-};
+}
 
-export type Department = {
-  id: string;
+export interface Department extends BaseEntity {
   name: string;
   code: string;
-};
+}
 
-export type Asset = {
-  id: string;
+export interface Asset extends BaseEntity {
   name: string;
   code: string;
   siteId: string;
-};
+}
 
-export type Ticket = {
-  id: string;
+export interface Ticket extends BaseEntity {
   displayId: string;
-  type: 'correctivo' | 'preventivo';
-  status: 'Abierta' | 'En curso' | 'En espera' | 'Resuelta' | 'Cerrada';
-  priority: 'Baja' | 'Media' | 'Alta' | 'Crítica';
+  type: "correctivo" | "preventivo";
+  status: "Abierta" | "En curso" | "En espera" | "Resuelta" | "Cerrada";
+  priority: "Baja" | "Media" | "Alta" | "Crítica";
   siteId: string;
   departmentId: string;
   assetId?: string;
@@ -48,18 +63,16 @@ export type Ticket = {
   assignedRole?: string;
   assignedTo?: string | null;
   photoUrls?: string[];
-  createdAt: any; // Timestamp
-  updatedAt: any; // Timestamp
-  closedAt?: any; // Timestamp
+  closedAt?: Timestamp;
   closedBy?: string;
   waiting?: {
     reason: string;
     detail: string;
-    eta?: any; // Timestamp
+    eta?: Timestamp;
   };
-  lastCommentAt?: any; // Timestamp
+  lastCommentAt?: Timestamp;
   reportPdfUrl?: string;
-  emailSentAt?: any; // Timestamp
+  emailSentAt?: Timestamp;
   templateId?: string;
   templateSnapshot?: {
     name: string;
@@ -67,11 +80,11 @@ export type Ticket = {
   };
   preventive?: {
     frequencyDays: number;
-    scheduledFor: any; // Timestamp
-    checklist: any[];
+    scheduledFor: Timestamp;
+    checklist: unknown[];
   };
   reports?: ReportEntry[];
   reopened?: boolean;
   reopenedBy?: string;
-  reopenedAt?: any; // Timestamp
-};
+  reopenedAt?: Timestamp;
+}
