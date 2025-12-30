@@ -30,7 +30,18 @@ import {
   useUser,
 } from "@/lib/firebase";
 import type { Department, Site, Ticket, User } from "@/lib/firebase/models";
-import { collection, doc, or, query, serverTimestamp, Timestamp, updateDoc, where, addDoc } from "firebase/firestore";
+import {
+  addDoc,
+  and,
+  collection,
+  doc,
+  or,
+  query,
+  serverTimestamp,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 
@@ -66,8 +77,7 @@ export default function ClosedIncidentsPage() {
 
     return query(
       ticketsCollection,
-      statusCondition,
-      or(where("createdBy", "==", user.uid), where("assignedTo", "==", user.uid))
+      and(statusCondition, or(where("createdBy", "==", user.uid), where("assignedTo", "==", user.uid)))
     );
   }, [canViewAll, firestore, user, userProfile]);
 

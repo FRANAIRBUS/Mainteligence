@@ -34,7 +34,7 @@ import {
 } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, User } from "@/lib/firebase/models";
-import { collection, or, query, Timestamp, where } from "firebase/firestore";
+import { and, collection, or, query, Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
 
@@ -88,7 +88,7 @@ export default function ClosedTasksPage() {
       return query(tasksCollection, statusCondition, conditions[0]);
     }
 
-    return query(tasksCollection, statusCondition, or(...conditions));
+    return query(tasksCollection, and(statusCondition, or(...conditions)));
   }, [canViewAll, firestore, user, userProfile]);
 
   const { data: tasks, loading } = useCollectionQuery<TaskWithId>(tasksQuery);
