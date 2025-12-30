@@ -75,7 +75,10 @@ export default function ClosedTasksPage() {
       return query(tasksCollection, statusCondition);
     }
 
-    const conditions = [where("createdBy", "==", user.uid)];
+    const conditions = [
+      where("createdBy", "==", user.uid),
+      where("assignedTo", "==", user.uid),
+    ];
 
     if (userProfile.departmentId) {
       conditions.push(where("location", "==", userProfile.departmentId));
