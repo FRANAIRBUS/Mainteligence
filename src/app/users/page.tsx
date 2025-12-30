@@ -170,6 +170,22 @@ function CreateAdminProfile() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      const membershipRef = doc(firestore, 'memberships', `${user.uid}_${organizationId}`);
+      await setDoc(
+        membershipRef,
+        {
+          userId: user.uid,
+          organizationId,
+          organizationName: organizationId,
+          role: 'admin',
+          status: 'active',
+          primary: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
       toast({
         title: '¡Éxito!',
         description: 'Tu perfil de administrador ha sido creado.',
@@ -194,18 +210,22 @@ function CreateAdminProfile() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="text-amber-500" />
-          Completar Configuración de Administrador
+          Completar configuración de administrador
         </CardTitle>
         <CardDescription>
-          Tu cuenta de usuario autenticada no tiene un perfil en la base de datos de la aplicación.
-          Crea un perfil de administrador ahora para obtener permisos de gestión y que otros
-          administradores puedan encontrarte en el panel de Usuarios.
+          No encontramos un perfil asociado a tu usuario. Crearemos uno con los siguientes ajustes para la
+          organización <strong>{organizationId}</strong>:
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        <ul className="list-disc space-y-1 pl-6 text-sm text-muted-foreground">
+          <li>Rol: <span className="font-medium text-foreground">admin</span></li>
+          <li>Estado: activo y líder de mantenimiento</li>
+          <li>organizationId: <span className="font-mono text-foreground">{organizationId}</span></li>
+        </ul>
         <Button onClick={handleCreateAdmin} disabled={isCreating}>
           {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Crear Mi Perfil de Administrador
+          Crear mi perfil de administrador
         </Button>
       </CardContent>
     </Card>
