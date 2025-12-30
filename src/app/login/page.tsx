@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth, useFirestore, useUser } from '@/lib/firebase';
 import {
   GoogleAuthProvider,
@@ -20,13 +21,15 @@ import {
 } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent, useEffect } from 'react';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { ClientLogo } from '@/components/client-logo';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [organizationId, setOrganizationId] = useState(DEFAULT_ORGANIZATION_ID);
+  const [requestAdminRole, setRequestAdminRole] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isLoginView, setIsLoginView] = useState(true);
@@ -46,6 +49,8 @@ export default function LoginPage() {
     setError(null);
     setEmail('');
     setPassword('');
+    setOrganizationId(DEFAULT_ORGANIZATION_ID);
+    setRequestAdminRole(false);
   }, [isLoginView]);
 
   const handleAuthAction = async (e: FormEvent) => {
@@ -53,6 +58,12 @@ export default function LoginPage() {
     if (!auth) return;
     setError(null);
     setLoading(true);
+
+    if (!organizationId?.trim() && !isLoginView) {
+      setError('Debes ingresar un organizationId para tu empresa.');
+      setLoading(false);
+      return;
+    }
 
     if (password.length < 6) {
       setError('La contraseña debe tener al menos 6 caracteres.');
@@ -76,17 +87,30 @@ export default function LoginPage() {
 
         // After creating the user in Auth, create their profile in Firestore
         if (firestore && user) {
-            const userDocRef = doc(firestore, 'users', user.uid);
-            await setDoc(userDocRef, {
-                displayName: user.email, // Default display name
-                email: user.email,
-                role: 'operario', // Default role for new sign-ups
-                active: true,
-                isMaintenanceLead: false,
-                organizationId: DEFAULT_ORGANIZATION_ID,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-            }, { merge: true }); // Use merge to be safe
+          const sanitizedOrgId = organizationId?.trim() || DEFAULT_ORGANIZATION_ID;
+          const userDocRef = doc(firestore, 'users', user.uid);
+          await setDoc(userDocRef, {
+            displayName: user.email, // Default display name
+            email: user.email,
+            role: 'operario', // Default role for new sign-ups
+            active: true,
+            isMaintenanceLead: false,
+            organizationId: sanitizedOrgId,
+            adminRequestPending: requestAdminRole,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          }, { merge: true }); // Use merge to be safe
+
+          if (requestAdminRole) {
+            const adminRequests = collection(firestore, 'adminRequests');
+            await addDoc(adminRequests, {
+              userId: user.uid,
+              email: user.email,
+              organizationId: sanitizedOrgId,
+              status: 'pending',
+              createdAt: serverTimestamp(),
+            });
+          }
         }
         router.push('/');
       } catch (err: any) {
@@ -107,6 +131,7 @@ export default function LoginPage() {
 
       // After Google Sign-in, create or update their profile in Firestore
       const userDocRef = doc(firestore, 'users', user.uid);
+      const sanitizedOrgId = organizationId?.trim() || DEFAULT_ORGANIZATION_ID;
       await setDoc(userDocRef, {
         displayName: user.displayName,
         email: user.email,
@@ -114,10 +139,22 @@ export default function LoginPage() {
         // If it exists, this merge will not overwrite the existing role.
         role: 'operario',
         active: true,
-        organizationId: DEFAULT_ORGANIZATION_ID,
+        organizationId: sanitizedOrgId,
+        adminRequestPending: requestAdminRole,
         updatedAt: serverTimestamp(),
       }, { merge: true });
-      
+
+      if (requestAdminRole) {
+        const adminRequests = collection(firestore, 'adminRequests');
+        await addDoc(adminRequests, {
+          userId: user.uid,
+          email: user.email,
+          organizationId: sanitizedOrgId,
+          status: 'pending',
+          createdAt: serverTimestamp(),
+        });
+      }
+
       router.push('/');
 
     } catch (err: any) {
@@ -179,6 +216,35 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+            {!isLoginView && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="organizationId">ID de organización</Label>
+                  <Input
+                    id="organizationId"
+                    placeholder="tu-empresa"
+                    required
+                    value={organizationId}
+                    onChange={(e) => setOrganizationId(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Usa el identificador de la organización con la que deseas trabajar.
+                  </p>
+                </div>
+                <label className="flex items-center space-x-2 text-sm font-medium text-foreground">
+                  <Checkbox
+                    checked={requestAdminRole}
+                    onCheckedChange={(checked) => setRequestAdminRole(Boolean(checked))}
+                  />
+                  <span>Solicitar permisos de administrador</span>
+                </label>
+                {requestAdminRole && (
+                  <p className="text-xs text-muted-foreground">
+                    Crearemos una solicitud pendiente para que un administrador existente apruebe tu acceso.
+                  </p>
+                )}
+              </div>
+            )}
             {error && (
               <p className="text-sm text-destructive">{error}</p>
             )}
