@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc } from 'firebase/firestore';
-import { useFirestore } from '@/lib/firebase';
+import { useFirestore, useUser } from '@/lib/firebase';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 
@@ -49,6 +49,7 @@ interface AddLocationDialogProps {
 export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
+  const { organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<AddLocationFormValues>({
@@ -71,8 +72,11 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
     setIsPending(true);
     
     try {
+      if (!organizationId) {
+        throw new Error('Critical: Missing organizationId in transaction');
+      }
       const collectionRef = collection(firestore, "sites");
-      await addDoc(collectionRef, data);
+      await addDoc(collectionRef, { ...data, organizationId });
       toast({
         title: 'Éxito',
         description: `Ubicación '${data.name}' creada correctamente.`,

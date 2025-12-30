@@ -5,6 +5,7 @@ export type User = {
   displayName: string;
   email: string;
   role: 'operario' | 'mantenimiento' | 'admin';
+  organizationId?: string | null;
   departmentId?: string;
   isMaintenanceLead: boolean;
   active: boolean;

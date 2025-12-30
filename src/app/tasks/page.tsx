@@ -25,14 +25,7 @@ import {
 } from "@/components/ui/table";
 import { AppShell } from "@/components/app-shell";
 import { Icons } from "@/components/icons";
-import {
-  useAuth,
-  useCollection,
-  useCollectionQuery,
-  useDoc,
-  useFirestore,
-  useUser,
-} from "@/lib/firebase";
+import { useAuth, useCollection, useCollectionQuery, useFirestore, useUser } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { User } from "@/lib/firebase/models";
 import { collection, or, query, where } from "firebase/firestore";
@@ -58,25 +51,23 @@ const priorityOrder: Record<MaintenanceTask["priority"], number> = {
 export default function TasksPage() {
   const auth = useAuth();
   const firestore = useFirestore();
-  const { user, loading: userLoading } = useUser();
+  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
   const router = useRouter();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(
-    user ? `users/${user.uid}` : null
-  );
 
   const canViewAllTasks =
     userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
 
   const tasksQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null;
+    if (!firestore || !user || !userProfile || !organizationId) return null;
 
     const tasksCollection = collection(firestore, "tasks");
 
     if (canViewAllTasks) {
-      return query(tasksCollection);
+      return query(tasksCollection, where("organizationId", "==", organizationId));
     }
 
     const conditions = [
+      where("organizationId", "==", organizationId),
       where("createdBy", "==", user.uid),
       where("assignedTo", "==", user.uid),
     ];
@@ -86,7 +77,7 @@ export default function TasksPage() {
     }
 
     return query(tasksCollection, or(...conditions));
-  }, [canViewAllTasks, firestore, user, userProfile]);
+  }, [canViewAllTasks, firestore, organizationId, user, userProfile]);
 
   const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(tasksQuery);
   const { data: users, loading: usersLoading } = useCollection<User>("users");
@@ -98,10 +89,10 @@ export default function TasksPage() {
 
   useEffect(() => {
     if (!auth) return;
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push("/login");
     }
-  }, [auth, router, user, userLoading]);
+  }, [auth, isLoaded, router, user]);
 
   const userNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -155,9 +146,9 @@ export default function TasksPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
-  const isLoading = loading || usersLoading || userLoading || profileLoading;
+  const isLoading = loading || usersLoading || !isLoaded;
 
-  if (!firestore || !user || userLoading || profileLoading || !userProfile) {
+  if (!firestore || !user || !userProfile || !isLoaded) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

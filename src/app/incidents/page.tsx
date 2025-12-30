@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useDoc, useFirestore, useCollectionQuery } from '@/lib/firebase';
+import { useUser, useCollection, useFirestore, useCollectionQuery } from '@/lib/firebase';
 import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
@@ -149,7 +149,7 @@ function IncidentsTable({
 
 
 export default function IncidentsPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
   const router = useRouter();
   const firestore = useFirestore();
 
@@ -159,33 +159,31 @@ export default function IncidentsPage() {
 
   // Phase 1: Wait for user authentication to complete.
   useEffect(() => {
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push('/login');
     }
-  }, [user, userLoading, router]);
-
-  // Phase 2: Once user is authenticated, load their profile.
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  }, [isLoaded, user, router]);
   
   const isMantenimiento = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
 
   // Phase 3: Construct the tickets query only when firestore, user, AND userProfile are ready.
   const ticketsQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null;
+    if (!firestore || !user || !userProfile || !organizationId) return null;
 
     const ticketsCollection = collection(firestore, 'tickets');
 
     if (isMantenimiento) {
       // Admins and maintenance can see all tickets.
-      return query(ticketsCollection);
+      return query(ticketsCollection, where('organizationId', '==', organizationId));
     }
 
     // An 'operario' can see tickets they created or are assigned to.
     return query(
       ticketsCollection,
+      where('organizationId', '==', organizationId),
       or(where('createdBy', '==', user.uid), where('assignedTo', '==', user.uid))
     );
-  }, [firestore, user, userProfile, isMantenimiento]);
+  }, [firestore, isMantenimiento, organizationId, user, userProfile]);
   
   // Phase 4: Execute the query for tickets and load other collections.
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
@@ -226,7 +224,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  const initialLoading = userLoading || profileLoading;
+  const initialLoading = !isLoaded;
   
   if (initialLoading) {
     return (
