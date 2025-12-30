@@ -11,7 +11,6 @@ import type { Site, Department, Asset } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -66,7 +65,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
   const { toast } = useToast();
   const firestore = useFirestore();
   const storage = useStorage();
-  const { user } = useUser();
+  const { user, organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
 
@@ -91,11 +90,11 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
   };
 
   const onSubmit = async (data: AddIncidentFormValues) => {
-    if (!firestore || !user || !storage) {
+    if (!firestore || !user || !storage || !organizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No autenticado o servicios de Firebase no disponibles.',
+        description: 'No autenticado o falta el organizationId para registrar la incidencia.',
       });
       return;
     }
@@ -113,7 +112,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
             createdBy: user.uid,
             assignedRole: 'maintenance',
             assignedTo: null,
-            organizationId: DEFAULT_ORGANIZATION_ID,
+            organizationId,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             photoUrls,

@@ -107,19 +107,19 @@ export default function IncidentDetailPage() {
   }, [isClosed, isLoaded, isOperario, router, ticket, ticketLoading, user, userProfile]);
 
   const handleAddReport = async () => {
-    if (!firestore || !ticket?.id) {
+    if (!firestore || !ticket?.id || !organizationId) {
       toast({
         title: 'No se pudo registrar el informe',
-        description: 'Inténtalo nuevamente en unos instantes.',
+        description: 'Inténtalo nuevamente en unos instantes. Falta organizationId.',
         variant: 'destructive',
       });
       return;
     }
 
-    if (!user) {
+    if (!user || ticket.organizationId !== organizationId) {
       toast({
         title: 'Inicia sesión',
-        description: 'Debes iniciar sesión para informar la incidencia.',
+        description: 'Debes iniciar sesión con un organizationId válido para informar la incidencia.',
         variant: 'destructive',
       });
       return;
@@ -146,6 +146,7 @@ export default function IncidentDetailPage() {
           createdAt: Timestamp.now(),
           createdBy: user.uid,
         }),
+        organizationId,
         updatedAt: serverTimestamp(),
       });
 

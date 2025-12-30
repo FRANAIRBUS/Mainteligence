@@ -134,7 +134,16 @@ export default function ClosedIncidentsPage() {
   }, [dateFilter, departmentFilter, searchQuery, siteFilter, tickets, userFilter]);
 
   const handleReopen = async (ticket: Ticket) => {
-    if (!firestore || !isAdmin || !user) return;
+    if (!firestore || !isAdmin || !user || !organizationId) return;
+
+    if (ticket.organizationId !== organizationId) {
+      toast({
+        variant: "destructive",
+        title: "Organización inválida",
+        description: "No puedes modificar incidencias de otra organización.",
+      });
+      return;
+    }
 
     try {
       await updateDoc(doc(firestore, "tickets", ticket.id), {
@@ -142,6 +151,7 @@ export default function ClosedIncidentsPage() {
         reopened: true,
         reopenedBy: user.uid,
         reopenedAt: Timestamp.now(),
+        organizationId,
         updatedAt: serverTimestamp(),
       });
       toast({ title: "Incidencia reabierta", description: "Se movió al listado activo." });
@@ -156,12 +166,18 @@ export default function ClosedIncidentsPage() {
   };
 
   const handleDuplicate = async (ticket: Ticket) => {
-    if (!firestore || !isAdmin || !user) return;
+    if (!firestore || !isAdmin || !user || !organizationId) return;
+
+    if (ticket.organizationId !== organizationId) {
+      toast({
+        variant: "destructive",
+        title: "Organización inválida",
+        description: "No puedes duplicar incidencias de otra organización.",
+      });
+      return;
+    }
 
     try {
-      if (!organizationId) {
-        throw new Error("Critical: Missing organizationId in transaction");
-      }
       await addDoc(collection(firestore, "tickets"), {
         title: ticket.title,
         description: ticket.description,
@@ -174,7 +190,6 @@ export default function ClosedIncidentsPage() {
         assignedRole: ticket.assignedRole ?? null,
         assignedTo: ticket.assignedTo ?? null,
         createdBy: user.uid,
-        organizationId: DEFAULT_ORGANIZATION_ID,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         reopened: false,

@@ -49,7 +49,7 @@ interface AppSettings {
 }
 
 export default function SettingsPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
   const storage = useStorage();
   const firestore = useFirestore();
@@ -156,11 +156,11 @@ export default function SettingsPage() {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !storage || !firestore || !isAdmin) {
+    if (!selectedFile || !storage || !firestore || !isAdmin || !organizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
+        description: 'No se puede subir el logo. Asegúrate de ser administrador, tener organizationId y de haber seleccionado un archivo.',
       });
       return;
     }
@@ -211,6 +211,7 @@ export default function SettingsPage() {
 
       const settingsData = {
         logoUrl: downloadURL,
+        organizationId,
         updatedAt: serverTimestamp(),
       };
       await setDoc(settingsRef, settingsData, { merge: true });
@@ -242,12 +243,33 @@ export default function SettingsPage() {
   };
 
 
-  const initialLoading = userLoading || profileLoading;
+  const initialLoading = userLoading || profileLoading || organizationId === undefined;
 
   if (initialLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (organizationId === null) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center px-4">
+        <Card className="max-w-lg">
+          <CardHeader className="flex flex-col items-center gap-3 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <CardTitle>Falta el ID de organización</CardTitle>
+            <CardDescription className="text-balance">
+              No encontramos un organizationId válido en tu sesión. Vuelve a iniciar sesión para continuar.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center pb-6">
+            <Button onClick={() => router.push('/login')}>Volver al inicio de sesión</Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }

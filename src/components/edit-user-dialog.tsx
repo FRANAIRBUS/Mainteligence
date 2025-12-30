@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useFirestore } from '@/lib/firebase';
+import { useUser } from '@/lib/firebase/auth/use-user';
 import type { User, Department } from '@/lib/firebase/models';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
@@ -59,6 +60,7 @@ interface EditUserDialogProps {
 export function EditUserDialog({ open, onOpenChange, user, departments }: EditUserDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
+  const { organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<EditUserFormValues>({
@@ -72,11 +74,11 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
   });
 
   const onSubmit = async (data: EditUserFormValues) => {
-    if (!firestore || !user) {
+    if (!firestore || !user || !organizationId || user.organizationId !== organizationId) {
         toast({
             variant: 'destructive',
             title: 'Error',
-            description: 'Firestore no está disponible o no se encontró el usuario.',
+            description: 'Firestore no está disponible, falta organizationId o el usuario pertenece a otra organización.',
         });
         return;
     }
@@ -85,6 +87,7 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
     const userRef = doc(firestore, "users", user.id);
     const updateData = {
         ...data,
+        organizationId,
         updatedAt: serverTimestamp(),
     };
 
