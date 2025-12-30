@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useFirestore } from '@/lib/firebase';
 import type { Site } from '@/lib/firebase/models';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
@@ -80,7 +80,7 @@ export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDia
     const siteRef = doc(firestore, "sites", site.id);
     
     try {
-      await updateDoc(siteRef, data);
+      await updateDoc(siteRef, { ...data, updatedAt: serverTimestamp() });
       toast({
         title: 'Éxito',
         description: `Ubicación '${data.name}' actualizada correctamente.`,

@@ -43,6 +43,7 @@ import {
   where,
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
+import { DEFAULT_ORGANIZATION_ID } from "@/lib/organization";
 import { format } from "date-fns";
 
 const statusLabels: Record<Ticket["status"], string> = {
@@ -169,6 +170,7 @@ export default function ClosedIncidentsPage() {
         assignedRole: ticket.assignedRole ?? null,
         assignedTo: ticket.assignedTo ?? null,
         createdBy: user.uid,
+        organizationId: DEFAULT_ORGANIZATION_ID,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         reopened: false,

@@ -1,11 +1,11 @@
 import type { Timestamp } from "firebase/firestore";
 import type { ReportEntry } from "./report-entry";
+import type { BaseEntity } from "@/lib/firebase/models";
 
 export type TaskStatus = "pendiente" | "en_progreso" | "completada";
 export type TaskPriority = "alta" | "media" | "baja";
 
-export interface MaintenanceTask {
-  id?: string;
+export interface MaintenanceTask extends BaseEntity {
   title: string;
   description?: string;
   status: TaskStatus;
@@ -15,12 +15,13 @@ export interface MaintenanceTask {
   location?: string;
   category?: string;
   createdBy?: string;
-  createdAt?: Timestamp;
-  updatedAt?: Timestamp;
   reports?: ReportEntry[];
   reopened?: boolean;
   reopenedBy?: string;
   reopenedAt?: Timestamp;
 }
 
-export type MaintenanceTaskInput = Omit<MaintenanceTask, "id" | "createdAt" | "updatedAt">;
+export type MaintenanceTaskInput = Omit<
+  MaintenanceTask,
+  "id" | "createdAt" | "updatedAt" | "organizationId"
+>;
