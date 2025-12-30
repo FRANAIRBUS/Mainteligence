@@ -34,7 +34,7 @@ import {
 } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, User } from "@/lib/firebase/models";
-import { and, collection, or, query, Timestamp, where } from "firebase/firestore";
+import { and, or, Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
 
@@ -65,14 +65,13 @@ export default function ClosedTasksPage() {
   const canViewAll = userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
   const isAdmin = userProfile?.role === "admin";
 
-  const tasksQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null;
+  const tasksConstraints = useMemo(() => {
+    if (!user || !userProfile) return null;
 
-    const tasksCollection = collection(firestore, "tasks");
     const statusCondition = where("status", "==", "completada");
 
     if (canViewAll) {
-      return query(tasksCollection, statusCondition);
+      return [statusCondition];
     }
 
     const conditions = [
@@ -85,13 +84,16 @@ export default function ClosedTasksPage() {
     }
 
     if (conditions.length === 1) {
-      return query(tasksCollection, statusCondition, conditions[0]);
+      return [statusCondition, conditions[0]];
     }
 
-    return query(tasksCollection, and(statusCondition, or(...conditions)));
-  }, [canViewAll, firestore, user, userProfile]);
+    return [and(statusCondition, or(...conditions))];
+  }, [canViewAll, user, userProfile]);
 
-  const { data: tasks, loading } = useCollectionQuery<TaskWithId>(tasksQuery);
+  const { data: tasks, loading } = useCollectionQuery<TaskWithId>(
+    tasksConstraints ? "tasks" : null,
+    ...(tasksConstraints ?? [])
+  );
   const { data: departments } = useCollection<Department>("departments");
   const { data: users } = useCollection<User>("users");
 

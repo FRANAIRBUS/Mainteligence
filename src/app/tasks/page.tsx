@@ -30,12 +30,11 @@ import {
   useCollection,
   useCollectionQuery,
   useDoc,
-  useFirestore,
   useUser,
 } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { User } from "@/lib/firebase/models";
-import { collection, or, query, where } from "firebase/firestore";
+import { or, where } from "firebase/firestore";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -57,7 +56,6 @@ const priorityOrder: Record<MaintenanceTask["priority"], number> = {
 
 export default function TasksPage() {
   const auth = useAuth();
-  const firestore = useFirestore();
   const { user, loading: userLoading } = useUser();
   const router = useRouter();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(
@@ -67,13 +65,11 @@ export default function TasksPage() {
   const canViewAllTasks =
     userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
 
-  const tasksQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null;
-
-    const tasksCollection = collection(firestore, "tasks");
+  const tasksConstraints = useMemo(() => {
+    if (!user || !userProfile) return null;
 
     if (canViewAllTasks) {
-      return query(tasksCollection);
+      return [] as const;
     }
 
     const conditions = [
@@ -85,10 +81,13 @@ export default function TasksPage() {
       conditions.push(where("location", "==", userProfile.departmentId));
     }
 
-    return query(tasksCollection, or(...conditions));
-  }, [canViewAllTasks, firestore, user, userProfile]);
+    return [or(...conditions)];
+  }, [canViewAllTasks, user, userProfile]);
 
-  const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(tasksQuery);
+  const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(
+    tasksConstraints ? "tasks" : null,
+    ...(tasksConstraints ?? [])
+  );
   const { data: users, loading: usersLoading } = useCollection<User>("users");
   const [statusFilter, setStatusFilter] = useState<string>("todas");
   const [priorityFilter, setPriorityFilter] = useState<string>("todas");
@@ -157,7 +156,7 @@ export default function TasksPage() {
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
   const isLoading = loading || usersLoading || userLoading || profileLoading;
 
-  if (!firestore || !user || userLoading || profileLoading || !userProfile) {
+  if (!user || userLoading || profileLoading || !userProfile) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
