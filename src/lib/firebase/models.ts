@@ -25,7 +25,8 @@ export interface Organization extends BaseEntity {
 export interface User extends BaseEntity {
   displayName: string;
   email: string;
-  role: "operario" | "mantenimiento" | "admin";
+  role: 'operario' | 'mantenimiento' | 'admin';
+  organizationId?: string | null;
   departmentId?: string;
   isMaintenanceLead: boolean;
   active: boolean;

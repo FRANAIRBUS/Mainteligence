@@ -5,8 +5,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useFirestore } from '@/lib/firebase';
+import { collection, addDoc } from 'firebase/firestore';
+import { useFirestore, useUser } from '@/lib/firebase';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
@@ -50,6 +50,7 @@ interface AddDepartmentDialogProps {
 export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
+  const { organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<AddDepartmentFormValues>({
@@ -72,13 +73,11 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
     setIsPending(true);
 
     try {
+      if (!organizationId) {
+        throw new Error('Critical: Missing organizationId in transaction');
+      }
       const collectionRef = collection(firestore, 'departments');
-      await addDoc(collectionRef, {
-        ...data,
-        organizationId: DEFAULT_ORGANIZATION_ID,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await addDoc(collectionRef, { ...data, organizationId });
       toast({
         title: 'Éxito',
         description: `Departamento '${data.name}' creado correctamente.`,
