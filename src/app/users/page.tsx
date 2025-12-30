@@ -197,7 +197,8 @@ function CreateAdminProfile() {
         </CardTitle>
         <CardDescription>
           Tu cuenta de usuario autenticada no tiene un perfil en la base de datos de la aplicación.
-          Crea un perfil de administrador ahora para obtener permisos de gestión.
+          Crea un perfil de administrador ahora para obtener permisos de gestión y que otros
+          administradores puedan encontrarte en el panel de Usuarios.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -236,15 +237,27 @@ export default function UsersPage() {
     isAdmin ? 'users' : null
   );
   
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(
-    isAdmin ? 'departments' : null
-  );
+  const {
+    data: departments,
+    loading: deptsLoading,
+    error: departmentsError,
+  } = useCollection<Department>(isAdmin ? 'departments' : null);
 
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (departmentsError) {
+      toast({
+        variant: 'destructive',
+        title: 'Error al cargar departamentos',
+        description: 'No se pudieron obtener los departamentos para asignar el usuario.',
+      });
+    }
+  }, [departmentsError, toast]);
 
   const handleEditUser = (userToEdit: User) => {
     setEditingUser(userToEdit);
@@ -336,7 +349,12 @@ export default function UsersPage() {
                       Gestiona todos los usuarios y sus permisos.
                     </CardDescription>
                   </div>
-                    <Button onClick={() => setIsAddUserOpen(true)}>Añadir Usuario</Button>
+                    <Button
+                      onClick={() => setIsAddUserOpen(true)}
+                      disabled={deptsLoading || !!departmentsError}
+                    >
+                      Añadir Usuario
+                    </Button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -349,7 +367,11 @@ export default function UsersPage() {
                 <CardContent className="pt-6">
                   <div className="text-center text-muted-foreground">
                     <p>No tienes permiso para ver esta página.</p>
-                    <p className="text-sm">Por favor, contacta a un administrador.</p>
+                    <p className="text-sm">
+                      Pide a un administrador que te cree o actualice en el panel de Usuarios con el rol
+                      adecuado. Si tu cuenta no aparece, inicia sesión y crea tu perfil con el botón de
+                      "Crear Mi Perfil de Administrador".
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -357,7 +379,13 @@ export default function UsersPage() {
           )}
         </main>
       </SidebarInset>
-      {isAdmin && departments && <AddUserDialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen} departments={departments} />}
+      {isAdmin && (
+        <AddUserDialog
+          open={isAddUserOpen}
+          onOpenChange={setIsAddUserOpen}
+          departments={departments}
+        />
+      )}
       {editingUser && isAdmin && departments && (
         <EditUserDialog
           key={editingUser.id}

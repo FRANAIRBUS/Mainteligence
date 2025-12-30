@@ -180,18 +180,11 @@ export default function IncidentsPage() {
       return query(ticketsCollection);
     }
 
-    // An 'operario' can see tickets they created, are assigned to them, or are in their department.
-    const userDepartmentId = userProfile.departmentId;
-    const conditions = [
-        where('createdBy', '==', user.uid),
-        where('assignedTo', '==', user.uid)
-    ];
-
-    if (userDepartmentId) {
-        conditions.push(where('departmentId', '==', userDepartmentId));
-    }
-
-    return query(ticketsCollection, or(...conditions));
+    // An 'operario' can see tickets they created or are assigned to.
+    return query(
+      ticketsCollection,
+      or(where('createdBy', '==', user.uid), where('assignedTo', '==', user.uid))
+    );
   }, [firestore, user, userProfile, isMantenimiento]);
   
   // Phase 4: Execute the query for tickets and load other collections.
@@ -206,7 +199,9 @@ export default function IncidentsPage() {
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
 
   const sortedTickets = useMemo(() => {
-    return [...tickets].sort((a, b) => {
+    const openTickets = tickets.filter((ticket) => ticket.status !== 'Cerrada');
+
+    return [...openTickets].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
         ?? a.createdAt?.toDate?.().getTime()
         ?? 0;
@@ -270,27 +265,31 @@ export default function IncidentsPage() {
         <main className="flex-1 p-4 sm:p-6 md:p-8">
            <Card>
             <CardHeader>
-               <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <CardTitle>Incidencias</CardTitle>
                   <CardDescription className="mt-2">
                     Visualiza y gestiona todas las incidencias correctivas.
                   </CardDescription>
                 </div>
-                <Button onClick={() => setIsAddIncidentOpen(true)}>Crear Incidencia</Button>
+                <Button className="w-full sm:w-auto" onClick={() => setIsAddIncidentOpen(true)}>
+                  Crear Incidencia
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
-              <IncidentsTable
-                tickets={sortedTickets}
-                sites={sitesMap}
-                departments={departmentsMap}
-                loading={tableDataIsLoading}
-                onViewDetails={handleViewDetails}
-                onEdit={handleEditRequest}
-                userRole={userProfile?.role}
-                userId={user?.uid}
+              <div className="overflow-x-auto">
+                <IncidentsTable
+                  tickets={sortedTickets}
+                  sites={sitesMap}
+                  departments={departmentsMap}
+                  loading={tableDataIsLoading}
+                  onViewDetails={handleViewDetails}
+                  onEdit={handleEditRequest}
+                  userRole={userProfile?.role}
+                  userId={user?.uid}
                 />
+              </div>
             </CardContent>
           </Card>
         </main>
