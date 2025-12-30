@@ -34,6 +34,7 @@ export interface User extends BaseEntity {
   isMaintenanceLead: boolean;
   active: boolean;
   siteIds?: string[];
+  adminRequestPending?: boolean;
 }
 
 export interface Site extends BaseEntity {
