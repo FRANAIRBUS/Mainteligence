@@ -1,6 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { doc, onSnapshot, DocumentReference } from 'firebase/firestore';
+import {
+  doc,
+  onSnapshot,
+  type DocumentReference,
+  type DocumentData,
+} from 'firebase/firestore';
 import { useFirestore } from '../provider';
 import { useUser } from '..';
 import { errorEmitter } from '../error-emitter';
@@ -11,7 +16,7 @@ export function useDoc<T>(path: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
 
   useEffect(() => {
     // If path is null, user not ready, or db not ready, we wait.
@@ -22,7 +27,7 @@ export function useDoc<T>(path: string | null) {
       return;
     }
 
-    if (!db || userLoading) {
+    if (!db || userLoading || organizationId === undefined) {
       setLoading(true);
       setData(null);
       setError(null);
@@ -39,13 +44,36 @@ export function useDoc<T>(path: string | null) {
       return;
     }
 
+    if (organizationId === null) {
+      const organizationError = new Error('Critical: Missing organizationId in transaction');
+      setError(organizationError);
+      setData(null);
+      setLoading(false);
+      throw organizationError;
+    }
+
     setLoading(true);
     const docRef = doc(db, path);
     const unsubscribe = onSnapshot(
       docRef,
       (docSnap) => {
         if (docSnap.exists()) {
-          setData({ id: docSnap.id, ...docSnap.data() } as T);
+          const docData = docSnap.data() as DocumentData & { organizationId?: string };
+
+          if (docData.organizationId !== organizationId) {
+            const organizationError = new Error(
+              docData.organizationId
+                ? 'Critical: Organization mismatch in transaction'
+                : 'Critical: Missing organizationId in transaction',
+            );
+
+            setError(organizationError);
+            setData(null);
+            setLoading(false);
+            throw organizationError;
+          }
+
+          setData({ id: docSnap.id, ...docData } as T);
         } else {
           // Document does not exist
           setData(null);
@@ -71,7 +99,7 @@ export function useDoc<T>(path: string | null) {
     );
 
     return () => unsubscribe();
-  }, [db, path, user, userLoading]);
+  }, [db, organizationId, path, user, userLoading]);
   
   return { data, loading, error };
 }
@@ -81,20 +109,42 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
 
   useEffect(() => {
     // If docRef is null, or user is not ready, we are not ready to fetch.
-    if (!docRef || userLoading || !user) {
+    if (!docRef || userLoading || !user || organizationId === undefined) {
       setLoading(false);
       setData(null);
       setError(null);
       return;
     }
+
+    if (organizationId === null) {
+      const organizationError = new Error('Critical: Missing organizationId in transaction');
+      setError(organizationError);
+      setData(null);
+      setLoading(false);
+      throw organizationError;
+    }
     setLoading(true);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
-        setData({ id: docSnap.id, ...docSnap.data() } as T);
+        const docData = docSnap.data() as DocumentData & { organizationId?: string };
+
+        if (docData.organizationId !== organizationId) {
+          const organizationError = new Error(
+            docData.organizationId
+              ? 'Critical: Organization mismatch in transaction'
+              : 'Critical: Missing organizationId in transaction',
+          );
+          setError(organizationError);
+          setData(null);
+          setLoading(false);
+          throw organizationError;
+        }
+
+        setData({ id: docSnap.id, ...docData } as T);
       } else {
         setData(null);
       }
@@ -108,7 +158,7 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
     });
 
     return () => unsubscribe();
-  }, [docRef, user, userLoading]);
+  }, [docRef, organizationId, user, userLoading]);
 
   return { data, loading, error };
 }

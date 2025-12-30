@@ -1,16 +1,25 @@
 'use client';
-import { useEffect, useState } from 'react';
-import type { User } from 'firebase/auth';
-import { getIdTokenResult, onAuthStateChanged } from 'firebase/auth';
-import { useAuth } from '../provider';
 
-type UserContextValue = {
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import { onAuthStateChanged, type User as AuthUser } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { useAuth, useFirestore } from '../provider';
+import type { User as UserProfile } from '../models';
+
+interface UserContextValue {
   user: AuthUser | null;
-  profile: (UserProfile & { organizationId?: string | null }) | null;
+  profile: UserProfile | null;
   organizationId: string | null;
   isLoaded: boolean;
   loading: boolean;
-};
+}
 
 const UserContext = createContext<UserContextValue>({
   user: null,
@@ -20,38 +29,61 @@ const UserContext = createContext<UserContextValue>({
   loading: true,
 });
 
-const PUBLIC_ROUTES = ['/login', '/onboarding', '/error'];
-
 export function UserProvider({ children }: { children: ReactNode }) {
   const auth = useAuth();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const firestore = useFirestore();
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null | undefined>(
-    undefined
+    undefined,
   );
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!auth) {
+    if (!auth || !firestore) {
       setUser(null);
-      setAuthReady(true);
+      setProfile(null);
+      setOrganizationId(undefined);
+      setLoading(true);
       return;
     }
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
 
-      if (!user) {
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      setUser(authUser);
+
+      if (!authUser) {
+        setProfile(null);
         setOrganizationId(null);
         setLoading(false);
         return;
       }
 
+      setLoading(true);
       try {
-        const idTokenResult = await getIdTokenResult(user);
-        setOrganizationId(
-          (idTokenResult.claims.organizationId as string | undefined) ?? null
-        );
+        const profileRef = doc(firestore, 'users', authUser.uid);
+        const profileSnap = await getDoc(profileRef);
+
+        if (!profileSnap.exists()) {
+          setProfile(null);
+          setOrganizationId(null);
+          setLoading(false);
+          return;
+        }
+
+        const profileData = {
+          id: profileSnap.id,
+          ...profileSnap.data(),
+        } as UserProfile;
+
+        if (!profileData.organizationId) {
+          throw new Error('Critical: Missing organizationId in transaction');
+        }
+
+        setProfile(profileData);
+        setOrganizationId(profileData.organizationId);
       } catch (error) {
-        console.error('Error fetching ID token claims:', error);
+        console.error('[UserProvider] Failed to resolve user profile', error);
+        setProfile(null);
         setOrganizationId(null);
       } finally {
         setLoading(false);
@@ -59,7 +91,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [auth]);
+  }, [auth, firestore]);
 
-  return { user, loading, organizationId };
-};
+  const value = useMemo<UserContextValue>(() => {
+    const resolvedOrganizationId = organizationId ?? null;
+    const isLoaded = organizationId !== undefined && !loading;
+
+    return {
+      user,
+      profile,
+      organizationId: resolvedOrganizationId,
+      isLoaded,
+      loading,
+    };
+  }, [loading, organizationId, profile, user]);
+
+  return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
+}
+
+export const useUser = () => useContext(UserContext);

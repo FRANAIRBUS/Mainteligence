@@ -1,4 +1,3 @@
-import type { ReportEntry } from "@/types/report-entry";
 import type { Timestamp } from "firebase/firestore";
 
 export interface BaseEntity {
@@ -10,23 +9,27 @@ export interface BaseEntity {
 
 export interface Organization extends BaseEntity {
   name: string;
-  plan: {
-    name: string;
-    seats?: number;
-    expiresAt?: Timestamp;
-  };
+  taxId?: string;
+  subscriptionPlan: "trial" | "standard" | "enterprise";
+  isActive: boolean;
   settings: {
+    allowGuestAccess: boolean;
+    maxUsers: number;
     locale?: string;
     timezone?: string;
     logoUrl?: string;
   };
 }
 
+export interface ReportEntry extends BaseEntity {
+  description: string;
+  createdBy?: string;
+}
+
 export interface User extends BaseEntity {
   displayName: string;
   email: string;
   role: 'operario' | 'mantenimiento' | 'admin';
-  organizationId?: string | null;
   departmentId?: string;
   isMaintenanceLead: boolean;
   active: boolean;
