@@ -64,20 +64,11 @@ export default function ClosedIncidentsPage() {
       return query(ticketsCollection, statusCondition);
     }
 
-    const conditions = [
-      where("createdBy", "==", user.uid),
-      where("assignedTo", "==", user.uid),
-    ];
-
-    if (userProfile.departmentId) {
-      conditions.push(where("departmentId", "==", userProfile.departmentId));
-    }
-
-    if (conditions.length === 1) {
-      return query(ticketsCollection, statusCondition, conditions[0]);
-    }
-
-    return query(ticketsCollection, statusCondition, or(...conditions));
+    return query(
+      ticketsCollection,
+      statusCondition,
+      or(where("createdBy", "==", user.uid), where("assignedTo", "==", user.uid))
+    );
   }, [canViewAll, firestore, user, userProfile]);
 
   const { data: tickets, loading } = useCollectionQuery<Ticket>(ticketsQuery);

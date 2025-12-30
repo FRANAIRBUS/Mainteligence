@@ -180,18 +180,11 @@ export default function IncidentsPage() {
       return query(ticketsCollection);
     }
 
-    // An 'operario' can see tickets they created, are assigned to them, or are in their department.
-    const userDepartmentId = userProfile.departmentId;
-    const conditions = [
-        where('createdBy', '==', user.uid),
-        where('assignedTo', '==', user.uid)
-    ];
-
-    if (userDepartmentId) {
-        conditions.push(where('departmentId', '==', userDepartmentId));
-    }
-
-    return query(ticketsCollection, or(...conditions));
+    // An 'operario' can see tickets they created or are assigned to.
+    return query(
+      ticketsCollection,
+      or(where('createdBy', '==', user.uid), where('assignedTo', '==', user.uid))
+    );
   }, [firestore, user, userProfile, isMantenimiento]);
   
   // Phase 4: Execute the query for tickets and load other collections.
