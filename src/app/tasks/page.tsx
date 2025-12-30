@@ -25,13 +25,8 @@ import {
 } from "@/components/ui/table";
 import { AppShell } from "@/components/app-shell";
 import { Icons } from "@/components/icons";
-import {
-  useAuth,
-  useCollection,
-  useCollectionQuery,
-  useDoc,
-  useUser,
-} from "@/lib/firebase";
+import { useCollection, useCollectionQuery } from "@/lib/firebase";
+import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { User } from "@/lib/firebase/models";
 import { or, where } from "firebase/firestore";
@@ -55,22 +50,21 @@ const priorityOrder: Record<MaintenanceTask["priority"], number> = {
 };
 
 export default function TasksPage() {
-  const auth = useAuth();
-  const { user, loading: userLoading } = useUser();
+  const { user, profile: userProfile, organizationId, loading: userLoading, isLoaded } =
+    useUser();
   const router = useRouter();
 
   const canViewAllTasks =
     userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
 
   const tasksConstraints = useMemo(() => {
-    if (!user || !userProfile) return null;
+    if (!user || !userProfile || !organizationId) return null;
 
     if (canViewAllTasks) {
       return [] as const;
     }
 
     const conditions = [
-      where("organizationId", "==", organizationId),
       where("createdBy", "==", user.uid),
       where("assignedTo", "==", user.uid),
     ];
@@ -80,7 +74,7 @@ export default function TasksPage() {
     }
 
     return [or(...conditions)];
-  }, [canViewAllTasks, user, userProfile]);
+  }, [canViewAllTasks, organizationId, user, userProfile]);
 
   const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(
     tasksConstraints ? "tasks" : null,
@@ -94,11 +88,10 @@ export default function TasksPage() {
   const perPage = 6;
 
   useEffect(() => {
-    if (!auth) return;
     if (isLoaded && !user) {
       router.push("/login");
     }
-  }, [auth, isLoaded, router, user]);
+  }, [isLoaded, router, user]);
 
   const userNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -154,7 +147,7 @@ export default function TasksPage() {
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
   const isLoading = loading || usersLoading || !isLoaded;
 
-  if (!user || userLoading || profileLoading || !userProfile) {
+  if (!user || userLoading || !userProfile || !organizationId) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
