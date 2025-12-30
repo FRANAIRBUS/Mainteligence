@@ -3,33 +3,31 @@ import { useState, useEffect } from 'react';
 import {
   collection,
   onSnapshot,
-  Query,
-  DocumentData,
-  CollectionReference,
+  QueryConstraint,
+  query,
+  where,
 } from 'firebase/firestore';
 import { useFirestore } from '../provider';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 import { useUser } from '../auth/use-user';
 
-export function useCollection<T>(pathOrRef: string | CollectionReference | null) {
+export function useCollection<T>(path: string | null, ...queries: QueryConstraint[]) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
-  const { user, loading: userLoading } = useUser();
-
-  const memoizedPath = typeof pathOrRef === 'string' ? pathOrRef : pathOrRef?.path;
+  const { user, loading: userLoading, organizationId } = useUser();
 
   useEffect(() => {
-    if (!memoizedPath) {
+    if (!path) {
       setLoading(false);
       setData([]);
       setError(null);
       return;
     }
 
-    if (!db || userLoading) {
+    if (!db || userLoading || organizationId === undefined) {
       setLoading(true);
       setData([]);
       setError(null);
@@ -43,21 +41,23 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
       return;
     }
 
-    setLoading(true);
-
-    let collectionRef: CollectionReference;
-    if (typeof pathOrRef === 'string') {
-      collectionRef = collection(db, pathOrRef);
-    } else if (pathOrRef) {
-      collectionRef = pathOrRef; 
-    } else {
-      setLoading(false);
+    if (organizationId === null) {
+      const organizationError = new Error('organizationId is null');
+      setError(organizationError);
       setData([]);
-      return;
+      setLoading(false);
+      throw organizationError;
     }
 
+    setLoading(true);
+    const collectionQuery = query(
+      collection(db, path),
+      where('organizationId', '==', organizationId),
+      ...queries
+    );
+
     const unsubscribe = onSnapshot(
-      collectionRef,
+      collectionQuery,
       (snapshot) => {
         const newData = snapshot.docs.map((doc) => ({
           id: doc.id,
@@ -70,40 +70,44 @@ export function useCollection<T>(pathOrRef: string | CollectionReference | null)
       (err) => {
         if (err.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
-            path: collectionRef.path,
+            path: (collectionQuery as any)._query.path.segments.join('/'),
             operation: 'list',
           });
           errorEmitter.emit('permission-error', permissionError);
         }
-        console.error(`Error fetching collection ${collectionRef.path}:`, err);
+        console.error(`Error fetching collection ${path}:`, err);
         setError(err);
-        setData([]); 
+        setData([]);
         setLoading(false);
       }
     );
 
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, memoizedPath, user, userLoading]);
+  }, [db, path, user, userLoading, organizationId, ...queries]);
 
   return { data, loading, error };
 }
 
-export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
+export function useCollectionQuery<T>(
+  path: string | null,
+  ...queries: QueryConstraint[]
+) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const { user, loading: userLoading } = useUser();
+  const db = useFirestore();
+  const { user, loading: userLoading, organizationId } = useUser();
 
   useEffect(() => {
-    if (query === null) {
+    if (!path) {
       setLoading(false);
       setData([]);
       setError(null);
       return;
     }
 
-    if (userLoading) {
+    if (!db || userLoading || organizationId === undefined) {
       setLoading(true);
       setData([]);
       setError(null);
@@ -117,9 +121,23 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
       return;
     }
 
+    if (organizationId === null) {
+      const organizationError = new Error('organizationId is null');
+      setError(organizationError);
+      setData([]);
+      setLoading(false);
+      throw organizationError;
+    }
+
+    const preparedQuery = query(
+      collection(db, path),
+      where('organizationId', '==', organizationId),
+      ...queries
+    );
+
     setLoading(true);
     const unsubscribe = onSnapshot(
-      query,
+      preparedQuery,
       (snapshot) => {
         const newData = snapshot.docs.map((doc) => ({
           id: doc.id,
@@ -132,7 +150,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
       (err) => {
         if (err.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
-            path: (query as any)._query.path.segments.join('/'),
+            path: (preparedQuery as any)._query.path.segments.join('/'),
             operation: 'list',
           });
           errorEmitter.emit('permission-error', permissionError);
@@ -145,7 +163,7 @@ export function useCollectionQuery<T>(query: Query<DocumentData> | null) {
     );
 
     return () => unsubscribe();
-  }, [query, user, userLoading]); 
+  }, [db, organizationId, path, user, userLoading, ...queries]);
 
   return { data, loading, error };
 }

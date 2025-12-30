@@ -35,7 +35,6 @@ import {
   collection,
   doc,
   or,
-  query,
   serverTimestamp,
   Timestamp,
   updateDoc,
@@ -64,30 +63,27 @@ export default function ClosedIncidentsPage() {
   const canViewAll = userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
   const isAdmin = userProfile?.role === "admin";
 
-  const ticketsQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile || !organizationId) return null;
+  const ticketsConstraints = useMemo(() => {
+    if (!user || !userProfile) return null;
 
-    const ticketsCollection = collection(firestore, "tickets");
     const statusCondition = where("status", "==", "Cerrada");
 
     if (canViewAll) {
-      return query(
-        ticketsCollection,
-        and(statusCondition, where("organizationId", "==", organizationId))
-      );
+      return [statusCondition];
     }
 
-    return query(
-      ticketsCollection,
+    return [
       and(
         statusCondition,
-        where("organizationId", "==", organizationId),
         or(where("createdBy", "==", user.uid), where("assignedTo", "==", user.uid))
-      )
-    );
-  }, [canViewAll, firestore, organizationId, user, userProfile]);
+      ),
+    ];
+  }, [canViewAll, user, userProfile]);
 
-  const { data: tickets, loading } = useCollectionQuery<Ticket>(ticketsQuery);
+  const { data: tickets, loading } = useCollectionQuery<Ticket>(
+    ticketsConstraints ? "tickets" : null,
+    ...(ticketsConstraints ?? [])
+  );
   const { data: departments } = useCollection<Department>("departments");
   const { data: sites } = useCollection<Site>("sites");
   const { data: users } = useCollection<User>("users");
