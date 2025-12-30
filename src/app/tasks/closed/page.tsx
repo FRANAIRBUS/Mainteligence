@@ -58,7 +58,7 @@ export default function ClosedTasksPage() {
   const router = useRouter();
   const firestore = useFirestore();
   const auth = useAuth();
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   const { toast } = useToast();
 
@@ -165,7 +165,7 @@ export default function ClosedTasksPage() {
   };
 
   const handleDuplicate = async (task: TaskWithId) => {
-    if (!firestore || !auth || !user || !isAdmin) return;
+    if (!firestore || !auth || !user || !isAdmin || !organizationId) return;
 
     try {
       await createTask(firestore, auth, {
@@ -178,6 +178,7 @@ export default function ClosedTasksPage() {
         location: task.location ?? "",
         category: task.category ?? "",
         reopened: false,
+        organizationId,
       });
       toast({ title: "Tarea duplicada", description: "Se creó una nueva tarea a partir de la cerrada." });
     } catch (error) {
