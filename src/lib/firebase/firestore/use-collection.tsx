@@ -42,7 +42,7 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
     }
 
     if (organizationId === null) {
-      const organizationError = new Error('organizationId is null');
+      const organizationError = new Error('Critical: Missing organizationId in transaction');
       setError(organizationError);
       setData([]);
       setLoading(false);
@@ -70,7 +70,7 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
       (err) => {
         if (err.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
-            path: (collectionQuery as any)._query.path.segments.join('/'),
+            path,
             operation: 'list',
           });
           errorEmitter.emit('permission-error', permissionError);
@@ -122,7 +122,7 @@ export function useCollectionQuery<T>(
     }
 
     if (organizationId === null) {
-      const organizationError = new Error('organizationId is null');
+      const organizationError = new Error('Critical: Missing organizationId in transaction');
       setError(organizationError);
       setData([]);
       setLoading(false);
@@ -150,7 +150,7 @@ export function useCollectionQuery<T>(
       (err) => {
         if (err.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
-            path: (preparedQuery as any)._query.path.segments.join('/'),
+            path,
             operation: 'list',
           });
           errorEmitter.emit('permission-error', permissionError);
