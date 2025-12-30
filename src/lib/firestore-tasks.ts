@@ -25,6 +25,7 @@ import type {
 } from "@/types/maintenance-task";
 import type { User, Department } from "@/lib/firebase/models";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
+import { DEFAULT_ORGANIZATION_ID } from "./organization";
 
 const TASKS_COLLECTION = "tasks";
 
@@ -43,6 +44,7 @@ const taskConverter: FirestoreDataConverter<MaintenanceTask> = {
   toFirestore(task: MaintenanceTaskInput): DocumentData {
     return {
       ...task,
+      organizationId: DEFAULT_ORGANIZATION_ID,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };

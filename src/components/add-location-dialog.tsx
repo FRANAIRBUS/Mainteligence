@@ -5,10 +5,11 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore } from '@/lib/firebase';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -69,10 +70,15 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
       return;
     }
     setIsPending(true);
-    
+
     try {
       const collectionRef = collection(firestore, "sites");
-      await addDoc(collectionRef, data);
+      await addDoc(collectionRef, {
+        ...data,
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
       toast({
         title: 'Éxito',
         description: `Ubicación '${data.name}' creada correctamente.`,

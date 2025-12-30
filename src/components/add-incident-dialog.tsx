@@ -12,6 +12,7 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore"
 import { useCollection } from "@/lib/firebase/firestore/use-collection"
 import { useFirestore, useUser } from "@/lib/firebase"
 import type { User } from "@/lib/firebase/models"
+import { DEFAULT_ORGANIZATION_ID } from "@/lib/organization"
 
 interface AddIncidentDialogProps {
   open?: boolean
@@ -57,7 +58,9 @@ export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps
         description,
         assignedTo,
         status: "open",
+        organizationId: DEFAULT_ORGANIZATION_ID,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         createdBy: user.uid,
       })
 
