@@ -25,7 +25,6 @@ import type {
 } from "@/types/maintenance-task";
 import type { User, Department } from "@/lib/firebase/models";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
-import { DEFAULT_ORGANIZATION_ID } from "./organization";
 
 const TASKS_COLLECTION = "tasks";
 
@@ -42,9 +41,13 @@ const ensureAuthenticatedUser = async (auth: Auth) => {
 
 const taskConverter: FirestoreDataConverter<MaintenanceTask> = {
   toFirestore(task: MaintenanceTaskInput): DocumentData {
+    if (!task.organizationId) {
+      throw new Error("Critical: Missing organizationId in transaction");
+    }
+
     return {
       ...task,
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId: task.organizationId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -93,6 +96,10 @@ export const createTask = async (
   payload: MaintenanceTaskInput,
   options?: { users: User[]; departments: Department[] }
 ): Promise<string> => {
+  if (!payload.organizationId) {
+    throw new Error("Critical: Missing organizationId in transaction");
+  }
+
   const user = await ensureAuthenticatedUser(auth);
 
   const docRef = await addDoc(tasksCollection(db), {
