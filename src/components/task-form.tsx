@@ -10,6 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { useUser } from "@/lib/firebase/auth/use-user"
 
 const taskSchema = z.object({
   title: z.string().min(2, "El título debe tener al menos 2 caracteres"),
@@ -47,6 +48,7 @@ export function TaskForm({
   onSuccess,
   disabled = false,
 }: TaskFormProps) {
+  const { organizationId, loading: userLoading } = useUser()
   const form = useForm<TaskFormValues>({
     resolver: zodResolver(taskSchema),
     defaultValues,
@@ -233,7 +235,11 @@ export function TaskForm({
           />
         </div>
 
-        <Button type="submit" className="w-full" disabled={submitting || disabled}>
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={submitting || disabled || userLoading || !organizationId}
+        >
           {submitLabel}
         </Button>
       </form>
