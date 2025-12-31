@@ -25,9 +25,13 @@ import {
   addDoc,
   collection,
   doc,
+  getDocs,
   getDoc,
+  limit,
+  query,
   serverTimestamp,
   setDoc,
+  where,
 } from 'firebase/firestore';
 import { ClientLogo } from '@/components/client-logo';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
@@ -222,19 +226,31 @@ export default function LoginPage() {
     );
   };
 
+  const isFirstUserInOrganization = async (sanitizedOrgId: string) => {
+    if (!firestore) return false;
+    const existingUsers = query(
+      collection(firestore, 'users'),
+      where('organizationId', '==', sanitizedOrgId),
+      limit(1),
+    );
+    const snapshot = await getDocs(existingUsers);
+    return snapshot.empty;
+  };
+
   const buildUserProfilePayload = (
     sanitizedOrgId: string,
     userEmail: string,
-    isNewOrganization: boolean,
+    isAdmin: boolean,
+    adminRequestPending: boolean,
   ) => {
     return {
       displayName: userEmail,
       email: userEmail,
-      role: isNewOrganization ? 'admin' : 'operario',
+      role: isAdmin ? 'admin' : 'operario',
       active: true,
-      isMaintenanceLead: isNewOrganization,
+      isMaintenanceLead: isAdmin,
       organizationId: sanitizedOrgId,
-      adminRequestPending: !isNewOrganization && requestAdminRole,
+      adminRequestPending,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -293,12 +309,20 @@ export default function LoginPage() {
         const shouldCreateOrg = orgCheckStatus === 'not-found';
         const { created, name } = await ensureOrganizationExists(sanitizedOrgId, user.email || email);
         const isNewOrganization = shouldCreateOrg || created;
+        const isFirstUser = await isFirstUserInOrganization(sanitizedOrgId);
         const orgDisplayName = name || sanitizedOrgId;
+        const shouldBeAdmin = isNewOrganization || isFirstUser;
+        const adminRequestPending = !shouldBeAdmin && requestAdminRole;
 
         const userDocRef = doc(firestore, 'users', user.uid);
         await setDoc(
           userDocRef,
-          buildUserProfilePayload(sanitizedOrgId, user.email || email, isNewOrganization),
+          buildUserProfilePayload(
+            sanitizedOrgId,
+            user.email || email,
+            shouldBeAdmin,
+            adminRequestPending,
+          ),
           {
             merge: true,
           },
@@ -307,12 +331,12 @@ export default function LoginPage() {
         await upsertMembership(
           user.uid,
           sanitizedOrgId,
-          isNewOrganization ? 'admin' : 'operario',
+          shouldBeAdmin ? 'admin' : 'operario',
           orgDisplayName,
-          requestAdminRole && !isNewOrganization ? 'pending' : 'active',
+          adminRequestPending ? 'pending' : 'active',
         );
 
-        if (requestAdminRole && !isNewOrganization) {
+        if (adminRequestPending) {
           const adminRequests = collection(firestore, 'adminRequests');
           await addDoc(adminRequests, {
             userId: user.uid,
@@ -396,24 +420,32 @@ export default function LoginPage() {
       const shouldCreateOrg = orgCheckStatus === 'not-found' || (!existingProfile.exists() && orgCheckStatus === 'idle');
       const { created, name } = await ensureOrganizationExists(resolvedOrgId, user.email || email);
       const isNewOrganization = shouldCreateOrg || created;
+      const isFirstUser = await isFirstUserInOrganization(resolvedOrgId);
       const orgDisplayName = name || orgLookupName || resolvedOrgId;
+      const shouldBeAdmin = isNewOrganization || isFirstUser;
+      const adminRequestPending = !shouldBeAdmin && requestAdminRole;
 
       // After Google Sign-in, create or update their profile in Firestore
       await setDoc(
         userDocRef,
-        buildUserProfilePayload(resolvedOrgId, user.email || email, isNewOrganization),
+        buildUserProfilePayload(
+          resolvedOrgId,
+          user.email || email,
+          shouldBeAdmin,
+          adminRequestPending,
+        ),
         { merge: true },
       );
 
       await upsertMembership(
         user.uid,
         resolvedOrgId,
-        isNewOrganization ? 'admin' : 'operario',
+        shouldBeAdmin ? 'admin' : 'operario',
         orgDisplayName,
-        requestAdminRole && !isNewOrganization ? 'pending' : 'active',
+        adminRequestPending ? 'pending' : 'active',
       );
 
-      if (requestAdminRole && !isNewOrganization) {
+      if (adminRequestPending) {
         const adminRequests = collection(firestore, 'adminRequests');
         await addDoc(adminRequests, {
           userId: user.uid,
