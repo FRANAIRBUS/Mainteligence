@@ -41,6 +41,7 @@ import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { ClientLogo } from '@/components/client-logo';
 import { Progress } from '@/components/ui/progress';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 
 
 interface AppSettings {
@@ -49,7 +50,7 @@ interface AppSettings {
 }
 
 export default function SettingsPage() {
-  const { user, loading: userLoading, organizationId } = useUser();
+  const { user, loading: userLoading, organizationId, profile } = useUser();
   const router = useRouter();
   const storage = useStorage();
   const firestore = useFirestore();
@@ -67,6 +68,9 @@ export default function SettingsPage() {
   const uploadUnsubscribe = useRef<(() => void) | null>(null);
   const uploadTaskRef = useRef<UploadTask | null>(null);
   const uploadStallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resolvedOrganizationId =
+    organizationId ?? profile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
 
   const clearStallTimer = () => {
     if (uploadStallTimer.current) {
@@ -156,7 +160,7 @@ export default function SettingsPage() {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !storage || !firestore || !isAdmin || !organizationId) {
+    if (!selectedFile || !storage || !firestore || !isAdmin || !resolvedOrganizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -211,7 +215,7 @@ export default function SettingsPage() {
 
       const settingsData = {
         logoUrl: downloadURL,
-        organizationId,
+        organizationId: resolvedOrganizationId,
         updatedAt: serverTimestamp(),
       };
       await setDoc(settingsRef, settingsData, { merge: true });
@@ -243,33 +247,12 @@ export default function SettingsPage() {
   };
 
 
-  const initialLoading = userLoading || profileLoading || organizationId === undefined;
+  const initialLoading = userLoading || profileLoading;
 
   if (initialLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
-  if (organizationId === null) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center px-4">
-        <Card className="max-w-lg">
-          <CardHeader className="flex flex-col items-center gap-3 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-              <AlertTriangle className="h-6 w-6" />
-            </div>
-            <CardTitle>Falta el ID de organización</CardTitle>
-            <CardDescription className="text-balance">
-              No encontramos un organizationId válido en tu sesión. Vuelve a iniciar sesión para continuar.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center pb-6">
-            <Button onClick={() => router.push('/login')}>Volver al inicio de sesión</Button>
-          </CardContent>
-        </Card>
       </div>
     );
   }
