@@ -33,6 +33,7 @@ import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { useToast } from "@/hooks/use-toast";
+import { normalizeRole } from "@/lib/rbac";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
@@ -95,9 +96,10 @@ export default function TaskDetailPage() {
   }, [task?.reports]);
 
   const isTaskClosed = task?.status === "completada";
+  const normalizedRole = normalizeRole(userProfile?.role);
   const isPrivileged =
-    userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
-  const isOperario = userProfile?.role === "operario";
+    normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "maintenance";
+  const isOperario = normalizedRole === "operator";
   const canEdit =
     isPrivileged ||
     (!!task && task.createdBy === user?.uid && !isTaskClosed && !isOperario);
