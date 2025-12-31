@@ -9,9 +9,19 @@ import {
   type ReactNode,
 } from 'react';
 import { onAuthStateChanged, type User as AuthUser } from 'firebase/auth';
-import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 import { useAuth, useFirestore } from '../provider';
 import type { Membership, User as UserProfile } from '../models';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 
 interface UserContextValue {
   user: AuthUser | null;
@@ -87,8 +97,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
         const profileSnap = await getDoc(profileRef);
 
         if (!profileSnap.exists()) {
-          setProfile(null);
-          setOrganizationId(null);
+          const bootstrappedProfile = await ensureDefaultOrganization(firestore, authUser);
+          setProfile(bootstrappedProfile);
+          setOrganizationId(bootstrappedProfile?.organizationId ?? null);
           setProfileLoading(false);
           return;
         }
@@ -99,7 +110,15 @@ export function UserProvider({ children }: { children: ReactNode }) {
         } as UserProfile;
 
         if (!profileData.organizationId) {
-          throw new Error('Critical: Missing organizationId in transaction');
+          const bootstrappedProfile = await ensureDefaultOrganization(
+            firestore,
+            authUser,
+            profileData,
+          );
+          setProfile(bootstrappedProfile);
+          setOrganizationId(bootstrappedProfile?.organizationId ?? null);
+          setProfileLoading(false);
+          return;
         }
 
         setProfile(profileData);
@@ -233,3 +252,80 @@ export function UserProvider({ children }: { children: ReactNode }) {
 }
 
 export const useUser = () => useContext(UserContext);
+
+async function ensureDefaultOrganization(
+  firestore: ReturnType<typeof useFirestore>,
+  authUser: AuthUser,
+  existingProfile?: UserProfile | null,
+) {
+  if (!firestore) return null;
+
+  const organizationId = existingProfile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
+  const organizationRef = doc(firestore, 'organizations', organizationId);
+  const organizationSnapshot = await getDoc(organizationRef);
+
+  if (!organizationSnapshot.exists()) {
+    await setDoc(
+      organizationRef,
+      {
+        organizationId,
+        name: organizationId,
+        subscriptionPlan: 'trial',
+        isActive: true,
+        settings: {
+          allowGuestAccess: false,
+          maxUsers: 50,
+        },
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
+  const userRef = doc(firestore, 'users', authUser.uid);
+  const defaultProfileData = {
+    displayName: authUser.displayName || authUser.email || 'Usuario',
+    email: authUser.email || '',
+    role: existingProfile?.role ?? 'admin',
+    active: true,
+    isMaintenanceLead: true,
+    organizationId,
+    adminRequestPending: false,
+    createdAt: existingProfile?.createdAt ?? serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(
+    userRef,
+    {
+      ...defaultProfileData,
+    },
+    { merge: true },
+  );
+
+  const membershipRef = doc(firestore, 'memberships', `${authUser.uid}_${organizationId}`);
+  const membershipSnap = await getDoc(membershipRef);
+  if (!membershipSnap.exists()) {
+    await setDoc(
+      membershipRef,
+      {
+        userId: authUser.uid,
+        organizationId,
+        organizationName:
+          (organizationSnapshot.data() as { name?: string } | undefined)?.name ?? organizationId,
+        role: 'admin',
+        status: 'active',
+        primary: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
+  return {
+    id: userRef.id,
+    ...defaultProfileData,
+  } as UserProfile;
+}
