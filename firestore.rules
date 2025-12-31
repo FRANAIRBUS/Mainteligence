@@ -71,6 +71,13 @@ service cloud.firestore {
       allow delete: if isAdmin() && !isOwner(userId) && organizationIdMatchesResource();
     }
 
+    match /organizations/{organizationId} {
+      allow get: if true; // Permite verificar existencia de una organización durante el registro.
+      allow list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() && isMemberOfOrg(organizationId);
+    }
+
     match /sites/{siteId} {
       allow read: if isSignedIn() && organizationIdMatchesResource();
       allow create: if isAdmin() && organizationIdMatchesRequest();
