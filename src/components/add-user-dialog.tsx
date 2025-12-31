@@ -8,7 +8,6 @@ import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useFirestore, useUser } from '@/lib/firebase';
 import type { Department } from '@/lib/firebase/models';
-import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 
@@ -99,10 +98,9 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       ...data,
       active: true,
       isMaintenanceLead: data.role === 'admin' || data.role === 'mantenimiento', // Default lead status
-      organizationId: DEFAULT_ORGANIZATION_ID,
+      organizationId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      organizationId,
     };
     
     try {
