@@ -1,5 +1,15 @@
 import type { SVGProps } from "react";
-import { Pencil } from "lucide-react";
+import {
+  Home,
+  LayoutGrid,
+  Pencil,
+  ShieldCheck,
+  Building2,
+  Wrench,
+  Database,
+  Search,
+  FileDown,
+} from "lucide-react";
 
 export const Icons = {
   logo: (props: SVGProps<SVGSVGElement>) => (
@@ -37,4 +47,12 @@ export const Icons = {
     </svg>
   ),
   edit: (props: SVGProps<SVGSVGElement>) => <Pencil {...props} />,
+  home: (props: SVGProps<SVGSVGElement>) => <Home {...props} />,
+  layout: (props: SVGProps<SVGSVGElement>) => <LayoutGrid {...props} />,
+  building: (props: SVGProps<SVGSVGElement>) => <Building2 {...props} />,
+  shield: (props: SVGProps<SVGSVGElement>) => <ShieldCheck {...props} />,
+  wrench: (props: SVGProps<SVGSVGElement>) => <Wrench {...props} />,
+  database: (props: SVGProps<SVGSVGElement>) => <Database {...props} />,
+  search: (props: SVGProps<SVGSVGElement>) => <Search {...props} />,
+  fileDown: (props: SVGProps<SVGSVGElement>) => <FileDown {...props} />,
 };

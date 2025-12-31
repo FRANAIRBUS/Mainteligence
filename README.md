@@ -21,6 +21,12 @@ npm run dev
 
 Si ves el mensaje “No se pudo conectar con Firebase”, revisa que todas las variables `NEXT_PUBLIC_FIREBASE_*` estén definidas y que el dominio actual esté autorizado en Firebase Auth.
 
+### Consola root
+
+- Usa `NEXT_PUBLIC_ROOT_ALLOWLIST` con una lista separada por comas de correos autorizados para la consola `/root-admin`.
+- Los usuarios de la allowlist o con el custom claim `role: "root"` podrán ver y operar la consola.
+- La tabla de organizaciones permite suspender, soft delete, marcar hard delete, purgar datos (Firestore en vivo) y exportar un snapshot JSON por tenant.
+
 ### Variables en Firebase App Hosting
 
 Cuando despliegues en Firebase App Hosting, define las mismas variables `NEXT_PUBLIC_FIREBASE_*` en el backend correspondiente (staging o producción) desde **App Hosting → Environment variables** y vuelve a desplegar para que apliquen.

@@ -35,16 +35,6 @@ export type TicketPermission = {
   canReassign: boolean;
   canUnassignSelf: boolean;
   canViewAuditTrail: boolean;
-export type TicketPermission = {
-  canView: boolean;
-  canAssign: boolean;
-  canAssignToSelf: boolean;
-  canChangeDepartment: boolean;
-  canChangePriority: boolean;
-  canChangeStatus: boolean;
-  canRequestClosure: boolean;
-  canClose: boolean;
-  canReopen: boolean;
 };
 
 const getTicketOrigin = (ticket: Ticket) => ticket.originDepartmentId ?? ticket.departmentId;
@@ -79,10 +69,6 @@ const isOpen = (ticket: Ticket) => ticket.status === 'Abierta';
 
 export function getTicketPermissions(ticket: Ticket, user: User | null, userId: string | null): TicketPermission {
   const role = normalizeRole(user?.role);
-export function getTicketPermissions(ticket: Ticket, user: User | null, userId: string | null): TicketPermission {
-  const role = normalizeRole(user?.role);
-  const isCreator = !!userId && ticket.createdBy === userId;
-  const isAssignee = !!userId && ticket.assignedTo === userId;
 
   if (!userId || !role) {
     return {
@@ -208,83 +194,6 @@ export function getTicketPermissions(ticket: Ticket, user: User | null, userId: 
     canReassign,
     canUnassignSelf,
     canViewAuditTrail,
-      canAssign: false,
-      canAssignToSelf: false,
-      canChangeDepartment: false,
-      canChangePriority: false,
-      canChangeStatus: false,
-      canRequestClosure: false,
-      canClose: false,
-      canReopen: false,
-    };
-  }
-
-  const baseScope: DepartmentScope = {
-    departmentId: user?.departmentId,
-    departmentIds: user?.departmentIds,
-  };
-
-  const inScope = isInScope(ticket, baseScope);
-
-  const visibility =
-    role === 'super_admin' ||
-    role === 'admin' ||
-    role === 'maintenance' ||
-    (role === 'dept_head_multi' && (inScope || isCreator || isAssignee)) ||
-    (role === 'dept_head_single' && (inScope || isCreator || isAssignee)) ||
-    (role === 'operator' &&
-      (isCreator ||
-        isAssignee ||
-        getTicketOrigin(ticket) === user?.departmentId ||
-        getTicketTarget(ticket) === user?.departmentId));
-
-  const canAssign =
-    role === 'super_admin' ||
-    role === 'admin' ||
-    role === 'maintenance' ||
-    ((role === 'dept_head_multi' || role === 'dept_head_single') && inScope);
-
-  const canChangeDept = canAssign;
-
-  const canChangePriority =
-    role === 'super_admin' ||
-    role === 'admin' ||
-    role === 'maintenance' ||
-    ((role === 'dept_head_multi' || role === 'dept_head_single') && inScope) ||
-    (role === 'operator' && (isCreator || isAssignee));
-
-  const canChangeStatus =
-    role === 'super_admin' ||
-    role === 'admin' ||
-    role === 'maintenance' ||
-    ((role === 'dept_head_multi' || role === 'dept_head_single') && inScope) ||
-    (role === 'operator' && (isCreator || isAssignee));
-
-  const canClose =
-    role === 'super_admin' ||
-    role === 'admin' ||
-    role === 'maintenance' ||
-    ((role === 'dept_head_multi' || role === 'dept_head_single') && inScope);
-
-  const canRequestClosure =
-    role === 'operator' && (isAssignee || isCreator) && ticket.status !== 'Cerrada';
-
-  const canReopen =
-    role === 'super_admin' ||
-    role === 'admin' ||
-    role === 'maintenance' ||
-    ((role === 'dept_head_multi' || role === 'dept_head_single') && inScope);
-
-  return {
-    canView: visibility,
-    canAssign,
-    canAssignToSelf: role === 'operator' || canAssign,
-    canChangeDepartment: canChangeDept,
-    canChangePriority,
-    canChangeStatus,
-    canRequestClosure,
-    canClose,
-    canReopen,
   };
 }
 
