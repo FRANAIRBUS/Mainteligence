@@ -56,8 +56,6 @@ export default function IncidentDetailPage() {
   const firestore = useFirestore();
 
   const { user, profile: userProfile, organizationId, isLoaded } = useUser();
-  const isMantenimiento = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
-
   const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
   
   // Fetch all collections needed for display unconditionally
