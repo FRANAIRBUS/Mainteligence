@@ -119,6 +119,14 @@ export default function LoginPage() {
         }
       } catch (err: any) {
         if (isCancelled) return;
+        if (err?.code === 'permission-denied') {
+          setOrgCheckStatus('not-found');
+          setOrgLookupName(null);
+          setOrgLookupError(
+            'No se pudo comprobar la organización sin iniciar sesión. Continuaremos con el alta y la validaremos al crear tu cuenta.',
+          );
+          return;
+        }
         setOrgCheckStatus('error');
         setOrgLookupError(
           err?.message || 'No se pudo comprobar la organización. Inténtalo nuevamente.',
@@ -521,6 +529,9 @@ export default function LoginPage() {
                     <p className="text-amber-600">
                       Crearemos una nueva organización con este ID y te convertiremos en administrador principal.
                     </p>
+                  )}
+                  {orgLookupError && orgCheckStatus !== 'error' && (
+                    <p className="text-muted-foreground">{orgLookupError}</p>
                   )}
                   {orgCheckStatus === 'error' && (
                     <p className="text-destructive">{orgLookupError}</p>
