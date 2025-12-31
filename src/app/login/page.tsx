@@ -337,12 +337,32 @@ export default function LoginPage() {
       return;
     }
 
-    if (registerStep < 4) {
-      setRegisterStep((prev) => prev + 1);
+    if (registerStep === 1) {
+      setRegisterStep(2);
+      return;
+    }
+
+    if (registerStep === 2) {
+      const nextStep = orgCheckStatus === 'not-found' ? 3 : 4;
+      setRegisterStep(nextStep);
+      return;
+    }
+
+    if (registerStep === 3 && orgCheckStatus === 'not-found') {
+      setRegisterStep(4);
       return;
     }
 
     await completeRegistration();
+  };
+
+  const handlePreviousStep = () => {
+    setRegisterStep((prev) => {
+      if (prev === 4 && orgCheckStatus !== 'not-found') {
+        return 2;
+      }
+      return Math.max(1, prev - 1);
+    });
   };
 
   const handleAuthAction = async (e: FormEvent) => {
@@ -668,7 +688,7 @@ export default function LoginPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setRegisterStep((prev) => Math.max(1, prev - 1))}
+                  onClick={handlePreviousStep}
                   disabled={loading}
                 >
                   Atrás
