@@ -27,6 +27,7 @@ import { usePathname } from "next/navigation";
 import { useDoc, useUser } from "@/lib/firebase";
 import type { User } from "@/lib/firebase/models";
 import { useMemo } from "react";
+import { normalizeRole } from "@/lib/rbac";
 
 type NavItem = {
   href: string;
@@ -66,8 +67,8 @@ export function MainNav() {
           icon: Wrench,
           active: pathname === "/incidents" || (pathname.startsWith("/incidents/") && !pathname.startsWith("/incidents/closed")),
         },
-        { href: "/preventive", label: "Preventivos", icon: CalendarClock, active: pathname.startsWith("/preventive"), roles: ['admin', 'mantenimiento'] },
-        { href: "/reports", label: "Informes", icon: LineChart, active: pathname.startsWith("/reports"), roles: ['admin', 'mantenimiento', 'operario'] },
+        { href: "/preventive", label: "Preventivos", icon: CalendarClock, active: pathname.startsWith("/preventive"), roles: ['super_admin', 'admin', 'maintenance'] },
+        { href: "/reports", label: "Informes", icon: LineChart, active: pathname.startsWith("/reports"), roles: ['super_admin', 'admin', 'maintenance', 'dept_head_multi', 'dept_head_single', 'operator'] },
       ],
     },
     {
@@ -79,7 +80,7 @@ export function MainNav() {
     },
     {
       label: "Gestión",
-      roles: ['admin'],
+      roles: ['super_admin', 'admin', 'maintenance'],
       items: [
         { href: "/locations", label: "Ubicaciones", icon: Building, active: pathname.startsWith("/locations") },
         { href: "/departments", label: "Departamentos", icon: Archive, active: pathname.startsWith("/departments") },
@@ -89,7 +90,7 @@ export function MainNav() {
     },
     {
       label: "Configuración",
-      roles: ['admin'],
+      roles: ['super_admin', 'admin', 'maintenance'],
       items: [
         { href: "/settings", label: "Ajustes de la Empresa", icon: Settings, active: pathname.startsWith("/settings") },
         { href: "/smart-tagging", label: "Asistente IA", icon: Tags, active: pathname.startsWith("/smart-tagging") },
@@ -98,21 +99,20 @@ export function MainNav() {
   ], [pathname]);
 
   const menuItems = useMemo(() => {
-    const isAdmin = userProfile?.role === 'admin';
-    // If profile is loading, default to operario role to show base menu
-    const userRole = isAdmin ? 'admin' : userProfile?.role || 'operario';
+    const role = normalizeRole(userProfile?.role) || 'operator';
+    const isAdminLike = role === 'super_admin' || role === 'admin' || role === 'maintenance';
 
-    if (isAdmin) {
+    if (isAdminLike) {
       return allMenuItems;
     }
 
     return allMenuItems
       .map(group => ({
         ...group,
-        items: group.items.filter(item => !item.roles || item.roles.includes(userRole)),
+        items: group.items.filter(item => !item.roles || item.roles.includes(role)),
       }))
       .filter(group => group.items.length > 0)
-      .filter(group => !group.roles || group.roles.includes(userRole));
+      .filter(group => !group.roles || group.roles.includes(role));
 
   }, [userProfile, allMenuItems]);
 
