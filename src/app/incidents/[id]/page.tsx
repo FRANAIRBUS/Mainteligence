@@ -15,6 +15,7 @@ import {
 import { MainNav } from '@/components/main-nav';
 import { UserNav } from '@/components/user-nav';
 import { Icons } from '@/components/icons';
+import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import {
   Card,
   CardContent,
@@ -66,6 +67,8 @@ export default function IncidentDetailPage() {
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
   // Only fetch users if the current user is an admin or maintenance staff.
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const isMantenimiento = normalizedRole === 'super_admin' || normalizedRole === 'admin' || normalizedRole === 'maintenance';
   const { data: users, loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -81,7 +84,7 @@ export default function IncidentDetailPage() {
     });
   }, [ticket?.reports]);
   const isClosed = ticket?.status === 'Cerrada';
-  const isOperario = userProfile?.role === 'operario';
+  const permissions = ticket && userProfile ? getTicketPermissions(ticket, userProfile, user?.uid ?? null) : null;
 
   // Memoize derived data
   const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
@@ -94,17 +97,12 @@ export default function IncidentDetailPage() {
       router.push('/login');
     }
     // Authorization check after data has loaded
-    if (isLoaded && !ticketLoading && ticket && user && userProfile) {
-      const canView =
-        userProfile?.role === 'admin' ||
-        userProfile?.role === 'mantenimiento' ||
-        ticket.createdBy === user.uid ||
-        (isOperario && isClosed && userProfile.departmentId === ticket.departmentId);
-      if (!canView) {
+    if (isLoaded && !ticketLoading && ticket && user && userProfile && permissions) {
+      if (!permissions.canView) {
         router.push('/incidents');
       }
     }
-  }, [isClosed, isLoaded, isOperario, router, ticket, ticketLoading, user, userProfile]);
+  }, [isLoaded, permissions, router, ticket, ticketLoading, user, userProfile]);
 
   const handleAddReport = async () => {
     if (!firestore || !ticket?.id || !organizationId) {
@@ -221,10 +219,7 @@ export default function IncidentDetailPage() {
     return null;
   }
 
-  const canEdit =
-    userProfile.role === 'admin' ||
-    userProfile.role === 'mantenimiento' ||
-    (user ? ticket.createdBy === user.uid && !isClosed && !isOperario : false);
+  const canEdit = !!permissions?.canEditContent && !isClosed;
 
   return (
     <SidebarProvider>

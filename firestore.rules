@@ -19,11 +19,29 @@ service cloud.firestore {
       return getUser(uid).data.role;
     }
 
+    function normalizeRole(role) {
+      if (role == 'operario') return 'operator';
+      if (role == 'mantenimiento') return 'maintenance';
+      return role;
+    }
+
+    function userRole(uid) {
+      return normalizeRole(getUserRole(uid));
+    }
+
     function getUserDepartmentId(uid) {
       if (!exists(/databases/$(database)/documents/users/$(uid))) {
         return null;
       }
       return getUser(uid).data.departmentId;
+    }
+
+    function getUserDepartmentIds(uid) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
+        return [];
+      }
+      let deptIds = getUser(uid).data.departmentIds;
+      return deptIds == null ? [] : deptIds;
     }
 
     function getUserOrganizationId(uid) {
@@ -49,23 +67,58 @@ service cloud.firestore {
       return request.resource != null && request.resource.data.organizationId == resource.data.organizationId;
     }
 
-    function isMantenimiento() {
-      return isSignedIn() && getUserRole(request.auth.uid) in ['mantenimiento', 'admin'];
+    function isManager(uid) {
+      return userRole(uid) in ['super_admin', 'admin', 'maintenance'];
+    }
+
+    function isScopedHead(uid) {
+      return userRole(uid) in ['dept_head_multi', 'dept_head_single'];
     }
 
     function isAdmin() {
-      return isSignedIn() && getUserRole(request.auth.uid) == 'admin';
+      return isSignedIn() && userRole(request.auth.uid) in ['admin', 'super_admin'];
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
+
+    function ticketOriginDepartment(ticketData) {
+      return ticketData.originDepartmentId != null ? ticketData.originDepartmentId : ticketData.departmentId;
+    }
+
+    function ticketTargetDepartment(ticketData) {
+      return ticketData.targetDepartmentId != null ? ticketData.targetDepartmentId : ticketData.departmentId;
+    }
+
+    function ticketInScope(ticketData, uid) {
+      let primaryDept = getUserDepartmentId(uid);
+      let extraDepts = getUserDepartmentIds(uid);
+      let originDept = ticketOriginDepartment(ticketData);
+      let targetDept = ticketTargetDepartment(ticketData);
+      return (primaryDept != null && (originDept == primaryDept || targetDept == primaryDept)) ||
+             (extraDepts.size() > 0 && (extraDepts.hasAny([originDept]) || extraDepts.hasAny([targetDept])));
+    }
+
+    function canViewTicket(ticketData, uid) {
+      let role = userRole(uid);
+      if (role == 'super_admin') return true;
+      if (!isMemberOfOrg(ticketData.organizationId)) return false;
+      if (role in ['admin', 'maintenance']) return true;
+      if (role in ['dept_head_multi', 'dept_head_single']) {
+        return ticketInScope(ticketData, uid) || ticketData.createdBy == uid || ticketData.assignedTo == uid;
+      }
+      if (role == 'operator') {
+        return ticketInScope(ticketData, uid) || ticketData.createdBy == uid || ticketData.assignedTo == uid;
+      }
+      return false;
+    }
  
     // --- REGLAS DE COLECCIONES ---
 
     match /users/{userId} {
-      allow get: if (isOwner(userId) || isMantenimiento()) && organizationIdMatchesResource();
-      allow list: if isMantenimiento() && organizationIdMatchesResource();
+      allow get: if (isOwner(userId) || isManager(request.auth.uid)) && organizationIdMatchesResource();
+      allow list: if isManager(request.auth.uid);
       allow create: if isSignedIn() && isOwner(userId);
       allow update: if (isOwner(userId) || isAdmin()) && organizationIdMatchesResource() && organizationIdUnchanged();
       allow delete: if isAdmin() && !isOwner(userId) && organizationIdMatchesResource();
@@ -122,7 +175,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged();
 
       // Solo permite borrar si es admin (usando tu función de ayuda existente)
-      allow delete: if getUserRole(request.auth.uid) == 'admin' && organizationIdMatchesResource();
+      allow delete: if userRole(request.auth.uid) == 'admin' && organizationIdMatchesResource();
     }
     
     // Si tu sistema envía correos automáticamente al crear/editar tareas (usando la extensión "Trigger Email"),
@@ -134,14 +187,10 @@ service cloud.firestore {
     // --- REGLAS PARA INCIDENCIAS (Tickets) ---
     match /tickets/{ticketId} {
       // Permitimos crear a cualquier usuario logueado
-      allow create: if isSignedIn() && organizationIdMatchesRequest();
+      allow create: if isSignedIn() && organizationIdMatchesRequest() && request.resource.data.createdBy == request.auth.uid;
       // Permitimos leer si es admin, mantenimiento o si está involucrado
-      allow read: if isSignedIn() && organizationIdMatchesResource() && (
-        isMantenimiento() ||
-        resource.data.assignedTo == request.auth.uid ||
-        resource.data.createdBy == request.auth.uid
-      );
-      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow read: if isSignedIn() && canViewTicket(resource.data, request.auth.uid);
+      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged() && canViewTicket(resource.data, request.auth.uid);
       allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
