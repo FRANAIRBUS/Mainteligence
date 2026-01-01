@@ -27,7 +27,7 @@ import { usePathname } from "next/navigation";
 import { useDoc, useUser } from "@/lib/firebase";
 import type { User } from "@/lib/firebase/models";
 import { useMemo } from "react";
-import { normalizeRole } from "@/lib/rbac";
+import { isAdminLikeRole, normalizeRole } from "@/lib/rbac";
 
 type NavItem = {
   href: string;
@@ -99,8 +99,8 @@ export function MainNav() {
   ], [pathname]);
 
   const menuItems = useMemo(() => {
-    const role = normalizeRole(userProfile?.role) || 'operator';
-    const isAdminLike = role === 'super_admin' || role === 'admin' || role === 'maintenance';
+    const normalizedRole = normalizeRole(userProfile?.role) || 'operator';
+    const isAdminLike = isAdminLikeRole(normalizedRole);
 
     if (isAdminLike) {
       return allMenuItems;
@@ -109,10 +109,10 @@ export function MainNav() {
     return allMenuItems
       .map(group => ({
         ...group,
-        items: group.items.filter(item => !item.roles || item.roles.includes(role)),
+        items: group.items.filter(item => !item.roles || item.roles.includes(normalizedRole)),
       }))
       .filter(group => group.items.length > 0)
-      .filter(group => !group.roles || group.roles.includes(role));
+      .filter(group => !group.roles || group.roles.includes(normalizedRole));
 
   }, [userProfile, allMenuItems]);
 

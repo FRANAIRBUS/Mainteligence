@@ -42,6 +42,7 @@ import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase
 import { ClientLogo } from '@/components/client-logo';
 import { Progress } from '@/components/ui/progress';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
+import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
 
 
 interface AppSettings {
@@ -57,7 +58,8 @@ export default function SettingsPage() {
   const { toast } = useToast();
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-  const isAdmin = userProfile?.role === 'admin';
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const isAdmin = isAdminLikeRole(normalizedRole);
 
   const { data: settings, loading: settingsLoading } = useDoc<AppSettings>('settings/app');
 

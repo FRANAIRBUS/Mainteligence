@@ -55,6 +55,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
 
 function UserTable({
   users,
@@ -251,18 +252,19 @@ export default function UsersPage() {
     user ? `users/${user.uid}` : null
   );
 
-  const isAdmin = userProfile?.role === 'admin';
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const canManage = isAdminLikeRole(normalizedRole);
   
   // Phase 3: Load app data, but only if the current user is an admin
   const { data: users, loading: usersLoading } = useCollection<User>(
-    isAdmin ? 'users' : null
+    canManage ? 'users' : null
   );
   
   const {
     data: departments,
     loading: deptsLoading,
     error: departmentsError,
-  } = useCollection<Department>(isAdmin ? 'departments' : null);
+  } = useCollection<Department>(canManage ? 'departments' : null);
 
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
@@ -359,7 +361,7 @@ export default function UsersPage() {
 
   // This is a specific state: user is authenticated but has no profile document.
   const showCreateAdminProfile = !profileLoading && !userProfile;
-  const tableIsLoading = isAdmin && (usersLoading || deptsLoading);
+  const tableIsLoading = canManage && (usersLoading || deptsLoading);
 
   return (
     <SidebarProvider>
@@ -388,7 +390,7 @@ export default function UsersPage() {
         <main className="flex-1 p-4 sm:p-6 md:p-8">
           {showCreateAdminProfile && <CreateAdminProfile />}
 
-          {isAdmin ? (
+          {canManage ? (
             <Card>
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
@@ -428,14 +430,14 @@ export default function UsersPage() {
           )}
         </main>
       </SidebarInset>
-      {isAdmin && (
+      {canManage && (
         <AddUserDialog
           open={isAddUserOpen}
           onOpenChange={setIsAddUserOpen}
           departments={departments}
         />
       )}
-      {editingUser && isAdmin && departments && (
+      {editingUser && canManage && departments && (
         <EditUserDialog
           key={editingUser.id}
           open={isEditUserOpen}
