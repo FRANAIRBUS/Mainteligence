@@ -79,6 +79,10 @@ service cloud.firestore {
       return userRole(uid) in ['dept_head_multi', 'dept_head_single'];
     }
 
+    function isOperator(uid) {
+      return userRole(uid) == 'operator';
+    }
+
     function isAdmin() {
       return isSignedIn() && userRole(request.auth.uid) in ['admin', 'super_admin'];
     }
@@ -116,6 +120,75 @@ service cloud.firestore {
         return ticketInScope(ticketData, uid) || ticketData.createdBy == uid || ticketData.assignedTo == uid;
       }
       return false;
+    }
+
+    function isTicketParticipant(ticketData, uid) {
+      return ticketData.createdBy == uid || ticketData.assignedTo == uid;
+    }
+
+    function scopedHeadCanAct(ticketData, uid) {
+      return ticketInScope(ticketData, uid) || isTicketParticipant(ticketData, uid);
+    }
+
+    function operatorStatusAllowed(before, after) {
+      let allowedStatuses = ['Abierta', 'En curso', 'En espera', 'Resuelta', 'Cierre solicitado'];
+      if (!allowedStatuses.hasAny([after.status])) return false;
+      if (before.status == 'Cerrada') return false;
+      return after.status != 'Cerrada';
+    }
+
+    function operatorPriorityAllowed(before, after) {
+      return before.priority == 'Crítica' || after.priority != 'Crítica';
+    }
+
+    function operatorAssignmentAllowed(before, after, uid) {
+      if (after.assignedTo == before.assignedTo) return true;
+      if (after.assignedTo == uid) return true;
+      return after.assignedTo == null && before.assignedTo == uid;
+    }
+
+    function operatorUpdateGuard(before, after, uid) {
+      return operatorStatusAllowed(before, after) &&
+             operatorPriorityAllowed(before, after) &&
+             operatorAssignmentAllowed(before, after, uid) &&
+             ticketInScope(after, uid) &&
+             after.createdBy == before.createdBy &&
+             after.organizationId == before.organizationId;
+    }
+
+    function canCreateTicket(ticketData, uid) {
+      let role = userRole(uid);
+      if (role == 'super_admin') return true;
+      if (!isMemberOfOrg(ticketData.organizationId)) return false;
+      if (role in ['admin', 'maintenance']) return true;
+      if (role in ['dept_head_multi', 'dept_head_single']) {
+        return ticketInScope(ticketData, uid);
+      }
+      if (role == 'operator') {
+        return ticketInScope(ticketData, uid) || ticketData.createdBy == uid;
+      }
+      return false;
+    }
+
+    function canUpdateTicket(before, after, uid) {
+      let role = userRole(uid);
+      if (role == 'super_admin') return true;
+      if (!isMemberOfOrg(before.organizationId)) return false;
+      if (role in ['admin', 'maintenance']) return true;
+      if (role in ['dept_head_multi', 'dept_head_single']) {
+        return scopedHeadCanAct(before, uid) && scopedHeadCanAct(after, uid) && after.organizationId == before.organizationId;
+      }
+      if (role == 'operator') {
+        return isTicketParticipant(before, uid) && isTicketParticipant(after, uid) && operatorUpdateGuard(before, after, uid);
+      }
+      return false;
+    }
+
+    function canAccessTicketById(ticketId) {
+      if (!isSignedIn()) return false;
+      let path = /databases/$(database)/documents/tickets/$(ticketId);
+      if (!exists(path)) return false;
+      return canViewTicket(get(path).data, request.auth.uid);
     }
  
     // --- REGLAS DE COLECCIONES ---
@@ -190,18 +263,16 @@ service cloud.firestore {
 
     // --- REGLAS PARA INCIDENCIAS (Tickets) ---
     match /tickets/{ticketId} {
-      // Permitimos crear a cualquier usuario logueado
-      allow create: if isSignedIn() && organizationIdMatchesRequest() && request.resource.data.createdBy == request.auth.uid;
-      // Permitimos leer si es admin, mantenimiento o si está involucrado
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid && canCreateTicket(request.resource.data, request.auth.uid);
       allow read: if isSignedIn() && canViewTicket(resource.data, request.auth.uid);
-      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged() && canViewTicket(resource.data, request.auth.uid);
+      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged() && canUpdateTicket(resource.data, request.resource.data, request.auth.uid);
       allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
     match /tickets/{ticketId}/comments/{commentId} {
-      allow read: if isSignedIn() && organizationIdMatchesResource();
-      allow create: if isSignedIn() && organizationIdMatchesRequest();
-      allow update, delete: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow read: if isSignedIn() && canAccessTicketById(ticketId);
+      allow create: if isSignedIn() && canAccessTicketById(ticketId);
+      allow update, delete: if isAdmin() && canAccessTicketById(ticketId);
     }
 
     match /settings/{settingId} {
