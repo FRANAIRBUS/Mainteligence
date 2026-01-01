@@ -7,6 +7,19 @@ export const normalizeRole = (role?: UserRole) => {
   return role;
 };
 
+const ADMIN_LIKE_ROLES = ['super_admin', 'admin', 'maintenance'] as const;
+const SCOPED_HEAD_ROLES = ['dept_head_multi', 'dept_head_single'] as const;
+
+export const isAdminLikeRole = (role?: UserRole | null) => {
+  const normalized = normalizeRole(role ?? undefined);
+  return ADMIN_LIKE_ROLES.includes((normalized ?? '') as (typeof ADMIN_LIKE_ROLES)[number]);
+};
+
+export const isScopedDepartmentHead = (role?: UserRole | null) => {
+  const normalized = normalizeRole(role ?? undefined);
+  return SCOPED_HEAD_ROLES.includes((normalized ?? '') as (typeof SCOPED_HEAD_ROLES)[number]);
+};
+
 type DepartmentScope = { departmentId?: string; departmentIds?: string[] };
 
 type TicketRoleGuards = {

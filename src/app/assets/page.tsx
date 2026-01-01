@@ -54,6 +54,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
 
 function AssetsTable({
   assets,
@@ -164,11 +165,11 @@ export default function AssetsPage() {
   const { toast } = useToast();
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-
-  const isAdmin = userProfile?.role === 'admin';
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const canManage = isAdminLikeRole(normalizedRole);
   
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(isAdmin ? 'assets' : null);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(isAdmin ? 'sites' : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canManage ? 'assets' : null);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(canManage ? 'sites' : null);
 
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -236,7 +237,7 @@ export default function AssetsPage() {
           </div>
         </header>        
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-          {isAdmin ? (
+          {canManage ? (
           <Card>
             <CardHeader>
                <div className="flex items-start justify-between gap-4">
@@ -246,11 +247,11 @@ export default function AssetsPage() {
                     Gestiona todos los activos y equipos de la empresa.
                   </CardDescription>
                 </div>
-                {isAdmin && <Button onClick={() => setIsAddAssetOpen(true)}>Añadir Activo</Button>}
+                {canManage && <Button onClick={() => setIsAddAssetOpen(true)}>Añadir Activo</Button>}
               </div>
             </CardHeader>
             <CardContent>
-              <AssetsTable assets={assets} sites={sites} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={isAdmin} />
+              <AssetsTable assets={assets} sites={sites} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={canManage} />
             </CardContent>
           </Card>
           ) : (
@@ -265,7 +266,7 @@ export default function AssetsPage() {
           )}
         </main>
       </SidebarInset>
-      {isAdmin && <AddAssetDialog open={isAddAssetOpen} onOpenChange={setIsAddAssetOpen} sites={sites} />}
+      {canManage && <AddAssetDialog open={isAddAssetOpen} onOpenChange={setIsAddAssetOpen} sites={sites} />}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
