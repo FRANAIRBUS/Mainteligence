@@ -214,11 +214,25 @@ service cloud.firestore {
       allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
     }
 
+    // Public, minimal org document used ONLY to verify org existence/name during signup.
+    // This avoids leaking the full organizations collection.
+    match /organizationsPublic/{orgId} {
+      allow get: if true;
+      allow list: if false;
+      // Created when an org is created. Kept permissive to avoid blocking signup.
+      allow create: if isSignedIn() && request.resource.data.organizationId == orgId;
+      // Only admins of the org (or super_admin) can update/delete.
+      allow update, delete: if (isAdmin() && isMemberOfOrg(orgId)) || isSuperAdmin();
+    }
+
     match /organizations/{organizationId} {
-      allow get: if true; // Permite verificar existencia de una organización durante el registro.
-      allow list: if isSignedIn();
+      // IMPORTANT: do NOT allow listing organizations (multi-tenant leakage)
+      allow list: if isSuperAdmin();
+      // Allow org members (or super_admin) to read their org.
+      allow get: if (isSignedIn() && isMemberOfOrg(organizationId)) || isSuperAdmin();
+      // Allow creating an org during onboarding (membership is established right after).
       allow create: if isSignedIn();
-      allow update, delete: if isAdmin() && isMemberOfOrg(organizationId);
+      allow update, delete: if (isAdmin() && isMemberOfOrg(organizationId)) || isSuperAdmin();
     }
 
     match /sites/{siteId} {
@@ -257,10 +271,6 @@ service cloud.firestore {
     
     // Si tu sistema envía correos automáticamente al crear/editar tareas (usando la extensión "Trigger Email"),
     // necesitas dar permiso a la colección 'mail':
-    match /mail/{mailId} {
-      allow create: if isSignedIn();
-    }
-
     // --- REGLAS PARA INCIDENCIAS (Tickets) ---
     match /tickets/{ticketId} {
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid && canCreateTicket(request.resource.data, request.auth.uid);

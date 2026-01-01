@@ -262,6 +262,7 @@ async function ensureDefaultOrganization(
 
   const organizationId = existingProfile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
   const organizationRef = doc(firestore, 'organizations', organizationId);
+  const organizationPublicRef = doc(firestore, 'organizationsPublic', organizationId);
   const organizationSnapshot = await getDoc(organizationRef);
 
   if (!organizationSnapshot.exists()) {
@@ -276,6 +277,19 @@ async function ensureDefaultOrganization(
           allowGuestAccess: false,
           maxUsers: 50,
         },
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    // Minimal public doc so signup can verify org existence without leaking org list.
+    await setDoc(
+      organizationPublicRef,
+      {
+        organizationId,
+        name: organizationId,
+        isActive: true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       },

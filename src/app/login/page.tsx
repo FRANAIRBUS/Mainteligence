@@ -31,6 +31,7 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  writeBatch,
   where,
 } from 'firebase/firestore';
 import { ClientLogo } from '@/components/client-logo';
@@ -109,7 +110,8 @@ export default function LoginPage() {
 
     const checkOrg = async () => {
       try {
-        const orgRef = doc(firestore, 'organizations', sanitizedOrgId);
+        // NOTE: we only read from the public minimal collection during signup
+        const orgRef = doc(firestore, 'organizationsPublic', sanitizedOrgId);
         const snapshot = await getDoc(orgRef);
 
         if (isCancelled) return;
@@ -150,11 +152,35 @@ export default function LoginPage() {
       throw new Error('Firestore no está disponible.');
     }
 
-    const orgRef = doc(firestore, 'organizations', sanitizedOrgId);
-    const orgSnap = await getDoc(orgRef);
+    // Read from the public org doc so that joining an existing org does not require membership.
+    const orgPublicRef = doc(firestore, 'organizationsPublic', sanitizedOrgId);
+    const orgPublicSnap = await getDoc(orgPublicRef);
 
-    if (orgSnap.exists()) {
-      return { created: false, name: (orgSnap.data() as { name?: string }).name ?? sanitizedOrgId };
+    if (orgPublicSnap.exists()) {
+      return {
+        created: false,
+        name: (orgPublicSnap.data() as { name?: string }).name ?? sanitizedOrgId,
+      };
+    }
+
+    // Backward-compat: if the public doc does not exist yet but the private org doc does,
+    // create only the public doc and DO NOT overwrite the existing organization.
+    const orgRef = doc(firestore, 'organizations', sanitizedOrgId);
+    const existingOrgSnap = await getDoc(orgRef);
+    if (existingOrgSnap.exists()) {
+      const existingName = (existingOrgSnap.data() as { name?: string })?.name ?? sanitizedOrgId;
+      await setDoc(
+        orgPublicRef,
+        {
+          organizationId: sanitizedOrgId,
+          name: existingName,
+          isActive: true,
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      return { created: false, name: existingName };
     }
 
     if (!orgName.trim() || !orgCountry.trim()) {
@@ -169,7 +195,11 @@ export default function LoginPage() {
       storageMb: 1024,
     };
 
-    await setDoc(orgRef, {
+    // Create both the private org document (full data) and the public minimal org document (name/existence)
+    // in a single batch to reduce orphan states.
+    const batch = writeBatch(firestore);
+
+    batch.set(orgRef, {
       organizationId: sanitizedOrgId,
       name: orgName.trim(),
       taxId: orgTaxId.trim() || null,
@@ -194,6 +224,20 @@ export default function LoginPage() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    batch.set(
+      orgPublicRef,
+      {
+        organizationId: sanitizedOrgId,
+        name: orgName.trim(),
+        isActive: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    await batch.commit();
 
     return { created: true, name: orgName.trim() };
   };

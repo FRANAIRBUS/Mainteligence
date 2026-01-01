@@ -10,7 +10,7 @@ import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
-import { sendAssignmentEmail } from '@/lib/assignment-email';
+// Assignment notifications are sent server-side (Cloud Functions)
 import { getTicketPermissions } from '@/lib/rbac';
 
 import { Button } from '@/components/ui/button';
@@ -116,6 +116,12 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
 
     if (canEditStatus) {
       updateData.status = data.status;
+
+      // When closing, stamp closure metadata for reporting.
+      if (data.status === 'Cerrada') {
+        updateData.closedAt = serverTimestamp();
+        updateData.closedBy = currentUser.uid;
+      }
     }
 
     if (canEditPriority) {
@@ -135,24 +141,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
 
       await updateDoc(ticketRef, updateData);
 
-      if (canEditAssignment && newAssignee && newAssignee !== previousAssignee) {
-        await sendAssignmentEmail({
-          firestore,
-          users,
-          departments,
-          assignedTo: newAssignee,
-          departmentId: ticket.departmentId,
-          title: ticket.title,
-          identifier: ticket.displayId,
-          description: ticket.description,
-          priority: data.priority,
-          status: data.status,
-          location: ticket.departmentId,
-          category: ticket.type,
-          link: `${window.location.origin}/incidents/${ticket.id}`,
-          type: 'incidencia',
-        });
-      }
+      // Notifications are handled server-side.
       toast({
         title: 'Éxito',
         description: `Incidencia '${ticket.title}' actualizada.`,

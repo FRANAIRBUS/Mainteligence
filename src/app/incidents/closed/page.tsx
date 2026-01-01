@@ -28,7 +28,7 @@ import {
   useFirestore,
   useUser,
 } from "@/lib/firebase";
-import type { Department, Site, Ticket } from "@/lib/firebase/models";
+import type { Department, Site, Ticket, User } from "@/lib/firebase/models";
 import {
   addDoc,
   and,
