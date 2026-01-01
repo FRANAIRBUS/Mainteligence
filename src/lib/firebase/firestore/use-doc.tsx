@@ -10,13 +10,16 @@ import { useFirestore } from '../provider';
 import { useUser } from '..';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
+import { normalizeRole } from '@/lib/rbac';
 
 export function useDoc<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
-  const { user, loading: userLoading, organizationId } = useUser();
+  const { user, loading: userLoading, organizationId, profile } = useUser();
+  const normalizedRole = normalizeRole(profile?.role);
+  const allowCrossOrg = normalizedRole === 'super_admin';
 
   useEffect(() => {
     try {
@@ -45,7 +48,7 @@ export function useDoc<T>(path: string | null) {
         return;
       }
 
-      if (organizationId === null) {
+      if (organizationId === null && !allowCrossOrg) {
         const organizationError = new Error('Critical: Missing organizationId in transaction');
         setError(organizationError);
         setData(null);
@@ -62,7 +65,7 @@ export function useDoc<T>(path: string | null) {
             if (docSnap.exists()) {
               const docData = docSnap.data() as DocumentData & { organizationId?: string };
 
-              if (docData.organizationId !== organizationId) {
+              if (!allowCrossOrg && docData.organizationId !== organizationId) {
                 const organizationError = new Error(
                   docData.organizationId
                     ? 'Critical: Organization mismatch in transaction'
@@ -111,7 +114,7 @@ export function useDoc<T>(path: string | null) {
       setData(null);
       setLoading(false);
     }
-  }, [db, organizationId, path, user, userLoading]);
+  }, [allowCrossOrg, db, organizationId, path, user, userLoading]);
   
   return { data, loading, error };
 }
@@ -121,7 +124,9 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const { user, loading: userLoading, organizationId } = useUser();
+  const { user, loading: userLoading, organizationId, profile } = useUser();
+  const normalizedRole = normalizeRole(profile?.role);
+  const allowCrossOrg = normalizedRole === 'super_admin';
 
   useEffect(() => {
     try {
@@ -133,7 +138,7 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
         return;
       }
 
-      if (organizationId === null) {
+      if (organizationId === null && !allowCrossOrg) {
         const organizationError = new Error('Critical: Missing organizationId in transaction');
         setError(organizationError);
         setData(null);
@@ -148,7 +153,7 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
             if (docSnap.exists()) {
               const docData = docSnap.data() as DocumentData & { organizationId?: string };
 
-              if (docData.organizationId !== organizationId) {
+              if (!allowCrossOrg && docData.organizationId !== organizationId) {
                 const organizationError = new Error(
                   docData.organizationId
                     ? 'Critical: Organization mismatch in transaction'
@@ -186,7 +191,7 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
       setData(null);
       setLoading(false);
     }
-  }, [docRef, organizationId, user, userLoading]);
+  }, [allowCrossOrg, docRef, organizationId, user, userLoading]);
 
   return { data, loading, error };
 }

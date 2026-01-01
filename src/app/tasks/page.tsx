@@ -30,6 +30,7 @@ import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { User } from "@/lib/firebase/models";
 import { or, where } from "firebase/firestore";
+import { normalizeRole } from "@/lib/rbac";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -54,11 +55,14 @@ export default function TasksPage() {
     useUser();
   const router = useRouter();
 
+  const normalizedRole = normalizeRole(userProfile?.role);
   const canViewAllTasks =
-    userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
+    normalizedRole === "super_admin" ||
+    normalizedRole === "admin" ||
+    normalizedRole === "maintenance";
 
   const tasksConstraints = useMemo(() => {
-    if (!user || !userProfile || !organizationId) return null;
+    if (!user || !userProfile || (!organizationId && normalizedRole !== "super_admin")) return null;
 
     if (canViewAllTasks) {
       return [] as const;
@@ -74,7 +78,7 @@ export default function TasksPage() {
     }
 
     return [or(...conditions)];
-  }, [canViewAllTasks, organizationId, user, userProfile]);
+  }, [canViewAllTasks, organizationId, user, userProfile, normalizedRole]);
 
   const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(
     tasksConstraints ? "tasks" : null,
@@ -147,7 +151,7 @@ export default function TasksPage() {
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
   const isLoading = loading || usersLoading || !isLoaded;
 
-  if (!user || userLoading || !userProfile || !organizationId) {
+  if (!user || userLoading || !userProfile || (!organizationId && normalizedRole !== "super_admin")) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

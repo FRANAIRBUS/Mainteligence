@@ -168,15 +168,21 @@ export default function IncidentsPage() {
   }, [isLoaded, user, router]);
   
   const normalizedRole = normalizeRole(userProfile?.role);
-  const isMantenimiento =
-    normalizedRole === 'super_admin' || normalizedRole === 'admin' || normalizedRole === 'maintenance';
+  const isSuperAdmin = normalizedRole === 'super_admin';
+  const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
 
   // Phase 3: Construct the tickets query only when user and userProfile are ready.
   const ticketsConstraints = useMemo(() => {
-    if (!user || !userProfile || !organizationId || !normalizedRole) return null;
+    if (!user || !userProfile || (!organizationId && !isSuperAdmin) || !normalizedRole) return null;
+
+    if (isSuperAdmin) {
+      return [] as const;
+    }
+
+    const scopedOrgConstraint = [where('organizationId', '==', organizationId as string)] as const;
 
     if (isMantenimiento) {
-      return [where('organizationId', '==', organizationId)] as const;
+      return scopedOrgConstraint;
     }
 
     const scopeDepartments = (userProfile.departmentIds ?? []).length
@@ -208,8 +214,8 @@ export default function IncidentsPage() {
       ...departmentFilters,
     ];
 
-    return [where('organizationId', '==', organizationId), or(...baseFilters)];
-  }, [user, userProfile, organizationId, normalizedRole, isMantenimiento]);
+    return [where('organizationId', '==', organizationId as string), or(...baseFilters)];
+  }, [user, userProfile, organizationId, normalizedRole, isMantenimiento, isSuperAdmin]);
 
   // Phase 4: Execute the query for tickets and load other collections.
   const { data: tickets = [], loading: ticketsLoading } = useCollectionQuery<Ticket>(
