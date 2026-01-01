@@ -37,6 +37,7 @@ import type { Department, User } from "@/lib/firebase/models";
 import { and, or, Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
+import { normalizeRole } from "@/lib/rbac";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -62,8 +63,14 @@ export default function ClosedTasksPage() {
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   const { toast } = useToast();
 
-  const canViewAll = userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
-  const isAdmin = userProfile?.role === "admin";
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const isSuperAdmin = normalizedRole === "super_admin";
+  const canViewAll =
+    normalizedRole === "admin" ||
+    normalizedRole === "maintenance" ||
+    normalizedRole === "mantenimiento" ||
+    isSuperAdmin;
+  const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
   const tasksConstraints = useMemo(() => {
     if (!user || !userProfile) return null;
@@ -165,7 +172,9 @@ export default function ClosedTasksPage() {
   };
 
   const handleDuplicate = async (task: TaskWithId) => {
-    if (!firestore || !auth || !user || !isAdmin || !organizationId) return;
+    const targetOrgId = organizationId ?? task.organizationId;
+
+    if (!firestore || !auth || !user || !isAdmin || !targetOrgId) return;
 
     try {
       await createTask(firestore, auth, {
@@ -178,7 +187,7 @@ export default function ClosedTasksPage() {
         location: task.location ?? "",
         category: task.category ?? "",
         reopened: false,
-        organizationId,
+        organizationId: targetOrgId,
       });
       toast({ title: "Tarea duplicada", description: "Se creó una nueva tarea a partir de la cerrada." });
     } catch (error) {

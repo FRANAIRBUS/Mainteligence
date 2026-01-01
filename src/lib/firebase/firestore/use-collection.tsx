@@ -11,13 +11,16 @@ import { useFirestore } from '../provider';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 import { useUser } from '../auth/use-user';
+import { normalizeRole } from '@/lib/rbac';
 
 export function useCollection<T>(path: string | null, ...queries: QueryConstraint[]) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
-  const { user, loading: userLoading, organizationId } = useUser();
+  const { user, loading: userLoading, organizationId, profile } = useUser();
+  const normalizedRole = normalizeRole(profile?.role);
+  const allowCrossOrg = normalizedRole === 'super_admin';
 
   useEffect(() => {
     try {
@@ -42,7 +45,7 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
         return;
       }
 
-      if (organizationId === null) {
+      if (organizationId === null && !allowCrossOrg) {
         const organizationError = new Error('Critical: Missing organizationId in transaction');
         setError(organizationError);
         setData([]);
@@ -51,9 +54,10 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
       }
 
       setLoading(true);
+      const orgScope = allowCrossOrg ? [] : [where('organizationId', '==', organizationId)];
       const collectionQuery = query(
         collection(db, path),
-        where('organizationId', '==', organizationId),
+        ...orgScope,
         ...queries
       );
 
@@ -96,7 +100,7 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, path, user, userLoading, organizationId, ...queries]);
+  }, [allowCrossOrg, db, path, user, userLoading, organizationId, ...queries]);
 
   return { data, loading, error };
 }
@@ -109,7 +113,9 @@ export function useCollectionQuery<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
-  const { user, loading: userLoading, organizationId } = useUser();
+  const { user, loading: userLoading, organizationId, profile } = useUser();
+  const normalizedRole = normalizeRole(profile?.role);
+  const allowCrossOrg = normalizedRole === 'super_admin';
 
   useEffect(() => {
     try {
@@ -134,7 +140,7 @@ export function useCollectionQuery<T>(
         return;
       }
 
-      if (organizationId === null) {
+      if (organizationId === null && !allowCrossOrg) {
         const organizationError = new Error('Critical: Missing organizationId in transaction');
         setError(organizationError);
         setData([]);
@@ -142,9 +148,10 @@ export function useCollectionQuery<T>(
         return;
       }
 
+      const orgScope = allowCrossOrg ? [] : [where('organizationId', '==', organizationId)];
       const preparedQuery = query(
         collection(db, path),
-        where('organizationId', '==', organizationId),
+        ...orgScope,
         ...queries
       );
 
@@ -187,7 +194,7 @@ export function useCollectionQuery<T>(
       setData([]);
       setLoading(false);
     }
-  }, [db, organizationId, path, user, userLoading, ...queries]);
+  }, [allowCrossOrg, db, organizationId, path, user, userLoading, ...queries]);
 
   return { data, loading, error };
 }

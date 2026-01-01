@@ -51,16 +51,20 @@ service cloud.firestore {
       return getUser(uid).data.organizationId;
     }
 
+    function isSuperAdmin() {
+      return isSignedIn() && userRole(request.auth.uid) == 'super_admin';
+    }
+
     function isMemberOfOrg(orgId) {
       return isSignedIn() && getUserOrganizationId(request.auth.uid) == orgId;
     }
 
     function organizationIdMatchesResource() {
-      return resource.data.organizationId != null && isMemberOfOrg(resource.data.organizationId);
+      return (resource.data.organizationId != null && isMemberOfOrg(resource.data.organizationId)) || isSuperAdmin();
     }
 
     function organizationIdMatchesRequest() {
-      return request.resource != null && request.resource.data.organizationId != null && isMemberOfOrg(request.resource.data.organizationId);
+      return (request.resource != null && request.resource.data.organizationId != null && isMemberOfOrg(request.resource.data.organizationId)) || isSuperAdmin();
     }
 
     function organizationIdUnchanged() {

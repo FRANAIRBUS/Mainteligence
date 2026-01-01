@@ -66,7 +66,8 @@ export default function IncidentDetailPage() {
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
   // Only fetch users if the current user is an admin or maintenance staff.
   const normalizedRole = normalizeRole(userProfile?.role);
-  const isMantenimiento = normalizedRole === 'super_admin' || normalizedRole === 'admin' || normalizedRole === 'maintenance';
+  const isSuperAdmin = normalizedRole === 'super_admin';
+  const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
   const { data: users, loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -103,19 +104,39 @@ export default function IncidentDetailPage() {
   }, [isLoaded, permissions, router, ticket, ticketLoading, user, userProfile]);
 
   const handleAddReport = async () => {
-    if (!firestore || !ticket?.id || !organizationId) {
+    if (!firestore || !ticket?.id) {
       toast({
         title: 'No se pudo registrar el informe',
-        description: 'Inténtalo nuevamente en unos instantes. Falta organizationId.',
+        description: 'Inténtalo nuevamente en unos instantes. Faltan datos obligatorios.',
         variant: 'destructive',
       });
       return;
     }
 
-    if (!user || ticket.organizationId !== organizationId) {
+    const targetOrganizationId = ticket.organizationId ?? organizationId;
+
+    if (!targetOrganizationId) {
+      toast({
+        title: 'No se pudo registrar el informe',
+        description: 'No se encontró la organización asociada a la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!user) {
       toast({
         title: 'Inicia sesión',
-        description: 'Debes iniciar sesión con un organizationId válido para informar la incidencia.',
+        description: 'Debes iniciar sesión para informar la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!isSuperAdmin && ticket.organizationId !== organizationId) {
+      toast({
+        title: 'Organización no válida',
+        description: 'Tu sesión no coincide con la organización de la incidencia.',
         variant: 'destructive',
       });
       return;
@@ -142,7 +163,7 @@ export default function IncidentDetailPage() {
           createdAt: Timestamp.now(),
           createdBy: user.uid,
         }),
-        organizationId,
+        organizationId: targetOrganizationId,
         updatedAt: serverTimestamp(),
       });
 
