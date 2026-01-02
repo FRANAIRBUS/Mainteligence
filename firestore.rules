@@ -27,17 +27,14 @@ service cloud.firestore {
       return isSignedIn() && myOrgId() != null && myOrgId() == orgId;
     }
 
-    // NO BYPASS: super_admin es por-org, no global
     function organizationIdMatchesResource() {
       return isSignedIn()
-        && resource.data.organizationId != null
         && myOrgId() != null
         && resource.data.organizationId == myOrgId();
     }
 
     function organizationIdMatchesRequest() {
       return isSignedIn()
-        && request.resource.data.organizationId != null
         && myOrgId() != null
         && request.resource.data.organizationId == myOrgId();
     }
@@ -53,27 +50,28 @@ service cloud.firestore {
     // ---------- USERS ----------
     match /users/{userId} {
 
-      // get: owner o manager dentro de SU org (sin fugas cross-org)
+      // super_admin o admin acceden a usuarios de su organización; cada usuario puede leer su propio perfil
       allow get: if isSignedIn() && (
         request.auth.uid == userId ||
-        (isManager() && organizationIdMatchesResource())
+        (isAdmin() && organizationIdMatchesResource())
       );
 
-      // list SIEMPRE OFF para evitar fugas por queries
-      allow list: if false;
+      // listado de usuarios solo para super_admin o admin de la misma organización
+      allow list: if isAdmin() && organizationIdMatchesResource();
 
-      // create: el propio usuario crea perfil, PERO NO puede auto-asignarse super_admin
+      // crear usuarios dentro de la organización; un admin no puede asignar rol super_admin
       allow create: if isSignedIn()
-        && request.auth.uid == userId
-        && request.resource.data.role != 'super_admin';
+        && (isAdmin() || request.auth.uid == userId)
+        && request.resource.data.organizationId == myOrgId()
+        && (isSuperAdmin() || request.resource.data.role != 'super_admin');
 
-      // update: NO se permite cambiar role desde cliente (ni super_admin).
-      //        role se cambia solo por Cloud Function (Admin SDK).
+      // actualizar usuarios dentro de la organización; solo super_admin/admin pueden hacerlo
+      // un admin no puede otorgar rol super_admin y nunca se cambia de organización
       allow update: if isSignedIn()
+        && isAdmin()
         && organizationIdMatchesResource()
         && organizationIdUnchanged()
-        && roleUnchanged()
-        && (request.auth.uid == userId || isManager());
+        && (isSuperAdmin() || request.resource.data.role != 'super_admin');
 
       // delete: opcional, lo dejamos limitado
       allow delete: if false;
@@ -121,8 +119,8 @@ service cloud.firestore {
 
     // ---------- SETTINGS ----------
     match /settings/{settingId} {
-      allow read: if isSignedIn() && organizationIdMatchesResource();
-      // solo super_admin puede escribir configuración
+      // Solo super_admin puede consultar o modificar la configuración de su organización
+      allow read: if isSignedIn() && isSuperAdmin() && organizationIdMatchesResource();
       allow write: if isSignedIn() && isSuperAdmin() && organizationIdMatchesRequest();
     }
 
