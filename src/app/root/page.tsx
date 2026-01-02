@@ -11,11 +11,25 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+import { signOut } from 'firebase/auth';
+import { useAuth } from '@/lib/firebase/provider';
+
+
 type OrgRow = { id: string; name?: string; createdAt?: any; isActive?: boolean };
 
 export default function RootPage() {
   const router = useRouter();
   const { user, loading, isRoot } = useUser();
+  const auth = useAuth();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } finally {
+      router.replace('/login');
+      router.refresh();
+    }
+  };
 
   const fn = useMemo(() => {
     try {
@@ -100,6 +114,11 @@ export default function RootPage() {
           </div>
           <div className="text-xs text-muted-foreground">
             Root es un modo oculto (custom claim) que no pertenece a ninguna organización.
+          </div>
+          <div className="pt-2">
+            <Button variant="outline" onClick={handleSignOut}>
+              Cerrar sesión
+            </Button>
           </div>
           {error ? (
             <div className="text-sm text-red-600">{error}</div>
