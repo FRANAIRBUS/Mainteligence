@@ -193,20 +193,15 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if (isOwner(userId) || isManager(request.auth.uid)) && organizationIdMatchesResource();
-      allow list: if isManager(request.auth.uid);allow create: if isSignedIn() && isOwner(userId)
-        && request.resource.data.organizationId != null
-        && exists(/databases/$(database)/documents/organizationsPublic/$(request.resource.data.organizationId));
+      allow list: if isManager(request.auth.uid);
+      allow create: if isSignedIn() && isOwner(userId);
       allow update: if (isOwner(userId) || isAdmin()) && organizationIdMatchesResource() && organizationIdUnchanged();
       allow delete: if isAdmin() && !isOwner(userId) && organizationIdMatchesResource();
     }
 
     match /memberships/{membershipId} {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || (isAdmin() && organizationIdMatchesResource()));
-      allow create: if isSignedIn()
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.organizationId != null
-        && membershipId == (request.auth.uid + '_' + request.resource.data.organizationId)
-        && exists(/databases/$(database)/documents/organizationsPublic/$(request.resource.data.organizationId));
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && organizationIdMatchesRequest();
       allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && organizationIdMatchesResource() && organizationIdUnchanged();
       allow delete: if isAdmin() && organizationIdMatchesResource();
     }

@@ -17,7 +17,7 @@ export function useDoc<T>(path: string | null) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
-  const { user, loading: userLoading, organizationId, profile } = useUser();
+  const { user, loading: userLoading, organizationId, profile, isRoot } = useUser();
   const normalizedRole = normalizeRole(profile?.role);
   const allowCrossOrg = normalizedRole === 'super_admin';
 
@@ -42,6 +42,14 @@ export function useDoc<T>(path: string | null) {
       // we shouldn't even attempt the query. This prevents errors for paths like `users/${user?.uid}`
       // when user is null. We also check for 'undefined' to catch dynamic paths that aren't ready.
       if (!user || path.includes('undefined')) {
+        setLoading(false);
+        setData(null);
+        setError(null);
+        return;
+      }
+
+      // Root users never read tenant data via client SDK.
+      if (isRoot) {
         setLoading(false);
         setData(null);
         setError(null);

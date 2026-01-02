@@ -36,7 +36,6 @@ import {
 } from 'firebase/firestore';
 import { ClientLogo } from '@/components/client-logo';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
-import { REGISTRATION_FLAG_KEY } from '@/lib/registration-flag';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -337,7 +336,6 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(getFriendlyMessage(err));
     } finally {
-      try { sessionStorage.removeItem(REGISTRATION_FLAG_KEY); } catch {}
       setLoading(false);
     }
   };
@@ -397,7 +395,6 @@ export default function LoginPage() {
     } catch (err: any) {
       setError(getFriendlyMessage(err));
     } finally {
-      try { sessionStorage.removeItem(REGISTRATION_FLAG_KEY); } catch {}
       setLoading(false);
     }
   };
@@ -454,9 +451,22 @@ export default function LoginPage() {
     setLoading(true);
     const provider = new GoogleAuthProvider();
     try {
-      try { sessionStorage.setItem(REGISTRATION_FLAG_KEY, '1'); } catch {}
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
+
+      // --- ROOT MODE (hidden) ---
+      // Root users are identified by a Firebase Auth custom claim: token.root === true.
+      // They must NOT have profiles/memberships and must NOT be attached to any org.
+      try {
+        const token = await user.getIdTokenResult();
+        const isRoot = Boolean((token?.claims as any)?.root);
+        if (isRoot) {
+          router.push('/root');
+          return;
+        }
+      } catch {
+        // Ignore and continue normal flow.
+      }
 
       // Resolve existing profile to avoid sobrescribir organizationId en re-logins.
       const userDocRef = doc(firestore, 'users', user.uid);

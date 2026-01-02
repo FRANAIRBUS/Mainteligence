@@ -22,7 +22,6 @@ import {
 import { useAuth, useFirestore } from '../provider';
 import type { Membership, User as UserProfile } from '../models';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
-import { REGISTRATION_FLAG_KEY } from '@/lib/registration-flag';
 
 interface UserContextValue {
   user: AuthUser | null;
@@ -30,6 +29,15 @@ interface UserContextValue {
   organizationId: string | null;
   memberships: Membership[];
   activeMembership: Membership | null;
+  /**
+   * Root mode is a separate, hidden capability that is NOT an app role.
+   * It is granted ONLY via Firebase Auth custom claims (token.root === true).
+   * Root users:
+   * - do NOT get a /users profile document
+   * - do NOT get memberships
+   * - are redirected to /root
+   */
+  isRoot: boolean;
   setActiveOrganizationId: (organizationId: string) => void;
   isLoaded: boolean;
   loading: boolean;
@@ -41,6 +49,7 @@ const UserContext = createContext<UserContextValue>({
   organizationId: null,
   memberships: [],
   activeMembership: null,
+  isRoot: false,
   setActiveOrganizationId: () => undefined,
   isLoaded: false,
   loading: true,
@@ -52,6 +61,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [isRoot, setIsRoot] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null | undefined>(
     undefined,
   );
@@ -74,7 +84,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setMemberships([]);
       setOrganizationId(undefined);
       setProfileLoading(true);
-        const registrationInProgress = typeof window !== 'undefined' && sessionStorage.getItem(REGISTRATION_FLAG_KEY) === '1';
       setMembershipsLoading(true);
       setAuthResolved(false);
       return;
@@ -88,27 +97,37 @@ export function UserProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setMemberships([]);
         setOrganizationId(null);
+        setIsRoot(false);
         setProfileLoading(false);
         setMembershipsLoading(false);
         return;
       }
 
+      // Root users are identified ONLY by a custom claim and do not participate
+      // in org/membership flows.
+      try {
+        const token = await authUser.getIdTokenResult();
+        const rootClaim = Boolean((token?.claims as any)?.root);
+        setIsRoot(rootClaim);
+        if (rootClaim) {
+          setProfile(null);
+          setMemberships([]);
+          setOrganizationId(null);
+          setProfileLoading(false);
+          setMembershipsLoading(false);
+          return;
+        }
+      } catch (e) {
+        // If token read fails, fall back to normal flow.
+        setIsRoot(false);
+      }
+
       try {
         setProfileLoading(true);
-        const registrationInProgress = typeof window !== 'undefined' && sessionStorage.getItem(REGISTRATION_FLAG_KEY) === '1';
         const profileRef = doc(firestore, 'users', authUser.uid);
         const profileSnap = await getDoc(profileRef);
 
         if (!profileSnap.exists()) {
-          if (registrationInProgress) {
-            // Signup wizard will create profile + membership. Avoid bootstrapping to DEFAULT org.
-            setProfile(null);
-            setOrganizationId(null);
-            setMemberships([]);
-            setProfileLoading(false);
-            setMembershipsLoading(false);
-            return;
-          }
           const bootstrappedProfile = await ensureDefaultOrganization(firestore, authUser);
           setProfile(bootstrappedProfile);
           setOrganizationId(bootstrappedProfile?.organizationId ?? null);
@@ -122,16 +141,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
         } as UserProfile;
 
         if (!profileData.organizationId) {
-          if (registrationInProgress) {
-            // Do not mutate orgId during signup flow.
-            setProfile(profileData);
-            setOrganizationId(null);
-            setProfileLoading(false);
-            // memberships will be created by the wizard.
-            setMemberships([]);
-            setMembershipsLoading(false);
-            return;
-          }
           const bootstrappedProfile = await ensureDefaultOrganization(
             firestore,
             authUser,
@@ -157,7 +166,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [auth, firestore]);
 
   useEffect(() => {
-    if (!firestore || !user) {
+    if (!firestore || !user || isRoot) {
       setMemberships([]);
       setMembershipsLoading(false);
       return;
@@ -192,6 +201,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!authResolved) {
+      return;
+    }
+
+    if (isRoot) {
+      setOrganizationId(null);
       return;
     }
 
@@ -248,7 +262,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       memberships.find((membership) => membership.organizationId === resolvedOrganizationId) || null;
     const loading =
       !authResolved || profileLoading || membershipsLoading || organizationId === undefined;
-    const isLoaded = organizationId !== undefined && !loading;
+    const isLoaded = (organizationId !== undefined && !loading) || (isRoot && authResolved);
 
     return {
       user,
@@ -256,6 +270,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       organizationId: resolvedOrganizationId,
       memberships,
       activeMembership,
+      isRoot,
       setActiveOrganizationId,
       isLoaded,
       loading,
@@ -265,6 +280,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     memberships,
     profile,
     user,
+    isRoot,
     authResolved,
     profileLoading,
     membershipsLoading,

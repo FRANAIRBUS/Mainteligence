@@ -5,6 +5,30 @@ import { Resend } from 'resend';
 
 admin.initializeApp();
 
+// ---------------------------------------------------------------------------
+// ROOT MODE (hidden)
+// ---------------------------------------------------------------------------
+// Root is NOT an app role. It is a Firebase Auth custom claim: { root: true }
+// and is intended for a single, hidden operator account. Root:
+//   - must NOT have a /users profile or /memberships
+//   - must NOT belong to any organization
+//   - must only access data through privileged callable functions
+//
+// IMPORTANT: never confuse this with 'super_admin' (which is an in-app role).
+// ---------------------------------------------------------------------------
+
+const assertRoot = (context: functions.https.CallableContext) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+  }
+  const isRoot = Boolean((context.auth.token as any)?.root);
+  if (!isRoot) {
+    throw new functions.https.HttpsError('permission-denied', 'Root only');
+  }
+};
+
+type RootOrgRow = { id: string; name?: string; isActive?: boolean; createdAt?: any; updatedAt?: any };
+
 // --- Email (Resend) ---
 const resendApiKey = process.env.RESEND_API_KEY;
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
@@ -422,3 +446,157 @@ export const onTaskDeleted = functions.firestore
     const taskId = context.params.taskId as string;
     await deleteStoragePrefix(`tasks/${taskId}/`);
   });
+
+// ---------------------------------------------------------------------------
+// Root callables
+// ---------------------------------------------------------------------------
+
+/**
+ * List organizations (id + name). Root-only.
+ */
+export const rootListOrganizations = functions.https.onCall(async (data, context) => {
+  assertRoot(context);
+
+  const limit = Math.max(1, Math.min(200, Number(data?.limit ?? 50)));
+
+  // Order by updatedAt if present, else createdAt.
+  const col = admin.firestore().collection('organizations');
+  let q: FirebaseFirestore.Query = col;
+
+  // We avoid relying on an index that might not exist by trying updatedAt first
+  // and falling back to createdAt.
+  try {
+    q = col.orderBy('updatedAt', 'desc').limit(limit);
+    const snap = await q.get();
+    const organizations: RootOrgRow[] = snap.docs.map((d) => {
+      const v = d.data() as any;
+      return { id: d.id, name: v?.name, isActive: v?.isActive, createdAt: v?.createdAt, updatedAt: v?.updatedAt };
+    });
+    return { organizations };
+  } catch {
+    const snap = await col.orderBy('createdAt', 'desc').limit(limit).get();
+    const organizations: RootOrgRow[] = snap.docs.map((d) => {
+      const v = d.data() as any;
+      return { id: d.id, name: v?.name, isActive: v?.isActive, createdAt: v?.createdAt, updatedAt: v?.updatedAt };
+    });
+    return { organizations };
+  }
+});
+
+/**
+ * Move/upsert a user into an organization (single-tenant style primary org).
+ * Root-only.
+ */
+export const rootUpsertUserToOrganization = functions.https.onCall(async (data, context) => {
+  assertRoot(context);
+
+  const email = String(data?.email ?? '').trim().toLowerCase();
+  const organizationId = String(data?.organizationId ?? '').trim();
+  const role = (String(data?.role ?? 'operario').trim() as 'admin' | 'operario' | 'mantenimiento');
+
+  if (!email) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing email');
+  }
+  if (!organizationId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Missing organizationId');
+  }
+  if (!['admin', 'operario', 'mantenimiento'].includes(role)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid role');
+  }
+
+  // Resolve user from Auth
+  const authUser = await admin.auth().getUserByEmail(email);
+  const uid = authUser.uid;
+
+  // Ensure org documents exist (minimal stub)
+  const orgRef = admin.firestore().doc(`organizations/${organizationId}`);
+  const orgPublicRef = admin.firestore().doc(`organizationsPublic/${organizationId}`);
+  const orgSnap = await orgRef.get();
+  if (!orgSnap.exists) {
+    await orgRef.set(
+      {
+        organizationId,
+        name: organizationId,
+        country: 'ES',
+        isActive: true,
+        plan: {
+          tier: 'trial',
+          maxUsers: 50,
+          maxTicketsPerMonth: 500,
+          maxTasksPerMonth: 500,
+          storageMb: 1024,
+          usersThisMonth: 0,
+          ticketsThisMonth: 0,
+          tasksThisMonth: 0,
+          storageMbUsed: 0,
+        },
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+  await orgPublicRef.set(
+    {
+      organizationId,
+      name: (orgSnap.data() as any)?.name ?? organizationId,
+      isActive: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  // Update user profile doc
+  const userRef = admin.firestore().doc(`users/${uid}`);
+  await userRef.set(
+    {
+      email: authUser.email ?? email,
+      displayName: authUser.displayName ?? authUser.email ?? email,
+      active: true,
+      organizationId,
+      role,
+      isMaintenanceLead: role === 'admin',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  // Upsert membership
+  const membershipId = `${uid}_${organizationId}`;
+  const membershipRef = admin.firestore().doc(`memberships/${membershipId}`);
+  const orgName = (await orgRef.get()).data()?.name ?? organizationId;
+  await membershipRef.set(
+    {
+      userId: uid,
+      organizationId,
+      organizationName: orgName,
+      role,
+      status: 'active',
+      primary: true,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  // Create org member doc (used by rules)
+  const memberRef = admin.firestore().doc(`organizations/${organizationId}/members/${uid}`);
+  await memberRef.set(
+    {
+      uid,
+      orgId: organizationId,
+      email: authUser.email ?? email,
+      displayName: authUser.displayName ?? authUser.email ?? email,
+      active: true,
+      role,
+      source: 'root_console',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  return { ok: true, uid, organizationId, role };
+});

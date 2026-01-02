@@ -18,9 +18,9 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const db = useFirestore();
-  const { user, loading: userLoading, organizationId, profile } = useUser();
+  const { user, loading: userLoading, organizationId, profile, isRoot } = useUser();
   const normalizedRole = normalizeRole(profile?.role);
-  const allowCrossOrg = false; // Always scope to active organizationId
+  const allowCrossOrg = normalizedRole === 'super_admin';
 
   useEffect(() => {
     try {
@@ -39,6 +39,14 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
       }
 
       if (!user) {
+        setLoading(false);
+        setData([]);
+        setError(null);
+        return;
+      }
+
+      // Root users never read tenant data via client SDK.
+      if (isRoot) {
         setLoading(false);
         setData([]);
         setError(null);
@@ -115,7 +123,7 @@ export function useCollectionQuery<T>(
   const db = useFirestore();
   const { user, loading: userLoading, organizationId, profile } = useUser();
   const normalizedRole = normalizeRole(profile?.role);
-  const allowCrossOrg = false; // Always scope to active organizationId
+  const allowCrossOrg = normalizedRole === 'super_admin';
 
   useEffect(() => {
     try {
