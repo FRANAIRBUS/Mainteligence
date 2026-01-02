@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { signOut } from 'firebase/auth';
 
@@ -17,22 +16,32 @@ import { Label } from '@/components/ui/label';
 
 type OrgRow = {
   id: string;
-  name?: string;
+  name?: string | null;
   isActive?: boolean;
+  createdAt?: any;
   updatedAt?: any;
 };
 
-type CursorOrg = { lastUpdatedAtMillis: number | null; lastId: string };
+type OrgSummary = {
+  members?: number;
+  users?: number;
+  tickets?: number;
+  tasks?: number;
+  sites?: number;
+  assets?: number;
+  departments?: number;
+};
 
-type UserRow = {
+type MemberRow = {
   uid: string;
   email?: string | null;
   displayName?: string | null;
   active?: boolean;
-  role?: string;
+  role?: string | null;
+  departmentId?: string | null;
 };
 
-const ROLE_BUTTONS = ['root (claim)', 'super_admin', 'admin', 'maintenance', 'operator'] as const;
+const ROLE_OPTIONS = ['super_admin', 'admin', 'maintenance', 'operator'] as const;
 
 export default function RootPage() {
   const router = useRouter();
@@ -50,33 +59,39 @@ export default function RootPage() {
 
   const [error, setError] = useState<string | null>(null);
 
-  // Orgs table state
+  // ORGS
   const [orgs, setOrgs] = useState<OrgRow[]>([]);
-  const [orgSearch, setOrgSearch] = useState('');
-  const [includeInactive, setIncludeInactive] = useState(false);
+  const [orgsLoading, setOrgsLoading] = useState(false);
+  const [orgQ, setOrgQ] = useState('');
+  const [orgCursor, setOrgCursor] = useState<string | null>(null);
+  const [orgHasMore, setOrgHasMore] = useState(false);
   const [orgLimit, setOrgLimit] = useState(25);
-  const [orgCursor, setOrgCursor] = useState<CursorOrg | null>(null);
-  const [orgNextCursor, setOrgNextCursor] = useState<CursorOrg | null>(null);
-  const [orgLoading, setOrgLoading] = useState(false);
+  const [includeInactive, setIncludeInactive] = useState(true);
 
   const [selectedOrgId, setSelectedOrgId] = useState<string>('');
 
-  // Summary/users state
+  // SUMMARY
+  const [summary, setSummary] = useState<OrgSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summary, setSummary] = useState<any | null>(null);
 
-  const [usersLoading, setUsersLoading] = useState(false);
-  const [users, setUsers] = useState<UserRow[]>([]);
-  const [userSearch, setUserSearch] = useState('');
+  // USERS
+  const [members, setMembers] = useState<MemberRow[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [memberQ, setMemberQ] = useState('');
+  const [memberCursorEmail, setMemberCursorEmail] = useState<string | null>(null);
+  const [memberCursorUid, setMemberCursorUid] = useState<string | null>(null);
+  const [memberHasMore, setMemberHasMore] = useState(false);
+  const [memberLimit, setMemberLimit] = useState(25);
 
-  // Move user
-  const [email, setEmail] = useState('');
+  // MOVE USER
+  const [emailToMove, setEmailToMove] = useState('');
   const [targetOrgId, setTargetOrgId] = useState('default');
-  const [targetRole, setTargetRole] = useState<(typeof ROLE_BUTTONS)[number]>('admin');
+  const [targetRole, setTargetRole] = useState<(typeof ROLE_OPTIONS)[number]>('admin');
   const [moving, setMoving] = useState(false);
 
-  // Danger
-  const [dangerTyped, setDangerTyped] = useState('');
+  // DANGER
+  const [dangerConfirm, setDangerConfirm] = useState('');
+  const canDanger = dangerConfirm.trim() === selectedOrgId && Boolean(selectedOrgId);
 
   useEffect(() => {
     if (loading) return;
@@ -86,7 +101,6 @@ export default function RootPage() {
     }
     if (!isRoot) {
       router.replace('/');
-      return;
     }
   }, [loading, user, isRoot, router]);
 
@@ -99,171 +113,159 @@ export default function RootPage() {
     }
   };
 
-  const loadOrgs = async (opts?: { reset?: boolean }) => {
-    if (!fn) return;
+  const api = useMemo(() => {
+    if (!fn) return null;
+    return {
+      rootListOrganizations: httpsCallable(fn, 'rootListOrganizations'),
+      rootOrgSummary: httpsCallable(fn, 'rootOrgSummary'),
+      rootListUsersByOrg: httpsCallable(fn, 'rootListUsersByOrg'),
+      rootUpsertUserToOrganization: httpsCallable(fn, 'rootUpsertUserToOrganization'),
+      rootDeactivateOrganization: httpsCallable(fn, 'rootDeactivateOrganization'),
+      rootPurgeOrganizationCollection: httpsCallable(fn, 'rootPurgeOrganizationCollection'),
+      rootDeleteOrganizationScaffold: httpsCallable(fn, 'rootDeleteOrganizationScaffold'),
+    };
+  }, [fn]);
+
+  const loadOrgs = async (mode: 'reset' | 'next' = 'reset') => {
+    if (!api) return;
     setError(null);
-    setOrgLoading(true);
-
+    setOrgsLoading(true);
     try {
-      const call = httpsCallable(fn, 'rootListOrganizations');
-
-      const res = await call({
+      const res = await api.rootListOrganizations({
         limit: orgLimit,
+        q: orgQ.trim() || null,
+        cursor: mode === 'next' ? orgCursor : null,
         includeInactive,
-        search: orgSearch.trim(),
-        cursor: opts?.reset ? null : orgCursor,
+        includeDefault: true,
       });
+      const data = res.data as any;
+      const rows = (data?.organizations ?? []) as OrgRow[];
+      const nextCursor = (data?.nextCursor ?? null) as string | null;
 
-      const rows = (res.data as any)?.organizations as OrgRow[];
-      const next = (res.data as any)?.nextCursor as CursorOrg | null;
+      if (mode === 'reset') setOrgs(rows);
+      else setOrgs((prev) => [...prev, ...rows]);
 
-      setOrgs(Array.isArray(rows) ? rows : []);
-      setOrgNextCursor(next || null);
-
-      // if reset, also reset cursor
-      if (opts?.reset) setOrgCursor(null);
-
-      // Auto-select default if nothing selected and exists
-      if (!selectedOrgId) {
-        const hasDefault = (rows || []).some((o) => o.id === 'default');
-        if (hasDefault) setSelectedOrgId('default');
-      }
+      setOrgCursor(nextCursor);
+      setOrgHasMore(Boolean(nextCursor));
     } catch (e: any) {
       setError(e?.message ?? 'Error cargando organizaciones');
     } finally {
-      setOrgLoading(false);
+      setOrgsLoading(false);
     }
   };
 
-  const nextPageOrgs = async () => {
-    if (!orgNextCursor) return;
-    setOrgCursor(orgNextCursor);
-    await loadOrgs();
-  };
-
-  const refreshOrgs = async () => {
-    await loadOrgs({ reset: true });
-  };
-
-  const viewSummary = async () => {
-    if (!fn || !selectedOrgId) return;
+  const loadSummary = async () => {
+    if (!api || !selectedOrgId) return;
     setError(null);
     setSummaryLoading(true);
     try {
-      const call = httpsCallable(fn, 'rootOrgSummary');
-      const res = await call({ organizationId: selectedOrgId });
-      setSummary((res.data as any) || null);
+      const res = await api.rootOrgSummary({ organizationId: selectedOrgId });
+      const data = res.data as any;
+      setSummary((data?.summary ?? null) as OrgSummary);
     } catch (e: any) {
-      setError(e?.message ?? 'Error obteniendo resumen');
+      setError(e?.message ?? 'Error cargando resumen');
     } finally {
       setSummaryLoading(false);
     }
   };
 
-  const viewUsers = async () => {
-    if (!fn || !selectedOrgId) return;
+  const loadMembers = async (mode: 'reset' | 'next' = 'reset') => {
+    if (!api || !selectedOrgId) return;
     setError(null);
-    setUsersLoading(true);
+    setMembersLoading(true);
     try {
-      const call = httpsCallable(fn, 'rootListUsersByOrg');
-      const res = await call({ organizationId: selectedOrgId, limit: 100, search: userSearch.trim() });
-      const rows = (res.data as any)?.users as UserRow[];
-      setUsers(Array.isArray(rows) ? rows : []);
+      const payload: any = { organizationId: selectedOrgId, limit: memberLimit };
+      if (memberQ.trim()) payload.q = memberQ.trim();
+      if (mode === 'next') {
+        payload.cursorEmail = memberCursorEmail;
+        payload.cursorUid = memberCursorUid;
+      }
+
+      const res = await api.rootListUsersByOrg(payload);
+      const data = res.data as any;
+
+      const rows = (data?.users ?? []) as MemberRow[];
+      const nextEmail = (data?.nextCursorEmail ?? null) as string | null;
+      const nextUid = (data?.nextCursorUid ?? null) as string | null;
+
+      if (mode === 'reset') setMembers(rows);
+      else setMembers((prev) => [...prev, ...rows]);
+
+      setMemberCursorEmail(nextEmail);
+      setMemberCursorUid(nextUid);
+      setMemberHasMore(Boolean(nextEmail && nextUid));
     } catch (e: any) {
       setError(e?.message ?? 'Error cargando usuarios');
     } finally {
-      setUsersLoading(false);
+      setMembersLoading(false);
     }
   };
 
   const moveUser = async () => {
-    if (!fn) return;
+    if (!api) return;
     setError(null);
     setMoving(true);
     try {
-      const call = httpsCallable(fn, 'rootUpsertUserToOrganization');
-      const roleToSend = targetRole === 'root (claim)' ? 'operator' : targetRole; // root is claim, not org role
-
-      const res = await call({
-        email: email.trim(),
+      const res = await api.rootUpsertUserToOrganization({
+        email: emailToMove.trim(),
         organizationId: targetOrgId.trim(),
-        role: roleToSend,
+        role: targetRole,
       });
-
       const ok = (res.data as any)?.ok;
       if (!ok) throw new Error('No se pudo aplicar el cambio');
 
-      setEmail('');
-      await refreshOrgs();
-      if (selectedOrgId === targetOrgId.trim()) {
-        await viewUsers();
+      setEmailToMove('');
+      // refresca orgs + users
+      await loadOrgs('reset');
+      if (selectedOrgId) {
+        await loadSummary();
+        await loadMembers('reset');
       }
     } catch (e: any) {
-      setError(e?.message ?? 'Error actualizando usuario');
+      setError(e?.message ?? 'Error reubicando usuario');
     } finally {
       setMoving(false);
     }
   };
 
-  const deactivateOrg = async () => {
-    if (!fn || !selectedOrgId) return;
-    if (dangerTyped.trim() !== selectedOrgId) {
-      setError('Confirmación peligrosa incorrecta (debe coincidir exactamente con organizationId).');
-      return;
-    }
+  const deactivateOrg = async (isActive: boolean) => {
+    if (!api || !selectedOrgId) return;
     setError(null);
     try {
-      const call = httpsCallable(fn, 'rootDeactivateOrganization');
-      await call({ organizationId: selectedOrgId });
-      await refreshOrgs();
+      await api.rootDeactivateOrganization({ organizationId: selectedOrgId, isActive });
+      await loadOrgs('reset');
+      await loadSummary();
     } catch (e: any) {
-      setError(e?.message ?? 'Error desactivando organización');
+      setError(e?.message ?? 'Error actualizando organización');
     }
   };
 
-  const purgeCollection = async (collectionName: string) => {
-    if (!fn || !selectedOrgId) return;
-    if (dangerTyped.trim() !== selectedOrgId) {
-      setError('Confirmación peligrosa incorrecta (debe coincidir exactamente con organizationId).');
-      return;
-    }
+  const purge = async (collection: string) => {
+    if (!api || !selectedOrgId) return;
     setError(null);
     try {
-      const call = httpsCallable(fn, 'rootPurgeOrganizationCollection');
-      await call({ organizationId: selectedOrgId, collectionName, maxDocs: 20000 });
-      await viewSummary();
-      await viewUsers();
+      await api.rootPurgeOrganizationCollection({ organizationId: selectedOrgId, collection, batchSize: 200 });
+      await loadSummary();
+      if (collection === 'users') await loadMembers('reset');
     } catch (e: any) {
-      setError(e?.message ?? `Error purgando ${collectionName}`);
+      setError(e?.message ?? 'Error purgando colección');
     }
   };
 
-  const scaffoldDelete = async () => {
-    if (!fn || !selectedOrgId) return;
-    if (dangerTyped.trim() !== selectedOrgId) {
-      setError('Confirmación peligrosa incorrecta (debe coincidir exactamente con organizationId).');
-      return;
-    }
+  const deleteScaffold = async () => {
+    if (!api || !selectedOrgId) return;
     setError(null);
     try {
-      const call = httpsCallable(fn, 'rootDeleteOrganizationScaffold');
-      await call({ organizationId: selectedOrgId });
+      await api.rootDeleteOrganizationScaffold({ organizationId: selectedOrgId });
       setSelectedOrgId('');
-      await refreshOrgs();
       setSummary(null);
-      setUsers([]);
+      setMembers([]);
+      setDangerConfirm('');
+      await loadOrgs('reset');
     } catch (e: any) {
-      setError(e?.message ?? 'Error en scaffold delete');
+      setError(e?.message ?? 'Error borrando scaffold');
     }
   };
-
-  useEffect(() => {
-    // initial load
-    if (!loading && user && isRoot) {
-      loadOrgs({ reset: true }).catch(() => null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, user, isRoot]);
 
   if (loading || !user || !isRoot) {
     return (
@@ -291,264 +293,296 @@ export default function RootPage() {
             <Button variant="outline" onClick={handleSignOut}>
               Cerrar sesión
             </Button>
-            <Button onClick={refreshOrgs} disabled={orgLoading || !fn}>
-              {orgLoading ? 'Cargando…' : 'Refrescar organizaciones'}
-            </Button>
           </div>
 
-          {error ? <div className="text-sm text-red-600">{error}</div> : null}
+          {error ? <div className="text-sm text-red-600 pt-2">{error}</div> : null}
         </CardContent>
       </Card>
 
+      {/* ORGS TABLE */}
       <Card>
         <CardHeader>
-          <CardTitle>Organizaciones</CardTitle>
+          <CardTitle>Organizaciones (PRO)</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-2 md:grid-cols-4">
-            <div className="grid gap-2">
-              <Label>Búsqueda</Label>
-              <Input
-                value={orgSearch}
-                onChange={(e) => setOrgSearch(e.target.value)}
-                placeholder="default, Yeray, Montesdeoca…"
-              />
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="md:col-span-2">
+              <Label>Búsqueda (prefijo orgId)</Label>
+              <Input value={orgQ} onChange={(e) => setOrgQ(e.target.value)} placeholder="default, Yeray..." />
             </div>
 
-            <div className="grid gap-2">
+            <div>
               <Label>Límite</Label>
               <Input
-                value={String(orgLimit)}
-                onChange={(e) => setOrgLimit(parseInt(e.target.value || '25', 10) || 25)}
-                placeholder="25"
+                type="number"
+                value={orgLimit}
+                onChange={(e) => setOrgLimit(Math.max(5, Math.min(200, Number(e.target.value || 25))))}
               />
             </div>
 
-            <div className="grid gap-2">
-              <Label>Incluir inactivas</Label>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant={includeInactive ? 'default' : 'outline'}
-                  onClick={() => setIncludeInactive((v) => !v)}
-                >
-                  {includeInactive ? 'Sí' : 'No'}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => loadOrgs({ reset: true })} disabled={orgLoading}>
-                  Aplicar filtros
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Selecciona organización</Label>
-              <select
-                className="border rounded-md px-3 py-2 text-sm"
-                value={selectedOrgId}
-                onChange={(e) => setSelectedOrgId(e.target.value)}
-              >
-                <option value="">(ninguna)</option>
-                {orgs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.id}
-                  </option>
-                ))}
-              </select>
+            <div className="flex items-end gap-2">
+              <Button onClick={() => loadOrgs('reset')} disabled={!api || orgsLoading}>
+                {orgsLoading ? 'Cargando…' : 'Cargar'}
+              </Button>
+              <Button onClick={() => loadOrgs('next')} disabled={!api || orgsLoading || !orgHasMore}>
+                Más
+              </Button>
             </div>
           </div>
 
+          <div className="flex items-center gap-2">
+            <input
+              id="inactive"
+              type="checkbox"
+              checked={includeInactive}
+              onChange={(e) => setIncludeInactive(e.target.checked)}
+            />
+            <Label htmlFor="inactive">Incluir inactivas</Label>
+          </div>
+
           <div className="text-sm text-muted-foreground">
-            {orgs.length === 0 ? 'Sin datos (aún).' : `Mostrando ${orgs.length} organizaciones.`}
+            {orgs.length === 0 ? 'Sin datos.' : `Mostrando ${orgs.length} organizaciones.`}
           </div>
 
           {orgs.length > 0 ? (
             <div className="overflow-auto border rounded-md">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40">
-                  <tr>
-                    <th className="text-left p-2">organizationId</th>
-                    <th className="text-left p-2">name</th>
-                    <th className="text-left p-2">active</th>
+                  <tr className="text-left">
+                    <th className="p-2">orgId</th>
+                    <th className="p-2">name</th>
+                    <th className="p-2">active</th>
+                    <th className="p-2">acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {orgs.map((o) => (
-                    <tr
-                      key={o.id}
-                      className={`border-t hover:bg-muted/30 cursor-pointer ${
-                        selectedOrgId === o.id ? 'bg-muted/30' : ''
-                      }`}
-                      onClick={() => setSelectedOrgId(o.id)}
-                    >
+                    <tr key={o.id} className="border-t">
                       <td className="p-2 font-medium">{o.id}</td>
                       <td className="p-2 text-muted-foreground">{o.name ?? ''}</td>
                       <td className="p-2">{o.isActive === false ? 'false' : 'true'}</td>
+                      <td className="p-2">
+                        <Button
+                          size="sm"
+                          variant={selectedOrgId === o.id ? 'default' : 'outline'}
+                          onClick={() => {
+                            setSelectedOrgId(o.id);
+                            setTargetOrgId(o.id);
+                            setSummary(null);
+                            setMembers([]);
+                            setMemberQ('');
+                            setMemberCursorEmail(null);
+                            setMemberCursorUid(null);
+                            setMemberHasMore(false);
+                            setDangerConfirm('');
+                          }}
+                        >
+                          Seleccionar
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : null}
+        </CardContent>
+      </Card>
 
-          <div className="flex gap-2 flex-wrap">
-            <Button onClick={nextPageOrgs} disabled={!orgNextCursor || orgLoading}>
-              Siguiente página
-            </Button>
-            <Button variant="outline" onClick={() => setOrgCursor(null)} disabled={!orgCursor || orgLoading}>
-              Reset cursor
-            </Button>
-          </div>
+      {/* ORG DETAIL */}
+      {selectedOrgId ? (
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>Organización seleccionada: {selectedOrgId}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-2 flex-wrap">
+                <Button onClick={loadSummary} disabled={!api || summaryLoading}>
+                  {summaryLoading ? 'Cargando…' : 'Ver resumen'}
+                </Button>
+                <Button onClick={() => loadMembers('reset')} disabled={!api || membersLoading}>
+                  {membersLoading ? 'Cargando…' : 'Ver usuarios'}
+                </Button>
+              </div>
 
-          <div className="flex gap-2 flex-wrap pt-2">
-            <Button onClick={viewSummary} disabled={!selectedOrgId || summaryLoading || !fn}>
-              {summaryLoading ? 'Cargando…' : 'Ver resumen'}
-            </Button>
-            <Button onClick={viewUsers} disabled={!selectedOrgId || usersLoading || !fn}>
-              {usersLoading ? 'Cargando…' : 'Ver usuarios'}
-            </Button>
-          </div>
+              {summary ? (
+                <div className="text-sm">
+                  <div className="font-medium">Resumen</div>
+                  <div className="grid gap-1 mt-2">
+                    {Object.entries(summary).map(([k, v]) => (
+                      <div key={k} className="flex justify-between border rounded px-3 py-2">
+                        <span className="text-muted-foreground">{k}</span>
+                        <span className="font-medium">{String(v ?? 0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">Sin resumen (aún).</div>
+              )}
+            </CardContent>
+          </Card>
 
-          {summary ? (
-            <div className="border rounded-md p-3 text-sm">
-              <div className="font-medium mb-2">Resumen:</div>
-              <pre className="text-xs overflow-auto">{JSON.stringify(summary.counts ?? summary, null, 2)}</pre>
-            </div>
-          ) : null}
-
-          {selectedOrgId ? (
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Usuarios en organización</div>
-              <div className="text-xs text-muted-foreground">Org seleccionada: {selectedOrgId}</div>
-
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label>Buscar usuario</Label>
-                  <Input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} placeholder="email, nombre…" />
+          <Card>
+            <CardHeader>
+              <CardTitle>Usuarios en organización</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="md:col-span-2">
+                  <Label>Búsqueda (prefijo email)</Label>
+                  <Input value={memberQ} onChange={(e) => setMemberQ(e.target.value)} placeholder="a, fran, ..." />
+                </div>
+                <div>
+                  <Label>Límite</Label>
+                  <Input
+                    type="number"
+                    value={memberLimit}
+                    onChange={(e) => setMemberLimit(Math.max(5, Math.min(200, Number(e.target.value || 25))))}
+                  />
                 </div>
                 <div className="flex items-end gap-2">
-                  <Button variant="outline" onClick={viewUsers} disabled={!fn || usersLoading}>
-                    {usersLoading ? 'Cargando…' : 'Aplicar búsqueda'}
+                  <Button onClick={() => loadMembers('reset')} disabled={!api || membersLoading}>
+                    Buscar
+                  </Button>
+                  <Button onClick={() => loadMembers('next')} disabled={!api || membersLoading || !memberHasMore}>
+                    Más
                   </Button>
                 </div>
               </div>
 
-              {users.length === 0 ? (
-                <div className="text-sm text-muted-foreground">Sin usuarios (o filtro sin resultados).</div>
-              ) : (
+              <div className="text-sm text-muted-foreground">Org: {selectedOrgId}</div>
+
+              {members.length > 0 ? (
                 <div className="overflow-auto border rounded-md">
                   <table className="w-full text-sm">
                     <thead className="bg-muted/40">
-                      <tr>
-                        <th className="text-left p-2">email</th>
-                        <th className="text-left p-2">uid</th>
-                        <th className="text-left p-2">displayName</th>
-                        <th className="text-left p-2">active</th>
-                        <th className="text-left p-2">role</th>
+                      <tr className="text-left">
+                        <th className="p-2">email</th>
+                        <th className="p-2">uid</th>
+                        <th className="p-2">displayName</th>
+                        <th className="p-2">active</th>
+                        <th className="p-2">role</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((u) => (
-                        <tr key={u.uid} className="border-t">
-                          <td className="p-2">{u.email ?? '-'}</td>
-                          <td className="p-2 text-muted-foreground">{u.uid}</td>
-                          <td className="p-2">{u.displayName ?? '-'}</td>
-                          <td className="p-2">{u.active ? 'true' : 'false'}</td>
-                          <td className="p-2">{u.role ?? 'operator'}</td>
+                      {members.map((m) => (
+                        <tr key={m.uid} className="border-t">
+                          <td className="p-2">{m.email ?? ''}</td>
+                          <td className="p-2 font-mono text-xs">{m.uid}</td>
+                          <td className="p-2">{m.displayName ?? ''}</td>
+                          <td className="p-2">{m.active === false ? 'false' : 'true'}</td>
+                          <td className="p-2">{m.role ?? ''}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">Sin usuarios (o aún no cargados).</div>
               )}
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Reubicar usuario a organización</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-2">
-            <Label>Email del usuario</Label>
-            <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@empresa.com" />
-          </div>
-          <div className="grid gap-2">
-            <Label>organizationId destino</Label>
-            <Input value={targetOrgId} onChange={(e) => setTargetOrgId(e.target.value)} placeholder="default" />
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Reubicar usuario a organización</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-2">
+                <Label>Email del usuario</Label>
+                <Input value={emailToMove} onChange={(e) => setEmailToMove(e.target.value)} placeholder="usuario@empresa.com" />
+              </div>
 
-          <div className="grid gap-2">
-            <Label>Rol (en esa organización)</Label>
-            <div className="flex gap-2 flex-wrap">
-              {ROLE_BUTTONS.map((r) => (
-                <Button
-                  key={r}
-                  variant={targetRole === r ? 'default' : 'outline'}
-                  onClick={() => setTargetRole(r)}
-                  type="button"
-                >
-                  {r}
+              <div className="grid gap-2">
+                <Label>organizationId destino</Label>
+                <Input value={targetOrgId} onChange={(e) => setTargetOrgId(e.target.value)} placeholder="default" />
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Rol (en esa organización)</Label>
+                <div className="flex gap-2 flex-wrap">
+                  <Button variant="outline" type="button" disabled>
+                    root (claim)
+                  </Button>
+                  {ROLE_OPTIONS.map((r) => (
+                    <Button
+                      key={r}
+                      variant={targetRole === r ? 'default' : 'outline'}
+                      onClick={() => setTargetRole(r)}
+                      type="button"
+                    >
+                      {r}
+                    </Button>
+                  ))}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Nota: <b>root</b> es un custom claim y no se asigna como role en org.
+                </div>
+              </div>
+
+              <Button onClick={moveUser} disabled={!emailToMove.trim() || !targetOrgId.trim() || moving || !api}>
+                {moving ? 'Aplicando…' : 'Aplicar'}
+              </Button>
+
+              <div className="text-xs text-muted-foreground">
+                Esto crea/actualiza: users/{'{uid}'} (organizationId, role), memberships (uid_orgId) y organizations/{'{orgId}'}/members/{'{uid}'}.
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Zona peligrosa</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Para acciones destructivas, escribe exactamente el <b>organizationId</b>: {selectedOrgId}
+              </div>
+              <Input value={dangerConfirm} onChange={(e) => setDangerConfirm(e.target.value)} placeholder={selectedOrgId} />
+
+              <div className="flex gap-2 flex-wrap">
+                <Button variant="outline" disabled={!canDanger} onClick={() => deactivateOrg(false)}>
+                  Desactivar organización
                 </Button>
-              ))}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Nota: <b>root</b> es un custom claim y <b>no</b> se asigna como role en org. Usa super_admin/admin/etc.
-            </div>
-          </div>
+                <Button variant="outline" disabled={!canDanger} onClick={() => deactivateOrg(true)}>
+                  Activar organización
+                </Button>
+              </div>
 
-          <Button onClick={moveUser} disabled={!email.trim() || !targetOrgId.trim() || moving || !fn}>
-            {moving ? 'Aplicando…' : 'Aplicar'}
-          </Button>
+              <div className="flex gap-2 flex-wrap">
+                <Button variant="outline" disabled={!canDanger} onClick={() => purge('tickets')}>
+                  Purgar tickets
+                </Button>
+                <Button variant="outline" disabled={!canDanger} onClick={() => purge('tasks')}>
+                  Purgar tasks
+                </Button>
+                <Button variant="outline" disabled={!canDanger} onClick={() => purge('sites')}>
+                  Purgar sites
+                </Button>
+                <Button variant="outline" disabled={!canDanger} onClick={() => purge('assets')}>
+                  Purgar assets
+                </Button>
+                <Button variant="outline" disabled={!canDanger} onClick={() => purge('departments')}>
+                  Purgar departments
+                </Button>
+              </div>
 
-          <div className="text-xs text-muted-foreground">
-            Esto crea/actualiza: users/{'{uid}'} (organizationId), memberships (userId_orgId) y organizations/{'{orgId}'}/members/
-            {'{uid}'}.
-          </div>
-        </CardContent>
-      </Card>
+              <div className="pt-2">
+                <Button variant="destructive" disabled={!canDanger} onClick={deleteScaffold}>
+                  Scaffold delete org
+                </Button>
+              </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Zona peligrosa</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="text-sm text-muted-foreground">
-            Para acciones destructivas, escribe exactamente el <b>organizationId</b> seleccionado:
-          </div>
-
-          <div className="grid gap-2">
-            <Label>organizationId seleccionado</Label>
-            <Input value={selectedOrgId || ''} readOnly />
-          </div>
-
-          <div className="grid gap-2">
-            <Label>Confirmación (escribe exactamente el organizationId)</Label>
-            <Input value={dangerTyped} onChange={(e) => setDangerTyped(e.target.value)} placeholder="Ej: YerayReyes" />
-          </div>
-
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="outline" onClick={deactivateOrg} disabled={!selectedOrgId || !fn}>
-              Desactivar organización
-            </Button>
-            <Button variant="outline" onClick={() => purgeCollection('tickets')} disabled={!selectedOrgId || !fn}>
-              Purgar tickets (solo org)
-            </Button>
-            <Button variant="outline" onClick={() => purgeCollection('tasks')} disabled={!selectedOrgId || !fn}>
-              Purgar tasks (solo org)
-            </Button>
-            <Button variant="destructive" onClick={scaffoldDelete} disabled={!selectedOrgId || !fn}>
-              Scaffold delete org
-            </Button>
-          </div>
-
-          <div className="text-xs text-muted-foreground">
-            Recomendación: usa “Desactivar” antes de borrar. “Purgar” elimina documentos asociados a esa org (según la función).
-            “Scaffold delete” elimina estructura base.
-          </div>
-        </CardContent>
-      </Card>
+              <div className="text-xs text-muted-foreground">
+                Recomendación: desactiva antes de borrar. “Purgar” elimina docs con organizationId = org. “Scaffold delete”
+                elimina organizations/{'{orgId}'} y organizationsPublic/{'{orgId}'}.
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
     </div>
   );
 }

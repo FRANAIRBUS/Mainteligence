@@ -1,421 +1,548 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootSetUserRootClaim = exports.rootUpsertUserToOrganization = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskAssign = exports.onTicketAssign = void 0;
+exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskAssign = exports.onTicketAssign = void 0;
 const functions = require("firebase-functions/v1");
-const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 admin.initializeApp();
-function assertRoot(context) {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
-    }
-    const token = context.auth.token;
-    if ((token === null || token === void 0 ? void 0 : token.root) !== true) {
-        throw new functions.https.HttpsError('permission-denied', 'Solo root puede ejecutar esta acción.');
-    }
+const db = admin.firestore();
+function httpsError(code, message) {
+    return new functions.https.HttpsError(code, message);
 }
-function clampInt(v, min, max, fallback) {
-    const n = Number(v);
-    if (!Number.isFinite(n))
-        return fallback;
-    return Math.max(min, Math.min(max, Math.trunc(n)));
+function requireAuth(context) {
+    var _a;
+    if (!((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid))
+        throw httpsError('unauthenticated', 'Debes iniciar sesión.');
+    return context.auth.uid;
 }
-async function safeCount(q) {
+function isRootClaim(context) {
     var _a, _b;
-    const anyQ = q;
-    if (typeof anyQ.count === 'function') {
-        const res = await anyQ.count().get();
-        return Number((_b = (_a = res === null || res === void 0 ? void 0 : res.data()) === null || _a === void 0 ? void 0 : _a.count) !== null && _b !== void 0 ? _b : 0);
-    }
-    const snap = await q.get();
-    return snap.size;
+    return Boolean(((_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.root) === true);
 }
-// --------------------------
-// TRIGGERS
-// --------------------------
-exports.onTicketAssign = functions.firestore
-    .document('tickets/{ticketId}')
-    .onUpdate(async (change, context) => {
-    var _a, _b;
-    const after = change.after.data();
-    const before = change.before.data();
-    if (!after || !before)
-        return;
-    const prev = (_a = before.assignedToUserId) !== null && _a !== void 0 ? _a : null;
-    const next = (_b = after.assignedToUserId) !== null && _b !== void 0 ? _b : null;
-    if (prev === next)
-        return;
-    logger.info('onTicketAssign', { ticketId: context.params.ticketId, prev, next });
-});
-exports.onTaskAssign = functions.firestore
-    .document('tasks/{taskId}')
-    .onUpdate(async (change, context) => {
-    var _a, _b;
-    const after = change.after.data();
-    const before = change.before.data();
-    if (!after || !before)
-        return;
-    const prev = (_a = before.assignedToUserId) !== null && _a !== void 0 ? _a : null;
-    const next = (_b = after.assignedToUserId) !== null && _b !== void 0 ? _b : null;
-    if (prev === next)
-        return;
-    logger.info('onTaskAssign', { taskId: context.params.taskId, prev, next });
-});
-exports.onTicketClosed = functions.firestore
-    .document('tickets/{ticketId}')
-    .onUpdate(async (change, context) => {
-    var _a, _b;
-    const after = change.after.data();
-    const before = change.before.data();
-    if (!after || !before)
-        return;
-    const wasClosed = String((_a = before.status) !== null && _a !== void 0 ? _a : '').toLowerCase() === 'closed';
-    const isClosed = String((_b = after.status) !== null && _b !== void 0 ? _b : '').toLowerCase() === 'closed';
-    if (wasClosed || !isClosed)
-        return;
-    logger.info('onTicketClosed', { ticketId: context.params.ticketId });
-});
-exports.onTicketDeleted = functions.firestore
-    .document('tickets/{ticketId}')
-    .onDelete(async (_snap, context) => {
-    logger.info('onTicketDeleted', { ticketId: context.params.ticketId });
-});
-exports.onTaskDeleted = functions.firestore
-    .document('tasks/{taskId}')
-    .onDelete(async (_snap, context) => {
-    logger.info('onTaskDeleted', { taskId: context.params.taskId });
-});
-// --------------------------
-// ROOT CALLABLES
-// --------------------------
-exports.rootListOrganizations = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
-    assertRoot(context);
-    const db = admin.firestore();
-    const limit = Math.max(1, Math.min(200, Number((_a = data === null || data === void 0 ? void 0 : data.limit) !== null && _a !== void 0 ? _a : 25)));
-    const cursor = String((_b = data === null || data === void 0 ? void 0 : data.cursor) !== null && _b !== void 0 ? _b : '').trim(); // last orgId from previous page
-    const search = String((_c = data === null || data === void 0 ? void 0 : data.search) !== null && _c !== void 0 ? _c : '').trim(); // prefix match on orgId
-    const includeInactive = Boolean((_d = data === null || data === void 0 ? void 0 : data.includeInactive) !== null && _d !== void 0 ? _d : true);
-    // Ensure canonical "default" exists so it always appears in listings.
-    const defaultRef = db.collection('organizations').doc('default');
-    const defaultSnap = await defaultRef.get();
-    if (!defaultSnap.exists) {
-        await defaultRef.set({
+async function getUserDoc(uid) {
+    const ref = db.collection('users').doc(uid);
+    const snap = await ref.get();
+    return { ref, snap, data: snap.data() };
+}
+function normalizeRole(input) {
+    const r = String(input !== null && input !== void 0 ? input : '').trim().toLowerCase();
+    if (r === 'super_admin' || r === 'superadmin')
+        return 'super_admin';
+    if (r === 'admin' || r === 'administrator')
+        return 'admin';
+    if (r === 'maintenance' || r === 'mantenimiento' || r === 'maint' || r === 'maintainer')
+        return 'maintenance';
+    if (r === 'operator' || r === 'operario' || r === 'op')
+        return 'operator';
+    return 'operator';
+}
+async function ensureDefaultOrganizationExists() {
+    const ref = db.collection('organizations').doc('default');
+    const snap = await ref.get();
+    if (!snap.exists) {
+        await ref.set({
             organizationId: 'default',
             name: 'default',
             isActive: true,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            source: 'auto_ensure_default_org',
+            source: 'ensure_default_org_v1',
         }, { merge: true });
     }
     else {
-        await defaultRef.set({
-            organizationId: 'default',
-            name: (_f = (_e = defaultSnap.data()) === null || _e === void 0 ? void 0 : _e.name) !== null && _f !== void 0 ? _f : 'default',
-            isActive: (_h = (_g = defaultSnap.data()) === null || _g === void 0 ? void 0 : _g.isActive) !== null && _h !== void 0 ? _h : true,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+        const d = snap.data();
+        // si no existe el campo, lo normalizamos para que nunca se "pierda" en queries futuras
+        if ((d === null || d === void 0 ? void 0 : d.isActive) === undefined) {
+            await ref.set({ isActive: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        }
     }
-    // Order by documentId to avoid missing-field issues.
-    let q = db
+}
+async function countQuery(q) {
+    var _a, _b;
+    try {
+        // @ts-ignore - count() existe en SDK modernos
+        const agg = await q.count().get();
+        // @ts-ignore
+        return Number((_b = (_a = agg.data()) === null || _a === void 0 ? void 0 : _a.count) !== null && _b !== void 0 ? _b : 0);
+    }
+    catch (_c) {
+        const snap = await q.get();
+        return snap.size;
+    }
+}
+async function auditLog(params) {
+    await db.collection('auditLogs').add(Object.assign(Object.assign({}, params), { createdAt: admin.firestore.FieldValue.serverTimestamp() }));
+}
+/* ------------------------------
+   FIRESTORE TRIGGERS (GEN1)
+--------------------------------- */
+exports.onTicketAssign = functions.firestore
+    .document('tickets/{ticketId}')
+    .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    if (!before || !after)
+        return;
+    if (before.assignedTo === after.assignedTo)
+        return;
+    console.log('[onTicketAssign]', context.params.ticketId, before.assignedTo, '->', after.assignedTo);
+});
+exports.onTaskAssign = functions.firestore
+    .document('tasks/{taskId}')
+    .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    if (!before || !after)
+        return;
+    if (before.assignedTo === after.assignedTo)
+        return;
+    console.log('[onTaskAssign]', context.params.taskId, before.assignedTo, '->', after.assignedTo);
+});
+exports.onTicketClosed = functions.firestore
+    .document('tickets/{ticketId}')
+    .onUpdate(async (change, context) => {
+    var _a;
+    const before = change.before.data();
+    const after = change.after.data();
+    if (!before || !after)
+        return;
+    if (before.status === after.status)
+        return;
+    const s = String((_a = after.status) !== null && _a !== void 0 ? _a : '').toLowerCase();
+    if (s !== 'cerrada' && s !== 'closed')
+        return;
+    console.log('[onTicketClosed]', context.params.ticketId, 'status ->', after.status);
+});
+exports.onTicketDeleted = functions.firestore
+    .document('tickets/{ticketId}')
+    .onDelete(async (_snap, context) => {
+    console.log('[onTicketDeleted]', context.params.ticketId);
+});
+exports.onTaskDeleted = functions.firestore
+    .document('tasks/{taskId}')
+    .onDelete(async (_snap, context) => {
+    console.log('[onTaskDeleted]', context.params.taskId);
+});
+/* ------------------------------
+   ROOT (custom claim) CALLABLES
+--------------------------------- */
+function requireRoot(context) {
+    const uid = requireAuth(context);
+    if (!isRootClaim(context))
+        throw httpsError('permission-denied', 'Solo ROOT (claim) puede hacer esto.');
+    return uid;
+}
+exports.rootListOrganizations = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f;
+    requireRoot(context);
+    const limit = Math.min(Number((_a = data === null || data === void 0 ? void 0 : data.limit) !== null && _a !== void 0 ? _a : 25), 200);
+    const cursor = String((_b = data === null || data === void 0 ? void 0 : data.cursor) !== null && _b !== void 0 ? _b : '').trim(); // last docId
+    const qTerm = String((_c = data === null || data === void 0 ? void 0 : data.q) !== null && _c !== void 0 ? _c : '').trim();
+    const includeDefault = (data === null || data === void 0 ? void 0 : data.includeDefault) !== false; // default true
+    const includeInactive = (data === null || data === void 0 ? void 0 : data.includeInactive) !== false; // default true
+    if (includeDefault)
+        await ensureDefaultOrganizationExists();
+    // OJO: NO usar where('isActive','!=',false) porque excluye docs sin el campo isActive (como default)
+    let query = db
         .collection('organizations')
         .orderBy(admin.firestore.FieldPath.documentId())
         .limit(limit + 1);
-    if (search) {
-        const end = `${search}\uf8ff`;
-        q = q.startAt(search).endAt(end);
+    if (qTerm) {
+        query = db
+            .collection('organizations')
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .startAt(qTerm)
+            .endAt(qTerm + '\uf8ff')
+            .limit(limit + 1);
     }
-    if (cursor) {
-        q = q.startAfter(cursor);
+    else if (cursor) {
+        query = db
+            .collection('organizations')
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .startAfter(cursor)
+            .limit(limit + 1);
     }
-    const snap = await q.get();
+    const snap = await query.get();
     const docs = snap.docs;
-    const rows = docs.slice(0, limit).map((d) => {
-        const v = d.data() || {};
-        const isActive = typeof v.isActive === 'boolean' ? v.isActive : true;
+    const hasMore = docs.length > limit;
+    const sliced = hasMore ? docs.slice(0, limit) : docs;
+    let rows = sliced.map((d) => {
+        var _a, _b, _c;
+        const v = d.data();
+        const isActive = (v === null || v === void 0 ? void 0 : v.isActive) !== false; // missing => true
         return {
             id: d.id,
-            name: v.name,
+            name: (_a = v === null || v === void 0 ? void 0 : v.name) !== null && _a !== void 0 ? _a : null,
             isActive,
-            createdAt: v.createdAt,
-            updatedAt: v.updatedAt,
+            createdAt: (_b = v === null || v === void 0 ? void 0 : v.createdAt) !== null && _b !== void 0 ? _b : null,
+            updatedAt: (_c = v === null || v === void 0 ? void 0 : v.updatedAt) !== null && _c !== void 0 ? _c : null,
         };
     });
-    const filtered = includeInactive ? rows : rows.filter((r) => r.isActive !== false);
-    const nextCursorOut = docs.length > limit ? docs[limit].id : null;
-    return { organizations: filtered, nextCursor: nextCursorOut };
-});
-exports.rootUpsertUserToOrganization = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d;
-    assertRoot(context);
-    const email = String((_a = data === null || data === void 0 ? void 0 : data.email) !== null && _a !== void 0 ? _a : '').trim().toLowerCase();
-    const orgId = String((_b = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _b !== void 0 ? _b : '').trim();
-    const role = String((_c = data === null || data === void 0 ? void 0 : data.role) !== null && _c !== void 0 ? _c : '').trim();
-    if (!email)
-        throw new functions.https.HttpsError('invalid-argument', 'Email requerido.');
-    if (!orgId)
-        throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
-    if (!role)
-        throw new functions.https.HttpsError('invalid-argument', 'role requerido.');
-    const auth = admin.auth();
-    const user = await auth.getUserByEmail(email);
-    const db = admin.firestore();
-    const uid = user.uid;
-    // Ensure org doc exists
-    const orgRef = db.collection('organizations').doc(orgId);
-    await orgRef.set({
-        organizationId: orgId,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-    // Update /users/{uid}
-    const userRef = db.collection('users').doc(uid);
-    await userRef.set({
-        email,
-        organizationId: orgId,
-        role,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-    // memberships
-    const msRef = db.collection('memberships').doc(`${uid}_${orgId}`);
-    await msRef.set({
-        userId: uid,
-        organizationId: orgId,
-        role,
-        active: true,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        source: 'root_upsert_user_to_org',
-    }, { merge: true });
-    // org members subcollection
-    const memberRef = orgRef.collection('members').doc(uid);
-    await memberRef.set({
-        uid,
-        orgId,
-        email,
-        displayName: (_d = user.displayName) !== null && _d !== void 0 ? _d : null,
-        active: true,
-        role,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        source: 'root_upsert_user_to_org',
-    }, { merge: true });
-    return { ok: true, uid, organizationId: orgId, role };
-});
-exports.rootSetUserRootClaim = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d;
-    assertRoot(context);
-    const email = String((_a = data === null || data === void 0 ? void 0 : data.email) !== null && _a !== void 0 ? _a : '').trim();
-    const uidIn = String((_b = data === null || data === void 0 ? void 0 : data.uid) !== null && _b !== void 0 ? _b : '').trim();
-    const root = Boolean(data === null || data === void 0 ? void 0 : data.root);
-    const detach = Boolean((_c = data === null || data === void 0 ? void 0 : data.detach) !== null && _c !== void 0 ? _c : true);
-    if (!email && !uidIn) {
-        throw new functions.https.HttpsError('invalid-argument', 'Falta email o uid.');
-    }
-    const auth = admin.auth();
-    const userRecord = uidIn ? await auth.getUser(uidIn) : await auth.getUserByEmail(email);
-    const uid = userRecord.uid;
-    const currentClaims = ((_d = userRecord.customClaims) !== null && _d !== void 0 ? _d : {});
-    const nextClaims = Object.assign(Object.assign({}, currentClaims), { root });
-    if (!root)
-        delete nextClaims.root;
-    await auth.setCustomUserClaims(uid, nextClaims);
-    let firestoreOps = 0;
-    if (detach) {
-        const db = admin.firestore();
-        const batch = db.batch();
-        const uRef = db.collection('users').doc(uid);
-        const uSnap = await uRef.get();
-        if (uSnap.exists) {
-            batch.delete(uRef);
-            firestoreOps++;
+    if (!includeInactive)
+        rows = rows.filter((o) => o.isActive);
+    // fuerza default visible si por lo que sea no vino (y el caller lo pidió)
+    if (includeDefault && !rows.some((r) => r.id === 'default')) {
+        const def = await db.collection('organizations').doc('default').get();
+        if (def.exists) {
+            const v = def.data();
+            rows.unshift({
+                id: 'default',
+                name: (_d = v === null || v === void 0 ? void 0 : v.name) !== null && _d !== void 0 ? _d : 'default',
+                isActive: (v === null || v === void 0 ? void 0 : v.isActive) !== false,
+                createdAt: (_e = v === null || v === void 0 ? void 0 : v.createdAt) !== null && _e !== void 0 ? _e : null,
+                updatedAt: (_f = v === null || v === void 0 ? void 0 : v.updatedAt) !== null && _f !== void 0 ? _f : null,
+            });
         }
-        const msSnap = await db.collection('memberships').where('userId', '==', uid).get();
-        msSnap.docs.forEach((d) => {
-            batch.delete(d.ref);
-            firestoreOps++;
-        });
-        const orgs = await db.collection('organizations').get();
-        for (const o of orgs.docs) {
-            const mRef = db.collection('organizations').doc(o.id).collection('members').doc(uid);
-            const mSnap = await mRef.get();
-            if (mSnap.exists) {
-                batch.delete(mRef);
-                firestoreOps++;
-            }
-        }
-        if (firestoreOps > 0)
-            await batch.commit();
     }
-    return { ok: true, uid, email: userRecord.email, root, detached: detach, firestoreOps };
+    const nextCursor = hasMore ? docs[limit].id : null;
+    return { ok: true, organizations: rows, nextCursor };
 });
 exports.rootOrgSummary = functions.https.onCall(async (data, context) => {
     var _a;
-    assertRoot(context);
+    requireRoot(context);
     const orgId = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '').trim();
     if (!orgId)
-        throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
-    const db = admin.firestore();
-    const orgRef = db.collection('organizations').doc(orgId);
-    const membersQ = orgRef.collection('members');
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const membersQ = db.collection('organizations').doc(orgId).collection('members');
     const usersQ = db.collection('users').where('organizationId', '==', orgId);
     const ticketsQ = db.collection('tickets').where('organizationId', '==', orgId);
     const tasksQ = db.collection('tasks').where('organizationId', '==', orgId);
     const sitesQ = db.collection('sites').where('organizationId', '==', orgId);
     const assetsQ = db.collection('assets').where('organizationId', '==', orgId);
-    const departmentsQ = db.collection('departments').where('organizationId', '==', orgId);
+    const depsQ = db.collection('departments').where('organizationId', '==', orgId);
     const [members, users, tickets, tasks, sites, assets, departments] = await Promise.all([
-        safeCount(membersQ),
-        safeCount(usersQ),
-        safeCount(ticketsQ),
-        safeCount(tasksQ),
-        safeCount(sitesQ),
-        safeCount(assetsQ),
-        safeCount(departmentsQ),
+        countQuery(membersQ),
+        countQuery(usersQ),
+        countQuery(ticketsQ),
+        countQuery(tasksQ),
+        countQuery(sitesQ),
+        countQuery(assetsQ),
+        countQuery(depsQ),
     ]);
     return {
         ok: true,
         organizationId: orgId,
-        counts: { members, users, tickets, tasks, sites, assets, departments },
+        summary: { members, users, tickets, tasks, sites, assets, departments },
     };
 });
 exports.rootListUsersByOrg = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d;
-    assertRoot(context);
+    var _a, _b, _c, _d, _e, _f;
+    requireRoot(context);
     const orgId = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '').trim();
     if (!orgId)
-        throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
-    const limit = clampInt(data === null || data === void 0 ? void 0 : data.limit, 1, 200, 25);
-    const searchEmail = String((_b = data === null || data === void 0 ? void 0 : data.searchEmail) !== null && _b !== void 0 ? _b : '').trim().toLowerCase();
-    const cursor = data === null || data === void 0 ? void 0 : data.cursor;
-    const db = admin.firestore();
-    let q = db
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const limit = Math.min(Number((_b = data === null || data === void 0 ? void 0 : data.limit) !== null && _b !== void 0 ? _b : 25), 200);
+    const cursorEmail = String((_c = data === null || data === void 0 ? void 0 : data.cursorEmail) !== null && _c !== void 0 ? _c : '').trim();
+    const cursorUid = String((_d = data === null || data === void 0 ? void 0 : data.cursorUid) !== null && _d !== void 0 ? _d : '').trim();
+    const qTerm = String((_e = data === null || data === void 0 ? void 0 : data.q) !== null && _e !== void 0 ? _e : '').trim();
+    let query = db
         .collection('organizations')
         .doc(orgId)
         .collection('members')
         .orderBy('email')
         .orderBy(admin.firestore.FieldPath.documentId())
         .limit(limit + 1);
-    if (searchEmail) {
-        const end = `${searchEmail}\uf8ff`;
-        q = q.startAt(searchEmail).endAt(end);
+    if (qTerm) {
+        query = db
+            .collection('organizations')
+            .doc(orgId)
+            .collection('members')
+            .orderBy('email')
+            .startAt(qTerm)
+            .endAt(qTerm + '\uf8ff')
+            .limit(limit + 1);
     }
-    if ((cursor === null || cursor === void 0 ? void 0 : cursor.email) && (cursor === null || cursor === void 0 ? void 0 : cursor.uid)) {
-        q = q.startAfter(cursor.email.toLowerCase(), cursor.uid);
+    else if (cursorEmail && cursorUid) {
+        query = db
+            .collection('organizations')
+            .doc(orgId)
+            .collection('members')
+            .orderBy('email')
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .startAfter(cursorEmail, cursorUid)
+            .limit(limit + 1);
     }
-    const snap = await q.get();
+    const snap = await query.get();
     const docs = snap.docs;
-    const users = docs.slice(0, limit).map((d) => {
-        var _a, _b, _c, _d, _e;
-        const v = d.data() || {};
+    const hasMore = docs.length > limit;
+    const sliced = hasMore ? docs.slice(0, limit) : docs;
+    const users = sliced.map((d) => {
+        var _a, _b, _c, _d, _e, _f;
+        const v = d.data();
         return {
             uid: d.id,
-            email: (_a = v.email) !== null && _a !== void 0 ? _a : null,
-            displayName: (_b = v.displayName) !== null && _b !== void 0 ? _b : null,
-            active: (_c = v.active) !== null && _c !== void 0 ? _c : true,
-            role: (_d = v.role) !== null && _d !== void 0 ? _d : 'operator',
-            departmentId: (_e = v.departmentId) !== null && _e !== void 0 ? _e : null,
+            email: (_a = v === null || v === void 0 ? void 0 : v.email) !== null && _a !== void 0 ? _a : null,
+            displayName: (_b = v === null || v === void 0 ? void 0 : v.displayName) !== null && _b !== void 0 ? _b : null,
+            active: (v === null || v === void 0 ? void 0 : v.active) !== false,
+            role: (_c = v === null || v === void 0 ? void 0 : v.role) !== null && _c !== void 0 ? _c : null,
+            departmentId: (_d = v === null || v === void 0 ? void 0 : v.departmentId) !== null && _d !== void 0 ? _d : null,
+            createdAt: (_e = v === null || v === void 0 ? void 0 : v.createdAt) !== null && _e !== void 0 ? _e : null,
+            updatedAt: (_f = v === null || v === void 0 ? void 0 : v.updatedAt) !== null && _f !== void 0 ? _f : null,
         };
     });
-    const nextCursor = docs.length > limit
-        ? { email: String((_d = (_c = docs[limit].data()) === null || _c === void 0 ? void 0 : _c.email) !== null && _d !== void 0 ? _d : ''), uid: docs[limit].id }
-        : null;
-    return { ok: true, organizationId: orgId, users, nextCursor };
+    const nextCursor = hasMore ? docs[limit] : null;
+    return {
+        ok: true,
+        organizationId: orgId,
+        users,
+        nextCursorEmail: nextCursor ? String((_f = nextCursor.get('email')) !== null && _f !== void 0 ? _f : '') : null,
+        nextCursorUid: nextCursor ? nextCursor.id : null,
+    };
+});
+exports.rootUpsertUserToOrganization = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    const actorUid = requireRoot(context);
+    const email = String((_a = data === null || data === void 0 ? void 0 : data.email) !== null && _a !== void 0 ? _a : '').trim().toLowerCase();
+    const orgId = String((_b = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _b !== void 0 ? _b : '').trim();
+    const roleIn = String((_c = data === null || data === void 0 ? void 0 : data.role) !== null && _c !== void 0 ? _c : '').trim();
+    if (!email)
+        throw httpsError('invalid-argument', 'Email requerido.');
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const role = normalizeRole(roleIn);
+    const authUser = await admin.auth().getUserByEmail(email).catch(() => null);
+    if (!(authUser === null || authUser === void 0 ? void 0 : authUser.uid))
+        throw httpsError('not-found', 'No existe ese usuario en Auth.');
+    const uid = authUser.uid;
+    await db.collection('organizations').doc(orgId).set({
+        organizationId: orgId,
+        name: orgId,
+        isActive: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'root_upsert_user_v1',
+    }, { merge: true });
+    const userRef = db.collection('users').doc(uid);
+    const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(uid);
+    const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+    const beforeSnap = await userRef.get();
+    const before = beforeSnap.exists ? beforeSnap.data() : null;
+    const batch = db.batch();
+    batch.set(userRef, {
+        email: (_d = authUser.email) !== null && _d !== void 0 ? _d : email,
+        displayName: (_e = authUser.displayName) !== null && _e !== void 0 ? _e : null,
+        organizationId: orgId,
+        role,
+        active: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: beforeSnap.exists
+            ? (_f = beforeSnap.get('createdAt')) !== null && _f !== void 0 ? _f : admin.firestore.FieldValue.serverTimestamp()
+            : admin.firestore.FieldValue.serverTimestamp(),
+        source: 'root_upsert_user_v1',
+    }, { merge: true });
+    batch.set(memberRef, {
+        uid,
+        orgId,
+        email: (_g = authUser.email) !== null && _g !== void 0 ? _g : email,
+        displayName: (_h = authUser.displayName) !== null && _h !== void 0 ? _h : null,
+        active: true,
+        role,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'root_upsert_user_v1',
+    }, { merge: true });
+    batch.set(membershipRef, {
+        userId: uid,
+        organizationId: orgId,
+        role,
+        active: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'root_upsert_user_v1',
+    }, { merge: true });
+    await batch.commit();
+    await auditLog({
+        action: 'rootUpsertUserToOrganization',
+        actorUid,
+        actorEmail: (_l = (_k = (_j = context.auth) === null || _j === void 0 ? void 0 : _j.token) === null || _k === void 0 ? void 0 : _k.email) !== null && _l !== void 0 ? _l : null,
+        orgId,
+        targetUid: uid,
+        targetEmail: email,
+        before,
+        after: { organizationId: orgId, role },
+    });
+    return { ok: true, uid, email, organizationId: orgId, role };
 });
 exports.rootDeactivateOrganization = functions.https.onCall(async (data, context) => {
-    var _a, _b;
-    assertRoot(context);
+    var _a, _b, _c, _d, _e;
+    const actorUid = requireRoot(context);
     const orgId = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '').trim();
-    if (!orgId)
-        throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
     const isActive = Boolean((_b = data === null || data === void 0 ? void 0 : data.isActive) !== null && _b !== void 0 ? _b : false);
-    const db = admin.firestore();
-    await db.collection('organizations').doc(orgId).set({ isActive, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    await db.collection('organizations').doc(orgId).set({
+        isActive,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'rootDeactivateOrganization_v1',
+    }, { merge: true });
+    await auditLog({
+        action: 'rootDeactivateOrganization',
+        actorUid,
+        actorEmail: (_e = (_d = (_c = context.auth) === null || _c === void 0 ? void 0 : _c.token) === null || _d === void 0 ? void 0 : _d.email) !== null && _e !== void 0 ? _e : null,
+        orgId,
+        after: { isActive },
+    });
     return { ok: true, organizationId: orgId, isActive };
 });
 exports.rootDeleteOrganizationScaffold = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c;
-    assertRoot(context);
+    var _a, _b, _c, _d;
+    const actorUid = requireRoot(context);
     const orgId = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '').trim();
-    const confirm = String((_b = data === null || data === void 0 ? void 0 : data.confirm) !== null && _b !== void 0 ? _b : '').trim();
     if (!orgId)
-        throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
-    if (confirm !== orgId) {
-        throw new functions.https.HttpsError('failed-precondition', 'Confirmación inválida. Debes escribir exactamente el organizationId.');
-    }
-    const hardDelete = Boolean((_c = data === null || data === void 0 ? void 0 : data.hardDelete) !== null && _c !== void 0 ? _c : false);
-    const db = admin.firestore();
-    const ref = db.collection('organizations').doc(orgId);
-    await ref.set({
-        isActive: false,
-        isDeleted: true,
-        deletedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-    if (hardDelete) {
-        await ref.delete(); // NO borra subcolecciones
-    }
-    return { ok: true, organizationId: orgId, hardDelete };
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const batch = db.batch();
+    batch.delete(db.collection('organizations').doc(orgId));
+    batch.delete(db.collection('organizationsPublic').doc(orgId));
+    await batch.commit();
+    await auditLog({
+        action: 'rootDeleteOrganizationScaffold',
+        actorUid,
+        actorEmail: (_d = (_c = (_b = context.auth) === null || _b === void 0 ? void 0 : _b.token) === null || _c === void 0 ? void 0 : _c.email) !== null && _d !== void 0 ? _d : null,
+        orgId,
+    });
+    return { ok: true, organizationId: orgId };
 });
 exports.rootPurgeOrganizationCollection = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c;
-    assertRoot(context);
+    var _a, _b, _c, _d, _e, _f;
+    const actorUid = requireRoot(context);
     const orgId = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '').trim();
     const collection = String((_b = data === null || data === void 0 ? void 0 : data.collection) !== null && _b !== void 0 ? _b : '').trim();
-    const confirm = String((_c = data === null || data === void 0 ? void 0 : data.confirm) !== null && _c !== void 0 ? _c : '').trim();
+    const batchSize = Math.min(Math.max(Number((_c = data === null || data === void 0 ? void 0 : data.batchSize) !== null && _c !== void 0 ? _c : 200), 50), 500);
     if (!orgId)
-        throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
+        throw httpsError('invalid-argument', 'organizationId requerido.');
     if (!collection)
-        throw new functions.https.HttpsError('invalid-argument', 'collection requerido.');
-    if (confirm !== orgId) {
-        throw new functions.https.HttpsError('failed-precondition', 'Confirmación inválida. Debes escribir exactamente el organizationId.');
-    }
-    const allowed = ['tickets', 'tasks', 'sites', 'assets', 'departments', 'memberships', 'members'];
-    if (!allowed.includes(collection)) {
-        throw new functions.https.HttpsError('invalid-argument', `collection no permitido: ${collection}`);
-    }
-    const batchSize = clampInt(data === null || data === void 0 ? void 0 : data.batchSize, 50, 500, 250);
-    const maxDocs = clampInt(data === null || data === void 0 ? void 0 : data.maxDocs, 1, 5000, 1500);
-    const db = admin.firestore();
-    let deleted = 0;
-    const deleteBatch = async (docs) => {
-        const batch = db.batch();
-        docs.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-        deleted += docs.length;
-    };
-    if (collection === 'members') {
-        let hasMore = true;
-        while (hasMore && deleted < maxDocs) {
-            const snap = await db
-                .collection('organizations')
-                .doc(orgId)
-                .collection('members')
-                .limit(Math.min(batchSize, maxDocs - deleted))
-                .get();
-            if (snap.empty) {
-                hasMore = false;
-                break;
-            }
-            await deleteBatch(snap.docs);
-            hasMore = snap.size > 0 && deleted < maxDocs;
-        }
-        return { ok: true, organizationId: orgId, collection, deleted, hasMore: deleted >= maxDocs };
-    }
-    let hasMore = true;
-    while (hasMore && deleted < maxDocs) {
-        const snap = await db
-            .collection(collection)
-            .where('organizationId', '==', orgId)
-            .limit(Math.min(batchSize, maxDocs - deleted))
-            .get();
-        if (snap.empty) {
-            hasMore = false;
+        throw httpsError('invalid-argument', 'collection requerida.');
+    const allowed = new Set(['tickets', 'tasks', 'sites', 'assets', 'departments', 'memberships', 'users']);
+    if (!allowed.has(collection))
+        throw httpsError('invalid-argument', 'Colección no permitida para purge.');
+    let totalDeleted = 0;
+    while (true) {
+        const q = db.collection(collection).where('organizationId', '==', orgId).limit(batchSize);
+        const snap = await q.get();
+        if (snap.empty)
             break;
-        }
-        await deleteBatch(snap.docs);
-        hasMore = snap.size > 0 && deleted < maxDocs;
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        totalDeleted += snap.size;
+        if (snap.size < batchSize)
+            break;
     }
-    return { ok: true, organizationId: orgId, collection, deleted, hasMore: deleted >= maxDocs };
+    await auditLog({
+        action: 'rootPurgeOrganizationCollection',
+        actorUid,
+        actorEmail: (_f = (_e = (_d = context.auth) === null || _d === void 0 ? void 0 : _d.token) === null || _e === void 0 ? void 0 : _e.email) !== null && _f !== void 0 ? _f : null,
+        orgId,
+        meta: { collection, totalDeleted, batchSize },
+    });
+    return { ok: true, organizationId: orgId, collection, deleted: totalDeleted };
+});
+/* ------------------------------
+   ORG-SCOPED ROLE MGMT (callable)
+   (para que el cliente NO toque roles)
+--------------------------------- */
+async function requireCallerSuperAdminInOrg(actorUid, orgId) {
+    var _a, _b, _c, _d;
+    const me = await getUserDoc(actorUid);
+    if (!me.snap.exists)
+        throw httpsError('permission-denied', 'Perfil de usuario no existe.');
+    const myOrg = String((_b = (_a = me.data) === null || _a === void 0 ? void 0 : _a.organizationId) !== null && _b !== void 0 ? _b : '');
+    const myRole = String((_d = (_c = me.data) === null || _c === void 0 ? void 0 : _c.role) !== null && _d !== void 0 ? _d : '');
+    if (myOrg !== orgId)
+        throw httpsError('permission-denied', 'No perteneces a esa organización.');
+    if (myRole !== 'super_admin')
+        throw httpsError('permission-denied', 'Solo super_admin puede gestionar roles.');
+}
+async function resolveTargetUidByEmailOrUid(email, uid) {
+    const u = String(uid !== null && uid !== void 0 ? uid : '').trim();
+    if (u)
+        return u;
+    const e = String(email !== null && email !== void 0 ? email : '').trim().toLowerCase();
+    if (!e)
+        throw httpsError('invalid-argument', 'Debes indicar uid o email del usuario objetivo.');
+    const authUser = await admin.auth().getUserByEmail(e).catch(() => null);
+    if (!(authUser === null || authUser === void 0 ? void 0 : authUser.uid))
+        throw httpsError('not-found', 'No existe ese usuario en Auth.');
+    return authUser.uid;
+}
+async function setRoleWithinOrgImpl(params) {
+    var _a, _b, _c;
+    const { actorUid, actorEmail, isRoot, orgId, targetUid, role } = params;
+    if (!isRoot) {
+        await requireCallerSuperAdminInOrg(actorUid, orgId);
+    }
+    const target = await getUserDoc(targetUid);
+    if (!target.snap.exists)
+        throw httpsError('not-found', 'El usuario objetivo no tiene perfil /users.');
+    const before = target.data || {};
+    const targetOrg = String((_a = before.organizationId) !== null && _a !== void 0 ? _a : '');
+    if (targetOrg !== orgId)
+        throw httpsError('failed-precondition', 'El usuario objetivo no pertenece a esa organización.');
+    const beforeRole = String((_b = before.role) !== null && _b !== void 0 ? _b : 'operator');
+    if (beforeRole === role) {
+        return { ok: true, uid: targetUid, organizationId: orgId, role, noChange: true };
+    }
+    const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+    const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+    const batch = db.batch();
+    batch.set(target.ref, {
+        role,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'setRoleWithinOrg_v1',
+    }, { merge: true });
+    batch.set(memberRef, {
+        role,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'setRoleWithinOrg_v1',
+    }, { merge: true });
+    batch.set(membershipRef, {
+        role,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'setRoleWithinOrg_v1',
+    }, { merge: true });
+    await batch.commit();
+    await auditLog({
+        action: 'setRoleWithinOrg',
+        actorUid,
+        actorEmail,
+        orgId,
+        targetUid,
+        targetEmail: String((_c = before.email) !== null && _c !== void 0 ? _c : null),
+        before: { role: beforeRole },
+        after: { role },
+    });
+    return { ok: true, uid: targetUid, organizationId: orgId, role };
+}
+exports.setRoleWithinOrg = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = String((_d = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _d !== void 0 ? _d : '').trim();
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const isRoot = isRootClaim(context);
+    const targetUid = await resolveTargetUidByEmailOrUid(data === null || data === void 0 ? void 0 : data.email, data === null || data === void 0 ? void 0 : data.uid);
+    const role = normalizeRole(data === null || data === void 0 ? void 0 : data.role);
+    return setRoleWithinOrgImpl({ actorUid, actorEmail, isRoot, orgId, targetUid, role });
+});
+exports.promoteToSuperAdminWithinOrg = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = String((_d = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _d !== void 0 ? _d : '').trim();
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const isRoot = isRootClaim(context);
+    const targetUid = await resolveTargetUidByEmailOrUid(data === null || data === void 0 ? void 0 : data.email, data === null || data === void 0 ? void 0 : data.uid);
+    return setRoleWithinOrgImpl({ actorUid, actorEmail, isRoot, orgId, targetUid, role: 'super_admin' });
+});
+exports.demoteToAdminWithinOrg = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = String((_d = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _d !== void 0 ? _d : '').trim();
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const isRoot = isRootClaim(context);
+    const targetUid = await resolveTargetUidByEmailOrUid(data === null || data === void 0 ? void 0 : data.email, data === null || data === void 0 ? void 0 : data.uid);
+    return setRoleWithinOrgImpl({ actorUid, actorEmail, isRoot, orgId, targetUid, role: 'admin' });
 });
 //# sourceMappingURL=index.js.map

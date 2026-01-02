@@ -1,295 +1,164 @@
+// firestore.rules
 rules_version = '2';
- 
+
 service cloud.firestore {
   match /databases/{database}/documents {
- 
-    // --- FUNCIONES DE AYUDA ---
-    function isSignedIn() {
-      return request.auth != null;
-    }
 
-    function getUser(uid) {
+    // ---------- Helpers ----------
+    function isSignedIn() { return request.auth != null; }
+
+    function userDoc(uid) {
       return get(/databases/$(database)/documents/users/$(uid));
     }
 
-    function getUserRole(uid) {
-      return exists(/databases/$(database)/documents/users/$(uid))
-        ? getUser(uid).data.role
-        : 'none';
+    function myOrgId() {
+      return isSignedIn() ? userDoc(request.auth.uid).data.organizationId : null;
     }
 
-    function normalizeRole(role) {
-      return role == 'operario' ? 'operator'
-           : role == 'mantenimiento' ? 'maintenance'
-           : role;
+    function myRole() {
+      return isSignedIn() ? userDoc(request.auth.uid).data.role : null;
     }
 
-    function userRole(uid) {
-      return normalizeRole(getUserRole(uid));
-    }
-
-    function getUserDepartmentId(uid) {
-      return exists(/databases/$(database)/documents/users/$(uid))
-        ? getUser(uid).data.departmentId
-        : null;
-    }
-
-    function getUserDepartmentIds(uid) {
-      return exists(/databases/$(database)/documents/users/$(uid))
-        ? (getUser(uid).data.departmentIds == null ? [] : getUser(uid).data.departmentIds)
-        : [];
-    }
-
-    function getUserOrganizationId(uid) {
-      return exists(/databases/$(database)/documents/users/$(uid))
-        ? getUser(uid).data.organizationId
-        : null;
-    }
-
-    function isSuperAdmin() {
-      return isSignedIn() && userRole(request.auth.uid) == 'super_admin';
-    }
+    function isSuperAdmin() { return isSignedIn() && myRole() == 'super_admin'; }
+    function isAdmin() { return isSignedIn() && (myRole() == 'admin' || myRole() == 'super_admin'); }
+    function isManager() { return isSignedIn() && (myRole() == 'super_admin' || myRole() == 'admin' || myRole() == 'maintenance'); }
 
     function isMemberOfOrg(orgId) {
-      return isSignedIn() && getUserOrganizationId(request.auth.uid) == orgId;
+      return isSignedIn() && myOrgId() != null && myOrgId() == orgId;
     }
 
+    // NO BYPASS: super_admin es por-org, no global
     function organizationIdMatchesResource() {
-      return (resource.data.organizationId != null && isMemberOfOrg(resource.data.organizationId));
+      return isSignedIn()
+        && resource.data.organizationId != null
+        && myOrgId() != null
+        && resource.data.organizationId == myOrgId();
     }
 
     function organizationIdMatchesRequest() {
-      return (request.resource != null && request.resource.data.organizationId != null && isMemberOfOrg(request.resource.data.organizationId));
+      return isSignedIn()
+        && request.resource.data.organizationId != null
+        && myOrgId() != null
+        && request.resource.data.organizationId == myOrgId();
     }
 
     function organizationIdUnchanged() {
-      return request.resource != null && request.resource.data.organizationId == resource.data.organizationId;
+      return request.resource.data.organizationId == resource.data.organizationId;
     }
 
-    function isManager(uid) {
-      return userRole(uid) in ['super_admin', 'admin', 'maintenance'];
+    function roleUnchanged() {
+      return request.resource.data.role == resource.data.role;
     }
 
-    function isScopedHead(uid) {
-      return userRole(uid) in ['dept_head_multi', 'dept_head_single'];
-    }
-
-    function isOperator(uid) {
-      return userRole(uid) == 'operator';
-    }
-
-    function isAdmin() {
-      return isSignedIn() && userRole(request.auth.uid) in ['admin', 'super_admin'];
-    }
-
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function ticketOriginDepartment(ticketData) {
-      return ticketData.originDepartmentId != null ? ticketData.originDepartmentId : ticketData.departmentId;
-    }
-
-    function ticketTargetDepartment(ticketData) {
-      return ticketData.targetDepartmentId != null ? ticketData.targetDepartmentId : ticketData.departmentId;
-    }
-
-    function ticketInScope(ticketData, uid) {
-      let primaryDept = getUserDepartmentId(uid);
-      let extraDepts = getUserDepartmentIds(uid);
-      let originDept = ticketOriginDepartment(ticketData);
-      let targetDept = ticketTargetDepartment(ticketData);
-      return (primaryDept != null && (originDept == primaryDept || targetDept == primaryDept)) ||
-             (extraDepts.size() > 0 && (extraDepts.hasAny([originDept]) || extraDepts.hasAny([targetDept])));
-    }
-
-    function canViewTicket(ticketData, uid) {
-      let role = userRole(uid);
-      let basic = ticketInScope(ticketData, uid) || ticketData.createdBy == uid || ticketData.assignedTo == uid;
-
-      return role == 'super_admin'
-        ? true
-        : (!isMemberOfOrg(ticketData.organizationId)
-            ? false
-            : (role in ['admin', 'maintenance']
-                ? true
-                : ((role in ['dept_head_multi', 'dept_head_single'] || role == 'operator')
-                    ? basic
-                    : false)));
-    }
-
-    function isTicketParticipant(ticketData, uid) {
-      return ticketData.createdBy == uid || ticketData.assignedTo == uid;
-    }
-
-    function scopedHeadCanAct(ticketData, uid) {
-      return ticketInScope(ticketData, uid) || isTicketParticipant(ticketData, uid);
-    }
-
-    function operatorStatusAllowed(before, after) {
-      let allowedStatuses = ['Abierta', 'En curso', 'En espera', 'Resuelta', 'Cierre solicitado'];
-      return allowedStatuses.hasAny([after.status]) && before.status != 'Cerrada' && after.status != 'Cerrada';
-    }
-
-    function operatorPriorityAllowed(before, after) {
-      return before.priority == 'Crítica' || after.priority != 'Crítica';
-    }
-
-    function operatorAssignmentAllowed(before, after, uid) {
-      return after.assignedTo == before.assignedTo ||
-             after.assignedTo == uid ||
-             (after.assignedTo == null && before.assignedTo == uid);
-    }
-
-    function operatorUpdateGuard(before, after, uid) {
-      return operatorStatusAllowed(before, after) &&
-             operatorPriorityAllowed(before, after) &&
-             operatorAssignmentAllowed(before, after, uid) &&
-             ticketInScope(after, uid) &&
-             after.createdBy == before.createdBy &&
-             after.organizationId == before.organizationId;
-    }
-
-    function canCreateTicket(ticketData, uid) {
-      let role = userRole(uid);
-      return role == 'super_admin'
-        ? true
-        : (!isMemberOfOrg(ticketData.organizationId)
-            ? false
-            : (role in ['admin', 'maintenance']
-                ? true
-                : (role in ['dept_head_multi', 'dept_head_single']
-                    ? ticketInScope(ticketData, uid)
-                    : (role == 'operator'
-                        ? (ticketInScope(ticketData, uid) || ticketData.createdBy == uid)
-                        : false))));
-    }
-
-    function canUpdateTicket(before, after, uid) {
-      let role = userRole(uid);
-      return role == 'super_admin'
-        ? true
-        : (!isMemberOfOrg(before.organizationId)
-            ? false
-            : (role in ['admin', 'maintenance']
-                ? true
-                : (role in ['dept_head_multi', 'dept_head_single']
-                    ? (scopedHeadCanAct(before, uid) &&
-                       scopedHeadCanAct(after, uid) &&
-                       after.organizationId == before.organizationId)
-                    : (role == 'operator'
-                        ? (isTicketParticipant(before, uid) &&
-                           isTicketParticipant(after, uid) &&
-                           operatorUpdateGuard(before, after, uid))
-                        : false))));
-    }
-
-    function canAccessTicketById(ticketId) {
-      let path = /databases/$(database)/documents/tickets/$(ticketId);
-      return isSignedIn() && exists(path) && canViewTicket(get(path).data, request.auth.uid);
-    }
- 
-    // --- REGLAS DE COLECCIONES ---
-
+    // ---------- USERS ----------
     match /users/{userId} {
-      allow get: if (isOwner(userId) || isManager(request.auth.uid)) && organizationIdMatchesResource();
+
+      // get: owner o manager dentro de SU org (sin fugas cross-org)
+      allow get: if isSignedIn() && (
+        request.auth.uid == userId ||
+        (isManager() && organizationIdMatchesResource())
+      );
+
+      // list SIEMPRE OFF para evitar fugas por queries
       allow list: if false;
-      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.role != 'super_admin';
-      allow update: if (isOwner(userId) || isAdmin()) && organizationIdMatchesResource() && organizationIdUnchanged() && (request.resource.data.role == resource.data.role || isSuperAdmin());
-      allow delete: if isAdmin() && !isOwner(userId) && organizationIdMatchesResource();
+
+      // create: el propio usuario crea perfil, PERO NO puede auto-asignarse super_admin
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role != 'super_admin';
+
+      // update: NO se permite cambiar role desde cliente (ni super_admin).
+      //        role se cambia solo por Cloud Function (Admin SDK).
+      allow update: if isSignedIn()
+        && organizationIdMatchesResource()
+        && organizationIdUnchanged()
+        && roleUnchanged()
+        && (request.auth.uid == userId || isManager());
+
+      // delete: opcional, lo dejamos limitado
+      allow delete: if false;
     }
 
+    // ---------- MEMBERSHIPS ----------
     match /memberships/{membershipId} {
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || (isAdmin() && organizationIdMatchesResource()));
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && organizationIdMatchesRequest();
-      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow get: if isSignedIn() && organizationIdMatchesResource();
+      allow list: if false;
+
+      // roles NO se tocan desde cliente
+      allow create, update, delete: if false;
+    }
+
+    // ---------- ORGANIZATIONS ----------
+    match /organizations/{organizationId} {
+      // bloquear descubrimiento
+      allow list: if false;
+
+      allow get: if isMemberOfOrg(organizationId);
+
+      // crear org: permitido para onboarding, pero el doc debe ser coherente
+      allow create: if isSignedIn() && request.resource.data.organizationId == organizationId;
+
+      // settings de empresa: SOLO super_admin dentro de su org
+      allow update, delete: if isSuperAdmin() && isMemberOfOrg(organizationId);
+
+      match /members/{userId} {
+        // miembros visibles sólo dentro de su org
+        allow get, list: if isMemberOfOrg(organizationId);
+
+        // NO escribir desde cliente (ni roles ni altas): lo hace servidor / migraciones / CF
+        allow create, update, delete: if false;
+      }
+    }
+
+    // ---------- ORGANIZATIONS PUBLIC ----------
+    match /organizationsPublic/{organizationId} {
+      allow read: if true;
+
+      // editable SOLO por super_admin de ESA org (si lo usas desde cliente)
+      // si prefieres que ni eso: ponlo en false y que lo toque solo Cloud Function.
+      allow create, update, delete: if isSuperAdmin() && isMemberOfOrg(organizationId);
+    }
+
+    // ---------- SETTINGS ----------
+    match /settings/{settingId} {
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      // solo super_admin puede escribir configuración
+      allow write: if isSignedIn() && isSuperAdmin() && organizationIdMatchesRequest();
+    }
+
+    // ---------- TICKETS ----------
+    match /tickets/{ticketId} {
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isSignedIn() && organizationIdMatchesRequest();
+      allow update: if isSignedIn() && organizationIdMatchesResource();
       allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
-    match /adminRequests/{requestId} {
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || (isAdmin() && organizationIdMatchesResource()));
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && organizationIdMatchesRequest();
-      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+    // ---------- TASKS ----------
+    match /tasks/{taskId} {
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isSignedIn() && organizationIdMatchesRequest();
+      allow update: if isSignedIn() && organizationIdMatchesResource();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
-    // Public, minimal org document used ONLY to verify org existence/name during signup.
-    // This avoids leaking the full organizations collection.
-    match /organizationsPublic/{orgId} {
-      allow get: if true;
-      allow list: if false;
-      // Created when an org is created. Kept permissive to avoid blocking signup.
-      allow create: if isSignedIn() && request.resource.data.organizationId == orgId;
-      // Only admins of the org (or super_admin) can update/delete.
-      allow update, delete: if (isAdmin() && isMemberOfOrg(orgId));
-    }
-
-    match /organizations/{organizationId} {
-      // IMPORTANT: do NOT allow listing organizations (multi-tenant leakage)
-      allow list: if false;
-      // Allow org members (or super_admin) to read their org.
-      allow get: if (isSignedIn() && isMemberOfOrg(organizationId));
-      // Allow creating an org during onboarding (membership is established right after).
-      allow create: if isSignedIn();
-      allow update, delete: if (isSuperAdmin() && isMemberOfOrg(organizationId));
-    }
-
+    // ---------- SITES / ASSETS / DEPARTMENTS ----------
     match /sites/{siteId} {
       allow read: if isSignedIn() && organizationIdMatchesResource();
-      allow create: if isAdmin() && organizationIdMatchesRequest();
-      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
-      allow delete: if isAdmin() && organizationIdMatchesResource();
-    }
-
-    match /departments/{departmentId} {
-      allow read: if isSignedIn() && organizationIdMatchesResource();
-      allow create: if isAdmin() && organizationIdMatchesRequest();
-      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow create, update: if isAdmin() && organizationIdMatchesRequest();
       allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
     match /assets/{assetId} {
       allow read: if isSignedIn() && organizationIdMatchesResource();
-      allow create: if isAdmin() && organizationIdMatchesRequest();
-      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow create, update: if isAdmin() && organizationIdMatchesRequest();
       allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
-    // Reglas para la colección de tareas
-    match /tasks/{taskId} {
-      // Permite leer y crear tareas a cualquier usuario autenticado
+    match /departments/{departmentId} {
       allow read: if isSignedIn() && organizationIdMatchesResource();
-      allow create: if isSignedIn() && organizationIdMatchesRequest();
-
-      // Permite actualizar si estás autenticado (puedes refinar esto para que solo el dueño o un admin pueda)
-      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged();
-
-      // Solo permite borrar si es admin (usando tu función de ayuda existente)
-      allow delete: if userRole(request.auth.uid) == 'admin' && organizationIdMatchesResource();
-    }
-    
-    // Si tu sistema envía correos automáticamente al crear/editar tareas (usando la extensión "Trigger Email"),
-    // necesitas dar permiso a la colección 'mail':
-    // --- REGLAS PARA INCIDENCIAS (Tickets) ---
-    match /tickets/{ticketId} {
-      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid && canCreateTicket(request.resource.data, request.auth.uid);
-      allow read: if isSignedIn() && canViewTicket(resource.data, request.auth.uid);
-      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged() && canUpdateTicket(resource.data, request.resource.data, request.auth.uid);
+      allow create, update: if isAdmin() && organizationIdMatchesRequest();
       allow delete: if isAdmin() && organizationIdMatchesResource();
-    }
-
-    match /tickets/{ticketId}/comments/{commentId} {
-      allow read: if isSignedIn() && canAccessTicketById(ticketId);
-      allow create: if isSignedIn() && canAccessTicketById(ticketId);
-      allow update, delete: if isAdmin() && canAccessTicketById(ticketId);
-    }
-
-    match /settings/{settingId} {
-      allow read: if isSignedIn() && organizationIdMatchesResource();
-      allow write: if isSignedIn() && isSuperAdmin() && organizationIdMatchesRequest();
-    }
-
-    match /mail/{mailId} {
-      allow create: if isSignedIn();
     }
   }
 }
