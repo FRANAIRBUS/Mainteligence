@@ -6,10 +6,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useFirestore } from '@/lib/firebase';
+import { useFirestore, useUser } from '@/lib/firebase';
 import type { Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
+import { normalizeRole } from '@/lib/rbac';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -38,12 +39,34 @@ import {
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 
+const roleValues = [
+  'super_admin',
+  'admin',
+  'maintenance',
+  'dept_head_multi',
+  'dept_head_single',
+  'operator',
+  'mantenimiento',
+  'operario',
+] as const;
+
+const roleOptions = [
+  { value: roleValues[0], label: 'Super Admin' },
+  { value: roleValues[1], label: 'Administrador' },
+  { value: roleValues[2], label: 'Mantenimiento' },
+  { value: roleValues[3], label: 'Jefe de Departamento (múltiples)' },
+  { value: roleValues[4], label: 'Jefe de Departamento (único)' },
+  { value: roleValues[5], label: 'Operario' },
+  { value: roleValues[6], label: 'Mantenimiento (legacy)' },
+  { value: roleValues[7], label: 'Operario (legacy)' },
+] as const;
+
 const formSchema = z.object({
   displayName: z
     .string()
     .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
   email: z.string().email({ message: 'Por favor, ingrese un correo electrónico válido.' }),
-  role: z.enum(['operario', 'mantenimiento', 'admin']),
+  role: z.enum(roleValues),
   departmentId: z.string().optional(),
 });
 
@@ -58,6 +81,7 @@ interface AddUserDialogProps {
 export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
+  const { user: currentUser, organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<AddUserFormValues>({
@@ -65,25 +89,41 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     defaultValues: {
       displayName: '',
       email: '',
-      role: 'operario',
+      role: 'operator',
     },
   });
 
   const onSubmit = async (data: AddUserFormValues) => {
     if (!firestore) {
-        toast({
-            variant: 'destructive',
-            title: 'Error',
-            description: 'Firestore no está disponible. Por favor, intente de nuevo más tarde.',
-        });
-        return;
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Firestore no está disponible. Por favor, intente de nuevo más tarde.',
+      });
+      return;
+    }
+
+    if (!currentUser) {
+      toast({
+        variant: 'destructive',
+        title: 'Error de autenticación',
+        description: 'No se ha encontrado una sesión válida.',
+      });
+      return;
+    }
+
+    if (!organizationId) {
+      throw new Error('Critical: Missing organizationId in transaction');
     }
     setIsPending(true);
 
+    const normalizedRole = normalizeRole(data.role);
     const docData = {
       ...data,
+      role: normalizedRole,
       active: true,
-      isMaintenanceLead: data.role === 'admin' || data.role === 'mantenimiento', // Default lead status
+      isMaintenanceLead: ['super_admin', 'admin', 'maintenance'].includes(normalizedRole ?? ''),
+      organizationId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -183,9 +223,11 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="operario">Operario</SelectItem>
-                        <SelectItem value="mantenimiento">Mantenimiento</SelectItem>
-                        <SelectItem value="admin">Admin</SelectItem>
+                        {roleOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />

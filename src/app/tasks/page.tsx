@@ -25,17 +25,12 @@ import {
 } from "@/components/ui/table";
 import { AppShell } from "@/components/app-shell";
 import { Icons } from "@/components/icons";
-import {
-  useAuth,
-  useCollection,
-  useCollectionQuery,
-  useDoc,
-  useFirestore,
-  useUser,
-} from "@/lib/firebase";
+import { useCollection, useCollectionQuery } from "@/lib/firebase";
+import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { User } from "@/lib/firebase/models";
-import { collection, or, query, where } from "firebase/firestore";
+import { or, where } from "firebase/firestore";
+import { normalizeRole } from "@/lib/rbac";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -56,24 +51,21 @@ const priorityOrder: Record<MaintenanceTask["priority"], number> = {
 };
 
 export default function TasksPage() {
-  const auth = useAuth();
-  const firestore = useFirestore();
-  const { user, loading: userLoading } = useUser();
+  const { user, profile: userProfile, organizationId, loading: userLoading, isLoaded } =
+    useUser();
   const router = useRouter();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(
-    user ? `users/${user.uid}` : null
-  );
 
+  const normalizedRole = normalizeRole(userProfile?.role);
   const canViewAllTasks =
-    userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
+    normalizedRole === "super_admin" ||
+    normalizedRole === "admin" ||
+    normalizedRole === "maintenance";
 
-  const tasksQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null;
-
-    const tasksCollection = collection(firestore, "tasks");
+  const tasksConstraints = useMemo(() => {
+    if (!user || !userProfile || (!organizationId && normalizedRole !== "super_admin")) return null;
 
     if (canViewAllTasks) {
-      return query(tasksCollection);
+      return [] as const;
     }
 
     const conditions = [
@@ -85,10 +77,13 @@ export default function TasksPage() {
       conditions.push(where("location", "==", userProfile.departmentId));
     }
 
-    return query(tasksCollection, or(...conditions));
-  }, [canViewAllTasks, firestore, user, userProfile]);
+    return [or(...conditions)];
+  }, [canViewAllTasks, organizationId, user, userProfile, normalizedRole]);
 
-  const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(tasksQuery);
+  const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(
+    tasksConstraints ? "tasks" : null,
+    ...(tasksConstraints ?? [])
+  );
   const { data: users, loading: usersLoading } = useCollection<User>("users");
   const [statusFilter, setStatusFilter] = useState<string>("todas");
   const [priorityFilter, setPriorityFilter] = useState<string>("todas");
@@ -97,11 +92,10 @@ export default function TasksPage() {
   const perPage = 6;
 
   useEffect(() => {
-    if (!auth) return;
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push("/login");
     }
-  }, [auth, router, user, userLoading]);
+  }, [isLoaded, router, user]);
 
   const userNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -155,9 +149,9 @@ export default function TasksPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
-  const isLoading = loading || usersLoading || userLoading || profileLoading;
+  const isLoading = loading || usersLoading || !isLoaded;
 
-  if (!firestore || !user || userLoading || profileLoading || !userProfile) {
+  if (!user || userLoading || !userProfile || (!organizationId && normalizedRole !== "super_admin")) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

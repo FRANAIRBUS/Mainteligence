@@ -6,6 +6,7 @@ export type TaskPriority = "alta" | "media" | "baja";
 
 export interface MaintenanceTask {
   id?: string;
+  organizationId: string; // <--- Campo obligatorio para multi-tenant
   title: string;
   description?: string;
   status: TaskStatus;
@@ -18,9 +19,6 @@ export interface MaintenanceTask {
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   reports?: ReportEntry[];
-  reopened?: boolean;
-  reopenedBy?: string;
-  reopenedAt?: Timestamp;
 }
 
 export type MaintenanceTaskInput = Omit<MaintenanceTask, "id" | "createdAt" | "updatedAt">;

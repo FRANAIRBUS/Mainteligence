@@ -25,7 +25,6 @@ import { AppShell } from "@/components/app-shell";
 import {
   useCollection,
   useCollectionQuery,
-  useDoc,
   useFirestore,
   useUser,
 } from "@/lib/firebase";
@@ -36,13 +35,13 @@ import {
   collection,
   doc,
   or,
-  query,
   serverTimestamp,
   Timestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
+import { DEFAULT_ORGANIZATION_ID } from "@/lib/organization";
 import { format } from "date-fns";
 
 const statusLabels: Record<Ticket["status"], string> = {
@@ -58,30 +57,33 @@ type DateFilter = "todas" | "hoy" | "semana" | "mes";
 export default function ClosedIncidentsPage() {
   const router = useRouter();
   const firestore = useFirestore();
-  const { user, loading: userLoading } = useUser();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
   const { toast } = useToast();
 
   const canViewAll = userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
   const isAdmin = userProfile?.role === "admin";
 
-  const ticketsQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null;
+  const ticketsConstraints = useMemo(() => {
+    if (!user || !userProfile) return null;
 
-    const ticketsCollection = collection(firestore, "tickets");
     const statusCondition = where("status", "==", "Cerrada");
 
     if (canViewAll) {
-      return query(ticketsCollection, statusCondition);
+      return [statusCondition];
     }
 
-    return query(
-      ticketsCollection,
-      and(statusCondition, or(where("createdBy", "==", user.uid), where("assignedTo", "==", user.uid)))
-    );
-  }, [canViewAll, firestore, user, userProfile]);
+    return [
+      and(
+        statusCondition,
+        or(where("createdBy", "==", user.uid), where("assignedTo", "==", user.uid))
+      ),
+    ];
+  }, [canViewAll, user, userProfile]);
 
-  const { data: tickets, loading } = useCollectionQuery<Ticket>(ticketsQuery);
+  const { data: tickets, loading } = useCollectionQuery<Ticket>(
+    ticketsConstraints ? "tickets" : null,
+    ...(ticketsConstraints ?? [])
+  );
   const { data: departments } = useCollection<Department>("departments");
   const { data: sites } = useCollection<Site>("sites");
   const { data: users } = useCollection<User>("users");
@@ -93,10 +95,10 @@ export default function ClosedIncidentsPage() {
   const [userFilter, setUserFilter] = useState("todas");
 
   useEffect(() => {
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push("/login");
     }
-  }, [router, user, userLoading]);
+  }, [isLoaded, router, user]);
 
   const filteredTickets = useMemo(() => {
     const now = new Date();
@@ -132,7 +134,16 @@ export default function ClosedIncidentsPage() {
   }, [dateFilter, departmentFilter, searchQuery, siteFilter, tickets, userFilter]);
 
   const handleReopen = async (ticket: Ticket) => {
-    if (!firestore || !isAdmin || !user) return;
+    if (!firestore || !isAdmin || !user || !organizationId) return;
+
+    if (ticket.organizationId !== organizationId) {
+      toast({
+        variant: "destructive",
+        title: "Organización inválida",
+        description: "No puedes modificar incidencias de otra organización.",
+      });
+      return;
+    }
 
     try {
       await updateDoc(doc(firestore, "tickets", ticket.id), {
@@ -140,6 +151,7 @@ export default function ClosedIncidentsPage() {
         reopened: true,
         reopenedBy: user.uid,
         reopenedAt: Timestamp.now(),
+        organizationId,
         updatedAt: serverTimestamp(),
       });
       toast({ title: "Incidencia reabierta", description: "Se movió al listado activo." });
@@ -154,7 +166,16 @@ export default function ClosedIncidentsPage() {
   };
 
   const handleDuplicate = async (ticket: Ticket) => {
-    if (!firestore || !isAdmin || !user) return;
+    if (!firestore || !isAdmin || !user || !organizationId) return;
+
+    if (ticket.organizationId !== organizationId) {
+      toast({
+        variant: "destructive",
+        title: "Organización inválida",
+        description: "No puedes duplicar incidencias de otra organización.",
+      });
+      return;
+    }
 
     try {
       await addDoc(collection(firestore, "tickets"), {
@@ -172,6 +193,7 @@ export default function ClosedIncidentsPage() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         reopened: false,
+        organizationId,
       });
       toast({ title: "Incidencia duplicada", description: "Se creó una nueva incidencia a partir de la cerrada." });
     } catch (error) {
@@ -184,7 +206,7 @@ export default function ClosedIncidentsPage() {
     }
   };
 
-  const isLoading = loading || userLoading || profileLoading;
+  const isLoading = loading || !isLoaded;
   const totalColumns = isAdmin ? 7 : 6;
 
   return (

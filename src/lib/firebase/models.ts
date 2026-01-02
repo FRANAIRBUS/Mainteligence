@@ -1,45 +1,93 @@
-import type { ReportEntry } from "@/types/report-entry";
+import type { Timestamp } from "firebase/firestore";
 
-export type User = {
+export interface BaseEntity {
   id: string;
+  organizationId: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface Organization extends BaseEntity {
+  name: string;
+  taxId?: string;
+  subscriptionPlan: "trial" | "standard" | "enterprise";
+  isActive: boolean;
+  settings: {
+    allowGuestAccess: boolean;
+    maxUsers: number;
+    locale?: string;
+    timezone?: string;
+    logoUrl?: string;
+  };
+}
+
+export interface ReportEntry extends BaseEntity {
+  description: string;
+  createdBy?: string;
+}
+
+export type UserRole =
+  | 'super_admin'
+  | 'admin'
+  | 'maintenance'
+  | 'dept_head_multi'
+  | 'dept_head_single'
+  | 'operator'
+  | 'operario'
+  | 'mantenimiento';
+
+export interface User extends BaseEntity {
   displayName: string;
   email: string;
-  role: 'operario' | 'mantenimiento' | 'admin';
+  role: UserRole;
   departmentId?: string;
+  departmentIds?: string[];
+  siteId?: string;
   isMaintenanceLead: boolean;
   active: boolean;
   siteIds?: string[];
-  createdAt: any; // Timestamp
-  updatedAt: any; // Timestamp
-};
+  adminRequestPending?: boolean;
+}
 
-export type Site = {
-  id: string;
+export interface Membership extends BaseEntity {
+  userId: string;
+  role: User['role'];
+  status: 'active' | 'pending' | 'revoked';
+  organizationName?: string;
+  primary?: boolean;
+}
+
+export interface Site extends BaseEntity {
   name: string;
   code: string;
-};
+}
 
-export type Department = {
-  id: string;
+export interface Department extends BaseEntity {
   name: string;
   code: string;
-};
+}
 
-export type Asset = {
-  id: string;
+export interface Asset extends BaseEntity {
   name: string;
   code: string;
   siteId: string;
-};
+}
 
-export type Ticket = {
-  id: string;
+export interface Ticket extends BaseEntity {
   displayId: string;
-  type: 'correctivo' | 'preventivo';
-  status: 'Abierta' | 'En curso' | 'En espera' | 'Resuelta' | 'Cerrada';
-  priority: 'Baja' | 'Media' | 'Alta' | 'Crítica';
+  type: "correctivo" | "preventivo";
+  status:
+    | "Abierta"
+    | "En curso"
+    | "En espera"
+    | "Resuelta"
+    | "Cierre solicitado"
+    | "Cerrada";
+  priority: "Baja" | "Media" | "Alta" | "Crítica";
   siteId: string;
   departmentId: string;
+  originDepartmentId?: string;
+  targetDepartmentId?: string;
   assetId?: string;
   title: string;
   description: string;
@@ -47,18 +95,18 @@ export type Ticket = {
   assignedRole?: string;
   assignedTo?: string | null;
   photoUrls?: string[];
-  createdAt: any; // Timestamp
-  updatedAt: any; // Timestamp
-  closedAt?: any; // Timestamp
+  closedAt?: Timestamp;
   closedBy?: string;
+  closureRequestedBy?: string;
+  closureRequestedAt?: Timestamp;
   waiting?: {
     reason: string;
     detail: string;
-    eta?: any; // Timestamp
+    eta?: Timestamp;
   };
-  lastCommentAt?: any; // Timestamp
+  lastCommentAt?: Timestamp;
   reportPdfUrl?: string;
-  emailSentAt?: any; // Timestamp
+  emailSentAt?: Timestamp;
   templateId?: string;
   templateSnapshot?: {
     name: string;
@@ -66,11 +114,11 @@ export type Ticket = {
   };
   preventive?: {
     frequencyDays: number;
-    scheduledFor: any; // Timestamp
-    checklist: any[];
+    scheduledFor: Timestamp;
+    checklist: unknown[];
   };
   reports?: ReportEntry[];
   reopened?: boolean;
   reopenedBy?: string;
-  reopenedAt?: any; // Timestamp
-};
+  reopenedAt?: Timestamp;
+}

@@ -11,10 +11,10 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollectionQuery, useFirestore } from '@/lib/firebase';
+import { useUser, useCollectionQuery } from '@/lib/firebase';
 import type { Ticket } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import {
   Table,
   TableBody,
@@ -40,7 +40,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { collection, query, where } from 'firebase/firestore';
+import { where } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 
 function PreventiveTable({
@@ -123,7 +123,6 @@ function PreventiveTable({
 
 export default function PreventivePage() {
   const { user, loading: userLoading } = useUser();
-  const firestore = useFirestore();
   const router = useRouter();
 
   useEffect(() => {
@@ -132,12 +131,10 @@ export default function PreventivePage() {
     }
   }, [user, userLoading, router]);
 
-  const preventiveQuery = useMemo(() => {
-    if (!firestore) return null;
-    return query(collection(firestore, 'tickets'), where('type', '==', 'preventivo'));
-  }, [firestore]);
-
-  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(preventiveQuery);
+  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(
+    'tickets',
+    where('type', '==', 'preventivo')
+  );
 
   if (userLoading || !user) {
     return (

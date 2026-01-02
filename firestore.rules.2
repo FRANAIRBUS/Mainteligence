@@ -1,0 +1,297 @@
+rules_version = '2';
+ 
+service cloud.firestore {
+  match /databases/{database}/documents {
+ 
+    // --- FUNCIONES DE AYUDA ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUser(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function getUserRole(uid) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
+        return 'none';
+      }
+      return getUser(uid).data.role;
+    }
+
+    function normalizeRole(role) {
+      if (role == 'operario') return 'operator';
+      if (role == 'mantenimiento') return 'maintenance';
+      return role;
+    }
+
+    function userRole(uid) {
+      return normalizeRole(getUserRole(uid));
+    }
+
+    function getUserDepartmentId(uid) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
+        return null;
+      }
+      return getUser(uid).data.departmentId;
+    }
+
+    function getUserDepartmentIds(uid) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
+        return [];
+      }
+      let deptIds = getUser(uid).data.departmentIds;
+      return deptIds == null ? [] : deptIds;
+    }
+
+    function getUserOrganizationId(uid) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
+        return null;
+      }
+      return getUser(uid).data.organizationId;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && userRole(request.auth.uid) == 'super_admin';
+    }
+
+    function isMemberOfOrg(orgId) {
+      return isSignedIn() && getUserOrganizationId(request.auth.uid) == orgId;
+    }
+
+    function organizationIdMatchesResource() {
+      return (resource.data.organizationId != null && isMemberOfOrg(resource.data.organizationId)) || isSuperAdmin();
+    }
+
+    function organizationIdMatchesRequest() {
+      return (request.resource != null && request.resource.data.organizationId != null && isMemberOfOrg(request.resource.data.organizationId)) || isSuperAdmin();
+    }
+
+    function organizationIdUnchanged() {
+      return request.resource != null && request.resource.data.organizationId == resource.data.organizationId;
+    }
+
+    function isManager(uid) {
+      return userRole(uid) in ['super_admin', 'admin', 'maintenance'];
+    }
+
+    function isScopedHead(uid) {
+      return userRole(uid) in ['dept_head_multi', 'dept_head_single'];
+    }
+
+    function isOperator(uid) {
+      return userRole(uid) == 'operator';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && userRole(request.auth.uid) in ['admin', 'super_admin'];
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function ticketOriginDepartment(ticketData) {
+      return ticketData.originDepartmentId != null ? ticketData.originDepartmentId : ticketData.departmentId;
+    }
+
+    function ticketTargetDepartment(ticketData) {
+      return ticketData.targetDepartmentId != null ? ticketData.targetDepartmentId : ticketData.departmentId;
+    }
+
+    function ticketInScope(ticketData, uid) {
+      let primaryDept = getUserDepartmentId(uid);
+      let extraDepts = getUserDepartmentIds(uid);
+      let originDept = ticketOriginDepartment(ticketData);
+      let targetDept = ticketTargetDepartment(ticketData);
+      return (primaryDept != null && (originDept == primaryDept || targetDept == primaryDept)) ||
+             (extraDepts.size() > 0 && (extraDepts.hasAny([originDept]) || extraDepts.hasAny([targetDept])));
+    }
+
+    function canViewTicket(ticketData, uid) {
+      let role = userRole(uid);
+      if (role == 'super_admin') return true;
+      if (!isMemberOfOrg(ticketData.organizationId)) return false;
+      if (role in ['admin', 'maintenance']) return true;
+      if (role in ['dept_head_multi', 'dept_head_single']) {
+        return ticketInScope(ticketData, uid) || ticketData.createdBy == uid || ticketData.assignedTo == uid;
+      }
+      if (role == 'operator') {
+        return ticketInScope(ticketData, uid) || ticketData.createdBy == uid || ticketData.assignedTo == uid;
+      }
+      return false;
+    }
+
+    function isTicketParticipant(ticketData, uid) {
+      return ticketData.createdBy == uid || ticketData.assignedTo == uid;
+    }
+
+    function scopedHeadCanAct(ticketData, uid) {
+      return ticketInScope(ticketData, uid) || isTicketParticipant(ticketData, uid);
+    }
+
+    function operatorStatusAllowed(before, after) {
+      let allowedStatuses = ['Abierta', 'En curso', 'En espera', 'Resuelta', 'Cierre solicitado'];
+      if (!allowedStatuses.hasAny([after.status])) return false;
+      if (before.status == 'Cerrada') return false;
+      return after.status != 'Cerrada';
+    }
+
+    function operatorPriorityAllowed(before, after) {
+      return before.priority == 'Crítica' || after.priority != 'Crítica';
+    }
+
+    function operatorAssignmentAllowed(before, after, uid) {
+      if (after.assignedTo == before.assignedTo) return true;
+      if (after.assignedTo == uid) return true;
+      return after.assignedTo == null && before.assignedTo == uid;
+    }
+
+    function operatorUpdateGuard(before, after, uid) {
+      return operatorStatusAllowed(before, after) &&
+             operatorPriorityAllowed(before, after) &&
+             operatorAssignmentAllowed(before, after, uid) &&
+             ticketInScope(after, uid) &&
+             after.createdBy == before.createdBy &&
+             after.organizationId == before.organizationId;
+    }
+
+    function canCreateTicket(ticketData, uid) {
+      let role = userRole(uid);
+      if (role == 'super_admin') return true;
+      if (!isMemberOfOrg(ticketData.organizationId)) return false;
+      if (role in ['admin', 'maintenance']) return true;
+      if (role in ['dept_head_multi', 'dept_head_single']) {
+        return ticketInScope(ticketData, uid);
+      }
+      if (role == 'operator') {
+        return ticketInScope(ticketData, uid) || ticketData.createdBy == uid;
+      }
+      return false;
+    }
+
+    function canUpdateTicket(before, after, uid) {
+      let role = userRole(uid);
+      if (role == 'super_admin') return true;
+      if (!isMemberOfOrg(before.organizationId)) return false;
+      if (role in ['admin', 'maintenance']) return true;
+      if (role in ['dept_head_multi', 'dept_head_single']) {
+        return scopedHeadCanAct(before, uid) && scopedHeadCanAct(after, uid) && after.organizationId == before.organizationId;
+      }
+      if (role == 'operator') {
+        return isTicketParticipant(before, uid) && isTicketParticipant(after, uid) && operatorUpdateGuard(before, after, uid);
+      }
+      return false;
+    }
+
+    function canAccessTicketById(ticketId) {
+      if (!isSignedIn()) return false;
+      let path = /databases/$(database)/documents/tickets/$(ticketId);
+      if (!exists(path)) return false;
+      return canViewTicket(get(path).data, request.auth.uid);
+    }
+ 
+    // --- REGLAS DE COLECCIONES ---
+
+    match /users/{userId} {
+      allow get: if (isOwner(userId) || isManager(request.auth.uid)) && organizationIdMatchesResource();
+      allow list: if isManager(request.auth.uid);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if (isOwner(userId) || isAdmin()) && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && !isOwner(userId) && organizationIdMatchesResource();
+    }
+
+    match /memberships/{membershipId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || (isAdmin() && organizationIdMatchesResource()));
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && organizationIdMatchesRequest();
+      allow update: if isSignedIn() && request.resource.data.userId == request.auth.uid && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
+    }
+
+    match /adminRequests/{requestId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || (isAdmin() && organizationIdMatchesResource()));
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+    }
+
+    // Public, minimal org document used ONLY to verify org existence/name during signup.
+    // This avoids leaking the full organizations collection.
+    match /organizationsPublic/{orgId} {
+      allow get: if true;
+      allow list: if false;
+      // Created when an org is created. Kept permissive to avoid blocking signup.
+      allow create: if isSignedIn() && request.resource.data.organizationId == orgId;
+      // Only admins of the org (or super_admin) can update/delete.
+      allow update, delete: if (isAdmin() && isMemberOfOrg(orgId)) || isSuperAdmin();
+    }
+
+    match /organizations/{organizationId} {
+      // IMPORTANT: do NOT allow listing organizations (multi-tenant leakage)
+      allow list: if isSuperAdmin();
+      // Allow org members (or super_admin) to read their org.
+      allow get: if (isSignedIn() && isMemberOfOrg(organizationId)) || isSuperAdmin();
+      // Allow creating an org during onboarding (membership is established right after).
+      allow create: if isSignedIn();
+      allow update, delete: if (isAdmin() && isMemberOfOrg(organizationId)) || isSuperAdmin();
+    }
+
+    match /sites/{siteId} {
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
+    }
+
+    match /departments/{departmentId} {
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
+    }
+
+    match /assets/{assetId} {
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
+    }
+
+    // Reglas para la colección de tareas
+    match /tasks/{taskId} {
+      // Permite leer y crear tareas a cualquier usuario autenticado
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isSignedIn() && organizationIdMatchesRequest();
+
+      // Permite actualizar si estás autenticado (puedes refinar esto para que solo el dueño o un admin pueda)
+      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged();
+
+      // Solo permite borrar si es admin (usando tu función de ayuda existente)
+      allow delete: if userRole(request.auth.uid) == 'admin' && organizationIdMatchesResource();
+    }
+    
+    // Si tu sistema envía correos automáticamente al crear/editar tareas (usando la extensión "Trigger Email"),
+    // necesitas dar permiso a la colección 'mail':
+    // --- REGLAS PARA INCIDENCIAS (Tickets) ---
+    match /tickets/{ticketId} {
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid && canCreateTicket(request.resource.data, request.auth.uid);
+      allow read: if isSignedIn() && canViewTicket(resource.data, request.auth.uid);
+      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged() && canUpdateTicket(resource.data, request.resource.data, request.auth.uid);
+      allow delete: if isAdmin() && organizationIdMatchesResource();
+    }
+
+    match /tickets/{ticketId}/comments/{commentId} {
+      allow read: if isSignedIn() && canAccessTicketById(ticketId);
+      allow create: if isSignedIn() && canAccessTicketById(ticketId);
+      allow update, delete: if isAdmin() && canAccessTicketById(ticketId);
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /mail/{mailId} {
+      allow create: if isSignedIn();
+    }
+  }
+}

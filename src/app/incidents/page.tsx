@@ -11,7 +11,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useDoc, useFirestore, useCollectionQuery } from '@/lib/firebase';
+import { useUser, useCollection, useDoc, useCollectionQuery } from '@/lib/firebase';
 import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
@@ -43,7 +43,8 @@ import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { collection, query, where, or } from 'firebase/firestore';
+import { where, or } from 'firebase/firestore';
+import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
 
 const incidentPriorityOrder: Record<Ticket['priority'], number> = {
   Crítica: 3,
@@ -59,7 +60,7 @@ function IncidentsTable({
   loading,
   onViewDetails,
   onEdit,
-  userRole,
+  currentUser,
   userId,
 }: {
   tickets: Ticket[];
@@ -68,7 +69,7 @@ function IncidentsTable({
   loading: boolean;
   onViewDetails: (ticketId: string) => void;
   onEdit: (ticket: Ticket) => void;
-  userRole?: string;
+  currentUser?: User | null;
   userId?: string;
 }) {
   if (loading) {
@@ -97,44 +98,47 @@ function IncidentsTable({
       </TableHeader>
       <TableBody>
         {tickets.length > 0 ? (
-          tickets.map((ticket) => (
-            <TableRow key={ticket.id} className="cursor-pointer" onClick={() => onViewDetails(ticket.id)}>
-              <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0,6)}</TableCell>
-              <TableCell>{ticket.title}</TableCell>
-               <TableCell>
-                <Badge variant="outline">{ticket.status}</Badge>
-              </TableCell>
-               <TableCell>
-                <Badge variant="secondary">{ticket.priority}</Badge>
-              </TableCell>
-              <TableCell>{sites[ticket.siteId] || 'N/A'}</TableCell>
-              <TableCell>{departments[ticket.departmentId] || 'N/A'}</TableCell>
-              <TableCell>
-                {ticket.createdAt?.toDate ? ticket.createdAt.toDate().toLocaleDateString() : 'N/A'}
-              </TableCell>
-              <TableCell onClick={(e) => e.stopPropagation()}>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-haspopup="true"
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Menú de acciones</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => onViewDetails(ticket.id)}>Ver Detalles</DropdownMenuItem>
-                    {(userRole === 'admin' || userRole === 'mantenimiento' || ticket.createdBy === userId) && (
-                       <DropdownMenuItem onClick={() => onEdit(ticket)}>Editar</DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          ))
+          tickets.map((ticket) => {
+            const permissions = getTicketPermissions(ticket, currentUser ?? null, userId ?? null);
+            return (
+              <TableRow key={ticket.id} className="cursor-pointer" onClick={() => onViewDetails(ticket.id)}>
+                <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0,6)}</TableCell>
+                <TableCell>{ticket.title}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{ticket.status}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="secondary">{ticket.priority}</Badge>
+                </TableCell>
+                <TableCell>{sites[ticket.siteId] || 'N/A'}</TableCell>
+                <TableCell>{departments[ticket.departmentId] || 'N/A'}</TableCell>
+                <TableCell>
+                  {ticket.createdAt?.toDate ? ticket.createdAt.toDate().toLocaleDateString() : 'N/A'}
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        aria-haspopup="true"
+                        size="icon"
+                        variant="ghost"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Menú de acciones</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => onViewDetails(ticket.id)}>Ver Detalles</DropdownMenuItem>
+                      {permissions.canEditContent && (
+                        <DropdownMenuItem onClick={() => onEdit(ticket)}>Editar</DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            );
+          })
         ) : (
           <TableRow>
             <TableCell colSpan={8} className="h-24 text-center">
@@ -149,9 +153,8 @@ function IncidentsTable({
 
 
 export default function IncidentsPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
   const router = useRouter();
-  const firestore = useFirestore();
 
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
@@ -159,40 +162,70 @@ export default function IncidentsPage() {
 
   // Phase 1: Wait for user authentication to complete.
   useEffect(() => {
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push('/login');
     }
-  }, [user, userLoading, router]);
-
-  // Phase 2: Once user is authenticated, load their profile.
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  }, [isLoaded, user, router]);
   
-  const isMantenimiento = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const isSuperAdmin = normalizedRole === 'super_admin';
+  const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
 
-  // Phase 3: Construct the tickets query only when firestore, user, AND userProfile are ready.
-  const ticketsQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null;
+  // Phase 3: Construct the tickets query only when user and userProfile are ready.
+  const ticketsConstraints = useMemo(() => {
+    if (!user || !userProfile || (!organizationId && !isSuperAdmin) || !normalizedRole) return null;
 
-    const ticketsCollection = collection(firestore, 'tickets');
-
-    if (isMantenimiento) {
-      // Admins and maintenance can see all tickets.
-      return query(ticketsCollection);
+    if (isSuperAdmin) {
+      return [] as const;
     }
 
-    // An 'operario' can see tickets they created or are assigned to.
-    return query(
-      ticketsCollection,
-      or(where('createdBy', '==', user.uid), where('assignedTo', '==', user.uid))
-    );
-  }, [firestore, user, userProfile, isMantenimiento]);
-  
+    const scopedOrgConstraint = [where('organizationId', '==', organizationId as string)] as const;
+
+    if (isMantenimiento) {
+      return scopedOrgConstraint;
+    }
+
+    const scopeDepartments = (userProfile.departmentIds ?? []).length
+      ? userProfile.departmentIds ?? []
+      : userProfile.departmentId
+        ? [userProfile.departmentId]
+        : [];
+
+    const departmentFilters: any[] = [];
+    if (scopeDepartments.length === 1) {
+      const deptId = scopeDepartments[0];
+      departmentFilters.push(
+        where('departmentId', '==', deptId),
+        where('originDepartmentId', '==', deptId),
+        where('targetDepartmentId', '==', deptId),
+      );
+    } else if (scopeDepartments.length > 1) {
+      const scoped = scopeDepartments.slice(0, 10);
+      departmentFilters.push(
+        where('departmentId', 'in', scoped),
+        where('originDepartmentId', 'in', scoped),
+        where('targetDepartmentId', 'in', scoped),
+      );
+    }
+
+    const baseFilters = [
+      where('createdBy', '==', user.uid),
+      where('assignedTo', '==', user.uid),
+      ...departmentFilters,
+    ];
+
+    return [where('organizationId', '==', organizationId as string), or(...baseFilters)];
+  }, [user, userProfile, organizationId, normalizedRole, isMantenimiento, isSuperAdmin]);
+
   // Phase 4: Execute the query for tickets and load other collections.
-  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(ticketsQuery);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
-  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
+  const { data: tickets = [], loading: ticketsLoading } = useCollectionQuery<Ticket>(
+    ticketsConstraints ? 'tickets' : null,
+    ...(ticketsConstraints ?? [])
+  );
+  const { data: sites = [], loading: sitesLoading } = useCollection<Site>('sites');
+  const { data: departments = [], loading: deptsLoading } = useCollection<Department>('departments');
   // Only fetch users if the current user is an admin or maintenance staff.
-  const { data: users, loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
+  const { data: users = [], loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
 
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
@@ -226,7 +259,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  const initialLoading = userLoading || profileLoading;
+  const initialLoading = !isLoaded;
   
   if (initialLoading) {
     return (
@@ -286,7 +319,7 @@ export default function IncidentsPage() {
                   loading={tableDataIsLoading}
                   onViewDetails={handleViewDetails}
                   onEdit={handleEditRequest}
-                  userRole={userProfile?.role}
+                  currentUser={userProfile}
                   userId={user?.uid}
                 />
               </div>

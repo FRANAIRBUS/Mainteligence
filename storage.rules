@@ -9,7 +9,6 @@ service firebase.storage {
     }
 
     function getUser(uid) {
-      // Nota: He cambiado (default) por $(database) para mayor compatibilidad
       return get(/databases/$(database)/documents/users/$(uid));
     }
 
@@ -20,6 +19,16 @@ service firebase.storage {
       return get(/databases/$(database)/documents/users/$(uid)).data.role;
     }
 
+    function normalizeRole(role) {
+      if (role == 'operario') return 'operator';
+      if (role == 'mantenimiento') return 'maintenance';
+      return role;
+    }
+
+    function userRole(uid) {
+      return normalizeRole(getUserRole(uid));
+    }
+
     function getUserDepartmentId(uid) {
       if (!exists(/databases/$(database)/documents/users/$(uid))) {
         return null;
@@ -27,12 +36,36 @@ service firebase.storage {
       return get(/databases/$(database)/documents/users/$(uid)).data.departmentId;
     }
 
-    function isMantenimiento() {
-      return isSignedIn() && getUserRole(request.auth.uid) in ['mantenimiento', 'admin'];
+    function getUserDepartmentIds(uid) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
+        return [];
+      }
+      let deptIds = get(/databases/$(database)/documents/users/$(uid)).data.departmentIds;
+      return deptIds == null ? [] : deptIds;
     }
 
-    function isAdmin() {
-      return isSignedIn() && getUserRole(request.auth.uid) == 'admin';
+    function getUserOrganizationId(uid) {
+      if (!exists(/databases/$(database)/documents/users/$(uid))) {
+        return null;
+      }
+      return get(/databases/$(database)/documents/users/$(uid)).data.organizationId;
+    }
+
+    function ticketOriginDepartment(ticketData) {
+      return ticketData.originDepartmentId != null ? ticketData.originDepartmentId : ticketData.departmentId;
+    }
+
+    function ticketTargetDepartment(ticketData) {
+      return ticketData.targetDepartmentId != null ? ticketData.targetDepartmentId : ticketData.departmentId;
+    }
+
+    function ticketInScope(ticketData, uid) {
+      let primaryDept = getUserDepartmentId(uid);
+      let extraDepts = getUserDepartmentIds(uid);
+      let originDept = ticketOriginDepartment(ticketData);
+      let targetDept = ticketTargetDepartment(ticketData);
+      return (primaryDept != null && (originDept == primaryDept || targetDept == primaryDept)) ||
+             (extraDepts.size() > 0 && (extraDepts.hasAny([originDept]) || extraDepts.hasAny([targetDept])));
     }
 
     function canAccessTicket(ticketId) {
@@ -41,11 +74,20 @@ service firebase.storage {
       if (!exists(path)) return false;
 
       let ticketData = get(path).data;
+      let role = userRole(request.auth.uid);
 
-      return isMantenimiento() ||
+      if (role == 'super_admin') return true;
+      if (!isSignedIn() || ticketData.organizationId != getUserOrganizationId(request.auth.uid)) return false;
+      if (role in ['admin', 'maintenance']) return true;
+      if (role in ['dept_head_multi', 'dept_head_single']) {
+        return ticketInScope(ticketData, request.auth.uid) || ticketData.createdBy == request.auth.uid || ticketData.assignedTo == request.auth.uid;
+      }
+
+      return (
+        ticketInScope(ticketData, request.auth.uid) ||
         ticketData.createdBy == request.auth.uid ||
-        ticketData.assignedTo == request.auth.uid ||
-        (ticketData.departmentId != null && ticketData.departmentId == getUserDepartmentId(request.auth.uid));
+        ticketData.assignedTo == request.auth.uid
+      );
     }
 
     // --- REGLAS DE CARPETAS ---
@@ -53,7 +95,7 @@ service firebase.storage {
     // 1. Logo de la empresa (Público para lectura)
     match /branding/logo.png {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isSignedIn() && userRole(request.auth.uid) in ['admin', 'super_admin'];
     }
 
     // 2. Fotos de Incidencias (Tickets)

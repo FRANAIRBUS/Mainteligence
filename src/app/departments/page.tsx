@@ -15,6 +15,7 @@ import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
 import type { Department, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
 import {
   Table,
   TableBody,
@@ -146,10 +147,10 @@ export default function DepartmentsPage() {
   const { toast } = useToast();
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-  
-  const isAdmin = userProfile?.role === 'admin';
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const canManage = isAdminLikeRole(normalizedRole);
 
-  const { data: departments, loading: departmentsLoading } = useCollection<Department>(isAdmin ? 'departments' : null);
+  const { data: departments, loading: departmentsLoading } = useCollection<Department>(canManage ? 'departments' : null);
 
   const [isAddDepartmentOpen, setIsAddDepartmentOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -218,7 +219,7 @@ export default function DepartmentsPage() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-          {isAdmin ? (
+          {canManage ? (
             <Card>
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
@@ -228,11 +229,11 @@ export default function DepartmentsPage() {
                         Gestiona todos los departamentos de la empresa.
                       </CardDescription>
                     </div>
-                    {isAdmin && <Button onClick={() => setIsAddDepartmentOpen(true)}>Añadir Departamento</Button>}
+                    {canManage && <Button onClick={() => setIsAddDepartmentOpen(true)}>Añadir Departamento</Button>}
                   </div>
               </CardHeader>
               <CardContent>
-                <DepartmentsTable departments={departments} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={isAdmin} />
+                <DepartmentsTable departments={departments} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={canManage} />
               </CardContent>
             </Card>
           ) : (
@@ -247,7 +248,7 @@ export default function DepartmentsPage() {
           )}
         </main>
       </SidebarInset>
-       {isAdmin && <AddDepartmentDialog
+       {canManage && <AddDepartmentDialog
         open={isAddDepartmentOpen}
         onOpenChange={setIsAddDepartmentOpen}
       />}

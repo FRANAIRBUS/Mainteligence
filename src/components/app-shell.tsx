@@ -25,16 +25,21 @@ interface AppShellProps {
 }
 
 export function AppShell({ title, description, action, children }: AppShellProps) {
-  const { user, loading } = useUser();
+  const { user, loading, isRoot } = useUser();
   const router = useRouter();
 
   useEffect(() => {
+    // Root users are redirected to the hidden root console.
+    if (!loading && isRoot) {
+      router.replace('/root');
+      return;
+    }
     if (!loading && !user) {
       router.replace("/login");
     }
-  }, [loading, router, user]);
+  }, [loading, router, user, isRoot]);
 
-  if (loading || !user) {
+  if (loading || !user || isRoot) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
