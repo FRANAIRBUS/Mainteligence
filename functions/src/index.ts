@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v1';
+import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import { Resend } from 'resend';
 
@@ -104,7 +105,7 @@ async function sendEmail(params: {
   attachments?: { filename: string; content: Buffer | string }[];
 }) {
   if (!resend) {
-    functions.logger.warn('RESEND_API_KEY missing; skipping email send', {
+    logger.warn('RESEND_API_KEY missing; skipping email send', {
       subject: params.subject,
       to: params.to,
     });
@@ -120,7 +121,7 @@ async function sendEmail(params: {
   });
 
   if (error) {
-    functions.logger.error('Resend error', error);
+    logger.error('Resend error', error);
     throw new Error(error.message);
   }
 
@@ -130,7 +131,7 @@ async function sendEmail(params: {
 // --- Notifications: Ticket assignment ---
 export const onTicketAssign = functions.firestore
   .document('tickets/{ticketId}')
-  .onUpdate(async (change, context) => {
+  .onUpdate(async (change: functions.Change<FirebaseFirestore.DocumentSnapshot>, context: functions.EventContext) => {
     const before = change.before.data() as TicketDoc;
     const after = change.after.data() as TicketDoc;
 
@@ -173,7 +174,7 @@ export const onTicketAssign = functions.firestore
 // --- Notifications: Task assignment ---
 export const onTaskAssign = functions.firestore
   .document('tasks/{taskId}')
-  .onUpdate(async (change, context) => {
+  .onUpdate(async (change: functions.Change<FirebaseFirestore.DocumentSnapshot>, context: functions.EventContext) => {
     const before = change.before.data() as TaskDoc;
     const after = change.after.data() as TaskDoc;
     const taskId = context.params.taskId as string;
@@ -294,7 +295,7 @@ async function generateTicketClosurePdfBuffer(params: {
 
 export const onTicketClosed = functions.firestore
   .document('tickets/{ticketId}')
-  .onUpdate(async (change, context) => {
+  .onUpdate(async (change: functions.Change<FirebaseFirestore.DocumentSnapshot>, context: functions.EventContext) => {
     const before = change.before.data() as TicketDoc;
     const after = change.after.data() as TicketDoc;
     const ticketId = context.params.ticketId as string;
@@ -371,7 +372,7 @@ export const onTicketClosed = functions.firestore
 
     const to = uniq([...recipientEmails, ...managers]);
     if (to.length === 0) {
-      functions.logger.warn('No recipients for ticket close email', { ticketId });
+      logger.warn('No recipients for ticket close email', { ticketId });
     } else {
       const subject = `Informe de cierre - ${after.displayId ?? ticketId}`;
       const html = buildTicketClosureHtml(after, reportUrl);
@@ -402,7 +403,7 @@ async function deleteStoragePrefix(prefix: string) {
       try {
         await f.delete();
       } catch (err) {
-        functions.logger.warn('Failed to delete storage file', { name: f.name, err });
+        logger.warn('Failed to delete storage file', { name: f.name, err });
       }
     }),
   );
@@ -410,14 +411,14 @@ async function deleteStoragePrefix(prefix: string) {
 
 export const onTicketDeleted = functions.firestore
   .document('tickets/{ticketId}')
-  .onDelete(async (_snap, context) => {
+  .onDelete(async (_snap: FirebaseFirestore.DocumentSnapshot, context: functions.EventContext) => {
     const ticketId = context.params.ticketId as string;
     await deleteStoragePrefix(`tickets/${ticketId}/`);
   });
 
 export const onTaskDeleted = functions.firestore
   .document('tasks/{taskId}')
-  .onDelete(async (_snap, context) => {
+  .onDelete(async (_snap: FirebaseFirestore.DocumentSnapshot, context: functions.EventContext) => {
     const taskId = context.params.taskId as string;
     await deleteStoragePrefix(`tasks/${taskId}/`);
   });
