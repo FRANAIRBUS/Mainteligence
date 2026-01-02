@@ -13,16 +13,15 @@ service cloud.firestore {
     }
 
     function getUserRole(uid) {
-      if (!exists(/databases/$(database)/documents/users/$(uid))) {
-        return 'none';
-      }
-      return getUser(uid).data.role;
+      return exists(/databases/$(database)/documents/users/$(uid))
+        ? getUser(uid).data.role
+        : 'none';
     }
 
     function normalizeRole(role) {
-      if (role == 'operario') return 'operator';
-      if (role == 'mantenimiento') return 'maintenance';
-      return role;
+      return role == 'operario' ? 'operator'
+           : role == 'mantenimiento' ? 'maintenance'
+           : role;
     }
 
     function userRole(uid) {
@@ -30,25 +29,21 @@ service cloud.firestore {
     }
 
     function getUserDepartmentId(uid) {
-      if (!exists(/databases/$(database)/documents/users/$(uid))) {
-        return null;
-      }
-      return getUser(uid).data.departmentId;
+      return exists(/databases/$(database)/documents/users/$(uid))
+        ? getUser(uid).data.departmentId
+        : null;
     }
 
     function getUserDepartmentIds(uid) {
-      if (!exists(/databases/$(database)/documents/users/$(uid))) {
-        return [];
-      }
-      let deptIds = getUser(uid).data.departmentIds;
-      return deptIds == null ? [] : deptIds;
+      return exists(/databases/$(database)/documents/users/$(uid))
+        ? (getUser(uid).data.departmentIds == null ? [] : getUser(uid).data.departmentIds)
+        : [];
     }
 
     function getUserOrganizationId(uid) {
-      if (!exists(/databases/$(database)/documents/users/$(uid))) {
-        return null;
-      }
-      return getUser(uid).data.organizationId;
+      return exists(/databases/$(database)/documents/users/$(uid))
+        ? getUser(uid).data.organizationId
+        : null;
     }
 
     function isSuperAdmin() {
@@ -110,16 +105,17 @@ service cloud.firestore {
 
     function canViewTicket(ticketData, uid) {
       let role = userRole(uid);
-      if (role == 'super_admin') return true;
-      if (!isMemberOfOrg(ticketData.organizationId)) return false;
-      if (role in ['admin', 'maintenance']) return true;
-      if (role in ['dept_head_multi', 'dept_head_single']) {
-        return ticketInScope(ticketData, uid) || ticketData.createdBy == uid || ticketData.assignedTo == uid;
-      }
-      if (role == 'operator') {
-        return ticketInScope(ticketData, uid) || ticketData.createdBy == uid || ticketData.assignedTo == uid;
-      }
-      return false;
+      let basic = ticketInScope(ticketData, uid) || ticketData.createdBy == uid || ticketData.assignedTo == uid;
+
+      return role == 'super_admin'
+        ? true
+        : (!isMemberOfOrg(ticketData.organizationId)
+            ? false
+            : (role in ['admin', 'maintenance']
+                ? true
+                : ((role in ['dept_head_multi', 'dept_head_single'] || role == 'operator')
+                    ? basic
+                    : false)));
     }
 
     function isTicketParticipant(ticketData, uid) {
@@ -132,9 +128,7 @@ service cloud.firestore {
 
     function operatorStatusAllowed(before, after) {
       let allowedStatuses = ['Abierta', 'En curso', 'En espera', 'Resuelta', 'Cierre solicitado'];
-      if (!allowedStatuses.hasAny([after.status])) return false;
-      if (before.status == 'Cerrada') return false;
-      return after.status != 'Cerrada';
+      return allowedStatuses.hasAny([after.status]) && before.status != 'Cerrada' && after.status != 'Cerrada';
     }
 
     function operatorPriorityAllowed(before, after) {
@@ -142,9 +136,9 @@ service cloud.firestore {
     }
 
     function operatorAssignmentAllowed(before, after, uid) {
-      if (after.assignedTo == before.assignedTo) return true;
-      if (after.assignedTo == uid) return true;
-      return after.assignedTo == null && before.assignedTo == uid;
+      return after.assignedTo == before.assignedTo ||
+             after.assignedTo == uid ||
+             (after.assignedTo == null && before.assignedTo == uid);
     }
 
     function operatorUpdateGuard(before, after, uid) {
@@ -158,37 +152,41 @@ service cloud.firestore {
 
     function canCreateTicket(ticketData, uid) {
       let role = userRole(uid);
-      if (role == 'super_admin') return true;
-      if (!isMemberOfOrg(ticketData.organizationId)) return false;
-      if (role in ['admin', 'maintenance']) return true;
-      if (role in ['dept_head_multi', 'dept_head_single']) {
-        return ticketInScope(ticketData, uid);
-      }
-      if (role == 'operator') {
-        return ticketInScope(ticketData, uid) || ticketData.createdBy == uid;
-      }
-      return false;
+      return role == 'super_admin'
+        ? true
+        : (!isMemberOfOrg(ticketData.organizationId)
+            ? false
+            : (role in ['admin', 'maintenance']
+                ? true
+                : (role in ['dept_head_multi', 'dept_head_single']
+                    ? ticketInScope(ticketData, uid)
+                    : (role == 'operator'
+                        ? (ticketInScope(ticketData, uid) || ticketData.createdBy == uid)
+                        : false))));
     }
 
     function canUpdateTicket(before, after, uid) {
       let role = userRole(uid);
-      if (role == 'super_admin') return true;
-      if (!isMemberOfOrg(before.organizationId)) return false;
-      if (role in ['admin', 'maintenance']) return true;
-      if (role in ['dept_head_multi', 'dept_head_single']) {
-        return scopedHeadCanAct(before, uid) && scopedHeadCanAct(after, uid) && after.organizationId == before.organizationId;
-      }
-      if (role == 'operator') {
-        return isTicketParticipant(before, uid) && isTicketParticipant(after, uid) && operatorUpdateGuard(before, after, uid);
-      }
-      return false;
+      return role == 'super_admin'
+        ? true
+        : (!isMemberOfOrg(before.organizationId)
+            ? false
+            : (role in ['admin', 'maintenance']
+                ? true
+                : (role in ['dept_head_multi', 'dept_head_single']
+                    ? (scopedHeadCanAct(before, uid) &&
+                       scopedHeadCanAct(after, uid) &&
+                       after.organizationId == before.organizationId)
+                    : (role == 'operator'
+                        ? (isTicketParticipant(before, uid) &&
+                           isTicketParticipant(after, uid) &&
+                           operatorUpdateGuard(before, after, uid))
+                        : false))));
     }
 
     function canAccessTicketById(ticketId) {
-      if (!isSignedIn()) return false;
       let path = /databases/$(database)/documents/tickets/$(ticketId);
-      if (!exists(path)) return false;
-      return canViewTicket(get(path).data, request.auth.uid);
+      return isSignedIn() && exists(path) && canViewTicket(get(path).data, request.auth.uid);
     }
  
     // --- REGLAS DE COLECCIONES ---
