@@ -36,6 +36,7 @@ import {
 } from 'firebase/firestore';
 import { ClientLogo } from '@/components/client-logo';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
+import { REGISTRATION_FLAG_KEY } from '@/lib/registration-flag';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');

@@ -22,6 +22,17 @@ import {
 import { useAuth, useFirestore } from '../provider';
 import type { Membership, User as UserProfile } from '../models';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
+import { REGISTRATION_FLAG_KEY } from '@/lib/registration-flag';
+
+
+function isRegistrationInProgress(): boolean {
+  try {
+    if (typeof window === 'undefined') return false;
+    return window.sessionStorage?.getItem(REGISTRATION_FLAG_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 interface UserContextValue {
   user: AuthUser | null;
@@ -97,6 +108,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
         const profileSnap = await getDoc(profileRef);
 
         if (!profileSnap.exists()) {
+          // During the signup wizard we don't want to auto-bootstrap a default org/profile.
+          if (isRegistrationInProgress()) {
+            setProfile(null);
+            setOrganizationId(null);
+            setProfileLoading(false);
+            return;
+          }
           const bootstrappedProfile = await ensureDefaultOrganization(firestore, authUser);
           setProfile(bootstrappedProfile);
           setOrganizationId(bootstrappedProfile?.organizationId ?? null);
@@ -110,13 +128,19 @@ export function UserProvider({ children }: { children: ReactNode }) {
         } as UserProfile;
 
         if (!profileData.organizationId) {
-          const bootstrappedProfile = await ensureDefaultOrganization(
-            firestore,
-            authUser,
-            profileData,
-          );
-          setProfile(bootstrappedProfile);
-          setOrganizationId(bootstrappedProfile?.organizationId ?? null);
+          // During the signup wizard we don't want to auto-bootstrap a default org/profile.
+          if (isRegistrationInProgress()) {
+            setProfile(profileData);
+            setOrganizationId(null);
+          } else {
+            const bootstrappedProfile = await ensureDefaultOrganization(
+              firestore,
+              authUser,
+              profileData,
+            );
+            setProfile(bootstrappedProfile);
+            setOrganizationId(bootstrappedProfile?.organizationId ?? null);
+          }
           setProfileLoading(false);
           return;
         }
