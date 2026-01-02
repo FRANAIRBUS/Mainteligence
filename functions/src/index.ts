@@ -1,602 +1,513 @@
 import * as functions from 'firebase-functions/v1';
 import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
-import { Resend } from 'resend';
 
 admin.initializeApp();
 
-// ---------------------------------------------------------------------------
-// ROOT MODE (hidden)
-// ---------------------------------------------------------------------------
-// Root is NOT an app role. It is a Firebase Auth custom claim: { root: true }
-// and is intended for a single, hidden operator account. Root:
-//   - must NOT have a /users profile or /memberships
-//   - must NOT belong to any organization
-//   - must only access data through privileged callable functions
-//
-// IMPORTANT: never confuse this with 'super_admin' (which is an in-app role).
-// ---------------------------------------------------------------------------
-
-const assertRoot = (context: functions.https.CallableContext) => {
+function assertRoot(context: functions.https.CallableContext): void {
   if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Authentication required');
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
   }
-  const isRoot = Boolean((context.auth.token as any)?.root);
-  if (!isRoot) {
-    throw new functions.https.HttpsError('permission-denied', 'Root only');
-  }
-};
-
-type RootOrgRow = { id: string; name?: string; isActive?: boolean; createdAt?: any; updatedAt?: any };
-
-// --- Email (Resend) ---
-const resendApiKey = process.env.RESEND_API_KEY;
-const resend = resendApiKey ? new Resend(resendApiKey) : null;
-
-const DEFAULT_FROM = 'Mainteligence <noreply@mainteligence.com>';
-
-type UserDoc = {
-  id: string;
-  email?: string;
-  displayName?: string;
-  role?: string;
-  organizationId?: string;
-  departmentId?: string;
-  departmentIds?: string[];
-  isMaintenanceLead?: boolean;
-  active?: boolean;
-};
-
-type TicketDoc = {
-  displayId?: string;
-  title?: string;
-  description?: string;
-  status?: string;
-  priority?: string;
-  type?: string;
-  organizationId?: string;
-  departmentId?: string;
-  originDepartmentId?: string;
-  targetDepartmentId?: string;
-  siteId?: string;
-  assetId?: string;
-  createdBy?: string;
-  assignedTo?: string | null;
-  closedAt?: admin.firestore.Timestamp;
-  closedBy?: string;
-  reportPdfUrl?: string;
-  emailSentAt?: admin.firestore.Timestamp;
-};
-
-type TaskDoc = {
-  title?: string;
-  description?: string;
-  priority?: string;
-  status?: string;
-  dueDate?: admin.firestore.Timestamp | null;
-  organizationId?: string;
-  assignedTo?: string;
-  // In this project, tasks use `location` to store a departmentId.
-  location?: string;
-  category?: string;
-};
-
-function uniq<T>(arr: T[]) {
-  return Array.from(new Set(arr));
-}
-
-function safeEmail(email?: string) {
-  if (!email) return null;
-  const trimmed = email.trim();
-  return trimmed.includes('@') ? trimmed : null;
-}
-
-function tsToDateString(ts?: admin.firestore.Timestamp) {
-  try {
-    if (!ts) return '';
-    const d = ts.toDate();
-    return d.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' });
-  } catch {
-    return '';
+  const token = context.auth.token as Record<string, unknown>;
+  if (token?.root !== true) {
+    throw new functions.https.HttpsError('permission-denied', 'Solo root puede ejecutar esta acción.');
   }
 }
 
-async function getOrgUsers(organizationId: string): Promise<UserDoc[]> {
-  const snap = await admin
-    .firestore()
-    .collection('users')
-    .where('organizationId', '==', organizationId)
-    .get();
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+function clampInt(v: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(n)));
 }
 
-async function createDispatchOnce(dispatchId: string, payload: Record<string, any>) {
-  const ref = admin.firestore().collection('emailDispatches').doc(dispatchId);
-  try {
-    await ref.create({ ...payload, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-    return true;
-  } catch (err: any) {
-    // Already exists => idempotency guard
-    if (err?.code === 6 || err?.code === 'already-exists') return false;
-    throw err;
+async function safeCount(q: FirebaseFirestore.Query<FirebaseFirestore.DocumentData>): Promise<number> {
+  const anyQ = q as any;
+  if (typeof anyQ.count === 'function') {
+    const res = await anyQ.count().get();
+    return Number(res?.data()?.count ?? 0);
   }
+  const snap = await q.get();
+  return snap.size;
 }
 
-async function sendEmail(params: {
-  to: string[];
-  subject: string;
-  html: string;
-  attachments?: { filename: string; content: Buffer | string }[];
-}) {
-  if (!resend) {
-    logger.warn('RESEND_API_KEY missing; skipping email send', {
-      subject: params.subject,
-      to: params.to,
-    });
-    return;
-  }
+// --------------------------
+// TRIGGERS
+// --------------------------
 
-  const { data, error } = await resend.emails.send({
-    from: DEFAULT_FROM,
-    to: params.to,
-    subject: params.subject,
-    html: params.html,
-    attachments: params.attachments,
-  });
-
-  if (error) {
-    logger.error('Resend error', error);
-    throw new Error(error.message);
-  }
-
-  return data;
-}
-
-// --- Notifications: Ticket assignment ---
 export const onTicketAssign = functions.firestore
   .document('tickets/{ticketId}')
-  .onUpdate(async (change: functions.Change<FirebaseFirestore.DocumentSnapshot>, context: functions.EventContext) => {
-    const before = change.before.data() as TicketDoc;
-    const after = change.after.data() as TicketDoc;
+  .onUpdate(async (change, context) => {
+    const after = change.after.data() as any;
+    const before = change.before.data() as any;
+    if (!after || !before) return;
 
-    const ticketId = context.params.ticketId as string;
+    const prev = before.assignedToUserId ?? null;
+    const next = after.assignedToUserId ?? null;
+    if (prev === next) return;
 
-    // Only on assignedTo change (non-empty)
-    if (before.assignedTo === after.assignedTo) return;
-    if (!after.assignedTo) return;
-    if (!after.organizationId) return;
-
-    const dispatchId = `ticket_assign_${ticketId}_${after.assignedTo}`;
-    const created = await createDispatchOnce(dispatchId, {
-      type: 'ticket_assign',
-      ticketId,
-      organizationId: after.organizationId,
-      assignedTo: after.assignedTo,
-    });
-    if (!created) return;
-
-    const assignedUser = await admin.firestore().collection('users').doc(after.assignedTo).get();
-    const assignedUserData = assignedUser.data() as UserDoc | undefined;
-    const to = safeEmail(assignedUserData?.email);
-    if (!to) return;
-
-    const title = after.title ?? 'Incidencia';
-    const displayId = after.displayId ?? ticketId;
-    const subject = `Nueva incidencia asignada (${displayId})`;
-    const html = `
-      <h2>Nueva incidencia asignada</h2>
-      <p><strong>Referencia:</strong> ${displayId}</p>
-      <p><strong>Título:</strong> ${title}</p>
-      <p><strong>Prioridad:</strong> ${after.priority ?? '-'}</p>
-      <p><strong>Estado:</strong> ${after.status ?? '-'}</p>
-      <p>Puedes verla aquí: <a href="https://mainteligence.com/incidents/${ticketId}">Abrir incidencia</a></p>
-    `;
-
-    await sendEmail({ to: [to], subject, html });
+    logger.info('onTicketAssign', { ticketId: context.params.ticketId, prev, next });
   });
 
-// --- Notifications: Task assignment ---
 export const onTaskAssign = functions.firestore
   .document('tasks/{taskId}')
-  .onUpdate(async (change: functions.Change<FirebaseFirestore.DocumentSnapshot>, context: functions.EventContext) => {
-    const before = change.before.data() as TaskDoc;
-    const after = change.after.data() as TaskDoc;
-    const taskId = context.params.taskId as string;
+  .onUpdate(async (change, context) => {
+    const after = change.after.data() as any;
+    const before = change.before.data() as any;
+    if (!after || !before) return;
 
-    // Only react to assignment change
-    if (before.assignedTo === after.assignedTo) return;
-    if (!after.assignedTo) return;
-    if (!after.organizationId) return;
+    const prev = before.assignedToUserId ?? null;
+    const next = after.assignedToUserId ?? null;
+    if (prev === next) return;
 
-    const dispatchId = `task_assign_${taskId}_${after.assignedTo}`;
-    const created = await createDispatchOnce(dispatchId, {
-      type: 'task_assign',
-      taskId,
-      organizationId: after.organizationId,
-      assignedTo: after.assignedTo,
-    });
-    if (!created) return;
-
-    const orgUsers = await getOrgUsers(after.organizationId);
-    const assigned = orgUsers.find((u) => u.id === after.assignedTo);
-    const toPrimary = safeEmail(assigned?.email);
-    if (!toPrimary) return;
-
-    // Optional CC group: maintenance leads + department members
-    const deptId = after.location;
-    const cc = uniq(
-      orgUsers
-        .filter((u) => u.active !== false)
-        .filter((u) => {
-          const isLead = Boolean(u.isMaintenanceLead);
-          const sameDept = deptId ? u.departmentId === deptId || (u.departmentIds ?? []).includes(deptId) : false;
-          const isManagerRole = ['admin', 'maintenance', 'dept_head_multi', 'dept_head_single', 'super_admin'].includes(
-            (u.role ?? '').toString(),
-          );
-          return (isLead && isManagerRole) || (sameDept && isManagerRole);
-        })
-        .map((u) => safeEmail(u.email))
-        .filter(Boolean) as string[],
-    ).filter((e) => e !== toPrimary);
-
-    const subject = `Nueva tarea asignada: ${after.title ?? '(sin título)'}`;
-    const html = `
-      <h2>Nueva tarea asignada</h2>
-      <p><strong>Título:</strong> ${after.title ?? '-'}</p>
-      <p><strong>Prioridad:</strong> ${after.priority ?? '-'}</p>
-      <p><strong>Estado:</strong> ${after.status ?? '-'}</p>
-      <p><strong>Vence:</strong> ${tsToDateString(after.dueDate ?? undefined) || '-'}</p>
-      <p><strong>Descripción:</strong> ${(after.description ?? '').toString().slice(0, 500)}</p>
-      <p>Abrir tarea: <a href="https://mainteligence.com/tasks/${taskId}">Ver tarea</a></p>
-    `;
-
-    const recipients = uniq([toPrimary, ...cc]);
-    await sendEmail({ to: recipients, subject, html });
+    logger.info('onTaskAssign', { taskId: context.params.taskId, prev, next });
   });
-
-// --- Ticket closure PDF + email ---
-function buildTicketClosureHtml(ticket: TicketDoc, reportUrl?: string) {
-  const displayId = ticket.displayId ?? '';
-  const title = ticket.title ?? '';
-  const closedAt = tsToDateString(ticket.closedAt);
-
-  return `
-    <h2>Informe de cierre de incidencia</h2>
-    <p>Se ha cerrado la incidencia <strong>${displayId}</strong>.</p>
-    <p><strong>Título:</strong> ${title}</p>
-    <p><strong>Fecha de cierre:</strong> ${closedAt || '-'}</p>
-    ${reportUrl ? `<p><a href="${reportUrl}">Descargar informe en PDF</a></p>` : ''}
-  `;
-}
-
-async function generateTicketClosurePdfBuffer(params: {
-  ticketId: string;
-  ticket: TicketDoc;
-  organizationName: string;
-  closedByName?: string;
-}) {
-  // pdfkit is commonjs
-  const PDFDocument = require('pdfkit');
-
-  return await new Promise<Buffer>((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({ size: 'A4', margin: 50 });
-      const chunks: Buffer[] = [];
-
-      doc.on('data', (c: Buffer) => chunks.push(c));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
-
-      const { ticket, ticketId, organizationName, closedByName } = params;
-      const displayId = ticket.displayId ?? ticketId;
-
-      doc.fontSize(18).text('INFORME DE CIERRE - INCIDENCIA', { align: 'center' });
-      doc.moveDown(1);
-      doc.fontSize(12).text(`Organización: ${organizationName}`);
-      doc.text(`Referencia: ${displayId}`);
-      doc.text(`Estado: ${ticket.status ?? '-'}`);
-      doc.text(`Prioridad: ${ticket.priority ?? '-'}`);
-      doc.text(`Tipo: ${ticket.type ?? '-'}`);
-      doc.text(`Cerrada el: ${tsToDateString(ticket.closedAt) || '-'}`);
-      if (closedByName) doc.text(`Cerrada por: ${closedByName}`);
-      doc.moveDown(1);
-
-      doc.fontSize(14).text(ticket.title ?? '');
-      doc.moveDown(0.5);
-      doc.fontSize(11).text(ticket.description ?? '', { align: 'left' });
-
-      doc.moveDown(2);
-      doc.fontSize(9).text('Este informe fue generado automáticamente por Mainteligence.', {
-        align: 'center',
-      });
-
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
 
 export const onTicketClosed = functions.firestore
   .document('tickets/{ticketId}')
-  .onUpdate(async (change: functions.Change<FirebaseFirestore.DocumentSnapshot>, context: functions.EventContext) => {
-    const before = change.before.data() as TicketDoc;
-    const after = change.after.data() as TicketDoc;
-    const ticketId = context.params.ticketId as string;
+  .onUpdate(async (change, context) => {
+    const after = change.after.data() as any;
+    const before = change.before.data() as any;
+    if (!after || !before) return;
 
-    if (before.status === after.status) return;
-    if (after.status !== 'Cerrada') return;
-    if (!after.organizationId) return;
+    const wasClosed = String(before.status ?? '').toLowerCase() === 'closed';
+    const isClosed = String(after.status ?? '').toLowerCase() === 'closed';
+    if (wasClosed || !isClosed) return;
 
-    // idempotency: if already emailed, skip
-    if (after.emailSentAt && after.reportPdfUrl) return;
-
-    const dispatchId = `ticket_close_${ticketId}`;
-    const created = await createDispatchOnce(dispatchId, {
-      type: 'ticket_close',
-      ticketId,
-      organizationId: after.organizationId,
-    });
-    if (!created) return;
-
-    // Resolve org name from private org doc (best-effort)
-    const orgSnap = await admin.firestore().collection('organizations').doc(after.organizationId).get();
-    const orgName = (orgSnap.data() as any)?.name ?? after.organizationId;
-
-    // Resolve closedBy display name (best-effort)
-    let closedByName: string | undefined;
-    if (after.closedBy) {
-      const closedBySnap = await admin.firestore().collection('users').doc(after.closedBy).get();
-      const u = closedBySnap.data() as any;
-      closedByName = u?.displayName ?? u?.email;
-    }
-
-    const pdfBuffer = await generateTicketClosurePdfBuffer({
-      ticketId,
-      ticket: after,
-      organizationName: orgName,
-      closedByName,
-    });
-
-    // Upload PDF to Storage (under the ticket folder)
-    const bucket = admin.storage().bucket();
-    const token = (globalThis.crypto as any)?.randomUUID?.() ?? `${Date.now()}_${Math.random()}`;
-    const storagePath = `tickets/${ticketId}/closure-report.pdf`;
-    const file = bucket.file(storagePath);
-
-    await file.save(pdfBuffer, {
-      contentType: 'application/pdf',
-      resumable: false,
-      metadata: {
-        metadata: {
-          firebaseStorageDownloadTokens: token,
-        },
-      },
-    });
-
-    const reportUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(
-      storagePath,
-    )}?alt=media&token=${token}`;
-
-    // Recipients: creator + assigned + admins/maintenance leads
-    const orgUsers = await getOrgUsers(after.organizationId);
-    const recipientEmails = uniq(
-      [after.createdBy, after.assignedTo ?? undefined]
-        .filter(Boolean)
-        .map((uid) => orgUsers.find((u) => u.id === uid))
-        .map((u) => safeEmail(u?.email))
-        .filter(Boolean) as string[],
-    );
-
-    const managers = orgUsers
-      .filter((u) => u.active !== false)
-      .filter((u) => ['admin', 'maintenance', 'super_admin'].includes((u.role ?? '').toString()))
-      .map((u) => safeEmail(u.email))
-      .filter(Boolean) as string[];
-
-    const to = uniq([...recipientEmails, ...managers]);
-    if (to.length === 0) {
-      logger.warn('No recipients for ticket close email', { ticketId });
-    } else {
-      const subject = `Informe de cierre - ${after.displayId ?? ticketId}`;
-      const html = buildTicketClosureHtml(after, reportUrl);
-
-      await sendEmail({
-        to,
-        subject,
-        html,
-        attachments: [{ filename: `informe-cierre-${after.displayId ?? ticketId}.pdf`, content: pdfBuffer }],
-      });
-    }
-
-    await change.after.ref.set(
-      {
-        reportPdfUrl: reportUrl,
-        emailSentAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
+    logger.info('onTicketClosed', { ticketId: context.params.ticketId });
   });
-
-// --- Storage cleanup to prevent orphans ---
-async function deleteStoragePrefix(prefix: string) {
-  const bucket = admin.storage().bucket();
-  const [files] = await bucket.getFiles({ prefix });
-  await Promise.all(
-    files.map(async (f) => {
-      try {
-        await f.delete();
-      } catch (err) {
-        logger.warn('Failed to delete storage file', { name: f.name, err });
-      }
-    }),
-  );
-}
 
 export const onTicketDeleted = functions.firestore
   .document('tickets/{ticketId}')
-  .onDelete(async (_snap: FirebaseFirestore.DocumentSnapshot, context: functions.EventContext) => {
-    const ticketId = context.params.ticketId as string;
-    await deleteStoragePrefix(`tickets/${ticketId}/`);
+  .onDelete(async (_snap, context) => {
+    logger.info('onTicketDeleted', { ticketId: context.params.ticketId });
   });
 
 export const onTaskDeleted = functions.firestore
   .document('tasks/{taskId}')
-  .onDelete(async (_snap: FirebaseFirestore.DocumentSnapshot, context: functions.EventContext) => {
-    const taskId = context.params.taskId as string;
-    await deleteStoragePrefix(`tasks/${taskId}/`);
+  .onDelete(async (_snap, context) => {
+    logger.info('onTaskDeleted', { taskId: context.params.taskId });
   });
 
-// ---------------------------------------------------------------------------
-// Root callables
-// ---------------------------------------------------------------------------
+// --------------------------
+// ROOT CALLABLES
+// --------------------------
 
-/**
- * List organizations (id + name). Root-only.
- */
 export const rootListOrganizations = functions.https.onCall(async (data, context) => {
   assertRoot(context);
 
-  const limit = Math.max(1, Math.min(200, Number(data?.limit ?? 50)));
+  const db = admin.firestore();
 
-  // Order by updatedAt if present, else createdAt.
-  const col = admin.firestore().collection('organizations');
-  let q: FirebaseFirestore.Query = col;
+  const limit = Math.max(1, Math.min(200, Number((data as any)?.limit ?? 25)));
+  const cursor = String((data as any)?.cursor ?? '').trim(); // last orgId from previous page
+  const search = String((data as any)?.search ?? '').trim(); // prefix match on orgId
+  const includeInactive = Boolean((data as any)?.includeInactive ?? true);
 
-  // We avoid relying on an index that might not exist by trying updatedAt first
-  // and falling back to createdAt.
-  try {
-    q = col.orderBy('updatedAt', 'desc').limit(limit);
-    const snap = await q.get();
-    const organizations: RootOrgRow[] = snap.docs.map((d) => {
-      const v = d.data() as any;
-      return { id: d.id, name: v?.name, isActive: v?.isActive, createdAt: v?.createdAt, updatedAt: v?.updatedAt };
-    });
-    return { organizations };
-  } catch {
-    const snap = await col.orderBy('createdAt', 'desc').limit(limit).get();
-    const organizations: RootOrgRow[] = snap.docs.map((d) => {
-      const v = d.data() as any;
-      return { id: d.id, name: v?.name, isActive: v?.isActive, createdAt: v?.createdAt, updatedAt: v?.updatedAt };
-    });
-    return { organizations };
+  // Ensure canonical "default" exists so it always appears in listings.
+  const defaultRef = db.collection('organizations').doc('default');
+  const defaultSnap = await defaultRef.get();
+
+  if (!defaultSnap.exists) {
+    await defaultRef.set(
+      {
+        organizationId: 'default',
+        name: 'default',
+        isActive: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'auto_ensure_default_org',
+      },
+      { merge: true }
+    );
+  } else {
+    await defaultRef.set(
+      {
+        organizationId: 'default',
+        name: (defaultSnap.data() as any)?.name ?? 'default',
+        isActive: (defaultSnap.data() as any)?.isActive ?? true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
   }
+
+  // Order by documentId to avoid missing-field issues.
+  let q: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db
+    .collection('organizations')
+    .orderBy(admin.firestore.FieldPath.documentId())
+    .limit(limit + 1);
+
+  if (search) {
+    const end = `${search}\uf8ff`;
+    q = q.startAt(search).endAt(end);
+  }
+
+  if (cursor) {
+    q = q.startAfter(cursor);
+  }
+
+  const snap = await q.get();
+  const docs = snap.docs;
+
+  const rows = docs.slice(0, limit).map((d) => {
+    const v = d.data() || {};
+    const isActive = typeof (v as any).isActive === 'boolean' ? (v as any).isActive : true;
+    return {
+      id: d.id,
+      name: (v as any).name,
+      isActive,
+      createdAt: (v as any).createdAt,
+      updatedAt: (v as any).updatedAt,
+    };
+  });
+
+  const filtered = includeInactive ? rows : rows.filter((r) => r.isActive !== false);
+  const nextCursorOut = docs.length > limit ? docs[limit].id : null;
+
+  return { organizations: filtered, nextCursor: nextCursorOut };
 });
 
-/**
- * Move/upsert a user into an organization (single-tenant style primary org).
- * Root-only.
- */
 export const rootUpsertUserToOrganization = functions.https.onCall(async (data, context) => {
   assertRoot(context);
 
-  const email = String(data?.email ?? '').trim().toLowerCase();
-  const organizationId = String(data?.organizationId ?? '').trim();
-  const role = (String(data?.role ?? 'operario').trim() as 'admin' | 'operario' | 'mantenimiento');
+  const email = String((data as any)?.email ?? '').trim().toLowerCase();
+  const orgId = String((data as any)?.organizationId ?? '').trim();
+  const role = String((data as any)?.role ?? '').trim();
 
-  if (!email) {
-    throw new functions.https.HttpsError('invalid-argument', 'Missing email');
-  }
-  if (!organizationId) {
-    throw new functions.https.HttpsError('invalid-argument', 'Missing organizationId');
-  }
-  if (!['admin', 'operario', 'mantenimiento'].includes(role)) {
-    throw new functions.https.HttpsError('invalid-argument', 'Invalid role');
-  }
+  if (!email) throw new functions.https.HttpsError('invalid-argument', 'Email requerido.');
+  if (!orgId) throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
+  if (!role) throw new functions.https.HttpsError('invalid-argument', 'role requerido.');
 
-  // Resolve user from Auth
-  const authUser = await admin.auth().getUserByEmail(email);
-  const uid = authUser.uid;
+  const auth = admin.auth();
+  const user = await auth.getUserByEmail(email);
 
-  // Ensure org documents exist (minimal stub)
-  const orgRef = admin.firestore().doc(`organizations/${organizationId}`);
-  const orgPublicRef = admin.firestore().doc(`organizationsPublic/${organizationId}`);
-  const orgSnap = await orgRef.get();
-  if (!orgSnap.exists) {
-    await orgRef.set(
-      {
-        organizationId,
-        name: organizationId,
-        country: 'ES',
-        isActive: true,
-        plan: {
-          tier: 'trial',
-          maxUsers: 50,
-          maxTicketsPerMonth: 500,
-          maxTasksPerMonth: 500,
-          storageMb: 1024,
-          usersThisMonth: 0,
-          ticketsThisMonth: 0,
-          tasksThisMonth: 0,
-          storageMbUsed: 0,
-        },
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
-  }
-  await orgPublicRef.set(
+  const db = admin.firestore();
+  const uid = user.uid;
+
+  // Ensure org doc exists
+  const orgRef = db.collection('organizations').doc(orgId);
+  await orgRef.set(
     {
-      organizationId,
-      name: (orgSnap.data() as any)?.name ?? organizationId,
-      isActive: true,
+      organizationId: orgId,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
     },
-    { merge: true },
+    { merge: true }
   );
 
-  // Update user profile doc
-  const userRef = admin.firestore().doc(`users/${uid}`);
+  // Update /users/{uid}
+  const userRef = db.collection('users').doc(uid);
   await userRef.set(
     {
-      email: authUser.email ?? email,
-      displayName: authUser.displayName ?? authUser.email ?? email,
-      active: true,
-      organizationId,
+      email,
+      organizationId: orgId,
       role,
-      isMaintenanceLead: role === 'admin',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
     },
-    { merge: true },
+    { merge: true }
   );
 
-  // Upsert membership
-  const membershipId = `${uid}_${organizationId}`;
-  const membershipRef = admin.firestore().doc(`memberships/${membershipId}`);
-  const orgName = (await orgRef.get()).data()?.name ?? organizationId;
-  await membershipRef.set(
+  // memberships
+  const msRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+  await msRef.set(
     {
       userId: uid,
-      organizationId,
-      organizationName: orgName,
+      organizationId: orgId,
       role,
-      status: 'active',
-      primary: true,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      active: true,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      source: 'root_upsert_user_to_org',
     },
-    { merge: true },
+    { merge: true }
   );
 
-  // Create org member doc (used by rules)
-  const memberRef = admin.firestore().doc(`organizations/${organizationId}/members/${uid}`);
+  // org members subcollection
+  const memberRef = orgRef.collection('members').doc(uid);
   await memberRef.set(
     {
       uid,
-      orgId: organizationId,
-      email: authUser.email ?? email,
-      displayName: authUser.displayName ?? authUser.email ?? email,
+      orgId,
+      email,
+      displayName: user.displayName ?? null,
       active: true,
       role,
-      source: 'root_console',
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      source: 'root_upsert_user_to_org',
     },
-    { merge: true },
+    { merge: true }
   );
 
-  return { ok: true, uid, organizationId, role };
+  return { ok: true, uid, organizationId: orgId, role };
+});
+
+export const rootSetUserRootClaim = functions.https.onCall(async (data, context) => {
+  assertRoot(context);
+
+  const email = String((data as any)?.email ?? '').trim();
+  const uidIn = String((data as any)?.uid ?? '').trim();
+  const root = Boolean((data as any)?.root);
+  const detach = Boolean((data as any)?.detach ?? true);
+
+  if (!email && !uidIn) {
+    throw new functions.https.HttpsError('invalid-argument', 'Falta email o uid.');
+  }
+
+  const auth = admin.auth();
+  const userRecord = uidIn ? await auth.getUser(uidIn) : await auth.getUserByEmail(email);
+  const uid = userRecord.uid;
+
+  const currentClaims = (userRecord.customClaims ?? {}) as Record<string, unknown>;
+  const nextClaims: Record<string, unknown> = { ...currentClaims, root };
+  if (!root) delete (nextClaims as any).root;
+
+  await auth.setCustomUserClaims(uid, nextClaims);
+
+  let firestoreOps = 0;
+
+  if (detach) {
+    const db = admin.firestore();
+    const batch = db.batch();
+
+    const uRef = db.collection('users').doc(uid);
+    const uSnap = await uRef.get();
+    if (uSnap.exists) {
+      batch.delete(uRef);
+      firestoreOps++;
+    }
+
+    const msSnap = await db.collection('memberships').where('userId', '==', uid).get();
+    msSnap.docs.forEach((d) => {
+      batch.delete(d.ref);
+      firestoreOps++;
+    });
+
+    const orgs = await db.collection('organizations').get();
+    for (const o of orgs.docs) {
+      const mRef = db.collection('organizations').doc(o.id).collection('members').doc(uid);
+      const mSnap = await mRef.get();
+      if (mSnap.exists) {
+        batch.delete(mRef);
+        firestoreOps++;
+      }
+    }
+
+    if (firestoreOps > 0) await batch.commit();
+  }
+
+  return { ok: true, uid, email: userRecord.email, root, detached: detach, firestoreOps };
+});
+
+export const rootOrgSummary = functions.https.onCall(async (data, context) => {
+  assertRoot(context);
+
+  const orgId = String((data as any)?.organizationId ?? '').trim();
+  if (!orgId) throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
+
+  const db = admin.firestore();
+  const orgRef = db.collection('organizations').doc(orgId);
+
+  const membersQ = orgRef.collection('members');
+  const usersQ = db.collection('users').where('organizationId', '==', orgId);
+  const ticketsQ = db.collection('tickets').where('organizationId', '==', orgId);
+  const tasksQ = db.collection('tasks').where('organizationId', '==', orgId);
+  const sitesQ = db.collection('sites').where('organizationId', '==', orgId);
+  const assetsQ = db.collection('assets').where('organizationId', '==', orgId);
+  const departmentsQ = db.collection('departments').where('organizationId', '==', orgId);
+
+  const [members, users, tickets, tasks, sites, assets, departments] = await Promise.all([
+    safeCount(membersQ),
+    safeCount(usersQ),
+    safeCount(ticketsQ),
+    safeCount(tasksQ),
+    safeCount(sitesQ),
+    safeCount(assetsQ),
+    safeCount(departmentsQ),
+  ]);
+
+  return {
+    ok: true,
+    organizationId: orgId,
+    counts: { members, users, tickets, tasks, sites, assets, departments },
+  };
+});
+
+type RootUsersCursor = { email: string; uid: string };
+
+export const rootListUsersByOrg = functions.https.onCall(async (data, context) => {
+  assertRoot(context);
+
+  const orgId = String((data as any)?.organizationId ?? '').trim();
+  if (!orgId) throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
+
+  const limit = clampInt((data as any)?.limit, 1, 200, 25);
+  const searchEmail = String((data as any)?.searchEmail ?? '').trim().toLowerCase();
+  const cursor = (data as any)?.cursor as RootUsersCursor | undefined;
+
+  const db = admin.firestore();
+
+  let q: FirebaseFirestore.Query<FirebaseFirestore.DocumentData> = db
+    .collection('organizations')
+    .doc(orgId)
+    .collection('members')
+    .orderBy('email')
+    .orderBy(admin.firestore.FieldPath.documentId())
+    .limit(limit + 1);
+
+  if (searchEmail) {
+    const end = `${searchEmail}\uf8ff`;
+    q = q.startAt(searchEmail).endAt(end);
+  }
+
+  if (cursor?.email && cursor?.uid) {
+    q = q.startAfter(cursor.email.toLowerCase(), cursor.uid);
+  }
+
+  const snap = await q.get();
+  const docs = snap.docs;
+
+  const users = docs.slice(0, limit).map((d) => {
+    const v = d.data() || {};
+    return {
+      uid: d.id,
+      email: (v as any).email ?? null,
+      displayName: (v as any).displayName ?? null,
+      active: (v as any).active ?? true,
+      role: (v as any).role ?? 'operator',
+      departmentId: (v as any).departmentId ?? null,
+    };
+  });
+
+  const nextCursor =
+    docs.length > limit
+      ? ({ email: String((docs[limit].data() as any)?.email ?? ''), uid: docs[limit].id } as RootUsersCursor)
+      : null;
+
+  return { ok: true, organizationId: orgId, users, nextCursor };
+});
+
+export const rootDeactivateOrganization = functions.https.onCall(async (data, context) => {
+  assertRoot(context);
+
+  const orgId = String((data as any)?.organizationId ?? '').trim();
+  if (!orgId) throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
+
+  const isActive = Boolean((data as any)?.isActive ?? false);
+
+  const db = admin.firestore();
+  await db.collection('organizations').doc(orgId).set(
+    { isActive, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+    { merge: true }
+  );
+
+  return { ok: true, organizationId: orgId, isActive };
+});
+
+export const rootDeleteOrganizationScaffold = functions.https.onCall(async (data, context) => {
+  assertRoot(context);
+
+  const orgId = String((data as any)?.organizationId ?? '').trim();
+  const confirm = String((data as any)?.confirm ?? '').trim();
+  if (!orgId) throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
+  if (confirm !== orgId) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Confirmación inválida. Debes escribir exactamente el organizationId.'
+    );
+  }
+
+  const hardDelete = Boolean((data as any)?.hardDelete ?? false);
+
+  const db = admin.firestore();
+  const ref = db.collection('organizations').doc(orgId);
+
+  await ref.set(
+    {
+      isActive: false,
+      isDeleted: true,
+      deletedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  if (hardDelete) {
+    await ref.delete(); // NO borra subcolecciones
+  }
+
+  return { ok: true, organizationId: orgId, hardDelete };
+});
+
+type PurgeCollectionName = 'tickets' | 'tasks' | 'sites' | 'assets' | 'departments' | 'memberships' | 'members';
+
+export const rootPurgeOrganizationCollection = functions.https.onCall(async (data, context) => {
+  assertRoot(context);
+
+  const orgId = String((data as any)?.organizationId ?? '').trim();
+  const collection = String((data as any)?.collection ?? '').trim() as PurgeCollectionName;
+  const confirm = String((data as any)?.confirm ?? '').trim();
+
+  if (!orgId) throw new functions.https.HttpsError('invalid-argument', 'organizationId requerido.');
+  if (!collection) throw new functions.https.HttpsError('invalid-argument', 'collection requerido.');
+  if (confirm !== orgId) {
+    throw new functions.https.HttpsError(
+      'failed-precondition',
+      'Confirmación inválida. Debes escribir exactamente el organizationId.'
+    );
+  }
+
+  const allowed: PurgeCollectionName[] = ['tickets', 'tasks', 'sites', 'assets', 'departments', 'memberships', 'members'];
+  if (!allowed.includes(collection)) {
+    throw new functions.https.HttpsError('invalid-argument', `collection no permitido: ${collection}`);
+  }
+
+  const batchSize = clampInt((data as any)?.batchSize, 50, 500, 250);
+  const maxDocs = clampInt((data as any)?.maxDocs, 1, 5000, 1500);
+
+  const db = admin.firestore();
+  let deleted = 0;
+
+  const deleteBatch = async (docs: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[]) => {
+    const batch = db.batch();
+    docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    deleted += docs.length;
+  };
+
+  if (collection === 'members') {
+    let hasMore = true;
+    while (hasMore && deleted < maxDocs) {
+      const snap = await db
+        .collection('organizations')
+        .doc(orgId)
+        .collection('members')
+        .limit(Math.min(batchSize, maxDocs - deleted))
+        .get();
+
+      if (snap.empty) {
+        hasMore = false;
+        break;
+      }
+      await deleteBatch(snap.docs);
+      hasMore = snap.size > 0 && deleted < maxDocs;
+    }
+    return { ok: true, organizationId: orgId, collection, deleted, hasMore: deleted >= maxDocs };
+  }
+
+  let hasMore = true;
+  while (hasMore && deleted < maxDocs) {
+    const snap = await db
+      .collection(collection)
+      .where('organizationId', '==', orgId)
+      .limit(Math.min(batchSize, maxDocs - deleted))
+      .get();
+
+    if (snap.empty) {
+      hasMore = false;
+      break;
+    }
+    await deleteBatch(snap.docs);
+    hasMore = snap.size > 0 && deleted < maxDocs;
+  }
+
+  return { ok: true, organizationId: orgId, collection, deleted, hasMore: deleted >= maxDocs };
 });
