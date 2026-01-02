@@ -55,11 +55,11 @@ service cloud.firestore {
     }
 
     function organizationIdMatchesResource() {
-      return (resource.data.organizationId != null && isMemberOfOrg(resource.data.organizationId)) || isSuperAdmin();
+      return (resource.data.organizationId != null && isMemberOfOrg(resource.data.organizationId));
     }
 
     function organizationIdMatchesRequest() {
-      return (request.resource != null && request.resource.data.organizationId != null && isMemberOfOrg(request.resource.data.organizationId)) || isSuperAdmin();
+      return (request.resource != null && request.resource.data.organizationId != null && isMemberOfOrg(request.resource.data.organizationId));
     }
 
     function organizationIdUnchanged() {
@@ -193,9 +193,9 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if (isOwner(userId) || isManager(request.auth.uid)) && organizationIdMatchesResource();
-      allow list: if isManager(request.auth.uid);
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if (isOwner(userId) || isAdmin()) && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow list: if false;
+      allow create: if isSignedIn() && isOwner(userId) && request.resource.data.role != 'super_admin';
+      allow update: if (isOwner(userId) || isAdmin()) && organizationIdMatchesResource() && organizationIdUnchanged() && (request.resource.data.role == resource.data.role || isSuperAdmin());
       allow delete: if isAdmin() && !isOwner(userId) && organizationIdMatchesResource();
     }
 
@@ -220,17 +220,17 @@ service cloud.firestore {
       // Created when an org is created. Kept permissive to avoid blocking signup.
       allow create: if isSignedIn() && request.resource.data.organizationId == orgId;
       // Only admins of the org (or super_admin) can update/delete.
-      allow update, delete: if (isAdmin() && isMemberOfOrg(orgId)) || isSuperAdmin();
+      allow update, delete: if (isAdmin() && isMemberOfOrg(orgId));
     }
 
     match /organizations/{organizationId} {
       // IMPORTANT: do NOT allow listing organizations (multi-tenant leakage)
-      allow list: if isSuperAdmin();
+      allow list: if false;
       // Allow org members (or super_admin) to read their org.
-      allow get: if (isSignedIn() && isMemberOfOrg(organizationId)) || isSuperAdmin();
+      allow get: if (isSignedIn() && isMemberOfOrg(organizationId));
       // Allow creating an org during onboarding (membership is established right after).
       allow create: if isSignedIn();
-      allow update, delete: if (isAdmin() && isMemberOfOrg(organizationId)) || isSuperAdmin();
+      allow update, delete: if (isSuperAdmin() && isMemberOfOrg(organizationId));
     }
 
     match /sites/{siteId} {
@@ -284,8 +284,8 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read: if isSignedIn() && organizationIdMatchesResource();
+      allow write: if isSignedIn() && isSuperAdmin() && organizationIdMatchesRequest();
     }
 
     match /mail/{mailId} {

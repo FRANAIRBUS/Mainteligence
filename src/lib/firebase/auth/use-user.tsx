@@ -29,6 +29,12 @@ interface UserContextValue {
   organizationId: string | null;
   memberships: Membership[];
   activeMembership: Membership | null;
+  role: 'root' | 'super_admin' | 'admin' | 'maintenance' | 'operator';
+  isSuperAdmin: boolean;
+  isAdmin: boolean;
+  isMaintenance: boolean;
+  isOperator: boolean;
+  canAccessOrgConfig: boolean;
   /**
    * Root mode is a separate, hidden capability that is NOT an app role.
    * It is granted ONLY via Firebase Auth custom claims (token.root === true).
@@ -264,12 +270,36 @@ export function UserProvider({ children }: { children: ReactNode }) {
       !authResolved || profileLoading || membershipsLoading || organizationId === undefined;
     const isLoaded = (organizationId !== undefined && !loading) || (isRoot && authResolved);
 
-    return {
+    
+    const roleRaw = (profile?.role ?? activeMembership?.role ?? 'operator') as any;
+    const role =
+      roleRaw === 'root'
+        ? 'root'
+        : roleRaw === 'super_admin'
+          ? 'super_admin'
+          : roleRaw === 'admin'
+            ? 'admin'
+            : roleRaw === 'maintenance'
+              ? 'maintenance'
+              : 'operator';
+
+    const isSuperAdmin = role === 'super_admin';
+    const isAdmin = role === 'admin' || isSuperAdmin;
+    const isMaintenance = role === 'maintenance';
+    const isOperator = role === 'operator';
+    const canAccessOrgConfig = isSuperAdmin;
+return {
       user,
       profile,
       organizationId: resolvedOrganizationId,
       memberships,
       activeMembership,
+      role,
+      isSuperAdmin,
+      isAdmin,
+      isMaintenance,
+      isOperator,
+      canAccessOrgConfig,
       isRoot,
       setActiveOrganizationId,
       isLoaded,
