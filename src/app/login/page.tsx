@@ -333,13 +333,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      if (typeof window !== 'undefined') {
-        window.sessionStorage?.removeItem(REGISTRATION_FLAG_KEY);
-      }
       router.push('/');
     } catch (err: any) {
       setError(getFriendlyMessage(err));
     } finally {
+      try { sessionStorage.removeItem(REGISTRATION_FLAG_KEY); } catch {}
       setLoading(false);
     }
   };
@@ -348,10 +346,7 @@ export default function LoginPage() {
     if (!auth) return;
     setLoading(true);
     try {
-      if (typeof window !== 'undefined') {
-          window.sessionStorage?.setItem(REGISTRATION_FLAG_KEY, '1');
-        }
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
       // After creating the user in Auth, create their profile in Firestore
@@ -398,13 +393,11 @@ export default function LoginPage() {
           });
         }
       }
-      if (typeof window !== 'undefined') {
-        window.sessionStorage?.removeItem(REGISTRATION_FLAG_KEY);
-      }
       router.push('/');
     } catch (err: any) {
       setError(getFriendlyMessage(err));
     } finally {
+      try { sessionStorage.removeItem(REGISTRATION_FLAG_KEY); } catch {}
       setLoading(false);
     }
   };
@@ -461,10 +454,8 @@ export default function LoginPage() {
     setLoading(true);
     const provider = new GoogleAuthProvider();
     try {
-      if (typeof window !== 'undefined') {
-          window.sessionStorage?.setItem(REGISTRATION_FLAG_KEY, '1');
-        }
-        const result = await signInWithPopup(auth, provider);
+      try { sessionStorage.setItem(REGISTRATION_FLAG_KEY, '1'); } catch {}
+      const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
       // Resolve existing profile to avoid sobrescribir organizationId en re-logins.
@@ -513,9 +504,6 @@ export default function LoginPage() {
         });
       }
 
-      if (typeof window !== 'undefined') {
-        window.sessionStorage?.removeItem(REGISTRATION_FLAG_KEY);
-      }
       router.push('/');
     } catch (err: any) {
       setError(getFriendlyMessage(err));

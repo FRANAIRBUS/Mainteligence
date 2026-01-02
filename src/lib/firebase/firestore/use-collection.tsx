@@ -20,7 +20,7 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
   const db = useFirestore();
   const { user, loading: userLoading, organizationId, profile } = useUser();
   const normalizedRole = normalizeRole(profile?.role);
-  const allowCrossOrg = normalizedRole === 'super_admin';
+  const allowCrossOrg = false; // Always scope to active organizationId
 
   useEffect(() => {
     try {
@@ -115,7 +115,7 @@ export function useCollectionQuery<T>(
   const db = useFirestore();
   const { user, loading: userLoading, organizationId, profile } = useUser();
   const normalizedRole = normalizeRole(profile?.role);
-  const allowCrossOrg = normalizedRole === 'super_admin';
+  const allowCrossOrg = false; // Always scope to active organizationId
 
   useEffect(() => {
     try {

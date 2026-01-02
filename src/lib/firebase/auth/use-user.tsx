@@ -24,16 +24,6 @@ import type { Membership, User as UserProfile } from '../models';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 import { REGISTRATION_FLAG_KEY } from '@/lib/registration-flag';
 
-
-function isRegistrationInProgress(): boolean {
-  try {
-    if (typeof window === 'undefined') return false;
-    return window.sessionStorage?.getItem(REGISTRATION_FLAG_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
 interface UserContextValue {
   user: AuthUser | null;
   profile: UserProfile | null;
@@ -84,6 +74,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setMemberships([]);
       setOrganizationId(undefined);
       setProfileLoading(true);
+        const registrationInProgress = typeof window !== 'undefined' && sessionStorage.getItem(REGISTRATION_FLAG_KEY) === '1';
       setMembershipsLoading(true);
       setAuthResolved(false);
       return;
@@ -104,15 +95,18 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
       try {
         setProfileLoading(true);
+        const registrationInProgress = typeof window !== 'undefined' && sessionStorage.getItem(REGISTRATION_FLAG_KEY) === '1';
         const profileRef = doc(firestore, 'users', authUser.uid);
         const profileSnap = await getDoc(profileRef);
 
         if (!profileSnap.exists()) {
-          // During the signup wizard we don't want to auto-bootstrap a default org/profile.
-          if (isRegistrationInProgress()) {
+          if (registrationInProgress) {
+            // Signup wizard will create profile + membership. Avoid bootstrapping to DEFAULT org.
             setProfile(null);
             setOrganizationId(null);
+            setMemberships([]);
             setProfileLoading(false);
+            setMembershipsLoading(false);
             return;
           }
           const bootstrappedProfile = await ensureDefaultOrganization(firestore, authUser);
@@ -128,19 +122,23 @@ export function UserProvider({ children }: { children: ReactNode }) {
         } as UserProfile;
 
         if (!profileData.organizationId) {
-          // During the signup wizard we don't want to auto-bootstrap a default org/profile.
-          if (isRegistrationInProgress()) {
+          if (registrationInProgress) {
+            // Do not mutate orgId during signup flow.
             setProfile(profileData);
             setOrganizationId(null);
-          } else {
-            const bootstrappedProfile = await ensureDefaultOrganization(
-              firestore,
-              authUser,
-              profileData,
-            );
-            setProfile(bootstrappedProfile);
-            setOrganizationId(bootstrappedProfile?.organizationId ?? null);
+            setProfileLoading(false);
+            // memberships will be created by the wizard.
+            setMemberships([]);
+            setMembershipsLoading(false);
+            return;
           }
+          const bootstrappedProfile = await ensureDefaultOrganization(
+            firestore,
+            authUser,
+            profileData,
+          );
+          setProfile(bootstrappedProfile);
+          setOrganizationId(bootstrappedProfile?.organizationId ?? null);
           setProfileLoading(false);
           return;
         }
