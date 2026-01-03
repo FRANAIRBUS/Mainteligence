@@ -178,10 +178,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Firestore security rules require queries to be scoped to the caller's organization.
+    // Wait until the profile is loaded so we can constrain the query accordingly.
+    const organizationFilterId = profile?.organizationId;
+    if (!organizationFilterId) {
+      setMemberships([]);
+      setMembershipsLoading(false);
+      return;
+    }
+
     setMembershipsLoading(true);
     const membershipsQuery = query(
       collection(firestore, 'memberships'),
       where('userId', '==', user.uid),
+      where('organizationId', '==', organizationFilterId),
       where('status', 'in', ['active', 'pending']),
     );
 
@@ -203,7 +213,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     );
 
     return () => unsubscribe();
-  }, [firestore, user]);
+  }, [firestore, user, isRoot, profile?.organizationId]);
 
   useEffect(() => {
     if (!authResolved) {
