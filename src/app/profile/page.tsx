@@ -9,6 +9,7 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
 import { useAuth, useFirestore, useUser } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 import {
   Card,
   CardContent,
@@ -51,7 +52,7 @@ const profileFormSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 export default function ProfilePage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, profile, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
   
   useEffect(() => {
@@ -82,12 +83,15 @@ export default function ProfilePage() {
     }
   }, [user, form]);
   
+  const resolvedOrganizationId =
+    organizationId ?? profile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
+
   const onSubmit = async (data: ProfileFormValues) => {
     if (!user || !firestore || !auth?.currentUser) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No estás autenticado.',
+        description: 'No estás autenticado. Por favor, inicia sesión nuevamente.',
       });
       return;
     }
@@ -98,6 +102,8 @@ export default function ProfilePage() {
       const userDocRef = doc(firestore, 'users', user.uid);
       await setDoc(userDocRef, {
         displayName: data.displayName,
+        email: data.email || user.email || '',
+        organizationId: resolvedOrganizationId,
         updatedAt: serverTimestamp(),
       }, { merge: true });
       

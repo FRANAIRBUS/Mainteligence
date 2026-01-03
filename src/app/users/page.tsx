@@ -55,6 +55,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
 
 function UserTable({
   users,
@@ -143,17 +144,17 @@ function UserTable({
 }
 
 function CreateAdminProfile() {
-  const { user } = useUser();
+  const { user, organizationId } = useUser();
   const firestore = useFirestore();
   const { toast } = useToast();
   const [isCreating, setIsCreating] = useState(false);
 
   const handleCreateAdmin = async () => {
-    if (!user || !firestore) {
+    if (!user || !firestore || !organizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Usuario o base de datos no disponibles.',
+        description: 'Usuario, base de datos u organizationId no disponibles.',
       });
       return;
     }
@@ -166,9 +167,26 @@ function CreateAdminProfile() {
         role: 'admin',
         active: true,
         isMaintenanceLead: true,
+        organizationId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      const membershipRef = doc(firestore, 'memberships', `${user.uid}_${organizationId}`);
+      await setDoc(
+        membershipRef,
+        {
+          userId: user.uid,
+          organizationId,
+          organizationName: organizationId,
+          role: 'admin',
+          status: 'active',
+          primary: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
       toast({
         title: '¡Éxito!',
         description: 'Tu perfil de administrador ha sido creado.',
@@ -193,18 +211,22 @@ function CreateAdminProfile() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <AlertTriangle className="text-amber-500" />
-          Completar Configuración de Administrador
+          Completar configuración de administrador
         </CardTitle>
         <CardDescription>
-          Tu cuenta de usuario autenticada no tiene un perfil en la base de datos de la aplicación.
-          Crea un perfil de administrador ahora para obtener permisos de gestión y que otros
-          administradores puedan encontrarte en el panel de Usuarios.
+          No encontramos un perfil asociado a tu usuario. Crearemos uno con los siguientes ajustes para la
+          organización <strong>{organizationId}</strong>:
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        <ul className="list-disc space-y-1 pl-6 text-sm text-muted-foreground">
+          <li>Rol: <span className="font-medium text-foreground">admin</span></li>
+          <li>Estado: activo y líder de mantenimiento</li>
+          <li>organizationId: <span className="font-mono text-foreground">{organizationId}</span></li>
+        </ul>
         <Button onClick={handleCreateAdmin} disabled={isCreating}>
           {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Crear Mi Perfil de Administrador
+          Crear mi perfil de administrador
         </Button>
       </CardContent>
     </Card>
@@ -212,7 +234,7 @@ function CreateAdminProfile() {
 }
 
 export default function UsersPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
 
   // Phase 1: Wait for user authentication
@@ -230,18 +252,19 @@ export default function UsersPage() {
     user ? `users/${user.uid}` : null
   );
 
-  const isAdmin = userProfile?.role === 'admin';
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const canManage = isAdminLikeRole(normalizedRole);
   
   // Phase 3: Load app data, but only if the current user is an admin
   const { data: users, loading: usersLoading } = useCollection<User>(
-    isAdmin ? 'users' : null
+    canManage ? 'users' : null
   );
   
   const {
     data: departments,
     loading: deptsLoading,
     error: departmentsError,
-  } = useCollection<Department>(isAdmin ? 'departments' : null);
+  } = useCollection<Department>(canManage ? 'departments' : null);
 
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
@@ -278,7 +301,14 @@ export default function UsersPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deletingUserId || !firestore) return;
+    if (!deletingUserId || !firestore || !organizationId) {
+      toast({
+        variant: 'destructive',
+        title: 'Falta organizationId',
+        description: 'No podemos eliminar usuarios sin un organizationId válido.',
+      });
+      return;
+    }
     try {
       await deleteDoc(doc(firestore, 'users', deletingUserId));
       toast({
@@ -298,7 +328,7 @@ export default function UsersPage() {
   };
 
   // Initial loading is true if we are waiting for auth or profile info
-  const initialLoading = userLoading || profileLoading;
+  const initialLoading = userLoading || profileLoading || organizationId === undefined;
 
   if (initialLoading) {
     return (
@@ -308,9 +338,30 @@ export default function UsersPage() {
     );
   }
 
+  if (organizationId === null) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center px-4">
+        <Card className="max-w-lg">
+          <CardHeader className="flex flex-col items-center gap-3 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-6 w-6" />
+            </div>
+            <CardTitle>Falta el ID de organización</CardTitle>
+            <CardDescription className="text-balance">
+              No encontramos un organizationId en tu sesión. Inicia sesión nuevamente para continuar.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center pb-6">
+            <Button onClick={() => router.push('/login')}>Volver al inicio de sesión</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   // This is a specific state: user is authenticated but has no profile document.
   const showCreateAdminProfile = !profileLoading && !userProfile;
-  const tableIsLoading = isAdmin && (usersLoading || deptsLoading);
+  const tableIsLoading = canManage && (usersLoading || deptsLoading);
 
   return (
     <SidebarProvider>
@@ -339,7 +390,7 @@ export default function UsersPage() {
         <main className="flex-1 p-4 sm:p-6 md:p-8">
           {showCreateAdminProfile && <CreateAdminProfile />}
 
-          {isAdmin ? (
+          {canManage ? (
             <Card>
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
@@ -379,14 +430,14 @@ export default function UsersPage() {
           )}
         </main>
       </SidebarInset>
-      {isAdmin && (
+      {canManage && (
         <AddUserDialog
           open={isAddUserOpen}
           onOpenChange={setIsAddUserOpen}
           departments={departments}
         />
       )}
-      {editingUser && isAdmin && departments && (
+      {editingUser && canManage && departments && (
         <EditUserDialog
           key={editingUser.id}
           open={isEditUserOpen}

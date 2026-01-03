@@ -7,9 +7,11 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useFirestore } from '@/lib/firebase';
+import { useUser } from '@/lib/firebase/auth/use-user';
 import type { User, Department } from '@/lib/firebase/models';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
+import { normalizeRole } from '@/lib/rbac';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -38,12 +40,34 @@ import {
 } from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
 
+const roleValues = [
+  'super_admin',
+  'admin',
+  'maintenance',
+  'dept_head_multi',
+  'dept_head_single',
+  'operator',
+  'mantenimiento',
+  'operario',
+] as const;
+
+const roleOptions = [
+  { value: roleValues[0], label: 'Super Admin' },
+  { value: roleValues[1], label: 'Administrador' },
+  { value: roleValues[2], label: 'Mantenimiento' },
+  { value: roleValues[3], label: 'Jefe de Departamento (múltiples)' },
+  { value: roleValues[4], label: 'Jefe de Departamento (único)' },
+  { value: roleValues[5], label: 'Operario' },
+  { value: roleValues[6], label: 'Mantenimiento (legacy)' },
+  { value: roleValues[7], label: 'Operario (legacy)' },
+] as const;
+
 const formSchema = z.object({
   displayName: z
     .string()
     .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
   email: z.string().email({ message: 'Por favor, ingrese un correo electrónico válido.' }),
-  role: z.enum(['operario', 'mantenimiento', 'admin']),
+  role: z.enum(roleValues),
   departmentId: z.string().optional(),
 });
 
@@ -59,6 +83,7 @@ interface EditUserDialogProps {
 export function EditUserDialog({ open, onOpenChange, user, departments }: EditUserDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
+  const { organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<EditUserFormValues>({
@@ -66,25 +91,28 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
     defaultValues: {
       displayName: user.displayName || '',
       email: user.email || '',
-      role: user.role || 'operario',
+      role: normalizeRole(user.role) ?? user.role ?? 'operator',
       departmentId: user.departmentId || '',
     },
   });
 
   const onSubmit = async (data: EditUserFormValues) => {
-    if (!firestore || !user) {
+    if (!firestore || !user || !organizationId || user.organizationId !== organizationId) {
         toast({
             variant: 'destructive',
             title: 'Error',
-            description: 'Firestore no está disponible o no se encontró el usuario.',
+            description: 'Firestore no está disponible, falta organizationId o el usuario pertenece a otra organización.',
         });
         return;
     }
     setIsPending(true);
 
     const userRef = doc(firestore, "users", user.id);
+    const normalizedRole = normalizeRole(data.role);
     const updateData = {
         ...data,
+        role: normalizedRole,
+        organizationId,
         updatedAt: serverTimestamp(),
     };
 
@@ -176,9 +204,11 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="operario">Operario</SelectItem>
-                        <SelectItem value="mantenimiento">Mantenimiento</SelectItem>
-                        <SelectItem value="admin">Admin</SelectItem>
+                        {roleOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />

@@ -34,9 +34,10 @@ import {
 } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, User } from "@/lib/firebase/models";
-import { and, collection, or, query, Timestamp, where } from "firebase/firestore";
+import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
+import { normalizeRole } from "@/lib/rbac";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -58,40 +59,28 @@ export default function ClosedTasksPage() {
   const router = useRouter();
   const firestore = useFirestore();
   const auth = useAuth();
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   const { toast } = useToast();
 
-  const canViewAll = userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
-  const isAdmin = userProfile?.role === "admin";
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const isSuperAdmin = normalizedRole === "super_admin";
+  const canViewAll =
+    normalizedRole === "admin" ||
+    normalizedRole === "maintenance" ||
+    isSuperAdmin;
+  const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
-  const tasksQuery = useMemo(() => {
-    if (!firestore || !user || !userProfile) return null;
+  const tasksConstraints = useMemo(() => {
+    if (!user || !userProfile) return null;
+    // Cargamos todas las tareas completadas de la organización y filtramos por permisos en el cliente.
+    return [where("status", "==", "completada")];
+  }, [user, userProfile]);
 
-    const tasksCollection = collection(firestore, "tasks");
-    const statusCondition = where("status", "==", "completada");
-
-    if (canViewAll) {
-      return query(tasksCollection, statusCondition);
-    }
-
-    const conditions = [
-      where("createdBy", "==", user.uid),
-      where("assignedTo", "==", user.uid),
-    ];
-
-    if (userProfile.departmentId) {
-      conditions.push(where("location", "==", userProfile.departmentId));
-    }
-
-    if (conditions.length === 1) {
-      return query(tasksCollection, statusCondition, conditions[0]);
-    }
-
-    return query(tasksCollection, and(statusCondition, or(...conditions)));
-  }, [canViewAll, firestore, user, userProfile]);
-
-  const { data: tasks, loading } = useCollectionQuery<TaskWithId>(tasksQuery);
+  const { data: tasks, loading } = useCollectionQuery<TaskWithId>(
+    tasksConstraints ? "tasks" : null,
+    ...(tasksConstraints ?? [])
+  );
   const { data: departments } = useCollection<Department>("departments");
   const { data: users } = useCollection<User>("users");
 
@@ -115,7 +104,26 @@ export default function ClosedTasksPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    return [...tasks]
+    const scopeDepartments = Array.from(
+      new Set(
+        [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
+          (id): id is string => Boolean(id)
+        )
+      )
+    );
+
+    const visibleTasks = canViewAll
+      ? tasks
+      : tasks.filter((task) => {
+          if (task.createdBy === user?.uid) return true;
+          if (task.assignedTo === user?.uid) return true;
+          if (scopeDepartments.length > 0 && task.location) {
+            return scopeDepartments.includes(task.location);
+          }
+          return false;
+        });
+
+    return [...visibleTasks]
       .filter((task) => {
         const createdAtDate = task.createdAt?.toDate?.() ?? null;
         if (dateLimits[dateFilter] && createdAtDate) {
@@ -139,7 +147,7 @@ export default function ClosedTasksPage() {
         const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
         return bCreatedAt - aCreatedAt;
       });
-  }, [dateFilter, departmentFilter, searchQuery, tasks, userFilter]);
+  }, [canViewAll, dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, userProfile?.departmentId, userProfile?.departmentIds]);
 
   const handleReopen = async (task: TaskWithId) => {
     if (!firestore || !auth || !user || !isAdmin) return;
@@ -163,7 +171,9 @@ export default function ClosedTasksPage() {
   };
 
   const handleDuplicate = async (task: TaskWithId) => {
-    if (!firestore || !auth || !user || !isAdmin) return;
+    const targetOrgId = organizationId ?? task.organizationId;
+
+    if (!firestore || !auth || !user || !isAdmin || !targetOrgId) return;
 
     try {
       await createTask(firestore, auth, {
@@ -176,6 +186,7 @@ export default function ClosedTasksPage() {
         location: task.location ?? "",
         category: task.category ?? "",
         reopened: false,
+        organizationId: targetOrgId,
       });
       toast({ title: "Tarea duplicada", description: "Se creó una nueva tarea a partir de la cerrada." });
     } catch (error) {

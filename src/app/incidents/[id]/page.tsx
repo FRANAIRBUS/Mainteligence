@@ -15,6 +15,7 @@ import {
 import { MainNav } from '@/components/main-nav';
 import { UserNav } from '@/components/user-nav';
 import { Icons } from '@/components/icons';
+import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import {
   Card,
   CardContent,
@@ -54,10 +55,7 @@ export default function IncidentDetailPage() {
   const ticketId = Array.isArray(id) ? id[0] : id;
   const firestore = useFirestore();
 
-  const { user, loading: userLoading } = useUser();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-  const isMantenimiento = userProfile?.role === 'admin' || userProfile?.role === 'mantenimiento';
-
+  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
   const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
   
   // Fetch all collections needed for display unconditionally
@@ -67,6 +65,9 @@ export default function IncidentDetailPage() {
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
   // Only fetch users if the current user is an admin or maintenance staff.
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const isSuperAdmin = normalizedRole === 'super_admin';
+  const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
   const { data: users, loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -82,7 +83,7 @@ export default function IncidentDetailPage() {
     });
   }, [ticket?.reports]);
   const isClosed = ticket?.status === 'Cerrada';
-  const isOperario = userProfile?.role === 'operario';
+  const permissions = ticket && userProfile ? getTicketPermissions(ticket, userProfile, user?.uid ?? null) : null;
 
   // Memoize derived data
   const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
@@ -91,27 +92,33 @@ export default function IncidentDetailPage() {
 
 
   useEffect(() => {
-    if (!userLoading && !user) {
+    if (isLoaded && !user) {
       router.push('/login');
     }
-     // Authorization check after data has loaded
-     if (!ticketLoading && !userLoading && !profileLoading && ticket && user && userProfile) {
-      const canView =
-        userProfile?.role === 'admin' ||
-        userProfile?.role === 'mantenimiento' ||
-        ticket.createdBy === user.uid ||
-        (isOperario && isClosed && userProfile.departmentId === ticket.departmentId);
-      if (!canView) {
+    // Authorization check after data has loaded
+    if (isLoaded && !ticketLoading && ticket && user && userProfile && permissions) {
+      if (!permissions.canView) {
         router.push('/incidents');
       }
     }
-  }, [user, userLoading, router, ticket, ticketLoading, userProfile, profileLoading, isClosed, isOperario]);
+  }, [isLoaded, permissions, router, ticket, ticketLoading, user, userProfile]);
 
   const handleAddReport = async () => {
     if (!firestore || !ticket?.id) {
       toast({
         title: 'No se pudo registrar el informe',
-        description: 'Inténtalo nuevamente en unos instantes.',
+        description: 'Inténtalo nuevamente en unos instantes. Faltan datos obligatorios.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const targetOrganizationId = ticket.organizationId ?? organizationId;
+
+    if (!targetOrganizationId) {
+      toast({
+        title: 'No se pudo registrar el informe',
+        description: 'No se encontró la organización asociada a la incidencia.',
         variant: 'destructive',
       });
       return;
@@ -121,6 +128,15 @@ export default function IncidentDetailPage() {
       toast({
         title: 'Inicia sesión',
         description: 'Debes iniciar sesión para informar la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!isSuperAdmin && ticket.organizationId !== organizationId) {
+      toast({
+        title: 'Organización no válida',
+        description: 'Tu sesión no coincide con la organización de la incidencia.',
         variant: 'destructive',
       });
       return;
@@ -147,6 +163,7 @@ export default function IncidentDetailPage() {
           createdAt: Timestamp.now(),
           createdBy: user.uid,
         }),
+        organizationId: targetOrganizationId,
         updatedAt: serverTimestamp(),
       });
 
@@ -167,7 +184,15 @@ export default function IncidentDetailPage() {
     }
   };
 
-  const isLoading = userLoading || profileLoading || ticketLoading || createdByLoading || sitesLoading || deptsLoading || assetsLoading || (isMantenimiento && usersLoading) || assignedToLoading;
+  const isLoading =
+    !isLoaded ||
+    ticketLoading ||
+    createdByLoading ||
+    sitesLoading ||
+    deptsLoading ||
+    assetsLoading ||
+    (isMantenimiento && usersLoading) ||
+    assignedToLoading;
 
   if (isLoading || !userProfile) { // Also check for userProfile, since it's needed for auth
     return (
@@ -213,10 +238,7 @@ export default function IncidentDetailPage() {
     return null;
   }
 
-  const canEdit =
-    userProfile.role === 'admin' ||
-    userProfile.role === 'mantenimiento' ||
-    (user ? ticket.createdBy === user.uid && !isClosed && !isOperario : false);
+  const canEdit = !!permissions?.canEditContent && !isClosed;
 
   return (
     <SidebarProvider>

@@ -54,6 +54,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
 
 function LocationsTable({
   sites,
@@ -149,10 +150,10 @@ export default function LocationsPage() {
   const { toast } = useToast();
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-  
-  const isAdmin = userProfile?.role === 'admin';
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const canManage = isAdminLikeRole(normalizedRole);
 
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(isAdmin ? 'sites' : null);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(canManage ? 'sites' : null);
   
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
   const [isEditLocationOpen, setIsEditLocationOpen] = useState(false);
@@ -227,7 +228,7 @@ export default function LocationsPage() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-          {isAdmin ? (
+          {canManage ? (
             <Card>
               <CardHeader>
                 <div className="flex items-start justify-between gap-4">
@@ -237,7 +238,7 @@ export default function LocationsPage() {
                         Gestiona todas las ubicaciones físicas de la empresa.
                       </CardDescription>
                     </div>
-                    {isAdmin && <Button onClick={() => setIsAddLocationOpen(true)}>Añadir Ubicación</Button>}
+                    {canManage && <Button onClick={() => setIsAddLocationOpen(true)}>Añadir Ubicación</Button>}
                   </div>
               </CardHeader>
               <CardContent>
@@ -246,7 +247,7 @@ export default function LocationsPage() {
                   loading={tableIsLoading} 
                   onEdit={handleEditRequest} 
                   onDelete={handleDeleteRequest} 
-                  canEdit={isAdmin}
+                  canEdit={canManage}
                 />
               </CardContent>
             </Card>
@@ -262,11 +263,11 @@ export default function LocationsPage() {
           )}
         </main>
       </SidebarInset>
-      {isAdmin && <AddLocationDialog
+      {canManage && <AddLocationDialog
         open={isAddLocationOpen}
         onOpenChange={setIsAddLocationOpen}
       />}
-      {isAdmin && <EditLocationDialog
+      {canManage && <EditLocationDialog
         open={isEditLocationOpen}
         onOpenChange={setIsEditLocationOpen}
         site={editingSite}

@@ -41,6 +41,8 @@ import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { ClientLogo } from '@/components/client-logo';
 import { Progress } from '@/components/ui/progress';
+import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
+import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
 
 
 interface AppSettings {
@@ -49,14 +51,15 @@ interface AppSettings {
 }
 
 export default function SettingsPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId, profile } = useUser();
   const router = useRouter();
   const storage = useStorage();
   const firestore = useFirestore();
   const { toast } = useToast();
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-  const isAdmin = userProfile?.role === 'admin';
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const isAdmin = isAdminLikeRole(normalizedRole);
 
   const { data: settings, loading: settingsLoading } = useDoc<AppSettings>('settings/app');
 
@@ -67,6 +70,9 @@ export default function SettingsPage() {
   const uploadUnsubscribe = useRef<(() => void) | null>(null);
   const uploadTaskRef = useRef<UploadTask | null>(null);
   const uploadStallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resolvedOrganizationId =
+    organizationId ?? profile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
 
   const clearStallTimer = () => {
     if (uploadStallTimer.current) {
@@ -156,11 +162,11 @@ export default function SettingsPage() {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !storage || !firestore || !isAdmin) {
+    if (!selectedFile || !storage || !firestore || !isAdmin || !resolvedOrganizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No se puede subir el logo. Asegúrate de ser administrador y de haber seleccionado un archivo.',
+        description: 'No se puede subir el logo. Asegúrate de ser administrador, tener organizationId y de haber seleccionado un archivo.',
       });
       return;
     }
@@ -211,6 +217,7 @@ export default function SettingsPage() {
 
       const settingsData = {
         logoUrl: downloadURL,
+        organizationId: resolvedOrganizationId,
         updatedAt: serverTimestamp(),
       };
       await setDoc(settingsRef, settingsData, { merge: true });

@@ -24,7 +24,8 @@ import type {
   MaintenanceTaskInput,
 } from "@/types/maintenance-task";
 import type { User, Department } from "@/lib/firebase/models";
-import { sendAssignmentEmail } from "@/lib/assignment-email";
+// Email notifications are handled server-side (Cloud Functions) to avoid
+// duplicates and ensure delivery even if the client disconnects.
 
 const TASKS_COLLECTION = "tasks";
 
@@ -41,8 +42,13 @@ const ensureAuthenticatedUser = async (auth: Auth) => {
 
 const taskConverter: FirestoreDataConverter<MaintenanceTask> = {
   toFirestore(task: MaintenanceTaskInput): DocumentData {
+    if (!task.organizationId) {
+      throw new Error("Critical: Missing organizationId in transaction");
+    }
+
     return {
       ...task,
+      organizationId: task.organizationId,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -91,6 +97,10 @@ export const createTask = async (
   payload: MaintenanceTaskInput,
   options?: { users: User[]; departments: Department[] }
 ): Promise<string> => {
+  if (!payload.organizationId) {
+    throw new Error("Critical: Missing organizationId in transaction");
+  }
+
   const user = await ensureAuthenticatedUser(auth);
 
   const docRef = await addDoc(tasksCollection(db), {
@@ -100,28 +110,7 @@ export const createTask = async (
     priority: payload.priority || "media",
   });
 
-  if (options && (payload.assignedTo || payload.departmentId)) {
-    try {
-      await sendAssignmentEmail({
-        users: options.users,
-        departments: options.departments,
-        assignedTo: payload.assignedTo,
-        departmentId: payload.departmentId,
-        title: payload.title,
-        description: payload.description,
-        priority: payload.priority,
-        status: payload.status,
-        dueDate: payload.dueDate ? payload.dueDate.toDate?.() ?? payload.dueDate : null,
-        location: payload.location,
-        category: payload.category,
-        link: typeof window !== 'undefined' ? `${window.location.origin}/tasks/${docRef.id}` : '',
-        type: "tarea",
-        identifier: payload.identifier
-      });
-    } catch (e) {
-      console.error("Error intentando enviar email:", e);
-    }
-  }
+  // Notifications are sent by Cloud Functions (functions/src/index.ts)
 
   return docRef.id;
 };
@@ -149,30 +138,7 @@ export const updateTask = async (
   const docRef = doc(db, TASKS_COLLECTION, id);
   await updateDoc(docRef, { ...updates, updatedAt: serverTimestamp() });
 
-  if (options && (updates.assignedTo || updates.departmentId)) {
-    try {
-      const title = updates.title || "Tarea Actualizada"; 
-      
-      await sendAssignmentEmail({
-        users: options.users,
-        departments: options.departments,
-        assignedTo: updates.assignedTo,
-        departmentId: updates.departmentId,
-        title: title,
-        description: updates.description,
-        priority: updates.priority,
-        status: updates.status,
-        dueDate: updates.dueDate ? updates.dueDate.toDate?.() ?? updates.dueDate : null,
-        location: updates.location,
-        category: updates.category,
-        link: typeof window !== 'undefined' ? `${window.location.origin}/tasks/${id}` : '',
-        type: "tarea",
-        identifier: updates.identifier
-      });
-    } catch (e) {
-       console.error("Error intentando enviar email en update:", e);
-    }
-  }
+  // Notifications are sent by Cloud Functions (functions/src/index.ts)
 
   return id;
 };

@@ -31,8 +31,9 @@ import { useAuth, useCollection, useDoc, useFirestore, useUser } from "@/lib/fir
 import { addTaskReport, updateTask } from "@/lib/firestore-tasks";
 import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
-import { sendAssignmentEmail } from "@/lib/assignment-email";
+// Assignment notifications are sent server-side (Cloud Functions)
 import { useToast } from "@/hooks/use-toast";
+import { normalizeRole } from "@/lib/rbac";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
@@ -95,12 +96,25 @@ export default function TaskDetailPage() {
   }, [task?.reports]);
 
   const isTaskClosed = task?.status === "completada";
+  const normalizedRole = normalizeRole(userProfile?.role);
   const isPrivileged =
-    userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
-  const isOperario = userProfile?.role === "operario";
+    normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "maintenance";
+
+  const scopeDepartments = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
+            (id): id is string => Boolean(id)
+          )
+        )
+      ),
+    [userProfile?.departmentId, userProfile?.departmentIds]
+  );
+
   const canEdit =
     isPrivileged ||
-    (!!task && task.createdBy === user?.uid && !isTaskClosed && !isOperario);
+    (!!task && task.createdBy === user?.uid && !isTaskClosed);
   const isLoading = userLoading || profileLoading || loading || assignedUserLoading;
 
   useEffect(() => {
@@ -112,13 +126,15 @@ export default function TaskDetailPage() {
       const canView =
         isPrivileged ||
         task.createdBy === user.uid ||
-        (isOperario && isTaskClosed && userProfile?.departmentId === task.location);
+        task.assignedTo === user.uid ||
+        (Boolean(task.location) && scopeDepartments.includes(task.location));
       if (!canView) {
         router.push("/tasks");
       }
     }
   }, [
     isPrivileged,
+    scopeDepartments,
     loading,
     profileLoading,
     router,
@@ -231,24 +247,7 @@ export default function TaskDetailPage() {
 
       await updateTask(firestore, auth, task.id, updates);
 
-      if (updates.assignedTo && updates.assignedTo !== previousAssignee) {
-        await sendAssignmentEmail({
-          firestore,
-          users,
-          departments,
-          assignedTo: updates.assignedTo,
-          departmentId: updates.location,
-          title: updates.title,
-          description: updates.description,
-          priority: updates.priority,
-          status: updates.status,
-          dueDate: values.dueDate || null,
-          location: updates.location,
-          category: updates.category,
-          link: `${window.location.origin}/tasks/${task.id}`,
-          type: "tarea",
-        });
-      }
+      // Notifications are handled server-side.
 
       toast({
         title: "Tarea actualizada",

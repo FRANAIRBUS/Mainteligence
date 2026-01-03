@@ -10,7 +10,8 @@ import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
-import { sendAssignmentEmail } from '@/lib/assignment-email';
+// Assignment notifications are sent server-side (Cloud Functions)
+import { getTicketPermissions } from '@/lib/rbac';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -58,7 +59,7 @@ interface EditIncidentDialogProps {
 export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], departments = [] }: EditIncidentDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
-  const { user: currentUser, loading: userLoading } = useUser();
+  const { user: currentUser, loading: userLoading, organizationId } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(currentUser ? `users/${currentUser.uid}` : null);
 
   const [isPending, setIsPending] = useState(false);
@@ -83,11 +84,22 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
   }, [ticket, form]);
 
   const onSubmit = async (data: EditIncidentFormValues) => {
-    if (!firestore || !currentUser) {
+    if (!firestore || !currentUser || !organizationId || ticket.organizationId !== organizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No autenticado o base de datos no disponible.',
+        description: 'No autenticado, falta organizationId o la incidencia pertenece a otra organización.',
+      });
+      return;
+    }
+
+    const canEditSomething = canEditStatus || canEditPriority || canEditAssignment || canEditDepartment;
+
+    if (!canEditSomething) {
+      toast({
+        variant: 'destructive',
+        title: 'Permisos insuficientes',
+        description: 'No tienes permisos para editar esta incidencia.',
       });
       return;
     }
@@ -95,39 +107,41 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     setIsPending(true);
     
     const ticketRef = doc(firestore, 'tickets', ticket.id);
-    const newAssignee = data.assignedTo === 'null' ? null : data.assignedTo;
+    const newAssignee = data.assignedTo === 'null' ? null : data.assignedTo ?? null;
 
-    const updateData: any = {
-      status: data.status,
-      priority: data.priority,
-      departmentId: data.departmentId,
-      assignedTo: newAssignee,
+    const updateData: Record<string, unknown> = {
+      organizationId,
       updatedAt: serverTimestamp(),
     };
+
+    if (canEditStatus) {
+      updateData.status = data.status;
+
+      // When closing, stamp closure metadata for reporting.
+      if (data.status === 'Cerrada') {
+        updateData.closedAt = serverTimestamp();
+        updateData.closedBy = currentUser.uid;
+      }
+    }
+
+    if (canEditPriority) {
+      updateData.priority = data.priority;
+    }
+
+    if (canEditDepartment) {
+      updateData.departmentId = data.departmentId;
+    }
+
+    if (canEditAssignment) {
+      updateData.assignedTo = newAssignee;
+    }
     
     try {
       const previousAssignee = ticket.assignedTo ?? null;
 
       await updateDoc(ticketRef, updateData);
 
-      if (newAssignee && newAssignee !== previousAssignee) {
-        await sendAssignmentEmail({
-          firestore,
-          users,
-          departments,
-          assignedTo: newAssignee,
-          departmentId: ticket.departmentId,
-          title: ticket.title,
-          identifier: ticket.displayId,
-          description: ticket.description,
-          priority: data.priority,
-          status: data.status,
-          location: ticket.departmentId,
-          category: ticket.type,
-          link: `${window.location.origin}/incidents/${ticket.id}`,
-          type: 'incidencia',
-        });
-      }
+      // Notifications are handled server-side.
       toast({
         title: 'Éxito',
         description: `Incidencia '${ticket.title}' actualizada.`,
@@ -163,14 +177,27 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     return null; // or a loader
   }
 
-  const isCreator = ticket.createdBy === currentUser?.uid;
-  const isAdmin = userProfile?.role === 'admin';
-  const isMantenimiento = userProfile?.role === 'mantenimiento';
+  const permissions = getTicketPermissions(ticket, userProfile ?? null, currentUser?.uid ?? null);
+  const canAssignAnyUser = permissions.canAssignAnyUser;
+  const canAssignToSelf = permissions.canAssignToSelf;
+  const canEditAssignment = canAssignAnyUser || canAssignToSelf;
+  const canEditStatus = permissions.canChangeStatus;
+  const canEditPriority = permissions.canChangePriority;
+  const canEditDepartment = permissions.canChangeDepartment;
 
-  const canEditStatus = isAdmin || isMantenimiento;
-  const canEditPriority = isAdmin || isMantenimiento || isCreator;
-  const canEditAssignment = isAdmin || isMantenimiento;
-  const canEditDepartment = isAdmin;
+  const currentAssignee =
+    ticket.assignedTo && users ? users.find((userOption) => userOption.id === ticket.assignedTo) : null;
+
+  const selectableUsers = (() => {
+    if (canAssignAnyUser) return users;
+    if (canAssignToSelf && currentUser) return users.filter((userOption) => userOption.id === currentUser.uid);
+    return [];
+  })();
+
+  const assignmentOptions =
+    currentAssignee && !selectableUsers.some((userOption) => userOption.id === currentAssignee.id)
+      ? [...selectableUsers, currentAssignee]
+      : selectableUsers;
 
 
   return (
@@ -253,7 +280,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
                     <Select
                       name={field.name}
                       onValueChange={field.onChange}
-                      value={field.value || 'null'}
+                      value={field.value ?? 'null'}
                       disabled={!canEditAssignment}
                     >
                       <FormControl>
@@ -263,9 +290,9 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="null">Sin asignar</SelectItem>
-                        {users.map(user => (
-                          <SelectItem key={user.id} value={user.id}>
-                            {user.displayName}
+                        {assignmentOptions.map(userOption => (
+                          <SelectItem key={userOption.id} value={userOption.id}>
+                            {userOption.displayName}
                           </SelectItem>
                         ))}
                       </SelectContent>

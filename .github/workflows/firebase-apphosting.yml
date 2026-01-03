@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - staging
+      - staging_multi
 
 jobs:
   deploy:
@@ -20,8 +21,8 @@ jobs:
           node-version: 20
           cache: npm
 
-      - run: npm ci
-      - run: npm run build
+      # NOTE: App Hosting builds in Cloud Build. Avoid running `next build` here,
+      # otherwise `NEXT_PUBLIC_*` values get frozen without the App Hosting build env.
 
       - name: Deploy to Firebase App Hosting
         run: |

@@ -17,7 +17,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 export function UserNav() {
-  const { user, loading } = useUser();
+  const { user, loading, organizationId, memberships, setActiveOrganizationId, activeMembership } = useUser();
   const auth = useAuth();
   const router = useRouter();
 
@@ -48,6 +48,8 @@ export function UserNav() {
     return name.substring(0, 2);
   }
 
+  const activeOrganizationName = activeMembership?.organizationName || organizationId || 'Org sin nombre';
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -71,9 +73,41 @@ export function UserNav() {
             <p className="text-xs leading-none text-muted-foreground">
               {user.email || 'Sin correo electrónico'}
             </p>
+            {organizationId && (
+              <p className="text-xs leading-none text-muted-foreground">
+                Org. activa: {activeOrganizationName}
+              </p>
+            )}
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {memberships.length > 0 && (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="text-xs uppercase text-muted-foreground">
+              Organizaciones
+            </DropdownMenuLabel>
+            {memberships.map((membership) => (
+              <DropdownMenuItem
+                key={membership.id}
+                className="flex items-center justify-between"
+                onClick={() => setActiveOrganizationId(membership.organizationId)}
+              >
+                <span className="flex flex-col">
+                  <span className="text-sm font-medium">
+                    {membership.organizationName || membership.organizationId}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Rol: {membership.role}
+                  </span>
+                </span>
+                {organizationId === membership.organizationId && (
+                  <span className="text-xs text-emerald-600">Activa</span>
+                )}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+          </DropdownMenuGroup>
+        )}
         <DropdownMenuGroup>
            <DropdownMenuItem asChild>
             <Link href="/profile">
