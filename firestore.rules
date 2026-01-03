@@ -3,272 +3,204 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---------------- Helpers ----------------
+    // -----------------------------
+    // Helpers
+    // -----------------------------
     function isSignedIn() { return request.auth != null; }
 
-    function userPath(uid) {
-      return /databases/$(database)/documents/users/$(uid);
-    }
-
-    function userExists(uid) {
-      return exists(userPath(uid));
-    }
-
     function userDoc(uid) {
-      return get(userPath(uid));
+      return get(/databases/$(database)/documents/users/$(uid));
     }
 
-    function userOrg(uid) {
-      return userExists(uid) ? userDoc(uid).data.organizationId : null;
+    function myOrgId() {
+      return userDoc(request.auth.uid).data.organizationId;
     }
 
-    function userRole(uid) {
-      return userExists(uid) ? userDoc(uid).data.role : null;
+    function myRole() {
+      return userDoc(request.auth.uid).data.role;
     }
 
-    function userDept(uid) {
-      return userExists(uid) ? userDoc(uid).data.departmentId : null;
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    function myOrg() { return userOrg(request.auth.uid); }
-    function myRole() { return userRole(request.auth.uid); }
-    function myDept() { return userDept(request.auth.uid); }
-
-    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
-
-    // Roles reales de la app
-    function isSuperAdmin() { return isSignedIn() && myRole() == 'super_admin'; }
-    function isAdminRole() { return isSignedIn() && (myRole() == 'admin' || myRole() == 'super_admin'); }
-    function isMaintenance() { return isSignedIn() && myRole() == 'maintenance'; }
-    function isOperator() { return isSignedIn() && myRole() == 'operator'; }
-
-    // Accesos
-    function canManageUsers() { return isSuperAdmin(); } // SOLO super_admin cambia roles
-    function canAdminOrg() { return isAdminRole() || isMaintenance(); } // admin/super_admin/maintenance
-
-    // Org scoping (SIN bypass por super_admin)
-    function orgMatchesOrgId(orgId) {
-      return isSignedIn() && myOrg() != null && orgId != null && myOrg() == orgId;
+    // Roles (accept both old/new variants used by the app)
+    function isSuperAdmin() {
+      return isSignedIn() && (myRole() == 'super_admin');
     }
 
-<<<<<<< HEAD
+    function isAdmin() {
+      return isSignedIn() && (myRole() == 'admin' || myRole() == 'super_admin');
+    }
+
+    function isMaintenance() {
+      return isSignedIn() && (myRole() == 'maintenance');
+    }
+
+    function isManager() {
+      // Used for user/member management screens
+      return isAdmin() || isMaintenance();
+    }
+
+    function isMemberOfOrg(orgId) {
+      return isSignedIn() && myOrgId() != null && myOrgId() == orgId;
+    }
+
+    // Hard org isolation (NO cross-org bypass for any role)
     function organizationIdMatchesResource() {
       return isSignedIn()
         && myOrgId() != null
+        && resource.data.organizationId != null
         && resource.data.organizationId == myOrgId();
     }
 
     function organizationIdMatchesRequest() {
       return isSignedIn()
         && myOrgId() != null
-        && request.resource.data.organizationId == myOrgId();
-=======
-    function orgMatchesResource() {
-      return resource != null
-        && resource.data != null
-        && resource.data.organizationId != null
-        && orgMatchesOrgId(resource.data.organizationId);
-    }
-
-    function orgMatchesRequest() {
-      return request.resource != null
-        && request.resource.data != null
         && request.resource.data.organizationId != null
-        && orgMatchesOrgId(request.resource.data.organizationId);
->>>>>>> 3ad751d (fix: org security (no cross-org) + root console pro + v1 functions)
+        && request.resource.data.organizationId == myOrgId();
     }
 
-    function orgUnchanged() {
-      return request.resource != null
-        && resource != null
-        && request.resource.data.organizationId == resource.data.organizationId;
+    function organizationIdUnchanged() {
+      return request.resource.data.organizationId == resource.data.organizationId;
     }
 
-    // ---------------- USERS ----------------
+    // -----------------------------
+    // USERS (profile + role)
+    // -----------------------------
     match /users/{userId} {
 
-<<<<<<< HEAD
-      // super_admin o admin acceden a usuarios de su organización; cada usuario puede leer su propio perfil
-      allow get: if isSignedIn() && (
-        request.auth.uid == userId ||
-        (isAdmin() && organizationIdMatchesResource())
-      );
-
-      // listado de usuarios solo para super_admin o admin de la misma organización
-      allow list: if isAdmin() && organizationIdMatchesResource();
-
-      // crear usuarios dentro de la organización; un admin no puede asignar rol super_admin
-      allow create: if isSignedIn()
-        && (isAdmin() || request.auth.uid == userId)
-        && request.resource.data.organizationId == myOrgId()
-        && (isSuperAdmin() || request.resource.data.role != 'super_admin');
-
-      // actualizar usuarios dentro de la organización; solo super_admin/admin pueden hacerlo
-      // un admin no puede otorgar rol super_admin y nunca se cambia de organización
-      allow update: if isSignedIn()
-        && isAdmin()
-        && organizationIdMatchesResource()
-        && organizationIdUnchanged()
-        && (isSuperAdmin() || request.resource.data.role != 'super_admin');
-=======
-      // Permite queries (list) pero solo se devolverán docs permitidos por "read"
-      allow list: if isSignedIn();
-
-      // Leer: tú mismo o admin/super_admin/maintenance PERO solo tu org
+      // Read your own profile. Managers can read users of their org.
       allow get: if isSignedIn() && (
         isOwner(userId) ||
-        (orgMatchesResource() && (isAdminRole() || isMaintenance()))
+        (isManager() && organizationIdMatchesResource())
       );
 
-      // Crear perfil propio en onboarding.
-      // Permitimos role=super_admin SOLO si está creando org nueva (no existe organizations/{orgId})
+      // Allow list only for managers. Queries MUST be constrained by organizationId == myOrgId()
+      // otherwise Firestore will reject the query automatically.
+      allow list: if isManager();
+
+      // Users can create their own profile (e.g., on first login).
+      // Do NOT allow creating yourself as super_admin.
       allow create: if isSignedIn()
         && isOwner(userId)
-        && request.resource.data.organizationId is string
-        && request.resource.data.role is string
-        && (
-          request.resource.data.role != 'super_admin' ||
-          !exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId))
-        );
+        && request.resource.data.organizationId != null
+        && request.resource.data.role != 'super_admin';
 
-      // Update:
-      // - el owner puede editar su perfil pero NO puede cambiar role ni organizationId
-      // - admin/super_admin/maintenance pueden editar usuarios dentro de su org
-      // - SOLO super_admin puede cambiar role (y siempre dentro de su org)
+      // Owner can edit their profile (but never role/org).
+      // Admins can edit users inside org (active/department/etc), but cannot change role.
+      // Only super_admin can change role (still inside same org, and orgId cannot change).
       allow update: if isSignedIn()
-        && orgMatchesResource()
-        && orgUnchanged()
+        && organizationIdMatchesResource()
+        && organizationIdUnchanged()
         && (
-          (isOwner(userId) &&
-            request.resource.data.role == resource.data.role
-          )
-          ||
-          ((isAdminRole() || isMaintenance()) &&
-            (
-              request.resource.data.role == resource.data.role
-              ||
-              (canManageUsers())
-            )
-          )
+          (isOwner(userId) && request.resource.data.role == resource.data.role) ||
+          (isAdmin() && request.resource.data.role == resource.data.role) ||
+          (isSuperAdmin())
         );
->>>>>>> 3ad751d (fix: org security (no cross-org) + root console pro + v1 functions)
 
-      // Delete: admin/super_admin dentro de su org (no te borres a ti mismo)
-      allow delete: if isSignedIn()
-        && orgMatchesResource()
-        && isAdminRole()
+      // Admins can delete users inside org (not self).
+      allow delete: if isAdmin()
+        && organizationIdMatchesResource()
         && request.auth.uid != userId;
     }
 
-    // ---------------- ORGANIZATIONS ----------------
+    // -----------------------------
+    // MEMBERSHIPS (global mapping, must have organizationId field)
+    // -----------------------------
+    match /memberships/{membershipId} {
+      allow get, list: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update, delete: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+    }
+
+    // -----------------------------
+    // ORGANIZATIONS (one doc per org, docId == organizationId)
+    // -----------------------------
     match /organizations/{organizationId} {
-      // No discovery cross-org
+
+      // Prevent org discovery from client
       allow list: if false;
 
-      allow get: if isSignedIn() && orgMatchesOrgId(organizationId);
+      // Only members can read their own org
+      allow get: if isMemberOfOrg(organizationId);
 
-      // Crear: onboarding (el doc lo crea el flujo). Permite si estás logueado.
+      // Allow creating org docs during signup.
+      // (Your client must still write the org doc with the correct id.)
       allow create: if isSignedIn();
 
-      // Update/Delete: SOLO super_admin dentro de su org (config empresa)
-      allow update, delete: if isSignedIn() && isSuperAdmin() && orgMatchesOrgId(organizationId);
+      // Only super_admin of that org can update/delete org settings
+      allow update, delete: if isSuperAdmin() && isMemberOfOrg(organizationId);
 
-      match /members/{uid} {
-        // Lectura: miembros de la org (todos)
-        allow read: if isSignedIn() && orgMatchesOrgId(organizationId);
-
-        // Escritura: admin/super_admin/maintenance (gestión interna)
-        allow create, update, delete: if isSignedIn() && orgMatchesOrgId(organizationId) && canAdminOrg();
+      // Members subcollection (docId == uid)
+      match /members/{userId} {
+        allow get, list: if isSignedIn() && isMemberOfOrg(organizationId);
+        // Admins can manage members inside org (role/active/department in this doc)
+        allow create, update, delete: if isAdmin() && isMemberOfOrg(organizationId);
       }
     }
 
-    // ---------------- ORGANIZATIONS PUBLIC ----------------
-    match /organizationsPublic/{orgId} {
-      // Solo para lookup en signup
-      allow read: if true;
-
-      // Recomendado: SOLO super_admin (misma org) o root via Function (Admin SDK).
-      // Como este doc es "público", NO dejes que admin normal lo toque si no quieres.
-      allow create, update, delete: if isSignedIn() && isSuperAdmin() && orgMatchesOrgId(orgId);
+    // -----------------------------
+    // ORGANIZATIONS PUBLIC (public landing/meta)
+    // -----------------------------
+    match /organizationsPublic/{organizationId} {
+      allow get, list: if true;
+      // Only super_admin of that org can edit public org profile
+      allow create, update, delete: if isSuperAdmin() && isMemberOfOrg(organizationId);
     }
 
-    // ---------------- MEMBERSHIPS ----------------
-    match /memberships/{membershipId} {
-      // Para queries internas; se filtra por org en el doc
-      allow read: if isSignedIn() && orgMatchesResource();
-
-      // Admin/super_admin/maintenance dentro de su org
-      allow create, update, delete: if isSignedIn() && canAdminOrg() && orgMatchesRequest();
-    }
-
-    // ---------------- SETTINGS ----------------
+    // -----------------------------
+    // SETTINGS (per-org docs with organizationId field)
+    // -----------------------------
     match /settings/{settingId} {
-<<<<<<< HEAD
-      // Solo super_admin puede consultar o modificar la configuración de su organización
-      allow read: if isSignedIn() && isSuperAdmin() && organizationIdMatchesResource();
-      allow write: if isSignedIn() && isSuperAdmin() && organizationIdMatchesRequest();
-=======
-      allow read: if isSignedIn() && orgMatchesResource();
-      allow write: if isSignedIn() && isSuperAdmin() && orgMatchesRequest();
->>>>>>> 3ad751d (fix: org security (no cross-org) + root console pro + v1 functions)
+      // Only super_admin should access company settings / AI assistant settings screens
+      allow get, list: if isSuperAdmin() && organizationIdMatchesResource();
+      allow create, update, delete: if isSuperAdmin() && organizationIdMatchesRequest() && (resource == null || organizationIdUnchanged());
     }
 
-    // ---------------- TICKETS ----------------
+    // -----------------------------
+    // CORE RESOURCES (top-level collections with organizationId field)
+    // -----------------------------
     match /tickets/{ticketId} {
-      allow read: if isSignedIn() && orgMatchesResource();
-
-      // Crear: cualquier usuario logueado dentro de su org (recuerda poner organizationId)
-      allow create: if isSignedIn() && orgMatchesRequest();
-
-      // Update: operator puede actualizar si es de su dept o está asignado; admin/maintenance full
-      allow update: if isSignedIn() && orgMatchesResource() && (
-        canAdminOrg()
-        ||
-        (isOperator() && (
-          (resource.data.assignedToUid != null && resource.data.assignedToUid == request.auth.uid)
-          ||
-          (resource.data.departmentId != null && myDept() != null && resource.data.departmentId == myDept())
-        ))
-      );
-
-      allow delete: if isSignedIn() && orgMatchesResource() && isAdminRole();
+      allow get, list: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isSignedIn() && organizationIdMatchesRequest();
+      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
-    // ---------------- TASKS ----------------
     match /tasks/{taskId} {
-      allow read: if isSignedIn() && orgMatchesResource();
-
-      // Crear tasks: admin/super_admin/maintenance (operario crea tickets, no tasks)
-      allow create: if isSignedIn() && orgMatchesRequest() && canAdminOrg();
-
-      // Update: operator si asignada o su dept; admin/maintenance full
-      allow update: if isSignedIn() && orgMatchesResource() && (
-        canAdminOrg()
-        ||
-        (isOperator() && (
-          (resource.data.assignedToUid != null && resource.data.assignedToUid == request.auth.uid)
-          ||
-          (resource.data.departmentId != null && myDept() != null && resource.data.departmentId == myDept())
-        ))
-      );
-
-      allow delete: if isSignedIn() && orgMatchesResource() && isAdminRole();
+      allow get, list: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isSignedIn() && organizationIdMatchesRequest();
+      allow update: if isSignedIn() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
-    // ---------------- SITES / ASSETS / DEPARTMENTS ----------------
     match /sites/{siteId} {
-      allow read: if isSignedIn() && orgMatchesResource();
-      allow create, update, delete: if isSignedIn() && canAdminOrg() && orgMatchesRequest();
+      allow get, list: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
     match /assets/{assetId} {
-      allow read: if isSignedIn() && orgMatchesResource();
-      allow create, update, delete: if isSignedIn() && canAdminOrg() && orgMatchesRequest();
+      allow get, list: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
     }
 
     match /departments/{departmentId} {
-      allow read: if isSignedIn() && orgMatchesResource();
-      allow create, update, delete: if isSignedIn() && canAdminOrg() && orgMatchesRequest();
+      allow get, list: if isSignedIn() && organizationIdMatchesResource();
+      allow create: if isAdmin() && organizationIdMatchesRequest();
+      allow update: if isAdmin() && organizationIdMatchesResource() && organizationIdUnchanged();
+      allow delete: if isAdmin() && organizationIdMatchesResource();
+    }
+
+    // -----------------------------
+    // Fallback: deny everything else by default
+    // -----------------------------
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
