@@ -208,31 +208,19 @@ export const rootListOrganizations = functions.https.onCall(async (data, context
   if (!includeInactive) rows = rows.filter((o) => o.isActive);
 
   // fuerza default visible si por lo que sea no vino (y el caller lo pidió)
-      if (includeDefault && !rows.some((r) => r.id === 'default')) {
-        const ref = db.collection('organizations').doc('default');
-        let def = await ref.get();
-
-        // Si no existe, lo creamos (evita que root no lo vea nunca).
-        if (!def.exists) {
-          await ref.set({
-            name: 'default',
-            isActive: true,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            _auto: 'rootListOrganizations_create_default_v1',
-          });
-          def = await ref.get();
-        }
-
-        const v = (def.data() as any) || {};
-        rows.unshift({
-          id: 'default',
-          name: v?.name ?? 'default',
-          createdAt: v?.createdAt ?? null,
-          updatedAt: v?.updatedAt ?? null,
-          isActive: v?.isActive !== false,
-        });
-      }
+  if (includeDefault && !rows.some((r) => r.id === 'default')) {
+    const def = await db.collection('organizations').doc('default').get();
+    if (def.exists) {
+      const v = def.data() as any;
+      rows.unshift({
+        id: 'default',
+        name: v?.name ?? 'default',
+        isActive: v?.isActive !== false,
+        createdAt: v?.createdAt ?? null,
+        updatedAt: v?.updatedAt ?? null,
+      });
+    }
+  }
 
   const nextCursor = hasMore ? docs[limit].id : null;
 

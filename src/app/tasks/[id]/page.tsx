@@ -99,10 +99,22 @@ export default function TaskDetailPage() {
   const normalizedRole = normalizeRole(userProfile?.role);
   const isPrivileged =
     normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "maintenance";
-  const isOperario = normalizedRole === "operator";
+
+  const scopeDepartments = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
+            (id): id is string => Boolean(id)
+          )
+        )
+      ),
+    [userProfile?.departmentId, userProfile?.departmentIds]
+  );
+
   const canEdit =
     isPrivileged ||
-    (!!task && task.createdBy === user?.uid && !isTaskClosed && !isOperario);
+    (!!task && task.createdBy === user?.uid && !isTaskClosed);
   const isLoading = userLoading || profileLoading || loading || assignedUserLoading;
 
   useEffect(() => {
@@ -114,13 +126,15 @@ export default function TaskDetailPage() {
       const canView =
         isPrivileged ||
         task.createdBy === user.uid ||
-        (isOperario && isTaskClosed && userProfile?.departmentId === task.location);
+        task.assignedTo === user.uid ||
+        (Boolean(task.location) && scopeDepartments.includes(task.location));
       if (!canView) {
         router.push("/tasks");
       }
     }
   }, [
     isPrivileged,
+    scopeDepartments,
     loading,
     profileLoading,
     router,

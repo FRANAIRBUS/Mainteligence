@@ -22,6 +22,7 @@ import {
 import { useAuth, useFirestore } from '../provider';
 import type { Membership, User as UserProfile } from '../models';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
+import { normalizeRole } from '@/lib/rbac';
 
 interface UserContextValue {
   user: AuthUser | null;
@@ -29,7 +30,14 @@ interface UserContextValue {
   organizationId: string | null;
   memberships: Membership[];
   activeMembership: Membership | null;
-  role: 'root' | 'super_admin' | 'admin' | 'maintenance' | 'operator';
+  role:
+    | 'root'
+    | 'super_admin'
+    | 'admin'
+    | 'maintenance'
+    | 'dept_head_multi'
+    | 'dept_head_single'
+    | 'operator';
   isSuperAdmin: boolean;
   isAdmin: boolean;
   isMaintenance: boolean;
@@ -272,23 +280,27 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     
     const roleRaw = (profile?.role ?? activeMembership?.role ?? 'operator') as any;
+    const normalizedRole = normalizeRole(roleRaw) ?? 'operator';
     const role =
-      roleRaw === 'root'
-        ? 'root'
-        : roleRaw === 'super_admin'
-          ? 'super_admin'
-          : roleRaw === 'admin'
-            ? 'admin'
-            : roleRaw === 'maintenance'
-              ? 'maintenance'
-              : 'operator';
+      normalizedRole === 'super_admin'
+        ? 'super_admin'
+        : normalizedRole === 'admin'
+          ? 'admin'
+          : normalizedRole === 'maintenance'
+            ? 'maintenance'
+            : normalizedRole === 'dept_head_multi'
+              ? 'dept_head_multi'
+              : normalizedRole === 'dept_head_single'
+                ? 'dept_head_single'
+                : 'operator';
 
     const isSuperAdmin = role === 'super_admin';
     const isAdmin = role === 'admin' || isSuperAdmin;
     const isMaintenance = role === 'maintenance';
     const isOperator = role === 'operator';
     const canAccessOrgConfig = isSuperAdmin;
-return {
+
+    return {
       user,
       profile,
       organizationId: resolvedOrganizationId,

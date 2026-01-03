@@ -181,27 +181,17 @@ exports.rootListOrganizations = functions.https.onCall(async (data, context) => 
         rows = rows.filter((o) => o.isActive);
     // fuerza default visible si por lo que sea no vino (y el caller lo pidió)
     if (includeDefault && !rows.some((r) => r.id === 'default')) {
-        const ref = db.collection('organizations').doc('default');
-        let def = await ref.get();
-        // Si no existe, lo creamos (evita que root no lo vea nunca).
-        if (!def.exists) {
-            await ref.set({
-                name: 'default',
-                isActive: true,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                _auto: 'rootListOrganizations_create_default_v1',
+        const def = await db.collection('organizations').doc('default').get();
+        if (def.exists) {
+            const v = def.data();
+            rows.unshift({
+                id: 'default',
+                name: (_d = v === null || v === void 0 ? void 0 : v.name) !== null && _d !== void 0 ? _d : 'default',
+                isActive: (v === null || v === void 0 ? void 0 : v.isActive) !== false,
+                createdAt: (_e = v === null || v === void 0 ? void 0 : v.createdAt) !== null && _e !== void 0 ? _e : null,
+                updatedAt: (_f = v === null || v === void 0 ? void 0 : v.updatedAt) !== null && _f !== void 0 ? _f : null,
             });
-            def = await ref.get();
         }
-        const v = def.data() || {};
-        rows.unshift({
-            id: 'default',
-            name: (_d = v === null || v === void 0 ? void 0 : v.name) !== null && _d !== void 0 ? _d : 'default',
-            createdAt: (_e = v === null || v === void 0 ? void 0 : v.createdAt) !== null && _e !== void 0 ? _e : null,
-            updatedAt: (_f = v === null || v === void 0 ? void 0 : v.updatedAt) !== null && _f !== void 0 ? _f : null,
-            isActive: (v === null || v === void 0 ? void 0 : v.isActive) !== false,
-        });
     }
     const nextCursor = hasMore ? docs[limit].id : null;
     return { ok: true, organizations: rows, nextCursor };

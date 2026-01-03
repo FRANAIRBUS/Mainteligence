@@ -31,10 +31,8 @@ import {
 import type { Department, Site, Ticket, User } from "@/lib/firebase/models";
 import {
   addDoc,
-  and,
   collection,
   doc,
-  or,
   serverTimestamp,
   Timestamp,
   updateDoc,
@@ -43,6 +41,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { DEFAULT_ORGANIZATION_ID } from "@/lib/organization";
 import { format } from "date-fns";
+import { normalizeRole } from "@/lib/rbac";
 
 const statusLabels: Record<Ticket["status"], string> = {
   Abierta: "Abierta",
@@ -60,25 +59,19 @@ export default function ClosedIncidentsPage() {
   const { user, profile: userProfile, organizationId, isLoaded } = useUser();
   const { toast } = useToast();
 
-  const canViewAll = userProfile?.role === "admin" || userProfile?.role === "mantenimiento";
-  const isAdmin = userProfile?.role === "admin";
+  const normalizedRole = normalizeRole(userProfile?.role);
+  const isSuperAdmin = normalizedRole === "super_admin";
+  const canViewAll =
+    normalizedRole === "admin" ||
+    normalizedRole === "maintenance" ||
+    isSuperAdmin;
+  const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
   const ticketsConstraints = useMemo(() => {
     if (!user || !userProfile) return null;
-
-    const statusCondition = where("status", "==", "Cerrada");
-
-    if (canViewAll) {
-      return [statusCondition];
-    }
-
-    return [
-      and(
-        statusCondition,
-        or(where("createdBy", "==", user.uid), where("assignedTo", "==", user.uid))
-      ),
-    ];
-  }, [canViewAll, user, userProfile]);
+    // Cargamos el histórico de la organización y filtramos por permisos en el cliente.
+    return [where("status", "==", "Cerrada")];
+  }, [user, userProfile]);
 
   const { data: tickets, loading } = useCollectionQuery<Ticket>(
     ticketsConstraints ? "tickets" : null,
@@ -109,7 +102,26 @@ export default function ClosedIncidentsPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    return [...tickets]
+    const scopeDepartments = Array.from(
+      new Set(
+        [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
+          (id): id is string => Boolean(id)
+        )
+      )
+    );
+
+    const visibleTickets = canViewAll
+      ? tickets
+      : tickets.filter((ticket) => {
+          if (ticket.createdBy === user?.uid) return true;
+          if (ticket.assignedTo === user?.uid) return true;
+          if (scopeDepartments.length > 0 && ticket.departmentId) {
+            return scopeDepartments.includes(ticket.departmentId);
+          }
+          return false;
+        });
+
+    return [...visibleTickets]
       .filter((ticket) => {
         if (dateLimits[dateFilter] && ticket.createdAt?.toDate) {
           return ticket.createdAt.toDate() >= (dateLimits[dateFilter] as Date);
@@ -131,7 +143,7 @@ export default function ClosedIncidentsPage() {
         const bDate = b.createdAt?.toMillis?.() ?? 0;
         return bDate - aDate;
       });
-  }, [dateFilter, departmentFilter, searchQuery, siteFilter, tickets, userFilter]);
+  }, [canViewAll, dateFilter, departmentFilter, searchQuery, siteFilter, tickets, user, userFilter, userProfile?.departmentId, userProfile?.departmentIds]);
 
   const handleReopen = async (ticket: Ticket) => {
     if (!firestore || !isAdmin || !user || !organizationId) return;

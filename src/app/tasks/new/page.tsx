@@ -6,9 +6,10 @@ import { Timestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { TaskForm, type TaskFormValues } from "@/components/task-form";
-import { useAuth, useFirestore, useUser } from "@/lib/firebase";
+import { useAuth, useCollection, useFirestore, useUser } from "@/lib/firebase";
 import { createTask } from "@/lib/firestore-tasks";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
+import type { Department, User } from "@/lib/firebase/models";
 // Assignment notifications are sent server-side (Cloud Functions)
 
 const emptyValues: TaskFormValues = {
@@ -26,6 +27,8 @@ export default function NewTaskPage() {
   const firestore = useFirestore();
   const auth = useAuth();
   const { user, loading: userLoading, organizationId } = useUser();
+  const { data: users } = useCollection<User>("users");
+  const { data: departments } = useCollection<Department>("departments");
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

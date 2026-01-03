@@ -25,11 +25,10 @@ import {
 } from "@/components/ui/table";
 import { AppShell } from "@/components/app-shell";
 import { Icons } from "@/components/icons";
-import { useCollection, useCollectionQuery } from "@/lib/firebase";
+import { useCollection } from "@/lib/firebase";
 import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { User } from "@/lib/firebase/models";
-import { or, where } from "firebase/firestore";
 import { normalizeRole } from "@/lib/rbac";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
@@ -61,29 +60,7 @@ export default function TasksPage() {
     normalizedRole === "admin" ||
     normalizedRole === "maintenance";
 
-  const tasksConstraints = useMemo(() => {
-    if (!user || !userProfile || (!organizationId && normalizedRole !== "super_admin")) return null;
-
-    if (canViewAllTasks) {
-      return [] as const;
-    }
-
-    const conditions = [
-      where("createdBy", "==", user.uid),
-      where("assignedTo", "==", user.uid),
-    ];
-
-    if (userProfile?.departmentId) {
-      conditions.push(where("location", "==", userProfile.departmentId));
-    }
-
-    return [or(...conditions)];
-  }, [canViewAllTasks, organizationId, user, userProfile, normalizedRole]);
-
-  const { data: tasks, loading } = useCollectionQuery<MaintenanceTask>(
-    tasksConstraints ? "tasks" : null,
-    ...(tasksConstraints ?? [])
-  );
+  const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
   const { data: users, loading: usersLoading } = useCollection<User>("users");
   const [statusFilter, setStatusFilter] = useState<string>("todas");
   const [priorityFilter, setPriorityFilter] = useState<string>("todas");
@@ -112,7 +89,26 @@ export default function TasksPage() {
   }, [user, userProfile?.displayName, users]);
 
   const filteredTasks = useMemo(() => {
-    const openTasks = tasks.filter((task) => task.status !== "completada");
+    const scopeDepartments = Array.from(
+      new Set(
+        [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
+          (id): id is string => Boolean(id)
+        )
+      )
+    );
+
+    const visibleTasks = canViewAllTasks
+      ? tasks
+      : tasks.filter((task) => {
+          if (task.createdBy === user?.uid) return true;
+          if (task.assignedTo === user?.uid) return true;
+          if (scopeDepartments.length > 0 && task.location) {
+            return scopeDepartments.includes(task.location);
+          }
+          return false;
+        });
+
+    const openTasks = visibleTasks.filter((task) => task.status !== "completada");
 
     const sortedTasks = [...openTasks].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
@@ -145,7 +141,7 @@ export default function TasksPage() {
         "no asignada".includes(searchQuery.toLowerCase());
       return matchesStatus && matchesPriority && matchesQuery;
     });
-  }, [priorityFilter, searchQuery, statusFilter, tasks, userNameMap]);
+  }, [canViewAllTasks, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile?.departmentId, userProfile?.departmentIds]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
