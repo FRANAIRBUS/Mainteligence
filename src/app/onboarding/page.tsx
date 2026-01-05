@@ -1,35 +1,89 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { AppShell } from "@/components/app-shell";
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { AppShell } from '@/components/app-shell';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useUser } from '@/lib/firebase/auth/use-user';
+import { signOut } from 'firebase/auth';
+import { useAuth } from '@/lib/firebase/provider';
 
-export default function OnboardingFallback() {
+export default function OnboardingPage() {
+  const router = useRouter();
+  const auth = useAuth();
+  const { user, profile, memberships, organizationId, activeMembership, loading, isRoot } = useUser();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) router.push('/login');
+    if (isRoot) router.push('/root');
+  }, [user, loading, router, isRoot]);
+
+  const pending = activeMembership && activeMembership.status !== 'active';
+
+  const doLogout = async () => {
+    if (!auth) return;
+    await signOut(auth);
+    router.push('/login');
+  };
+
   return (
-    <AppShell title="Completa tu registro" description="Falta información de la organización.">
-      <div className="flex justify-center">
-        <Card className="max-w-xl w-full">
-          <CardHeader className="flex flex-row items-center gap-3">
-            <div className="rounded-full bg-destructive/10 p-2 text-destructive">
-              <AlertTriangle className="h-6 w-6" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">Información incompleta</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                No encontramos un <strong>organizationId</strong> en tu perfil. Completa tu
-                registro o contacta a un administrador.
-              </p>
-            </div>
+    <AppShell>
+      <div className="max-w-2xl mx-auto space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Acceso a la organización</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            <Button asChild>
-              <Link href="/profile">Ir a mi perfil</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/login">Cambiar de cuenta</Link>
-            </Button>
+          <CardContent className="space-y-4">
+            {!user && <p>Redirigiendo a login…</p>}
+
+            {user && !profile && (
+              <>
+                <p className="text-muted-foreground">
+                  Tu cuenta está autenticada, pero todavía no has completado el alta de organización.
+                </p>
+                <div className="flex gap-3">
+                  <Button onClick={() => router.push('/login')}>Volver a registro</Button>
+                  <Button variant="outline" onClick={doLogout}>
+                    Cerrar sesión
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {user && profile && pending && (
+              <>
+                <p className="text-muted-foreground">
+                  Tu solicitud para unirte a la organización <b>{organizationId}</b> está pendiente de aprobación por un
+                  administrador.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  En cuanto un super administrador apruebe la solicitud, podrás acceder al sistema automáticamente.
+                </p>
+                <div className="flex gap-3">
+                  <Button onClick={() => router.refresh()}>Actualizar</Button>
+                  <Button variant="outline" onClick={doLogout}>
+                    Cerrar sesión
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {user && profile && !pending && (!memberships || memberships.length === 0) && (
+              <>
+                <p className="text-muted-foreground">
+                  No se ha encontrado ninguna membresía asociada a tu usuario. Regístrate con un ID de organización
+                  válido o solicita acceso.
+                </p>
+                <div className="flex gap-3">
+                  <Button onClick={() => router.push('/login')}>Ir a registro</Button>
+                  <Button variant="outline" onClick={doLogout}>
+                    Cerrar sesión
+                  </Button>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

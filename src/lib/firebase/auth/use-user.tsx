@@ -1,191 +1,157 @@
 'use client';
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
-import { onAuthStateChanged, type User as AuthUser } from 'firebase/auth';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import {
   collection,
   doc,
   getDoc,
   onSnapshot,
   query,
-  serverTimestamp,
-  setDoc,
   where,
+  QueryDocumentSnapshot,
+  DocumentData,
 } from 'firebase/firestore';
-import { useAuth, useFirestore } from '../provider';
-import type { Membership, User as UserProfile } from '../models';
-import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
-import { normalizeRole } from '@/lib/rbac';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
-interface UserContextValue {
-  user: AuthUser | null;
+import { useAuth, useFirestore, useFirebaseApp } from '@/lib/firebase/provider';
+import { Membership, UserProfile } from '@/lib/firebase/models';
+
+type UserContextType = {
+  user: FirebaseUser | null;
   profile: UserProfile | null;
-  organizationId: string | null;
   memberships: Membership[];
+  organizationId: string | null;
   activeMembership: Membership | null;
-  role:
-    | 'root'
-    | 'super_admin'
-    | 'admin'
-    | 'maintenance'
-    | 'dept_head_multi'
-    | 'dept_head_single'
-    | 'operator';
+  role: string | null;
+  isRoot: boolean;
   isSuperAdmin: boolean;
   isAdmin: boolean;
   isMaintenance: boolean;
-  isOperator: boolean;
-  canAccessOrgConfig: boolean;
-  /**
-   * Root mode is a separate, hidden capability that is NOT an app role.
-   * It is granted ONLY via Firebase Auth custom claims (token.root === true).
-   * Root users:
-   * - do NOT get a /users profile document
-   * - do NOT get memberships
-   * - are redirected to /root
-   */
-  isRoot: boolean;
-  setActiveOrganizationId: (organizationId: string) => void;
-  isLoaded: boolean;
   loading: boolean;
-}
+  error: string | null;
+  setActiveOrganizationId: (orgId: string) => Promise<void>;
+  refreshProfile: () => Promise<void>;
+};
 
-const UserContext = createContext<UserContextValue>({
+const UserContext = createContext<UserContextType>({
   user: null,
   profile: null,
-  organizationId: null,
   memberships: [],
+  organizationId: null,
   activeMembership: null,
+  role: null,
   isRoot: false,
-  setActiveOrganizationId: () => undefined,
-  isLoaded: false,
+  isSuperAdmin: false,
+  isAdmin: false,
+  isMaintenance: false,
   loading: true,
+  error: null,
+  setActiveOrganizationId: async () => {},
+  refreshProfile: async () => {},
 });
 
-export function UserProvider({ children }: { children: ReactNode }) {
+function mapMembership(snap: QueryDocumentSnapshot<DocumentData>): Membership {
+  const d = snap.data() as any;
+  return {
+    id: snap.id,
+    organizationId: String(d.organizationId ?? ''),
+    organizationName: d.organizationName ?? null,
+    userId: String(d.userId ?? ''),
+    role: String(d.role ?? 'operator'),
+    status: String(d.status ?? (d.active === true ? 'active' : 'pending')),
+    createdAt: d.createdAt ?? null,
+    updatedAt: d.updatedAt ?? null,
+    source: d.source ?? null,
+    primary: Boolean(d.primary ?? false),
+  } as any;
+}
+
+function pickDefaultOrgId(opts: {
+  preferredOrgId: string | null;
+  profileOrgId: string | null;
+  memberships: Membership[];
+}): string | null {
+  const { preferredOrgId, profileOrgId, memberships } = opts;
+
+  const active = memberships.filter((m) => m.status === 'active' && m.organizationId);
+  const pending = memberships.filter((m) => m.status !== 'active' && m.organizationId);
+
+  if (preferredOrgId) {
+    const hit = active.find((m) => m.organizationId === preferredOrgId);
+    if (hit) return hit.organizationId;
+  }
+
+  if (profileOrgId) {
+    const hit = active.find((m) => m.organizationId === profileOrgId);
+    if (hit) return hit.organizationId;
+
+    const pend = pending.find((m) => m.organizationId === profileOrgId);
+    if (pend) return pend.organizationId;
+  }
+
+  if (active.length > 0) return active[0].organizationId;
+  if (pending.length > 0) return pending[0].organizationId;
+
+  return null;
+}
+
+export function UserProvider({ children }: { children: React.ReactNode }) {
+  const app = useFirebaseApp();
   const auth = useAuth();
   const firestore = useFirestore();
-  const [user, setUser] = useState<AuthUser | null>(null);
+
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [memberships, setMemberships] = useState<Membership[]>([]);
-  const [isRoot, setIsRoot] = useState(false);
-  const [organizationId, setOrganizationId] = useState<string | null | undefined>(
-    undefined,
-  );
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [membershipsLoading, setMembershipsLoading] = useState(true);
-  const [authResolved, setAuthResolved] = useState(false);
-  const [persistedOrgId, setPersistedOrgId] = useState<string | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [activeMembership, setActiveMembership] = useState<Membership | null>(null);
+  const [role, setRole] = useState<string | null>(null);
+  const [isRoot, setIsRoot] = useState<boolean>(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  const refreshProfile = async () => {
+    if (!user || !firestore) return;
+    const profileRef = doc(firestore, 'users', user.uid);
+    const snap = await getDoc(profileRef);
+    setProfile(snap.exists() ? (snap.data() as UserProfile) : null);
+  };
+
+  // Auth subscription
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = window.localStorage.getItem('activeOrgId');
-      setPersistedOrgId(stored);
-    }
-  }, []);
+    if (!auth) return;
 
-  useEffect(() => {
-    if (!auth || !firestore) {
-      setUser(null);
-      setProfile(null);
-      setMemberships([]);
-      setOrganizationId(undefined);
-      setProfileLoading(true);
-      setMembershipsLoading(true);
-      setAuthResolved(false);
-      return;
-    }
-
-    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
-      setUser(authUser);
-      setAuthResolved(true);
-
-      if (!authUser) {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(true);
+      setError(null);
+      if (u) {
+        u.getIdTokenResult()
+          .then((r) => setIsRoot(Boolean((r?.claims as any)?.root) || (r?.claims as any)?.role === 'root'))
+          .catch(() => setIsRoot(false));
+      } else {
+        setIsRoot(false);
+      }
+      if (!u) {
         setProfile(null);
         setMemberships([]);
         setOrganizationId(null);
-        setIsRoot(false);
-        setProfileLoading(false);
-        setMembershipsLoading(false);
-        return;
-      }
-
-      // Root users are identified ONLY by a custom claim and do not participate
-      // in org/membership flows.
-      try {
-        const token = await authUser.getIdTokenResult();
-        const rootClaim = Boolean((token?.claims as any)?.root);
-        setIsRoot(rootClaim);
-        if (rootClaim) {
-          setProfile(null);
-          setMemberships([]);
-          setOrganizationId(null);
-          setProfileLoading(false);
-          setMembershipsLoading(false);
-          return;
-        }
-      } catch (e) {
-        // If token read fails, fall back to normal flow.
-        setIsRoot(false);
-      }
-
-      try {
-        setProfileLoading(true);
-        const profileRef = doc(firestore, 'users', authUser.uid);
-        const profileSnap = await getDoc(profileRef);
-
-        if (!profileSnap.exists()) {
-          const bootstrappedProfile = await ensureDefaultOrganization(firestore, authUser);
-          setProfile(bootstrappedProfile);
-          setOrganizationId(bootstrappedProfile?.organizationId ?? null);
-          setProfileLoading(false);
-          return;
-        }
-
-        const profileData = {
-          id: profileSnap.id,
-          ...profileSnap.data(),
-        } as UserProfile;
-
-        if (!profileData.organizationId) {
-          const bootstrappedProfile = await ensureDefaultOrganization(
-            firestore,
-            authUser,
-            profileData,
-          );
-          setProfile(bootstrappedProfile);
-          setOrganizationId(bootstrappedProfile?.organizationId ?? null);
-          setProfileLoading(false);
-          return;
-        }
-
-        setProfile(profileData);
-      } catch (error) {
-        console.error('[UserProvider] Failed to resolve user profile', error);
-        setProfile(null);
-        setOrganizationId(null);
-      } finally {
-        setProfileLoading(false);
+        setActiveMembership(null);
+        setRole(null);
+        setLoading(false);
       }
     });
 
-    return () => unsubscribe();
-  }, [auth, firestore]);
+    return () => unsub();
+  }, [auth]);
 
+  // Profile subscription
   useEffect(() => {
-    if (!firestore || !user || isRoot) {
-      setMemberships([]);
-      setMembershipsLoading(false);
-      return;
-    }
+    if (!user || !firestore) return;
+    const profileRef = doc(firestore, 'users', user.uid);
 
+<<<<<<< HEAD
     // Firestore security rules require queries to be scoped to the caller's organization.
     // Wait until the profile is loaded so we can constrain the query accordingly.
     const organizationFilterId = profile?.organizationId;
@@ -201,235 +167,116 @@ export function UserProvider({ children }: { children: ReactNode }) {
       where('userId', '==', user.uid),
       where('organizationId', '==', organizationFilterId),
       where('status', 'in', ['active', 'pending']),
+=======
+    const unsub = onSnapshot(
+      profileRef,
+      (snap) => {
+        if (!snap.exists()) {
+          // IMPORTANT: do not auto-create org/profile client-side.
+          setProfile(null);
+          setError(null);
+          return;
+        }
+        setProfile(snap.data() as UserProfile);
+      },
+      (err) => setError(err?.message ?? 'Error leyendo perfil')
+>>>>>>> 3633724 (fix: Mainteligence-staging_multi_users_panel)
     );
 
-    const unsubscribe = onSnapshot(
-      membershipsQuery,
-      (snapshot) => {
-        const mappedMemberships = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        })) as Membership[];
-        setMemberships(mappedMemberships);
-        setMembershipsLoading(false);
+    return () => unsub();
+  }, [user, firestore]);
+
+  // Memberships subscription (across orgs)
+  useEffect(() => {
+    if (!user || !firestore) return;
+
+    const membershipsRef = collection(firestore, 'memberships');
+    const q = query(membershipsRef, where('userId', '==', user.uid));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const items = snap.docs.map(mapMembership);
+        setMemberships(items);
       },
-      (err) => {
-        console.error('[UserProvider] Failed to load memberships', err);
-        setMemberships([]);
-        setMembershipsLoading(false);
-      },
+      (err) => setError(err?.message ?? 'Error leyendo membresías')
     );
 
+<<<<<<< HEAD
     return () => unsubscribe();
   }, [firestore, user, isRoot, profile?.organizationId]);
+=======
+    return () => unsub();
+  }, [user, firestore]);
+>>>>>>> 3633724 (fix: Mainteligence-staging_multi_users_panel)
 
+  // Derive active org / active membership / role
   useEffect(() => {
-    if (!authResolved) {
-      return;
-    }
+    if (!user) return;
 
-    if (isRoot) {
-      setOrganizationId(null);
-      return;
-    }
+    const preferredOrgId =
+      typeof window !== 'undefined' ? window.localStorage.getItem('preferredOrganizationId') : null;
 
-    const membershipOrgIds = memberships.map((membership) => membership.organizationId);
-    const profileOrgId = profile?.organizationId;
-    const candidates = new Set<string>();
-    if (profileOrgId) candidates.add(profileOrgId);
-    membershipOrgIds.forEach((id) => candidates.add(id));
+    const nextOrgId = pickDefaultOrgId({
+      preferredOrgId,
+      profileOrgId: (profile as any)?.organizationId ?? null,
+      memberships,
+    });
 
-    let resolved: string | null = null;
+    setOrganizationId((prev) => (prev === nextOrgId ? prev : nextOrgId));
 
-    if (persistedOrgId && candidates.has(persistedOrgId)) {
-      resolved = persistedOrgId;
-    } else if (profileOrgId) {
-      resolved = profileOrgId;
-    } else if (membershipOrgIds.length > 0) {
-      resolved = membershipOrgIds[0];
-    } else if (profileLoading || membershipsLoading) {
-      return;
-    }
+    const am = nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
+    setActiveMembership(am);
 
-    setOrganizationId(resolved ?? null);
-  }, [
-    authResolved,
-    memberships,
-    profile,
-    persistedOrgId,
-    profileLoading,
-    membershipsLoading,
-    organizationId,
-  ]);
+    const derivedRole = am?.status === 'active' ? (am.role ?? 'operator') : ((profile as any)?.role ?? 'operator');
+    setRole(derivedRole);
 
-  const setActiveOrganizationId = (orgId: string) => {
-    const allowedOrgIds = new Set<string>([
-      ...memberships.map((membership) => membership.organizationId),
-      profile?.organizationId ?? '',
-    ]);
+    setLoading(false);
+  }, [user, profile, memberships]);
 
-    if (!allowedOrgIds.has(orgId)) {
-      console.warn('Attempted to select unauthorized organizationId');
-      return;
-    }
+  const setActiveOrganizationId = async (orgId: string) => {
+    const next = String(orgId ?? '').trim();
+    if (!next) return;
 
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem('activeOrgId', orgId);
+      window.localStorage.setItem('preferredOrganizationId', next);
     }
 
-    setOrganizationId(orgId);
+    setOrganizationId(next);
+
+    // Persist server-side (optional, but useful across devices)
+    try {
+      if (!app) return;
+      const fn = httpsCallable(getFunctions(app), 'setActiveOrganization');
+      await fn({ organizationId: next });
+    } catch {
+      // If membership is pending or function unavailable, we keep local selection only.
+    }
   };
 
-  const value = useMemo<UserContextValue>(() => {
-    const resolvedOrganizationId = organizationId ?? null;
-    const activeMembership =
-      memberships.find((membership) => membership.organizationId === resolvedOrganizationId) || null;
-    const loading =
-      !authResolved || profileLoading || membershipsLoading || organizationId === undefined;
-    const isLoaded = (organizationId !== undefined && !loading) || (isRoot && authResolved);
-
-    
-    const roleRaw = (profile?.role ?? activeMembership?.role ?? 'operator') as any;
-    const normalizedRole = normalizeRole(roleRaw) ?? 'operator';
-    const role =
-      normalizedRole === 'super_admin'
-        ? 'super_admin'
-        : normalizedRole === 'admin'
-          ? 'admin'
-          : normalizedRole === 'maintenance'
-            ? 'maintenance'
-            : normalizedRole === 'dept_head_multi'
-              ? 'dept_head_multi'
-              : normalizedRole === 'dept_head_single'
-                ? 'dept_head_single'
-                : 'operator';
-
-    const isSuperAdmin = role === 'super_admin';
-    const isAdmin = role === 'admin' || isSuperAdmin;
-    const isMaintenance = role === 'maintenance';
-    const isOperator = role === 'operator';
-    const canAccessOrgConfig = isSuperAdmin;
-
-    return {
+  const value = useMemo<UserContextType>(
+    () => ({
       user,
       profile,
-      organizationId: resolvedOrganizationId,
       memberships,
+      organizationId,
       activeMembership,
       role,
-      isSuperAdmin,
-      isAdmin,
-      isMaintenance,
-      isOperator,
-      canAccessOrgConfig,
       isRoot,
-      setActiveOrganizationId,
-      isLoaded,
+      isSuperAdmin: !isRoot && role === 'super_admin',
+      isAdmin: !isRoot && (role === 'admin' || role === 'super_admin'),
+      isMaintenance: !isRoot && role === 'maintenance',
       loading,
-    };
-  }, [
-    organizationId,
-    memberships,
-    profile,
-    user,
-    isRoot,
-    authResolved,
-    profileLoading,
-    membershipsLoading,
-  ]);
+      error,
+      setActiveOrganizationId,
+      refreshProfile,
+    }),
+    [user, profile, memberships, organizationId, activeMembership, role, isRoot, loading, error]
+  );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 }
 
-export const useUser = () => useContext(UserContext);
-
-async function ensureDefaultOrganization(
-  firestore: ReturnType<typeof useFirestore>,
-  authUser: AuthUser,
-  existingProfile?: UserProfile | null,
-) {
-  if (!firestore) return null;
-
-  const organizationId = existingProfile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
-  const organizationRef = doc(firestore, 'organizations', organizationId);
-  const organizationPublicRef = doc(firestore, 'organizationsPublic', organizationId);
-  const organizationSnapshot = await getDoc(organizationRef);
-
-  if (!organizationSnapshot.exists()) {
-    await setDoc(
-      organizationRef,
-      {
-        organizationId,
-        name: organizationId,
-        subscriptionPlan: 'trial',
-        isActive: true,
-        settings: {
-          allowGuestAccess: false,
-          maxUsers: 50,
-        },
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
-
-    // Minimal public doc so signup can verify org existence without leaking org list.
-    await setDoc(
-      organizationPublicRef,
-      {
-        organizationId,
-        name: organizationId,
-        isActive: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
-  }
-
-  const userRef = doc(firestore, 'users', authUser.uid);
-  const defaultProfileData = {
-    displayName: authUser.displayName || authUser.email || 'Usuario',
-    email: authUser.email || '',
-    role: existingProfile?.role ?? 'admin',
-    active: true,
-    isMaintenanceLead: true,
-    organizationId,
-    adminRequestPending: false,
-    createdAt: existingProfile?.createdAt ?? serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  };
-
-  await setDoc(
-    userRef,
-    {
-      ...defaultProfileData,
-    },
-    { merge: true },
-  );
-
-  const membershipRef = doc(firestore, 'memberships', `${authUser.uid}_${organizationId}`);
-  const membershipSnap = await getDoc(membershipRef);
-  if (!membershipSnap.exists()) {
-    await setDoc(
-      membershipRef,
-      {
-        userId: authUser.uid,
-        organizationId,
-        organizationName:
-          (organizationSnapshot.data() as { name?: string } | undefined)?.name ?? organizationId,
-        role: 'admin',
-        status: 'active',
-        primary: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
-  }
-
-  return {
-    id: userRef.id,
-    ...defaultProfileData,
-  } as UserProfile;
+export function useUser() {
+  return useContext(UserContext);
 }

@@ -24,8 +24,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useDoc, useUser } from "@/lib/firebase";
-import type { User } from "@/lib/firebase/models";
+import { useUser } from "@/lib/firebase";
 import { useMemo } from "react";
 import { isAdminLikeRole, normalizeRole } from "@/lib/rbac";
 
@@ -45,11 +44,7 @@ type NavGroup = {
 
 export function MainNav() {
   const pathname = usePathname();
-  const { user, loading: userLoading } = useUser();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(
-    user ? `users/${user.uid}` : ''
-  );
-
+  const { user, role, loading: userLoading } = useUser();
   const allMenuItems: NavGroup[] = useMemo(() => [
     {
       label: "General",
@@ -99,7 +94,7 @@ export function MainNav() {
   ], [pathname]);
 
   const menuItems = useMemo(() => {
-    const normalizedRole = normalizeRole(userProfile?.role) || 'operator';
+    const normalizedRole = normalizeRole(role) || 'operator';
     const isAdminLike = isAdminLikeRole(normalizedRole);
 
     if (isAdminLike) {
@@ -114,7 +109,7 @@ export function MainNav() {
       .filter(group => group.items.length > 0)
       .filter(group => !group.roles || group.roles.includes(normalizedRole));
 
-  }, [userProfile, allMenuItems]);
+  }, [role, allMenuItems]);
 
   if (userLoading) {
     return (

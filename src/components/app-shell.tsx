@@ -1,89 +1,76 @@
-"use client";
+'use client';
 
-import { useEffect, type ReactNode } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { Icons } from "@/components/icons";
-import { MainNav } from "@/components/main-nav";
-import { UserNav } from "@/components/user-nav";
-import { useUser } from "@/lib/firebase";
-import { DynamicClientLogo } from "@/components/dynamic-client-logo";
+import { useEffect } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { Sidebar } from '@/components/sidebar';
+import { useUser } from '@/lib/firebase/auth/use-user';
 
-interface AppShellProps {
-  title: string;
-  description?: string;
-  action?: ReactNode;
-  children: ReactNode;
-}
-
-export function AppShell({ title, description, action, children }: AppShellProps) {
-  const { user, loading, isRoot } = useUser();
+export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const { user, profile, organizationId, activeMembership, loading, isRoot } = useUser();
 
   useEffect(() => {
-    // Root users are redirected to the hidden root console.
-    if (!loading && isRoot) {
-      router.replace('/root');
+    if (loading) return;
+
+    if (!user) {
+      router.push('/login');
       return;
     }
-    if (!loading && !user) {
-      router.replace("/login");
-    }
-  }, [loading, router, user, isRoot]);
 
-  if (loading || !user || isRoot) {
+    if (isRoot) {
+      router.push('/root');
+      return;
+    }
+
+    // No profile yet: user hasn't completed bootstrap signup / onboarding.
+    if (!profile) {
+      if (pathname !== '/onboarding') router.push('/onboarding');
+      return;
+    }
+
+    if (profile.active === false) {
+      if (pathname !== '/onboarding') router.push('/onboarding');
+      return;
+    }
+
+    if (!organizationId) {
+      if (pathname !== '/onboarding') router.push('/onboarding');
+      return;
+    }
+
+    // Membership gate: only active members can enter the app.
+    if (!activeMembership || activeMembership.status !== 'active') {
+      if (pathname !== '/onboarding') router.push('/onboarding');
+      return;
+    }
+
+    if (pathname === '/onboarding') {
+      router.push('/');
+    }
+  }, [user, profile, organizationId, activeMembership, loading, isRoot, router, pathname]);
+
+  // Full-page loading
+  if (loading || (user && !isRoot && !profile)) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-2">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <p className="text-muted-foreground">Cargando...</p>
+        </div>
       </div>
     );
   }
 
+  // Root has its own console
+  if (isRoot) return null;
+
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader className="p-4 text-center">
-          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-            <DynamicClientLogo />
-          </div>
-          <Link href="/" className="flex flex-col items-center gap-2">
-            <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-              Maintelligence
-            </span>
-          </Link>
-        </SidebarHeader>
-        <SidebarContent>
-          <MainNav />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
-          <div className="flex w-full items-center justify-end">{user && <UserNav />}</div>
-        </header>
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
-          <div className="mx-auto flex max-w-6xl flex-col gap-6">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">{title}</h1>
-                {description && (
-                  <p className="mt-2 text-muted-foreground">{description}</p>
-                )}
-              </div>
-              {action}
-            </div>
-            {children}
-          </div>
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar />
+      <main className="flex-1 overflow-y-auto bg-background">
+        <div className="container mx-auto p-6">{children}</div>
+      </main>
+    </div>
   );
 }
