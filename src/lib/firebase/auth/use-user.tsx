@@ -146,28 +146,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return () => unsub();
   }, [auth]);
 
-  // Profile subscription
+    // Profile subscription
   useEffect(() => {
     if (!user || !firestore) return;
     const profileRef = doc(firestore, 'users', user.uid);
 
-<<<<<<< HEAD
-    // Firestore security rules require queries to be scoped to the caller's organization.
-    // Wait until the profile is loaded so we can constrain the query accordingly.
-    const organizationFilterId = profile?.organizationId;
-    if (!organizationFilterId) {
-      setMemberships([]);
-      setMembershipsLoading(false);
-      return;
-    }
-
-    setMembershipsLoading(true);
-    const membershipsQuery = query(
-      collection(firestore, 'memberships'),
-      where('userId', '==', user.uid),
-      where('organizationId', '==', organizationFilterId),
-      where('status', 'in', ['active', 'pending']),
-=======
     const unsub = onSnapshot(
       profileRef,
       (snap) => {
@@ -180,7 +163,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setProfile(snap.data() as UserProfile);
       },
       (err) => setError(err?.message ?? 'Error leyendo perfil')
->>>>>>> 3633724 (fix: Mainteligence-staging_multi_users_panel)
     );
 
     return () => unsub();
@@ -202,13 +184,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       (err) => setError(err?.message ?? 'Error leyendo membresías')
     );
 
-<<<<<<< HEAD
-    return () => unsubscribe();
-  }, [firestore, user, isRoot, profile?.organizationId]);
-=======
     return () => unsub();
   }, [user, firestore]);
->>>>>>> 3633724 (fix: Mainteligence-staging_multi_users_panel)
 
   // Derive active org / active membership / role
   useEffect(() => {
