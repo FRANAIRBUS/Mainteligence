@@ -39,16 +39,9 @@ type NavGroup = {
   roles?: string[];
 };
 
-export function MainNav() {
+export function useAppNavigation() {
   const pathname = usePathname();
   const { role, loading: userLoading } = useUser();
-  const { isMobile, setOpenMobile } = useSidebar();
-
-  useEffect(() => {
-    if (!isMobile) return;
-
-    setOpenMobile(false);
-  }, [pathname, isMobile, setOpenMobile]);
 
   const allMenuItems: NavGroup[] = useMemo(() => [
     {
@@ -115,6 +108,19 @@ export function MainNav() {
       .filter(group => !group.roles || group.roles.includes(normalizedRole));
 
   }, [role, allMenuItems]);
+
+  return { menuItems, userLoading, pathname };
+}
+
+export function MainNav() {
+  const { menuItems, userLoading, pathname } = useAppNavigation();
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  useEffect(() => {
+    if (!isMobile) return;
+
+    setOpenMobile(false);
+  }, [pathname, isMobile, setOpenMobile]);
 
   if (userLoading) {
     return (
