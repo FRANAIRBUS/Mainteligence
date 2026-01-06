@@ -1,15 +1,6 @@
 'use client';
 
-import { MainNav } from '@/components/main-nav';
-import { UserNav } from '@/components/user-nav';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from '@/components/ui/sidebar';
+import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useDoc, useCollectionQuery } from '@/lib/firebase';
 import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
@@ -42,7 +33,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
-import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
 
@@ -272,65 +262,39 @@ export default function IncidentsPage() {
   const tableDataIsLoading = ticketsLoading || sitesLoading || deptsLoading || (isMantenimiento && usersLoading);
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader className="p-4 text-center">
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <DynamicClientLogo />
+    <>
+      <AppShell
+        title="Incidencias"
+        description="Visualiza y gestiona todas las incidencias correctivas."
+        action={
+          <Button className="w-full sm:w-auto" onClick={() => setIsAddIncidentOpen(true)}>
+            Crear Incidencia
+          </Button>
+        }
+      >
+        <Card>
+          <CardHeader>
+            <CardTitle>Listado de incidencias</CardTitle>
+            <CardDescription>Consulta, edita y prioriza incidencias en curso.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <IncidentsTable
+                tickets={sortedTickets}
+                sites={sitesMap}
+                departments={departmentsMap}
+                loading={tableDataIsLoading}
+                onViewDetails={handleViewDetails}
+                onEdit={handleEditRequest}
+                currentUser={userProfile}
+                userId={user?.uid}
+              />
             </div>
-            <a href="/" className="flex flex-col items-center gap-2">
-                <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-                Maintelligence
-                </span>
-            </a>
-        </SidebarHeader>
-        <SidebarContent>
-          <MainNav />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
-          <div className="flex w-full items-center justify-end">
-            <UserNav />
-          </div>
-        </header>
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
-           <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Incidencias</CardTitle>
-                  <CardDescription className="mt-2">
-                    Visualiza y gestiona todas las incidencias correctivas.
-                  </CardDescription>
-                </div>
-                <Button className="w-full sm:w-auto" onClick={() => setIsAddIncidentOpen(true)}>
-                  Crear Incidencia
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <IncidentsTable
-                  tickets={sortedTickets}
-                  sites={sitesMap}
-                  departments={departmentsMap}
-                  loading={tableDataIsLoading}
-                  onViewDetails={handleViewDetails}
-                  onEdit={handleEditRequest}
-                  currentUser={userProfile}
-                  userId={user?.uid}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </main>
-      </SidebarInset>
-      <AddIncidentDialog
-        open={isAddIncidentOpen}
-        onOpenChange={setIsAddIncidentOpen}
-      />
+          </CardContent>
+        </Card>
+      </AppShell>
+
+      <AddIncidentDialog open={isAddIncidentOpen} onOpenChange={setIsAddIncidentOpen} />
       {editingTicket && (
         <EditIncidentDialog
           open={isEditIncidentOpen}
@@ -340,6 +304,6 @@ export default function IncidentsPage() {
           departments={departments}
         />
       )}
-    </SidebarProvider>
+    </>
   );
 }
