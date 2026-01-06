@@ -8,6 +8,10 @@ on:
       - staging_multi
     paths:
       - 'functions/**'
+      - 'firebase.json'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - 'storage.rules'
 
 jobs:
   deploy:
@@ -28,7 +32,7 @@ jobs:
       - name: Deploy and Config
         uses: w9jds/firebase-action@master
         with:
-          args: functions:config:set resend.apikey="${{ secrets.RESEND_API_KEY }}" && firebase deploy --only functions
+          args: functions:config:set resend.apikey="${{ secrets.RESEND_API_KEY }}" && firebase deploy --only functions,firestore:rules,firestore:indexes,storage:rules
         env:
           GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
           PROJECT_ID: studio-4350140400-a3f8f
