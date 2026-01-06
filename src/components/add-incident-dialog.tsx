@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -88,7 +88,13 @@ export function AddIncidentDialog({ open, onOpenChange }: AddIncidentDialogProps
         </DialogTrigger>
       )}
       <DialogContent>
-        <DialogHeader><DialogTitle>Reportar Incidencia</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Reportar Incidencia</DialogTitle>
+          <DialogDescription>
+            Añade los detalles de la incidencia y asigna un responsable para hacerle
+            seguimiento.
+          </DialogDescription>
+        </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="title">Título</Label>
