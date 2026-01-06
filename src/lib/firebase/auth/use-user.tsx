@@ -146,7 +146,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     return () => unsub();
   }, [auth]);
 
-    // Profile subscription
+  // Profile subscription
   useEffect(() => {
     if (!user || !firestore) return;
     const profileRef = doc(firestore, 'users', user.uid);
