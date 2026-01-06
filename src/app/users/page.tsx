@@ -5,17 +5,7 @@ import { useRouter } from 'next/navigation';
 import { collection, onSnapshot, type DocumentData } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
-import { MainNav } from '@/components/main-nav';
-import { UserNav } from '@/components/user-nav';
-import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from '@/components/ui/sidebar';
+import { AppShell } from '@/components/app-shell';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -319,280 +309,251 @@ export default function UsersPage() {
   }
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader className="p-4 text-center">
-          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-            <DynamicClientLogo />
-          </div>
-          <a href="/" className="flex flex-col items-center gap-2">
-            <span className="text-xl font-headline font-semibold text-sidebar-foreground">Maintelligence</span>
-          </a>
-        </SidebarHeader>
-        <SidebarContent>
-          <MainNav />
-        </SidebarContent>
-      </Sidebar>
+    <AppShell
+      title="Usuarios y roles"
+      description="Gestiona miembros y solicitudes de acceso de la organización activa."
+    >
+      <div className="flex flex-1 flex-col gap-4 lg:gap-6">
+        {!organizationId && !isRoot && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Sin organización activa</CardTitle>
+              <CardDescription>
+                No tienes una organización activa seleccionada. Ve a onboarding o cambia de organización.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => router.push('/onboarding')}>Ir a onboarding</Button>
+            </CardContent>
+          </Card>
+        )}
 
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
-          <div className="flex w-full items-center justify-end">
-            <UserNav />
-          </div>
-        </header>
+        {organizationId && !canManage && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Permisos insuficientes</CardTitle>
+              <CardDescription>
+                Esta sección está reservada a super_admin (o root). Si has solicitado acceso, espera a que lo aprueben.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        )}
 
-        <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Usuarios</h1>
-            <p className="text-sm text-muted-foreground">
-              Gestiona miembros y solicitudes de acceso de la organización activa.
-            </p>
-          </div>
+        {organizationId && canManage && (
+          <Tabs defaultValue="requests" className="w-full">
+            <TabsList>
+              <TabsTrigger value="requests">
+                Solicitudes <span className="ml-2 text-xs text-muted-foreground">({pendingRequests.length})</span>
+              </TabsTrigger>
+              <TabsTrigger value="members">
+                Miembros <span className="ml-2 text-xs text-muted-foreground">({activeMembers.length})</span>
+              </TabsTrigger>
+            </TabsList>
 
-          {!organizationId && !isRoot && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Sin organización activa</CardTitle>
-                <CardDescription>
-                  No tienes una organización activa seleccionada. Ve a onboarding o cambia de organización.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button onClick={() => router.push('/onboarding')}>Ir a onboarding</Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {organizationId && !canManage && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Permisos insuficientes</CardTitle>
-                <CardDescription>
-                  Esta sección está reservada a super_admin (o root). Si has solicitado acceso, espera a que lo aprueben.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          )}
-
-          {organizationId && canManage && (
-            <Tabs defaultValue="requests" className="w-full">
-              <TabsList>
-                <TabsTrigger value="requests">
-                  Solicitudes <span className="ml-2 text-xs text-muted-foreground">({pendingRequests.length})</span>
-                </TabsTrigger>
-                <TabsTrigger value="members">
-                  Miembros <span className="ml-2 text-xs text-muted-foreground">({activeMembers.length})</span>
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="requests" className="mt-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Solicitudes pendientes</CardTitle>
-                    <CardDescription>
-                      Aprueba o rechaza peticiones para unirse a esta organización. La aprobación crea/activa la membresía.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {joinLoading ? (
-                      <div className="text-sm text-muted-foreground">Cargando solicitudes…</div>
-                    ) : pendingRequests.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No hay solicitudes pendientes.</div>
-                    ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Usuario</TableHead>
-                            <TableHead>Email</TableHead>
-                            <TableHead>Rol</TableHead>
-                            <TableHead className="text-right">Acciones</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {pendingRequests.map((r) => (
-                            <TableRow key={r.id}>
-                              <TableCell className="font-medium">
-                                {safeText(r.displayName)}
-                                <div className="text-xs text-muted-foreground">uid: {r.id}</div>
-                              </TableCell>
-                              <TableCell>{safeText(r.email)}</TableCell>
-                              <TableCell className="w-[220px]">
-                                <Select
-                                  value={approveRoleByUid[r.id] ?? (r.requestedRole ?? 'operator')}
-                                  onValueChange={(v) =>
-                                    setApproveRoleByUid((prev) => ({ ...prev, [r.id]: normalizeRole(v) }))
-                                  }
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Rol" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="operator">operator</SelectItem>
-                                    <SelectItem value="maintenance">maintenance</SelectItem>
-                                    <SelectItem value="admin">admin</SelectItem>
-                                    <SelectItem value="super_admin">super_admin</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                {r.requestedRole && (
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    Solicitado: {r.requestedRole}
-                                  </div>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex justify-end gap-2">
-                                  <Button size="sm" onClick={() => openApprove(r)}>
-                                    Aprobar
-                                  </Button>
-                                  <Button size="sm" variant="outline" onClick={() => openReject(r)}>
-                                    Rechazar
-                                  </Button>
+            <TabsContent value="requests" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Solicitudes pendientes</CardTitle>
+                  <CardDescription>
+                    Aprueba o rechaza peticiones para unirse a esta organización. La aprobación crea/activa la membresía.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {joinLoading ? (
+                    <div className="text-sm text-muted-foreground">Cargando solicitudes…</div>
+                  ) : pendingRequests.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No hay solicitudes pendientes.</div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Usuario</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Rol</TableHead>
+                          <TableHead className="text-right">Acciones</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pendingRequests.map((r) => (
+                          <TableRow key={r.id}>
+                            <TableCell className="font-medium">
+                              {safeText(r.displayName)}
+                              <div className="text-xs text-muted-foreground">uid: {r.id}</div>
+                            </TableCell>
+                            <TableCell>{safeText(r.email)}</TableCell>
+                            <TableCell className="w-[220px]">
+                              <Select
+                                value={approveRoleByUid[r.id] ?? (r.requestedRole ?? 'operator')}
+                                onValueChange={(v) =>
+                                  setApproveRoleByUid((prev) => ({ ...prev, [r.id]: normalizeRole(v) }))
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Rol" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="operator">operator</SelectItem>
+                                  <SelectItem value="maintenance">maintenance</SelectItem>
+                                  <SelectItem value="admin">admin</SelectItem>
+                                  <SelectItem value="super_admin">super_admin</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {r.requestedRole && (
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  Solicitado: {r.requestedRole}
                                 </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="members" className="mt-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Miembros de la organización</CardTitle>
-                    <CardDescription>
-                      Listado de miembros activos. La gestión avanzada (cambios de rol / bajas) se realiza por Cloud Function.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {membersLoading ? (
-                      <div className="text-sm text-muted-foreground">Cargando miembros…</div>
-                    ) : activeMembers.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No hay miembros activos.</div>
-                    ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Usuario</TableHead>
-                            <TableHead>Email</TableHead>
-                            <TableHead>Rol</TableHead>
-                            <TableHead>Estado</TableHead>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button size="sm" onClick={() => openApprove(r)}>
+                                  Aprobar
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => openReject(r)}>
+                                  Rechazar
+                                </Button>
+                              </div>
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {activeMembers.map((m) => (
-                            <TableRow key={m.id}>
-                              <TableCell className="font-medium">
-                                {safeText(m.displayName)}
-                                <div className="text-xs text-muted-foreground">uid: {m.id}</div>
-                              </TableCell>
-                              <TableCell>{safeText(m.email)}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline">{m.role ?? 'operator'}</Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={(m.status ?? 'active') === 'active' ? 'default' : 'secondary'}>
-                                  {m.status ?? 'active'}
-                                </Badge>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          )}
-        </main>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-        {/* Approve dialog */}
-        <AlertDialog open={approveOpen} onOpenChange={setApproveOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Aprobar solicitud</AlertDialogTitle>
-              <AlertDialogDescription>
-                Esto activará la membresía del usuario en la organización y le dará acceso según el rol seleccionado.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+            <TabsContent value="members" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Miembros de la organización</CardTitle>
+                  <CardDescription>
+                    Listado de miembros activos. La gestión avanzada (cambios de rol / bajas) se realiza por Cloud Function.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {membersLoading ? (
+                    <div className="text-sm text-muted-foreground">Cargando miembros…</div>
+                  ) : activeMembers.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No hay miembros activos.</div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Usuario</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Rol</TableHead>
+                          <TableHead>Estado</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {activeMembers.map((m) => (
+                          <TableRow key={m.id}>
+                            <TableCell className="font-medium">
+                              {safeText(m.displayName)}
+                              <div className="text-xs text-muted-foreground">uid: {m.id}</div>
+                            </TableCell>
+                            <TableCell>{safeText(m.email)}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{m.role ?? 'operator'}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={(m.status ?? 'active') === 'active' ? 'default' : 'secondary'}>
+                                {m.status ?? 'active'}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        )}
+      </div>
 
-            <div className="grid gap-3 py-2">
-              <div className="text-sm">
-                <span className="font-medium">Usuario:</span>{' '}
-                {safeText(selectedRequest?.displayName)} ({safeText(selectedRequest?.email)})
-              </div>
+      <AlertDialog open={approveOpen} onOpenChange={setApproveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Aprobar solicitud</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esto activará la membresía del usuario en la organización y le dará acceso según el rol seleccionado.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
 
-              <div className="grid gap-2">
-                <Label>Rol a asignar</Label>
-                <Select
-                  value={
-                    selectedRequest
-                      ? approveRoleByUid[selectedRequest.id] ?? (selectedRequest.requestedRole ?? 'operator')
-                      : 'operator'
-                  }
-                  onValueChange={(v) => {
-                    if (!selectedRequest) return;
-                    setApproveRoleByUid((prev) => ({ ...prev, [selectedRequest.id]: normalizeRole(v) }));
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Rol" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="operator">operator</SelectItem>
-                    <SelectItem value="maintenance">maintenance</SelectItem>
-                    <SelectItem value="admin">admin</SelectItem>
-                    <SelectItem value="super_admin">super_admin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="grid gap-3 py-2">
+            <div className="text-sm">
+              <span className="font-medium">Usuario:</span>{' '}
+              {safeText(selectedRequest?.displayName)} ({safeText(selectedRequest?.email)})
             </div>
 
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={doApprove}>Aprobar</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+            <div className="grid gap-2">
+              <Label>Rol a asignar</Label>
+              <Select
+                value={
+                  selectedRequest
+                    ? approveRoleByUid[selectedRequest.id] ?? (selectedRequest.requestedRole ?? 'operator')
+                    : 'operator'
+                }
+                onValueChange={(v) => {
+                  if (!selectedRequest) return;
+                  setApproveRoleByUid((prev) => ({ ...prev, [selectedRequest.id]: normalizeRole(v) }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Rol" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="operator">operator</SelectItem>
+                  <SelectItem value="maintenance">maintenance</SelectItem>
+                  <SelectItem value="admin">admin</SelectItem>
+                  <SelectItem value="super_admin">super_admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
-        {/* Reject dialog */}
-        <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Rechazar solicitud</AlertDialogTitle>
-              <AlertDialogDescription>
-                La solicitud se marcará como rechazada. Puedes indicar un motivo opcional.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={doApprove}>Aprobar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-            <div className="grid gap-3 py-2">
-              <div className="text-sm">
-                <span className="font-medium">Usuario:</span>{' '}
-                {safeText(selectedRequest?.displayName)} ({safeText(selectedRequest?.email)})
-              </div>
+      <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rechazar solicitud</AlertDialogTitle>
+            <AlertDialogDescription>
+              La solicitud se marcará como rechazada. Puedes indicar un motivo opcional.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
 
-              <div className="grid gap-2">
-                <Label htmlFor="rejectReason">Motivo (opcional)</Label>
-                <Input
-                  id="rejectReason"
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="Ej.: dominio no autorizado"
-                />
-              </div>
+          <div className="grid gap-3 py-2">
+            <div className="text-sm">
+              <span className="font-medium">Usuario:</span>{' '}
+              {safeText(selectedRequest?.displayName)} ({safeText(selectedRequest?.email)})
             </div>
 
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={doReject}>Rechazar</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </SidebarInset>
-    </SidebarProvider>
+            <div className="grid gap-2">
+              <Label htmlFor="rejectReason">Motivo (opcional)</Label>
+              <Input
+                id="rejectReason"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Ej.: dominio no autorizado"
+              />
+            </div>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={doReject}>Rechazar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </AppShell>
   );
 }
