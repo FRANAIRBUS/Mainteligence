@@ -6,6 +6,8 @@ const db = admin.firestore();
 
 type Role = 'super_admin' | 'admin' | 'maintenance' | 'operator';
 
+type JoinMode = 'new' | 'existing';
+
 function httpsError(code: functions.https.FunctionsErrorCode, message: string) {
   return new functions.https.HttpsError(code, message);
 }
@@ -35,6 +37,17 @@ function normalizeRole(input: any): Role {
   if (r === 'operator' || r === 'operario' || r === 'op') return 'operator';
 
   return 'operator';
+}
+
+function sanitizeOrgId(input: any): string {
+  const base = String(input ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return base || 'org-' + Math.random().toString(36).slice(2, 8);
 }
 
 async function ensureDefaultOrganizationExists() {
@@ -88,6 +101,61 @@ async function auditLog(params: {
     ...params,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+}
+
+async function ensureOrganizationPublicDoc(orgId: string, name?: string | null) {
+  const orgRef = db.collection('organizations').doc(orgId);
+  const orgPublicRef = db.collection('organizationsPublic').doc(orgId);
+
+  const [orgSnap, orgPublicSnap] = await Promise.all([orgRef.get(), orgPublicRef.get()]);
+
+  const organizationName = name ?? (orgSnap.exists ? (orgSnap.data() as any)?.name ?? orgId : orgId);
+
+  let created = false;
+
+  if (!orgSnap.exists) {
+    await orgRef.set(
+      {
+        organizationId: orgId,
+        name: organizationName,
+        subscriptionPlan: 'trial',
+        isActive: true,
+        settings: {
+          allowGuestAccess: false,
+          maxUsers: 50,
+        },
+        usage: {
+          users: 1,
+          ticketsThisMonth: 0,
+          tasksThisMonth: 0,
+          storageMb: 0,
+        },
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'bootstrapSignup_v1',
+      },
+      { merge: true }
+    );
+    created = true;
+  }
+
+  if (!orgPublicSnap.exists) {
+    await orgPublicRef.set(
+      {
+        organizationId: orgId,
+        name: organizationName,
+        isActive: true,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'bootstrapSignup_v1',
+      },
+      { merge: true }
+    );
+  }
+
+  const latestOrgSnap = orgSnap.exists ? orgSnap : await orgRef.get();
+
+  return { orgRef, orgPublicRef, orgSnap: latestOrgSnap, created };
 }
 
 /* ------------------------------
@@ -513,6 +581,269 @@ export const rootPurgeOrganizationCollection = functions.https.onCall(async (dat
   });
 
   return { ok: true, organizationId: orgId, collection, deleted: totalDeleted };
+});
+
+/* ------------------------------
+   SIGNUP / MEMBERSHIP BOOTSTRAP
+--------------------------------- */
+
+function buildUserProfilePayload(params: {
+  email: string | null;
+  organizationId: string;
+  role: Role;
+  adminRequestPending: boolean;
+}) {
+  const { email, organizationId, role, adminRequestPending } = params;
+  return {
+    displayName: email ?? 'Usuario',
+    email: email ?? null,
+    role,
+    active: true,
+    isMaintenanceLead: role === 'super_admin' || role === 'admin' || role === 'maintenance',
+    organizationId,
+    adminRequestPending,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+export const bootstrapSignup = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const rawOrgId = data?.organizationId;
+  const requestedRole = data?.requestAdminRole === true;
+  const mode: JoinMode = data?.mode === 'existing' ? 'existing' : 'new';
+
+  const organizationProfile = {
+    name: String(data?.organizationProfile?.name ?? '').trim() || null,
+    taxId: String(data?.organizationProfile?.taxId ?? '').trim() || null,
+    country: String(data?.organizationProfile?.country ?? '').trim() || null,
+    address: String(data?.organizationProfile?.address ?? '').trim() || null,
+    billingEmail: String(data?.organizationProfile?.billingEmail ?? '').trim() || actorEmail,
+    phone: String(data?.organizationProfile?.phone ?? '').trim() || null,
+    teamSize: Number(data?.organizationProfile?.teamSize ?? 0) || null,
+  };
+
+  const organizationId = sanitizeOrgId(rawOrgId || organizationProfile.name || '');
+
+  const membershipRef = db.collection('memberships').doc(`${uid}_${organizationId}`);
+  const userRef = db.collection('users').doc(uid);
+  const membersRef = db.collection('organizations').doc(organizationId).collection('members').doc(uid);
+
+  const membershipSnap = await membershipRef.get();
+  if (membershipSnap.exists && membershipSnap.get('status') === 'active') {
+    const activeRole = normalizeRole(membershipSnap.get('role'));
+    return {
+      ok: true,
+      organizationId,
+      organizationName: membershipSnap.get('organizationName') ?? organizationId,
+      membershipStatus: 'active',
+      role: activeRole,
+      mode: 'already-member',
+    };
+  }
+
+  const { orgRef, orgSnap, created } = await ensureOrganizationPublicDoc(
+    organizationId,
+    organizationProfile.name ?? organizationId,
+  );
+
+  const isExistingOrg = orgSnap.exists && !created;
+  const effectiveMode: JoinMode = isExistingOrg ? 'existing' : 'new';
+
+  const organizationName =
+    (orgSnap.data() as any)?.name ?? organizationProfile.name ?? organizationId;
+
+  const isNewOrg = effectiveMode === 'new';
+  const role: Role = isNewOrg ? 'super_admin' : requestedRole ? 'admin' : 'operator';
+  const membershipStatus: 'active' | 'pending' = isNewOrg ? 'active' : 'pending';
+  const adminRequestPending = !isNewOrg && requestedRole;
+
+  const batch = db.batch();
+
+  batch.set(
+    userRef,
+    {
+      ...buildUserProfilePayload({
+        email: actorEmail,
+        organizationId,
+        role,
+        adminRequestPending,
+      }),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      source: isNewOrg ? 'bootstrapSignup_newOrg_v1' : 'bootstrapSignup_joinExisting_v1',
+    },
+    { merge: true }
+  );
+
+  batch.set(
+    membershipRef,
+    {
+      userId: uid,
+      organizationId,
+      organizationName,
+      role,
+      status: membershipStatus,
+      primary: role === 'super_admin',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      source: isNewOrg ? 'bootstrapSignup_newOrg_v1' : 'bootstrapSignup_joinExisting_v1',
+    },
+    { merge: true }
+  );
+
+  batch.set(
+    membersRef,
+    {
+      uid,
+      orgId: organizationId,
+      email: actorEmail,
+      displayName: actorEmail,
+      role,
+      active: membershipStatus === 'active',
+      status: membershipStatus,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      source: isNewOrg ? 'bootstrapSignup_newOrg_v1' : 'bootstrapSignup_joinExisting_v1',
+    },
+    { merge: true }
+  );
+
+  if (!isNewOrg) {
+    const joinRequestRef = orgRef.collection('joinRequests').doc(uid);
+    batch.set(
+      joinRequestRef,
+      {
+        userId: uid,
+        email: actorEmail,
+        requestedRole: requestedRole ? 'admin' : 'operator',
+        status: 'pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'bootstrapSignup_joinExisting_v1',
+      },
+      { merge: true }
+    );
+  }
+
+  await batch.commit();
+
+  await auditLog({
+    action: 'bootstrapSignup',
+    actorUid: uid,
+    actorEmail,
+    orgId: organizationId,
+    targetUid: uid,
+    targetEmail: actorEmail,
+    meta: {
+      mode: effectiveMode,
+      membershipStatus,
+      requestedRole: requestedRole ? 'admin' : 'operator',
+    },
+  });
+
+  return {
+    ok: true,
+    organizationId,
+    organizationName,
+    membershipStatus,
+    role,
+    mode: effectiveMode,
+  };
+});
+
+export const approveJoinRequest = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = sanitizeOrgId(data?.organizationId);
+  const targetUid = String(data?.uid ?? '').trim();
+  const requestedRole: Role = normalizeRole(data?.role);
+
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!targetUid) throw httpsError('invalid-argument', 'uid del usuario a aprobar requerido.');
+
+  const isRoot = isRootClaim(context);
+  if (!isRoot) {
+    const actorMembership = await db.collection('memberships').doc(`${actorUid}_${orgId}`).get();
+    if (!actorMembership.exists) throw httpsError('permission-denied', 'No eres miembro de esa organización.');
+    const actorRole = normalizeRole(actorMembership.get('role'));
+    const actorStatus = actorMembership.get('status');
+    if (actorStatus !== 'active' || actorRole !== 'super_admin') {
+      throw httpsError('permission-denied', 'Solo super_admin activo de la organización puede aprobar.');
+    }
+  }
+
+  const userRef = db.collection('users').doc(targetUid);
+  const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+  const joinRequestRef = db.collection('organizations').doc(orgId).collection('joinRequests').doc(targetUid);
+
+  const batch = db.batch();
+
+  batch.set(
+    userRef,
+    {
+      organizationId: orgId,
+      role: requestedRole,
+      adminRequestPending: false,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      source: 'approveJoinRequest_v1',
+    },
+    { merge: true }
+  );
+
+  batch.set(
+    membershipRef,
+    {
+      userId: targetUid,
+      organizationId: orgId,
+      role: requestedRole,
+      organizationName: orgId,
+      status: 'active',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      source: 'approveJoinRequest_v1',
+    },
+    { merge: true }
+  );
+
+  batch.set(
+    memberRef,
+    {
+      uid: targetUid,
+      orgId,
+      role: requestedRole,
+      active: true,
+      status: 'active',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      source: 'approveJoinRequest_v1',
+    },
+    { merge: true }
+  );
+
+  batch.set(
+    joinRequestRef,
+    {
+      status: 'approved',
+      resolvedBy: actorUid,
+      resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+      requestedRole,
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
+
+  await auditLog({
+    action: 'approveJoinRequest',
+    actorUid,
+    actorEmail,
+    orgId,
+    targetUid,
+    meta: { role: requestedRole },
+  });
+
+  return { ok: true, organizationId: orgId, uid: targetUid, role: requestedRole };
 });
 
 /* ------------------------------

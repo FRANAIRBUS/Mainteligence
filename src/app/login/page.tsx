@@ -12,7 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useAuth, useFirestore, useUser } from '@/lib/firebase';
+import { useAuth, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
 import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
@@ -20,27 +20,26 @@ import {
   createUserWithEmailAndPassword,
 } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent, useEffect } from 'react';
-import {
-  addDoc,
-  collection,
-  doc,
-  getDocs,
-  getDoc,
-  limit,
-  query,
-  serverTimestamp,
-  setDoc,
-  writeBatch,
-  where,
-} from 'firebase/firestore';
+import { useState, type FormEvent, useEffect, useMemo } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ClientLogo } from '@/components/client-logo';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
+
+const sanitizeOrgId = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '') ||
+  DEFAULT_ORGANIZATION_ID;
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [organizationId, setOrganizationId] = useState(DEFAULT_ORGANIZATION_ID);
+  const [orgMode, setOrgMode] = useState<'new' | 'existing'>('new');
   const [requestAdminRole, setRequestAdminRole] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -56,6 +55,8 @@ export default function LoginPage() {
   const [orgBillingEmail, setOrgBillingEmail] = useState('');
   const [orgPhone, setOrgPhone] = useState('');
   const [orgTeamSize, setOrgTeamSize] = useState('');
+  const app = useFirebaseApp();
+  const functions = useMemo(() => (app ? getFunctions(app) : null), [app]);
   const auth = useAuth();
   const firestore = useFirestore();
   const router = useRouter();
@@ -73,6 +74,7 @@ export default function LoginPage() {
     setEmail('');
     setPassword('');
     setOrganizationId(DEFAULT_ORGANIZATION_ID);
+    setOrgMode('new');
     setRequestAdminRole(false);
     setOrgCheckStatus('idle');
     setOrgLookupName(null);
@@ -147,156 +149,39 @@ export default function LoginPage() {
     };
   }, [firestore, isLoginView, organizationId]);
 
-  const ensureOrganizationExists = async (sanitizedOrgId: string, userEmail: string) => {
-    if (!firestore) {
-      throw new Error('Firestore no está disponible.');
+  const callBootstrapSignup = async (userEmail: string | null) => {
+    if (!functions) {
+      throw new Error('Las funciones de Firebase no están disponibles.');
     }
 
-    // Read from the public org doc so that joining an existing org does not require membership.
-    const orgPublicRef = doc(firestore, 'organizationsPublic', sanitizedOrgId);
-    const orgPublicSnap = await getDoc(orgPublicRef);
+    const sanitizedOrgId = sanitizeOrgId(organizationId || DEFAULT_ORGANIZATION_ID);
+    const callable = httpsCallable(functions, 'bootstrapSignup');
 
-    if (orgPublicSnap.exists()) {
-      return {
-        created: false,
-        name: (orgPublicSnap.data() as { name?: string }).name ?? sanitizedOrgId,
+    const payload: Record<string, unknown> = {
+      organizationId: sanitizedOrgId,
+      mode: orgMode,
+      requestAdminRole,
+    };
+
+    if (orgMode === 'new') {
+      payload.organizationProfile = {
+        name: orgName.trim(),
+        taxId: orgTaxId.trim(),
+        country: orgCountry.trim(),
+        address: orgAddress.trim(),
+        billingEmail: orgBillingEmail.trim() || userEmail,
+        phone: orgPhone.trim(),
+        teamSize: orgTeamSize ? Number(orgTeamSize) : undefined,
       };
     }
 
-    // Backward-compat: if the public doc does not exist yet but the private org doc does,
-    // create only the public doc and DO NOT overwrite the existing organization.
-    const orgRef = doc(firestore, 'organizations', sanitizedOrgId);
-    const existingOrgSnap = await getDoc(orgRef);
-    if (existingOrgSnap.exists()) {
-      const existingName = (existingOrgSnap.data() as { name?: string })?.name ?? sanitizedOrgId;
-      await setDoc(
-        orgPublicRef,
-        {
-          organizationId: sanitizedOrgId,
-          name: existingName,
-          isActive: true,
-          updatedAt: serverTimestamp(),
-          createdAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      return { created: false, name: existingName };
-    }
-
-    if (!orgName.trim() || !orgCountry.trim()) {
-      throw new Error('Para crear una nueva organización debes indicar nombre fiscal y país.');
-    }
-
-    const normalizedTeamSize = orgTeamSize ? Number(orgTeamSize) : undefined;
-    const defaultLimits = {
-      maxUsers: Number.isFinite(normalizedTeamSize) ? normalizedTeamSize : 50,
-      monthlyTickets: 500,
-      monthlyTasks: 500,
-      storageMb: 1024,
-    };
-
-    // Create both the private org document (full data) and the public minimal org document (name/existence)
-    // in a single batch to reduce orphan states.
-    const batch = writeBatch(firestore);
-
-    batch.set(orgRef, {
-      organizationId: sanitizedOrgId,
-      name: orgName.trim(),
-      taxId: orgTaxId.trim() || null,
-      country: orgCountry.trim(),
-      address: orgAddress.trim() || null,
-      billingEmail: orgBillingEmail.trim() || userEmail,
-      contactPhone: orgPhone.trim() || null,
-      teamSize: Number.isFinite(normalizedTeamSize) ? normalizedTeamSize : null,
-      subscriptionPlan: 'trial',
-      isActive: true,
-      settings: {
-        allowGuestAccess: false,
-        maxUsers: defaultLimits.maxUsers,
-      },
-      limits: defaultLimits,
-      usage: {
-        users: 1,
-        ticketsThisMonth: 0,
-        tasksThisMonth: 0,
-        storageMb: 0,
-      },
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-
-    batch.set(
-      orgPublicRef,
-      {
-        organizationId: sanitizedOrgId,
-        name: orgName.trim(),
-        isActive: true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
-
-    await batch.commit();
-
-    return { created: true, name: orgName.trim() };
-  };
-
-  const upsertMembership = async (
-    userId: string,
-    sanitizedOrgId: string,
-    role: 'admin' | 'operario' | 'mantenimiento',
-    organizationName?: string,
-    status: 'active' | 'pending' = 'active',
-  ) => {
-    if (!firestore) {
-      return;
-    }
-
-    const membershipRef = doc(firestore, 'memberships', `${userId}_${sanitizedOrgId}`);
-    await setDoc(
-      membershipRef,
-      {
-        userId,
-        organizationId: sanitizedOrgId,
-        organizationName: organizationName ?? sanitizedOrgId,
-        role,
-        status,
-        primary: role === 'admin',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
-  };
-
-  const isFirstUserInOrganization = async (sanitizedOrgId: string) => {
-    if (!firestore) return false;
-    const existingUsers = query(
-      collection(firestore, 'users'),
-      where('organizationId', '==', sanitizedOrgId),
-      limit(1),
-    );
-    const snapshot = await getDocs(existingUsers);
-    return snapshot.empty;
-  };
-
-  const buildUserProfilePayload = (
-    sanitizedOrgId: string,
-    userEmail: string,
-    isAdmin: boolean,
-    adminRequestPending: boolean,
-  ) => {
-    return {
-      displayName: userEmail,
-      email: userEmail,
-      role: isAdmin ? 'admin' : 'operario',
-      active: true,
-      isMaintenanceLead: isAdmin,
-      organizationId: sanitizedOrgId,
-      adminRequestPending,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+    const result = await callable(payload);
+    return result.data as {
+      organizationId: string;
+      organizationName?: string;
+      membershipStatus: 'active' | 'pending';
+      role: string;
+      mode: string;
     };
   };
 
@@ -316,7 +201,17 @@ export default function LoginPage() {
       return false;
     }
 
-    if (registerStep === 3 && orgCheckStatus === 'not-found') {
+    if (!isLoginView && orgMode === 'existing' && orgCheckStatus === 'not-found') {
+      setError('Esa organización no existe. Ajusta el ID o cambia a "Crear nueva".');
+      return false;
+    }
+
+    if (!isLoginView && orgMode === 'new' && orgCheckStatus === 'exists') {
+      setError('Ese ID ya está en uso. Elige otro identificador o selecciona "Ya tengo organización".');
+      return false;
+    }
+
+    if (registerStep >= 3 && orgMode === 'new') {
       if (!orgName.trim() || !orgCountry.trim()) {
         setError('Indica al menos nombre fiscal y país para crear la organización.');
         return false;
@@ -347,50 +242,7 @@ export default function LoginPage() {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      // After creating the user in Auth, create their profile in Firestore
-      if (firestore && user) {
-        const sanitizedOrgId = organizationId?.trim() || DEFAULT_ORGANIZATION_ID;
-        const shouldCreateOrg = orgCheckStatus === 'not-found';
-        const { created, name } = await ensureOrganizationExists(sanitizedOrgId, user.email || email);
-        const isNewOrganization = shouldCreateOrg || created;
-        const isFirstUser = await isFirstUserInOrganization(sanitizedOrgId);
-        const orgDisplayName = name || sanitizedOrgId;
-        const shouldBeAdmin = isNewOrganization || isFirstUser;
-        const adminRequestPending = !shouldBeAdmin && requestAdminRole;
-
-        const userDocRef = doc(firestore, 'users', user.uid);
-        await setDoc(
-          userDocRef,
-          buildUserProfilePayload(
-            sanitizedOrgId,
-            user.email || email,
-            shouldBeAdmin,
-            adminRequestPending,
-          ),
-          {
-            merge: true,
-          },
-        );
-
-        await upsertMembership(
-          user.uid,
-          sanitizedOrgId,
-          shouldBeAdmin ? 'admin' : 'operario',
-          orgDisplayName,
-          adminRequestPending ? 'pending' : 'active',
-        );
-
-        if (adminRequestPending) {
-          const adminRequests = collection(firestore, 'adminRequests');
-          await addDoc(adminRequests, {
-            userId: user.uid,
-            email: user.email,
-            organizationId: sanitizedOrgId,
-            status: 'pending',
-            createdAt: serverTimestamp(),
-          });
-        }
-      }
+      await callBootstrapSignup(user.email || email);
       router.push('/');
     } catch (err: any) {
       setError(getFriendlyMessage(err));
@@ -411,12 +263,12 @@ export default function LoginPage() {
     }
 
     if (registerStep === 2) {
-      const nextStep = orgCheckStatus === 'not-found' ? 3 : 4;
+      const nextStep = orgMode === 'existing' ? 4 : 3;
       setRegisterStep(nextStep);
       return;
     }
 
-    if (registerStep === 3 && orgCheckStatus === 'not-found') {
+    if (registerStep === 3) {
       setRegisterStep(4);
       return;
     }
@@ -426,8 +278,8 @@ export default function LoginPage() {
 
   const handlePreviousStep = () => {
     setRegisterStep((prev) => {
-      if (prev === 4 && orgCheckStatus !== 'not-found') {
-        return 2;
+      if (prev === 4) {
+        return orgMode === 'existing' ? 2 : 3;
       }
       return Math.max(1, prev - 1);
     });
@@ -446,7 +298,7 @@ export default function LoginPage() {
   };
 
   const handleGoogleSignIn = async () => {
-    if (!auth || !firestore) return;
+    if (!auth) return;
     setError(null);
     setLoading(true);
     const provider = new GoogleAuthProvider();
@@ -468,52 +320,7 @@ export default function LoginPage() {
         // Ignore and continue normal flow.
       }
 
-      // Resolve existing profile to avoid sobrescribir organizationId en re-logins.
-      const userDocRef = doc(firestore, 'users', user.uid);
-      const existingProfile = await getDoc(userDocRef);
-      const sanitizedOrgId = organizationId?.trim() || DEFAULT_ORGANIZATION_ID;
-      const resolvedOrgId = (existingProfile.data() as { organizationId?: string } | undefined)?.organizationId
-        || sanitizedOrgId;
-
-      const shouldCreateOrg = orgCheckStatus === 'not-found' || (!existingProfile.exists() && orgCheckStatus === 'idle');
-      const { created, name } = await ensureOrganizationExists(resolvedOrgId, user.email || email);
-      const isNewOrganization = shouldCreateOrg || created;
-      const isFirstUser = await isFirstUserInOrganization(resolvedOrgId);
-      const orgDisplayName = name || orgLookupName || resolvedOrgId;
-      const shouldBeAdmin = isNewOrganization || isFirstUser;
-      const adminRequestPending = !shouldBeAdmin && requestAdminRole;
-
-      // After Google Sign-in, create or update their profile in Firestore
-      await setDoc(
-        userDocRef,
-        buildUserProfilePayload(
-          resolvedOrgId,
-          user.email || email,
-          shouldBeAdmin,
-          adminRequestPending,
-        ),
-        { merge: true },
-      );
-
-      await upsertMembership(
-        user.uid,
-        resolvedOrgId,
-        shouldBeAdmin ? 'admin' : 'operario',
-        orgDisplayName,
-        adminRequestPending ? 'pending' : 'active',
-      );
-
-      if (adminRequestPending) {
-        const adminRequests = collection(firestore, 'adminRequests');
-        await addDoc(adminRequests, {
-          userId: user.uid,
-          email: user.email,
-          organizationId: resolvedOrgId,
-          status: 'pending',
-          createdAt: serverTimestamp(),
-        });
-      }
-
+      await callBootstrapSignup(user.email || email);
       router.push('/');
     } catch (err: any) {
       setError(getFriendlyMessage(err));
@@ -595,6 +402,24 @@ export default function LoginPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="organizationId">ID de organización</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant={orgMode === 'existing' ? 'secondary' : 'outline'}
+                      size="sm"
+                      onClick={() => setOrgMode('existing')}
+                    >
+                      Ya tengo organización
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={orgMode === 'new' ? 'secondary' : 'outline'}
+                      size="sm"
+                      onClick={() => setOrgMode('new')}
+                    >
+                      Crear una nueva
+                    </Button>
+                  </div>
                   <Input
                     id="organizationId"
                     placeholder="tu-empresa"
@@ -603,7 +428,8 @@ export default function LoginPage() {
                     onChange={(e) => setOrganizationId(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Paso 1 · Identifica la organización con la que quieres trabajar.
+                    Paso 1 · Indica con qué organización quieres trabajar. Si eliges "Crear una nueva",
+                    la daremos de alta y serás super admin.
                   </p>
                 </div>
                 {registerStep >= 2 && (
@@ -630,14 +456,25 @@ export default function LoginPage() {
                   {orgCheckStatus === 'checking' && (
                     <p className="text-muted-foreground">Buscando organización...</p>
                   )}
-                  {orgCheckStatus === 'exists' && (
+                  {orgCheckStatus === 'exists' && orgMode === 'existing' && (
                     <p className="text-green-600">
-                      Organización encontrada: {orgLookupName || organizationId}. Puedes unirte o solicitar rol de admin.
+                      Organización encontrada: {orgLookupName || organizationId}. Crearemos una solicitud de acceso y
+                      no tendrás permisos hasta que un super admin te apruebe.
                     </p>
                   )}
-                  {orgCheckStatus === 'not-found' && (
+                  {orgCheckStatus === 'exists' && orgMode === 'new' && (
+                    <p className="text-destructive">
+                      Este ID ya está en uso. Cambia el identificador o selecciona "Ya tengo organización" para unirte.
+                    </p>
+                  )}
+                  {orgCheckStatus === 'not-found' && orgMode === 'new' && (
                     <p className="text-amber-600">
-                      Crearemos una nueva organización con este ID y te convertiremos en administrador principal.
+                      Crearemos una nueva organización con este ID y te convertiremos en super admin.
+                    </p>
+                  )}
+                  {orgCheckStatus === 'not-found' && orgMode === 'existing' && (
+                    <p className="text-destructive">
+                      No existe esta organización. Ajusta el ID o cambia a "Crear una nueva".
                     </p>
                   )}
                   {orgLookupError && orgCheckStatus !== 'error' && (
@@ -650,7 +487,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            {!isLoginView && registerStep >= 3 && orgCheckStatus === 'not-found' && (
+            {!isLoginView && registerStep >= 3 && orgMode === 'new' && (
               <div className="rounded-lg border bg-muted/30 p-4">
                 <div className="mb-3 space-y-1">
                   <p className="text-sm font-medium">Paso 3 · Datos de la nueva organización</p>
@@ -735,7 +572,9 @@ export default function LoginPage() {
                 <div className="mb-3 space-y-1">
                   <p className="text-sm font-medium">Paso 4 · Confirmación final</p>
                   <p className="text-xs text-muted-foreground">
-                    Crearemos tu perfil y una membresía activa. Podrás alternar de organización desde el menú de usuario.
+                    {orgMode === 'new'
+                      ? 'Crearemos tu organización y te daremos rol de super admin.'
+                      : 'Crearemos tu perfil y una solicitud de acceso; la organización debe aprobarte antes de operar.'}
                   </p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
@@ -743,17 +582,19 @@ export default function LoginPage() {
                     <p className="font-medium text-foreground">Organización</p>
                     <p className="text-muted-foreground">{orgLookupName || organizationId}</p>
                     <p className="text-xs text-muted-foreground">
-                      Estado: {orgCheckStatus === 'exists' ? 'Ya existe' : 'Se creará como nueva'}
+                      {orgMode === 'existing'
+                        ? 'Solicitud de acceso a una organización existente'
+                        : 'Se creará como nueva'}
                     </p>
                   </div>
                   <div className="space-y-1 text-sm">
                     <p className="font-medium text-foreground">Rol y permisos</p>
                     <p className="text-muted-foreground">
-                      {orgCheckStatus === 'not-found'
-                        ? 'Serás administrador principal'
+                      {orgMode === 'new'
+                        ? 'Serás super admin y tendrás menú completo'
                         : requestAdminRole
-                          ? 'Solicitud de admin pendiente + acceso como operario'
-                          : 'Acceso como operario'}
+                          ? 'Solicitud de admin pendiente; sin acceso hasta aprobación'
+                          : 'Solicitud como operador; sin acceso hasta aprobación'}
                     </p>
                   </div>
                   <div className="space-y-1 text-sm">

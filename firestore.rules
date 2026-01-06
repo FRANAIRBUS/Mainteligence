@@ -79,7 +79,7 @@ service cloud.firestore {
 
     // ---------- MEMBERSHIPS ----------
     match /memberships/{membershipId} {
-      allow get: if isSignedIn() && organizationIdMatchesResource();
+      allow get: if isSignedIn() && (organizationIdMatchesResource() || request.auth.uid == resource.data.userId);
       allow list: if false;
 
       // roles NO se tocan desde cliente
@@ -104,6 +104,12 @@ service cloud.firestore {
         allow get, list: if isMemberOfOrg(organizationId);
 
         // NO escribir desde cliente (ni roles ni altas): lo hace servidor / migraciones / CF
+        allow create, update, delete: if false;
+      }
+
+      match /joinRequests/{requestId} {
+        allow get: if isSignedIn() && (request.auth.uid == requestId || isMemberOfOrg(organizationId));
+        allow list: if false;
         allow create, update, delete: if false;
       }
     }
