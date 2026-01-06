@@ -6,9 +6,63 @@ service cloud.firestore {
 
     /* ------------------------------
        Helpers
+       NOTE:
+       - v11 data model was single-org using users/{uid}.organizationId
+       - v13 data model introduces memberships + organizations/{orgId}/members/{uid}
+       - Existing projects may have:
+         (a) memberships with random IDs (legacy)
+         (b) membership docs with {active:true} instead of {status:"active"}
+         (c) users/{uid}.organizationId populated (legacy primary org)
+       These helpers intentionally accept ALL compatible variants so that v13
+       code can read tenant data (tasks/incidents/sites/etc.) without breaking
+       existing datasets.
     --------------------------------- */
     function isSignedIn() { return request.auth != null; }
 
+    // --- Legacy profile (single-org)
+    function userProfile(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function legacyOrgId() {
+      return isSignedIn() ? (userProfile(request.auth.uid).data.organizationId) : null;
+    }
+
+    function legacyRole() {
+      return isSignedIn() ? (userProfile(request.auth.uid).data.role) : null;
+    }
+
+    function legacyActiveInOrg(orgId) {
+      return isSignedIn()
+        && legacyOrgId() != null
+        && legacyOrgId() == orgId
+        && (userProfile(request.auth.uid).data.active == true || userProfile(request.auth.uid).data.active == null);
+    }
+
+    // --- Org members (preferred, deterministic id = uid)
+    function memberDoc(uid, orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
+    }
+
+    function hasMember(orgId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+    }
+
+    function memberStatus(orgId) {
+      return hasMember(orgId)
+        ? (
+            memberDoc(request.auth.uid, orgId).data.status != null
+              ? memberDoc(request.auth.uid, orgId).data.status
+              : (memberDoc(request.auth.uid, orgId).data.active == true ? "active" : "pending")
+          )
+        : null;
+    }
+
+    function memberRole(orgId) {
+      return hasMember(orgId) ? (memberDoc(request.auth.uid, orgId).data.role) : null;
+    }
+
+    // --- Membership doc (preferred deterministic id = uid_orgId; kept for compatibility)
     function membershipId(uid, orgId) {
       return uid + "_" + orgId;
     }
@@ -17,32 +71,51 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/memberships/$(membershipId(uid, orgId)));
     }
 
-    function hasMembership(orgId) {
+    function hasMembershipById(orgId) {
       return isSignedIn() && exists(/databases/$(database)/documents/memberships/$(membershipId(request.auth.uid, orgId)));
     }
 
-    function membershipStatus(orgId) {
-      return hasMembership(orgId) ? (membershipDoc(request.auth.uid, orgId).data.status) : null;
+    function membershipStatusById(orgId) {
+      return hasMembershipById(orgId)
+        ? (
+            membershipDoc(request.auth.uid, orgId).data.status != null
+              ? membershipDoc(request.auth.uid, orgId).data.status
+              : (membershipDoc(request.auth.uid, orgId).data.active == true ? "active" : "pending")
+          )
+        : null;
     }
 
-    function membershipRole(orgId) {
-      return hasMembership(orgId) ? (membershipDoc(request.auth.uid, orgId).data.role) : null;
+    function membershipRoleById(orgId) {
+      return hasMembershipById(orgId) ? (membershipDoc(request.auth.uid, orgId).data.role) : null;
     }
 
+    // --- Unified checks
     function isActiveMember(orgId) {
-      return isSignedIn() && hasMembership(orgId) && membershipStatus(orgId) == "active";
+      return isSignedIn() && (
+        (hasMember(orgId) && memberStatus(orgId) == "active")
+        || (hasMembershipById(orgId) && membershipStatusById(orgId) == "active")
+        || legacyActiveInOrg(orgId)
+      );
+    }
+
+    function roleInOrg(orgId) {
+      return hasMember(orgId)
+        ? memberRole(orgId)
+        : (hasMembershipById(orgId)
+            ? membershipRoleById(orgId)
+            : (legacyOrgId() == orgId ? legacyRole() : null));
     }
 
     function isSuperAdminInOrg(orgId) {
-      return isActiveMember(orgId) && membershipRole(orgId) == "super_admin";
+      return isActiveMember(orgId) && roleInOrg(orgId) == "super_admin";
     }
 
     function isAdminInOrg(orgId) {
-      return isActiveMember(orgId) && (membershipRole(orgId) == "admin" || membershipRole(orgId) == "super_admin");
+      return isActiveMember(orgId) && (roleInOrg(orgId) == "admin" || roleInOrg(orgId) == "super_admin");
     }
 
     function isManagerInOrg(orgId) {
-      return isActiveMember(orgId) && (membershipRole(orgId) == "super_admin" || membershipRole(orgId) == "admin" || membershipRole(orgId) == "maintenance");
+      return isActiveMember(orgId) && (roleInOrg(orgId) == "super_admin" || roleInOrg(orgId) == "admin" || roleInOrg(orgId) == "maintenance");
     }
 
     function organizationIdUnchanged() {
@@ -59,7 +132,13 @@ service cloud.firestore {
        - Org changes are performed server-side via Cloud Function.
     --------------------------------- */
     match /users/{userId} {
-      allow read: if isSignedIn() && request.auth.uid == userId;
+      // Needed by v13 UI (tasks/incidents assignment, name maps, etc.)
+      // Allow reading user docs within the caller's active organization.
+      // Note: client queries are always scoped with where('organizationId'=='<activeOrgId>').
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId ||
+        (resource.data.organizationId != null && isActiveMember(resource.data.organizationId))
+      );
 
       allow create: if isSignedIn() && request.auth.uid == userId;
 
