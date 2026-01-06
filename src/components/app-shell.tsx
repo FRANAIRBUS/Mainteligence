@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { SidebarTrigger, Sidebar, SidebarContent, SidebarHeader, SidebarInset } from '@/components/ui/sidebar';
 import { ClientLogo } from '@/components/client-logo';
 import { MainNav } from '@/components/main-nav';
+import { MobileBottomNav } from '@/components/mobile-bottom-nav';
 import { OrgSwitcher } from '@/components/org-switcher';
 import { UserNav } from '@/components/user-nav';
 import { useUser } from '@/lib/firebase/auth/use-user';
@@ -110,7 +111,8 @@ export function AppShell({ children, title, description, action }: AppShellProps
             <UserNav />
           </div>
         </header>
-        <main className="flex-1 p-4 sm:p-6 md:p-8">{children}</main>
+        <main className="flex-1 p-4 pb-24 sm:p-6 sm:pb-28 md:p-8 md:pb-10">{children}</main>
+        <MobileBottomNav />
       </SidebarInset>
     </div>
   );
