@@ -84,7 +84,9 @@ export function AppShell({ children, title, description, action }: AppShellProps
         <SidebarHeader className="border-b p-4">
           <div className="flex items-center justify-between gap-2">
             <ClientLogo />
-            <UserNav />
+            <div className="hidden md:block">
+              <UserNav />
+            </div>
           </div>
           <div className="mt-4">
             <OrgSwitcher />
