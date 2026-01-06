@@ -1,6 +1,7 @@
 "use client";
 
 import { SidebarGroup, SidebarGroupLabel } from "@/components/ui/sidebar";
+
 import {
   LayoutGrid,
   ClipboardList,
@@ -16,12 +17,6 @@ import {
   HardHat,
   type LucideIcon,
 } from "lucide-react";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser } from "@/lib/firebase";
@@ -47,13 +42,13 @@ type NavGroup = {
 export function MainNav() {
   const pathname = usePathname();
   const { role, loading: userLoading } = useUser();
-  const { isMobile, setOpenMobile, openMobile } = useSidebar();
+  const { isMobile, setOpenMobile } = useSidebar();
 
   useEffect(() => {
-    if (!isMobile || !openMobile) return;
+    if (!isMobile) return;
 
     setOpenMobile(false);
-  }, [pathname, isMobile, openMobile, setOpenMobile]);
+  }, [pathname, isMobile, setOpenMobile]);
 
   const allMenuItems: NavGroup[] = useMemo(() => [
     {
@@ -121,14 +116,6 @@ export function MainNav() {
 
   }, [role, allMenuItems]);
 
-  const activeGroup = useMemo(
-    () =>
-      menuItems.find((group) => group.items.some((item) => item.active))?.label ||
-      menuItems[0]?.label ||
-      "menu",
-    [menuItems]
-  );
-
   if (userLoading) {
     return (
       <div className="flex w-full flex-col gap-2 p-2">
@@ -179,39 +166,41 @@ export function MainNav() {
         ))}
       </div>
 
-      <Accordion
-        type="single"
-        collapsible
-        defaultValue={activeGroup}
-        className="divide-y rounded-2xl border bg-card shadow-sm md:hidden"
-      >
+      <div className="md:hidden space-y-4">
         {menuItems.map((group) => (
-          <AccordionItem key={group.label} value={group.label} className="border-none">
-            <AccordionTrigger className="px-4 py-3 text-left text-sm font-semibold text-foreground">
-              {group.label}
-            </AccordionTrigger>
-            <AccordionContent className="px-3 pb-3">
-              <div className="grid gap-2">
-                {group.items.map((item) => (
-                  <Link
-                    key={item.label}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-xl border px-3 py-2 text-sm font-medium transition",
-                      item.active
-                        ? "border-primary/40 bg-primary/10 text-primary shadow-sm"
-                        : "border-transparent bg-muted/30 text-muted-foreground hover:border-muted hover:bg-muted/60"
-                    )}
-                  >
+          <div key={group.label} className="rounded-2xl border bg-card shadow-sm">
+            <div className="flex items-center justify-between px-4 py-3">
+              <p className="text-sm font-semibold text-foreground">{group.label}</p>
+              <span className="text-xs font-medium text-muted-foreground">{group.items.length} opciones</span>
+            </div>
+            <div className="grid gap-2 px-3 pb-3 sm:grid-cols-2">
+              {group.items.map((item) => (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  onClick={() => {
+                    if (isMobile) {
+                      setOpenMobile(false);
+                    }
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl border px-3 py-3 text-sm font-semibold transition",
+                    item.active
+                      ? "border-primary/40 bg-primary/10 text-primary shadow-sm"
+                      : "border-transparent bg-muted/30 text-muted-foreground hover:border-muted hover:bg-muted/60"
+                  )}
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/70 text-foreground">
                     <item.icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-              </div>
-            </AccordionContent>
-          </AccordionItem>
+                  </span>
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {item.active && <span className="text-[10px] font-semibold uppercase text-primary">activo</span>}
+                </Link>
+              ))}
+            </div>
+          </div>
         ))}
-      </Accordion>
+      </div>
     </div>
   );
 }
