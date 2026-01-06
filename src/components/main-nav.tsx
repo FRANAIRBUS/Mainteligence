@@ -46,13 +46,13 @@ type NavGroup = {
 export function MainNav() {
   const pathname = usePathname();
   const { user, role, loading: userLoading } = useUser();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, openMobile } = useSidebar();
 
   useEffect(() => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-  }, [pathname, isMobile, setOpenMobile]);
+    if (!isMobile || !openMobile) return;
+
+    setOpenMobile(false);
+  }, [pathname, isMobile, openMobile, setOpenMobile]);
   const allMenuItems: NavGroup[] = useMemo(() => [
     {
       label: "General",
