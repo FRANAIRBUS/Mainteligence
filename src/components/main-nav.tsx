@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarGroup,
-  SidebarGroupLabel,
-} from "@/components/ui/sidebar";
+import { SidebarGroup, SidebarGroupLabel } from "@/components/ui/sidebar";
 import {
   LayoutGrid,
   ClipboardList,
@@ -22,12 +16,19 @@ import {
   HardHat,
   type LucideIcon,
 } from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser } from "@/lib/firebase";
 import { useEffect, useMemo } from "react";
 import { normalizeRole } from "@/lib/rbac";
 import { useSidebar } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 
 type NavItem = {
   href: string;
@@ -45,7 +46,7 @@ type NavGroup = {
 
 export function MainNav() {
   const pathname = usePathname();
-  const { user, role, loading: userLoading } = useUser();
+  const { role, loading: userLoading } = useUser();
   const { isMobile, setOpenMobile, openMobile } = useSidebar();
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export function MainNav() {
 
     setOpenMobile(false);
   }, [pathname, isMobile, openMobile, setOpenMobile]);
+
   const allMenuItems: NavGroup[] = useMemo(() => [
     {
       label: "General",
@@ -119,6 +121,14 @@ export function MainNav() {
 
   }, [role, allMenuItems]);
 
+  const activeGroup = useMemo(
+    () =>
+      menuItems.find((group) => group.items.some((item) => item.active))?.label ||
+      menuItems[0]?.label ||
+      "menu",
+    [menuItems]
+  );
+
   if (userLoading) {
     return (
       <div className="flex w-full flex-col gap-2 p-2">
@@ -139,28 +149,69 @@ export function MainNav() {
   }
 
   return (
-    <div className="flex w-full flex-col gap-2">
-      {menuItems.map((group) => (
-        <SidebarGroup key={group.label}>
-          <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-          <SidebarMenu>
-            {group.items.map((item) => (
-              <SidebarMenuItem key={item.label}>
-                <SidebarMenuButton
-                  asChild
-                  isActive={item.active}
-                  tooltip={item.label}
+    <div className="flex w-full flex-col gap-3">
+      <div className="hidden flex-col gap-3 md:flex">
+        {menuItems.map((group) => (
+          <SidebarGroup key={group.label}>
+            <div className="flex items-center justify-between px-1">
+              <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground">
+                {group.label}
+              </SidebarGroupLabel>
+            </div>
+            <div className="mt-2 grid gap-2">
+              {group.items.map((item) => (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl border px-3 py-2 text-sm font-medium transition",
+                    item.active
+                      ? "border-primary/40 bg-primary/10 text-primary shadow-sm"
+                      : "border-transparent bg-muted/30 text-muted-foreground hover:border-muted hover:bg-muted/60"
+                  )}
                 >
-                  <Link href={item.href}>
-                    <item.icon />
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          </SidebarGroup>
+        ))}
+      </div>
+
+      <Accordion
+        type="single"
+        collapsible
+        defaultValue={activeGroup}
+        className="divide-y rounded-2xl border bg-card shadow-sm md:hidden"
+      >
+        {menuItems.map((group) => (
+          <AccordionItem key={group.label} value={group.label} className="border-none">
+            <AccordionTrigger className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+              {group.label}
+            </AccordionTrigger>
+            <AccordionContent className="px-3 pb-3">
+              <div className="grid gap-2">
+                {group.items.map((item) => (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-xl border px-3 py-2 text-sm font-medium transition",
+                      item.active
+                        ? "border-primary/40 bg-primary/10 text-primary shadow-sm"
+                        : "border-transparent bg-muted/30 text-muted-foreground hover:border-muted hover:bg-muted/60"
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
                     <span>{item.label}</span>
                   </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
-      ))}
+                ))}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
     </div>
   );
 }
