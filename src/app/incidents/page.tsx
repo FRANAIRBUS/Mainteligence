@@ -153,7 +153,7 @@ function IncidentsTable({
 
 
 export default function IncidentsPage() {
-  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
+  const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const router = useRouter();
 
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
@@ -162,10 +162,10 @@ export default function IncidentsPage() {
 
   // Phase 1: Wait for user authentication to complete.
   useEffect(() => {
-    if (isLoaded && !user) {
+    if (!userLoading && !user) {
       router.push('/login');
     }
-  }, [isLoaded, user, router]);
+  }, [userLoading, user, router]);
   
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
@@ -173,7 +173,7 @@ export default function IncidentsPage() {
 
   // Phase 3: Construct the tickets query only when user and userProfile are ready.
   const ticketsConstraints = useMemo(() => {
-    if (!user || !userProfile || (!organizationId && !isSuperAdmin) || !normalizedRole) return null;
+    if (userLoading || !user || !userProfile || (!organizationId && !isSuperAdmin) || !normalizedRole) return null;
 
     if (isSuperAdmin) {
       return [] as const;
@@ -259,7 +259,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  const initialLoading = !isLoaded;
+  const initialLoading = userLoading;
   
   if (initialLoading) {
     return (

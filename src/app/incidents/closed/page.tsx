@@ -56,7 +56,7 @@ type DateFilter = "todas" | "hoy" | "semana" | "mes";
 export default function ClosedIncidentsPage() {
   const router = useRouter();
   const firestore = useFirestore();
-  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
+  const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const { toast } = useToast();
 
   const normalizedRole = normalizeRole(userProfile?.role);
@@ -68,10 +68,10 @@ export default function ClosedIncidentsPage() {
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
   const ticketsConstraints = useMemo(() => {
-    if (!user || !userProfile) return null;
+    if (userLoading || !user || !userProfile) return null;
     // Cargamos el histórico de la organización y filtramos por permisos en el cliente.
     return [where("status", "==", "Cerrada")];
-  }, [user, userProfile]);
+  }, [user, userLoading, userProfile]);
 
   const { data: tickets, loading } = useCollectionQuery<Ticket>(
     ticketsConstraints ? "tickets" : null,
@@ -88,10 +88,10 @@ export default function ClosedIncidentsPage() {
   const [userFilter, setUserFilter] = useState("todas");
 
   useEffect(() => {
-    if (isLoaded && !user) {
+    if (!userLoading && !user) {
       router.push("/login");
     }
-  }, [isLoaded, router, user]);
+  }, [userLoading, router, user]);
 
   const filteredTickets = useMemo(() => {
     const now = new Date();
@@ -218,7 +218,7 @@ export default function ClosedIncidentsPage() {
     }
   };
 
-  const isLoading = loading || !isLoaded;
+  const isLoading = loading || userLoading;
   const totalColumns = isAdmin ? 7 : 6;
 
   return (
