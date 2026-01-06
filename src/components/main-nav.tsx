@@ -25,8 +25,9 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser } from "@/lib/firebase";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { normalizeRole } from "@/lib/rbac";
+import { useSidebar } from "@/components/ui/sidebar";
 
 type NavItem = {
   href: string;
@@ -45,6 +46,13 @@ type NavGroup = {
 export function MainNav() {
   const pathname = usePathname();
   const { user, role, loading: userLoading } = useUser();
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  useEffect(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  }, [pathname, isMobile, setOpenMobile]);
   const allMenuItems: NavGroup[] = useMemo(() => [
     {
       label: "General",
@@ -142,6 +150,11 @@ export function MainNav() {
                   asChild
                   isActive={item.active}
                   tooltip={item.label}
+                  onClick={() => {
+                    if (isMobile) {
+                      setOpenMobile(false);
+                    }
+                  }}
                 >
                   <Link href={item.href}>
                     <item.icon />
