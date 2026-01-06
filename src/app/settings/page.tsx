@@ -42,7 +42,7 @@ import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase
 import { ClientLogo } from '@/components/client-logo';
 import { Progress } from '@/components/ui/progress';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
-import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
+import { normalizeRole } from '@/lib/rbac';
 
 
 interface AppSettings {
@@ -59,7 +59,7 @@ export default function SettingsPage() {
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   const normalizedRole = normalizeRole(userProfile?.role);
-  const isAdmin = isAdminLikeRole(normalizedRole);
+  const isSuperAdmin = normalizedRole === 'super_admin';
 
   const { data: settings, loading: settingsLoading } = useDoc<AppSettings>('settings/app');
 
@@ -162,11 +162,11 @@ export default function SettingsPage() {
   };
 
   const handleUpload = async () => {
-    if (!selectedFile || !storage || !firestore || !isAdmin || !resolvedOrganizationId) {
+    if (!selectedFile || !storage || !firestore || !isSuperAdmin || !resolvedOrganizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'No se puede subir el logo. Asegúrate de ser administrador, tener organizationId y de haber seleccionado un archivo.',
+        description: 'No se puede subir el logo. Asegúrate de ser super administrador, tener organizationId y de haber seleccionado un archivo.',
       });
       return;
     }
@@ -288,7 +288,7 @@ export default function SettingsPage() {
             <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl mb-8">
               Ajustes
             </h1>
-            {isAdmin ? (
+            {isSuperAdmin ? (
                 <Card>
                 <CardHeader>
                     <CardTitle>Ajustes de la Empresa</CardTitle>
@@ -341,15 +341,15 @@ export default function SettingsPage() {
                 </Card>
             ) : (
                  <Card className="border-destructive/50">
-                    <CardHeader className="flex flex-row items-center gap-4">
-                         <AlertTriangle className="h-8 w-8 text-destructive" />
-                         <div>
-                            <CardTitle>Acceso Denegado</CardTitle>
-                            <CardDescription>
-                                Solo los administradores pueden modificar los ajustes de la empresa.
-                            </CardDescription>
-                        </div>
-                    </CardHeader>
+                 <CardHeader className="flex flex-row items-center gap-4">
+                      <AlertTriangle className="h-8 w-8 text-destructive" />
+                      <div>
+                         <CardTitle>Acceso Denegado</CardTitle>
+                         <CardDescription>
+                                Solo el super administrador puede modificar los ajustes de la empresa.
+                          </CardDescription>
+                      </div>
+                  </CardHeader>
                 </Card>
             )}
           </div>

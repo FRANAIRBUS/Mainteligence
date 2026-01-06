@@ -26,7 +26,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUser } from "@/lib/firebase";
 import { useMemo } from "react";
-import { isAdminLikeRole, normalizeRole } from "@/lib/rbac";
+import { normalizeRole } from "@/lib/rbac";
 
 type NavItem = {
   href: string;
@@ -80,24 +80,24 @@ export function MainNav() {
         { href: "/locations", label: "Ubicaciones", icon: Building, active: pathname.startsWith("/locations") },
         { href: "/departments", label: "Departamentos", icon: Archive, active: pathname.startsWith("/departments") },
         { href: "/assets", label: "Activos", icon: HardHat, active: pathname.startsWith("/assets") },
-        { href: "/users", label: "Usuarios y Roles", icon: UserCog, active: pathname.startsWith("/users") },
       ],
     },
     {
       label: "Configuración",
-      roles: ['super_admin', 'admin', 'maintenance'],
+      roles: ['super_admin'],
       items: [
-        { href: "/settings", label: "Ajustes de la Empresa", icon: Settings, active: pathname.startsWith("/settings") },
-        { href: "/smart-tagging", label: "Asistente IA", icon: Tags, active: pathname.startsWith("/smart-tagging") },
+        { href: "/settings", label: "Ajustes de la Empresa", icon: Settings, active: pathname.startsWith("/settings"), roles: ['super_admin'] },
+        { href: "/users", label: "Usuarios y Roles", icon: UserCog, active: pathname.startsWith("/users"), roles: ['super_admin'] },
+        { href: "/smart-tagging", label: "Asistente IA", icon: Tags, active: pathname.startsWith("/smart-tagging"), roles: ['super_admin'] },
       ],
     }
   ], [pathname]);
 
   const menuItems = useMemo(() => {
     const normalizedRole = normalizeRole(role) || 'operator';
-    const isAdminLike = isAdminLikeRole(normalizedRole);
+    const isSuperAdmin = normalizedRole === 'super_admin';
 
-    if (isAdminLike) {
+    if (isSuperAdmin) {
       return allMenuItems;
     }
 
