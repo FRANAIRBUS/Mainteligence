@@ -49,10 +49,10 @@ export function MainNav() {
   const { isMobile, setOpenMobile, openMobile } = useSidebar();
 
   useEffect(() => {
-    if (!isMobile || !openMobile) return;
+    if (!isMobile) return;
 
     setOpenMobile(false);
-  }, [pathname, isMobile, openMobile, setOpenMobile]);
+  }, [pathname, isMobile, setOpenMobile]);
   const allMenuItems: NavGroup[] = useMemo(() => [
     {
       label: "General",
