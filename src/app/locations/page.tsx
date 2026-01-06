@@ -1,15 +1,6 @@
 'use client';
 
-import { MainNav } from '@/components/main-nav';
-import { UserNav } from '@/components/user-nav';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from '@/components/ui/sidebar';
+import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
 import type { Site, User } from '@/lib/firebase/models';
@@ -53,7 +44,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
 
 function LocationsTable({
@@ -204,65 +194,45 @@ export default function LocationsPage() {
   const tableIsLoading = sitesLoading;
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader className="p-4 text-center">
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <DynamicClientLogo />
+    <AppShell
+      title="Ubicaciones"
+      description="Gestiona todas las ubicaciones físicas de la empresa."
+      action={
+        canManage ? (
+          <Button onClick={() => setIsAddLocationOpen(true)}>Añadir Ubicación</Button>
+        ) : null
+      }
+    >
+      {canManage ? (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Ubicaciones</CardTitle>
+              <CardDescription className="mt-2">
+                Gestiona todas las ubicaciones físicas de la empresa.
+              </CardDescription>
             </div>
-            <a href="/" className="flex flex-col items-center gap-2">
-                <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-                Maintelligence
-                </span>
-            </a>
-        </SidebarHeader>
-        <SidebarContent>
-          <MainNav />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
-          <div className="flex w-full items-center justify-end">
-            <UserNav />
-          </div>
-        </header>
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
-          {canManage ? (
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <CardTitle>Ubicaciones</CardTitle>
-                      <CardDescription className="mt-2">
-                        Gestiona todas las ubicaciones físicas de la empresa.
-                      </CardDescription>
-                    </div>
-                    {canManage && <Button onClick={() => setIsAddLocationOpen(true)}>Añadir Ubicación</Button>}
-                  </div>
-              </CardHeader>
-              <CardContent>
-                <LocationsTable 
-                  sites={sites} 
-                  loading={tableIsLoading} 
-                  onEdit={handleEditRequest} 
-                  onDelete={handleDeleteRequest} 
-                  canEdit={canManage}
-                />
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="mt-8">
-              <CardContent className="pt-6">
-                <div className="text-center text-muted-foreground">
-                  <p>No tienes permiso para ver esta página.</p>
-                  <p className="text-sm">Por favor, contacta a un administrador.</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </main>
-      </SidebarInset>
+          </CardHeader>
+          <CardContent>
+            <LocationsTable
+              sites={sites}
+              loading={tableIsLoading}
+              onEdit={handleEditRequest}
+              onDelete={handleDeleteRequest}
+              canEdit={canManage}
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="mt-8">
+          <CardContent className="pt-6">
+            <div className="text-center text-muted-foreground">
+              <p>No tienes permiso para ver esta página.</p>
+              <p className="text-sm">Por favor, contacta a un administrador.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {canManage && <AddLocationDialog
         open={isAddLocationOpen}
         onOpenChange={setIsAddLocationOpen}
@@ -287,6 +257,6 @@ export default function LocationsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </SidebarProvider>
+    </AppShell>
   );
 }
