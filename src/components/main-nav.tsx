@@ -49,10 +49,10 @@ export function MainNav() {
   const { isMobile, setOpenMobile, openMobile } = useSidebar();
 
   useEffect(() => {
-    if (!isMobile) return;
+    if (!isMobile || !openMobile) return;
 
     setOpenMobile(false);
-  }, [pathname, isMobile, setOpenMobile]);
+  }, [pathname, isMobile, openMobile, setOpenMobile]);
   const allMenuItems: NavGroup[] = useMemo(() => [
     {
       label: "General",
@@ -150,11 +150,6 @@ export function MainNav() {
                   asChild
                   isActive={item.active}
                   tooltip={item.label}
-                  onClick={() => {
-                    if (isMobile) {
-                      setOpenMobile(false);
-                    }
-                  }}
                 >
                   <Link href={item.href}>
                     <item.icon />
