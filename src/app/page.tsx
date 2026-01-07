@@ -122,7 +122,7 @@ export default function Home() {
               nextInspections.map((task) => (
                 <div
                   key={task.id}
-                  className="flex items-start justify-between rounded-lg border p-3"
+                  className="flex items-start justify-between rounded-lg border border-sky-500/20 bg-sky-500/10 p-3"
                 >
                   <div className="space-y-1">
                     <p className="font-medium">{task.title}</p>
