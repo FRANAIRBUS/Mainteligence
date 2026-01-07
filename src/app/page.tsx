@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
 import { AppShell } from "@/components/app-shell";
-import { useCollection } from "@/lib/firebase";
+import { ClientLogo } from "@/components/client-logo";
+import { useCollection, useUser } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 
 const priorityLabel: Record<string, string> = {
@@ -25,7 +26,14 @@ const statusLabel: Record<string, string> = {
 };
 
 export default function Home() {
+  const { activeMembership, organizationId } = useUser();
   const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
+
+  const organizationLabel =
+    activeMembership?.organizationName ??
+    activeMembership?.organizationId ??
+    organizationId ??
+    "Organización";
 
   const pendingTasks = tasks.filter((task) => task.status === "pendiente");
   const completedTasks = tasks.filter((task) => task.status === "completada");
