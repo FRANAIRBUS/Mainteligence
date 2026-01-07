@@ -120,7 +120,10 @@ export default function Home() {
             )}
             {!loading &&
               nextInspections.map((task) => (
-                <div key={task.id} className="flex items-start justify-between rounded-lg border p-3">
+                <div
+                  key={task.id}
+                  className="flex items-start justify-between rounded-lg border border-white/30 bg-transparent p-3"
+                >
                   <div className="space-y-1">
                     <p className="font-medium">{task.title}</p>
                     <p className="text-sm text-muted-foreground line-clamp-2">
