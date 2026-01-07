@@ -6,14 +6,6 @@ import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
 import type { Site, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -68,61 +60,44 @@ function LocationsTable({
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Nombre</TableHead>
-          <TableHead>Código</TableHead>
-          {canEdit && (
-            <TableHead>
-              <span className="sr-only">Acciones</span>
-            </TableHead>
-          )}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {sites.length > 0 ? (
-          sites.map((site) => (
-            <TableRow key={site.id}>
-              <TableCell className="font-medium">{site.name}</TableCell>
-              <TableCell>{site.code}</TableCell>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {sites.length > 0 ? (
+        sites.map((site) => (
+          <div key={site.id} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-base font-semibold">{site.name}</p>
+                <p className="text-sm text-muted-foreground">Código: {site.code}</p>
+              </div>
               {canEdit && (
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        aria-haspopup="true"
-                        size="icon"
-                        variant="ghost"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Menú de acciones</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                      <DropdownMenuItem onClick={() => onEdit(site)}>Editar</DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-red-600"
-                        onClick={() => onDelete(site.id)}
-                      >
-                        Eliminar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-haspopup="true" size="icon" variant="ghost">
+                      <MoreHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Menú de acciones</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => onEdit(site)}>Editar</DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-600"
+                      onClick={() => onDelete(site.id)}
+                    >
+                      Eliminar
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
-            </TableRow>
-          ))
-        ) : (
-          <TableRow>
-            <TableCell colSpan={canEdit ? 3 : 2} className="h-24 text-center">
-              No se encontraron ubicaciones.
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-    </Table>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+          No se encontraron ubicaciones.
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -2,18 +2,10 @@
 
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useDoc, useCollectionQuery } from '@/lib/firebase';
-import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
+import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
+import type { Ticket, Site, Department, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -42,105 +34,6 @@ const incidentPriorityOrder: Record<Ticket['priority'], number> = {
   Media: 1,
   Baja: 0,
 };
-
-function IncidentsTable({
-  tickets,
-  sites,
-  departments,
-  loading,
-  onViewDetails,
-  onEdit,
-  currentUser,
-  userId,
-}: {
-  tickets: Ticket[];
-  sites: Record<string, string>;
-  departments: Record<string, string>;
-  loading: boolean;
-  onViewDetails: (ticketId: string) => void;
-  onEdit: (ticket: Ticket) => void;
-  currentUser?: User | null;
-  userId?: string;
-}) {
-  if (loading) {
-    return (
-      <div className="flex h-64 w-full items-center justify-center">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>ID</TableHead>
-          <TableHead>Título</TableHead>
-          <TableHead>Estado</TableHead>
-          <TableHead>Prioridad</TableHead>
-          <TableHead>Ubicación</TableHead>
-          <TableHead>Departamento</TableHead>
-          <TableHead>Creado</TableHead>
-          <TableHead>
-            <span className="sr-only">Acciones</span>
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {tickets.length > 0 ? (
-          tickets.map((ticket) => {
-            const permissions = getTicketPermissions(ticket, currentUser ?? null, userId ?? null);
-            return (
-              <TableRow key={ticket.id} className="cursor-pointer" onClick={() => onViewDetails(ticket.id)}>
-                <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0,6)}</TableCell>
-                <TableCell>{ticket.title}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">{ticket.status}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{ticket.priority}</Badge>
-                </TableCell>
-                <TableCell>{sites[ticket.siteId] || 'N/A'}</TableCell>
-                <TableCell>{departments[ticket.departmentId] || 'N/A'}</TableCell>
-                <TableCell>
-                  {ticket.createdAt?.toDate ? ticket.createdAt.toDate().toLocaleDateString() : 'N/A'}
-                </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        aria-haspopup="true"
-                        size="icon"
-                        variant="ghost"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Menú de acciones</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                      <DropdownMenuItem onClick={() => onViewDetails(ticket.id)}>Ver Detalles</DropdownMenuItem>
-                      {permissions.canEditContent && (
-                        <DropdownMenuItem onClick={() => onEdit(ticket)}>Editar</DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            );
-          })
-        ) : (
-          <TableRow>
-            <TableCell colSpan={8} className="h-24 text-center">
-              No se encontraron incidencias.
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-    </Table>
-  );
-}
-
 
 export default function IncidentsPage() {
   const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
@@ -278,17 +171,105 @@ export default function IncidentsPage() {
             <CardDescription>Consulta, edita y prioriza incidencias en curso.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <IncidentsTable
-                tickets={sortedTickets}
-                sites={sitesMap}
-                departments={departmentsMap}
-                loading={tableDataIsLoading}
-                onViewDetails={handleViewDetails}
-                onEdit={handleEditRequest}
-                currentUser={userProfile}
-                userId={user?.uid}
-              />
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {tableDataIsLoading && (
+                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+                  <Icons.spinner className="h-4 w-4 animate-spin" />
+                  Cargando incidencias...
+                </div>
+              )}
+              {!tableDataIsLoading && sortedTickets.length === 0 && (
+                <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+                  No se encontraron incidencias.
+                </div>
+              )}
+              {!tableDataIsLoading &&
+                sortedTickets.map((ticket) => {
+                  const permissions = getTicketPermissions(ticket, userProfile ?? null, user?.uid ?? null);
+                  const createdAtLabel = ticket.createdAt?.toDate
+                    ? ticket.createdAt.toDate().toLocaleDateString()
+                    : 'N/A';
+                  const siteLabel = sitesMap[ticket.siteId] || 'N/A';
+                  const departmentLabel = departmentsMap[ticket.departmentId] || 'N/A';
+                  const ticketIdLabel = ticket.displayId || ticket.id.substring(0, 6);
+                  return (
+                    <div
+                      key={ticket.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleViewDetails(ticket.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          handleViewDetails(ticket.id);
+                        }
+                      }}
+                      className="block rounded-lg border bg-card p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-base font-semibold text-foreground">{ticket.title}</p>
+                            <Badge variant="outline">{ticket.status}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground line-clamp-2">
+                            {ticket.description || 'Sin descripción'}
+                          </p>
+                          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            <span>ID: {ticketIdLabel}</span>
+                            <span>Ubicación: {siteLabel}</span>
+                            <span>Departamento: {departmentLabel}</span>
+                            <span>Creado: {createdAtLabel}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={ticket.priority === 'Crítica' ? 'destructive' : 'secondary'}>
+                            Prioridad {ticket.priority}
+                          </Badge>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                aria-haspopup="true"
+                                size="icon"
+                                variant="ghost"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                }}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span className="sr-only">Menú de acciones</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                              <DropdownMenuItem
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  handleViewDetails(ticket.id);
+                                }}
+                              >
+                                Ver Detalles
+                              </DropdownMenuItem>
+                              {permissions.canEditContent && (
+                                <DropdownMenuItem
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleEditRequest(ticket);
+                                  }}
+                                >
+                                  Editar
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </CardContent>
         </Card>

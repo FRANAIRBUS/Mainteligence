@@ -2,14 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -219,8 +211,6 @@ export default function ClosedIncidentsPage() {
   };
 
   const isLoading = loading || userLoading;
-  const totalColumns = isAdmin ? 7 : 6;
-
   return (
     <AppShell
       title="Incidencias cerradas"
@@ -288,96 +278,85 @@ export default function ClosedIncidentsPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Título</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Prioridad</TableHead>
-                <TableHead>Departamento</TableHead>
-                <TableHead>Ubicación</TableHead>
-                <TableHead>Creada</TableHead>
-                {isAdmin && <TableHead className="text-right">Acciones</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading && (
-                <TableRow>
-                  <TableCell colSpan={totalColumns} className="h-24 text-center text-muted-foreground">
-                    <div className="flex items-center justify-center gap-2">
-                      <Icons.spinner className="h-4 w-4 animate-spin" /> Cargando incidencias...
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-              {!isLoading && filteredTickets.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={totalColumns} className="h-24 text-center text-muted-foreground">
-                    No se encontraron incidencias cerradas con esos filtros.
-                  </TableCell>
-                </TableRow>
-              )}
-              {!isLoading &&
-                filteredTickets.map((ticket) => (
-                  <TableRow
-                    key={ticket.id}
-                    className="cursor-pointer hover:bg-muted/40"
-                    onClick={() => router.push(`/incidents/${ticket.id}`)}
-                  >
-                    <TableCell className="font-medium">
-                      <div className="space-y-1">
-                        <p>{ticket.title}</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {isLoading && (
+            <div className="flex h-24 items-center justify-center gap-2 rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+              <Icons.spinner className="h-4 w-4 animate-spin" /> Cargando incidencias...
+            </div>
+          )}
+          {!isLoading && filteredTickets.length === 0 && (
+            <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+              No se encontraron incidencias cerradas con esos filtros.
+            </div>
+          )}
+          {!isLoading &&
+            filteredTickets.map((ticket) => {
+              const departmentLabel =
+                departments.find((dept) => dept.id === ticket.departmentId)?.name || "N/A";
+              const siteLabel = sites.find((site) => site.id === ticket.siteId)?.name || "N/A";
+              const createdAtLabel = ticket.createdAt?.toDate
+                ? format(ticket.createdAt.toDate(), "dd/MM/yyyy")
+                : "Sin fecha";
+              return (
+                <div
+                  key={ticket.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => router.push(`/incidents/${ticket.id}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      router.push(`/incidents/${ticket.id}`);
+                    }
+                  }}
+                  className="block rounded-lg border bg-card p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-base font-semibold text-foreground">{ticket.title}</p>
+                        <Badge variant="outline">{statusLabels[ticket.status]}</Badge>
                         {ticket.reopened && (
                           <Badge variant="outline" className="text-xs">Reabierta</Badge>
                         )}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{statusLabels[ticket.status]}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{ticket.priority}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {departments.find((dept) => dept.id === ticket.departmentId)?.name || "N/A"}
-                    </TableCell>
-                    <TableCell>
-                      {sites.find((site) => site.id === ticket.siteId)?.name || "N/A"}
-                    </TableCell>
-                    <TableCell>
-                      {ticket.createdAt?.toDate
-                        ? format(ticket.createdAt.toDate(), "dd/MM/yyyy")
-                        : "Sin fecha"}
-                    </TableCell>
-                    {isAdmin && (
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleReopen(ticket);
-                          }}
-                        >
-                          Reabrir
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleDuplicate(ticket);
-                          }}
-                        >
-                          Duplicar
-                        </Button>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
+                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <span>Departamento: {departmentLabel}</span>
+                        <span>Ubicación: {siteLabel}</span>
+                        <span>Creada: {createdAtLabel}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary">Prioridad {ticket.priority}</Badge>
+                      {isAdmin && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleReopen(ticket);
+                            }}
+                          >
+                            Reabrir
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleDuplicate(ticket);
+                            }}
+                          >
+                            Duplicar
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
         </div>
       </div>
     </AppShell>
