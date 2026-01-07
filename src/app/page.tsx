@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
 import { AppShell } from "@/components/app-shell";
-import { useCollection } from "@/lib/firebase";
+import { ClientLogo } from "@/components/client-logo";
+import { useCollection, useUser } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 
 const priorityLabel: Record<string, string> = {
@@ -25,7 +26,14 @@ const statusLabel: Record<string, string> = {
 };
 
 export default function Home() {
+  const { activeMembership, organizationId } = useUser();
   const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
+
+  const organizationLabel =
+    activeMembership?.organizationName ??
+    activeMembership?.organizationId ??
+    organizationId ??
+    "Organización";
 
   const pendingTasks = tasks.filter((task) => task.status === "pendiente");
   const completedTasks = tasks.filter((task) => task.status === "completada");
@@ -51,12 +59,29 @@ export default function Home() {
 
   return (
     <AppShell
-      title="Panel de Control"
-      description="Seguimiento de tareas e inspecciones de mantenimiento."
-      action={
-        <Button asChild>
-          <Link href="/tasks/new">Crear tarea</Link>
-        </Button>
+      headerContent={
+        <div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-1">
+            <h1 className="text-lg font-semibold leading-tight md:text-xl">Panel de Control</h1>
+            <p className="text-sm text-muted-foreground">
+              Seguimiento de tareas e inspecciones de mantenimiento.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <div className="flex items-center gap-2 rounded-md border border-muted px-2 py-1 text-sm text-muted-foreground">
+              <ClientLogo width={24} height={24} className="h-6 w-6" />
+              <span className="font-medium text-foreground">{organizationLabel}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild>
+                <Link href="/tasks/new">Crear tarea</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/incidents">Crear incidencia</Link>
+              </Button>
+            </div>
+          </div>
+        </div>
       }
     >
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -90,12 +115,12 @@ export default function Home() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xl">Próximas inspecciones</CardTitle>
+            <CardTitle className="text-xl">Próximas tareas</CardTitle>
             {loading && <Icons.spinner className="h-4 w-4 animate-spin text-muted-foreground" />}
           </CardHeader>
           <CardContent className="space-y-4">
             {!loading && nextInspections.length === 0 && (
-              <EmptyState message="No hay inspecciones programadas" />
+              <EmptyState message="No hay tareas programadas" />
             )}
             {loading && (
               <div className="space-y-2">
@@ -134,7 +159,7 @@ export default function Home() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xl">Alertas de mantenimiento</CardTitle>
+            <CardTitle className="text-xl">Incidencias pendientes</CardTitle>
             {overdueTasks.length > 0 && (
               <Badge variant="destructive">{overdueTasks.length} críticas</Badge>
             )}
@@ -147,7 +172,7 @@ export default function Home() {
               </div>
             )}
             {!loading && overdueTasks.length === 0 && (
-              <EmptyState message="No hay alertas activas" />
+              <EmptyState message="No hay incidencias pendientes" />
             )}
             {!loading &&
               overdueTasks.slice(0, 4).map((task) => {
