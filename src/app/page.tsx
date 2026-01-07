@@ -146,7 +146,7 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-sky-500/20 bg-sky-500/10">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xl">Incidencias pendientes</CardTitle>
             {overdueTasks.length > 0 && (
