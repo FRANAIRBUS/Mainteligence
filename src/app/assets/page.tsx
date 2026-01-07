@@ -6,14 +6,6 @@ import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
 import type { Asset, Site, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -75,69 +67,51 @@ function AssetsTable({
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Nombre</TableHead>
-          <TableHead>Código</TableHead>
-          <TableHead>Ubicación</TableHead>
-          {canEdit && (
-            <TableHead>
-              <span className="sr-only">Acciones</span>
-            </TableHead>
-          )}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {assets.length > 0 ? (
-          assets.map((asset) => (
-            <TableRow key={asset.id}>
-              <TableCell className="font-medium">{asset.name}</TableCell>
-              <TableCell>{asset.code}</TableCell>
-              <TableCell>
-                {sitesById[asset.siteId] ? (
-                  <Badge variant="outline">{sitesById[asset.siteId]}</Badge>
-                ) : (
-                  'N/A'
-                )}
-              </TableCell>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {assets.length > 0 ? (
+        assets.map((asset) => (
+          <div key={asset.id} className="rounded-lg border bg-card p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-base font-semibold">{asset.name}</p>
+                <p className="text-sm text-muted-foreground">Código: {asset.code}</p>
+                <div>
+                  {sitesById[asset.siteId] ? (
+                    <Badge variant="outline">{sitesById[asset.siteId]}</Badge>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Ubicación: N/A</span>
+                  )}
+                </div>
+              </div>
               {canEdit && (
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        aria-haspopup="true"
-                        size="icon"
-                        variant="ghost"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Menú de acciones</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                      <DropdownMenuItem disabled>Editar</DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-red-600"
-                        onClick={() => onDelete(asset.id)}
-                      >
-                        Eliminar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-haspopup="true" size="icon" variant="ghost">
+                      <MoreHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Menú de acciones</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-600"
+                      onClick={() => onDelete(asset.id)}
+                    >
+                      Eliminar
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
-            </TableRow>
-          ))
-        ) : (
-          <TableRow>
-            <TableCell colSpan={canEdit ? 4 : 3} className="h-24 text-center">
-              No se encontraron activos.
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-    </Table>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+          No se encontraron activos.
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -12,14 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -364,24 +356,16 @@ export default function UsersPage() {
                   ) : pendingRequests.length === 0 ? (
                     <div className="text-sm text-muted-foreground">No hay solicitudes pendientes.</div>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Usuario</TableHead>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Rol</TableHead>
-                          <TableHead className="text-right">Acciones</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {pendingRequests.map((r) => (
-                          <TableRow key={r.id}>
-                            <TableCell className="font-medium">
-                              {safeText(r.displayName)}
-                              <div className="text-xs text-muted-foreground">uid: {r.id}</div>
-                            </TableCell>
-                            <TableCell>{safeText(r.email)}</TableCell>
-                            <TableCell className="w-[220px]">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {pendingRequests.map((r) => (
+                        <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                          <div className="space-y-3">
+                            <div>
+                              <p className="text-base font-semibold">{safeText(r.displayName)}</p>
+                              <p className="text-xs text-muted-foreground">uid: {r.id}</p>
+                              <p className="text-sm text-muted-foreground">{safeText(r.email)}</p>
+                            </div>
+                            <div className="space-y-2">
                               <Select
                                 value={approveRoleByUid[r.id] ?? (r.requestedRole ?? 'operator')}
                                 onValueChange={(v) =>
@@ -399,25 +383,23 @@ export default function UsersPage() {
                                 </SelectContent>
                               </Select>
                               {r.requestedRole && (
-                                <div className="mt-1 text-xs text-muted-foreground">
+                                <div className="text-xs text-muted-foreground">
                                   Solicitado: {r.requestedRole}
                                 </div>
                               )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button size="sm" onClick={() => openApprove(r)}>
-                                  Aprobar
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => openReject(r)}>
-                                  Rechazar
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button size="sm" onClick={() => openApprove(r)}>
+                                Aprobar
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => openReject(r)}>
+                                Rechazar
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -437,35 +419,25 @@ export default function UsersPage() {
                   ) : activeMembers.length === 0 ? (
                     <div className="text-sm text-muted-foreground">No hay miembros activos.</div>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Usuario</TableHead>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Rol</TableHead>
-                          <TableHead>Estado</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {activeMembers.map((m) => (
-                          <TableRow key={m.id}>
-                            <TableCell className="font-medium">
-                              {safeText(m.displayName)}
-                              <div className="text-xs text-muted-foreground">uid: {m.id}</div>
-                            </TableCell>
-                            <TableCell>{safeText(m.email)}</TableCell>
-                            <TableCell>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {activeMembers.map((m) => (
+                        <div key={m.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                          <div className="space-y-3">
+                            <div>
+                              <p className="text-base font-semibold">{safeText(m.displayName)}</p>
+                              <p className="text-xs text-muted-foreground">uid: {m.id}</p>
+                              <p className="text-sm text-muted-foreground">{safeText(m.email)}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
                               <Badge variant="outline">{m.role ?? 'operator'}</Badge>
-                            </TableCell>
-                            <TableCell>
                               <Badge variant={(m.status ?? 'active') === 'active' ? 'default' : 'secondary'}>
                                 {m.status ?? 'active'}
                               </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </CardContent>
               </Card>
