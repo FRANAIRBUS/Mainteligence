@@ -60,26 +60,15 @@ export default function Home() {
   return (
     <AppShell
       headerContent={
-        <div className="flex w-full flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-lg font-semibold leading-tight md:text-xl">Panel de Control</h1>
-            <p className="text-sm text-muted-foreground">
-              Seguimiento de tareas e inspecciones de mantenimiento.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <div className="flex items-center gap-2 rounded-md border border-muted px-2 py-1 text-sm text-muted-foreground">
-              <ClientLogo width={24} height={24} className="h-6 w-6" />
-              <span className="font-medium text-foreground">{organizationLabel}</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button asChild>
-                <Link href="/tasks/new">Crear tarea</Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/incidents">Crear incidencia</Link>
-              </Button>
-            </div>
+        <div className="flex w-full flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <h1 className="text-lg font-semibold leading-tight md:text-xl">Panel de Control</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild>
+              <Link href="/tasks/new">Crear tarea</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/incidents">Crear incidencia</Link>
+            </Button>
           </div>
         </div>
       }
