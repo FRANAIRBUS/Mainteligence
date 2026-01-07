@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { SidebarTrigger, Sidebar, SidebarContent, SidebarHeader, SidebarInset } from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarHeader, SidebarInset } from '@/components/ui/sidebar';
 import { ClientLogo } from '@/components/client-logo';
 import { MainNav } from '@/components/main-nav';
 import { MobileBottomNav } from '@/components/mobile-bottom-nav';
@@ -100,7 +100,6 @@ export function AppShell({ children, title, description, action, headerContent }
       </Sidebar>
       <SidebarInset>
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
           {headerContent ? (
             <>
               <div className="flex flex-1">{headerContent}</div>
