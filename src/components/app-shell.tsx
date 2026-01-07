@@ -15,9 +15,10 @@ type AppShellProps = {
   title?: string;
   description?: string;
   action?: React.ReactNode;
+  headerContent?: React.ReactNode;
 };
 
-export function AppShell({ children, title, description, action }: AppShellProps) {
+export function AppShell({ children, title, description, action, headerContent }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, profile, organizationId, activeMembership, loading, isRoot } = useUser();
@@ -100,16 +101,27 @@ export function AppShell({ children, title, description, action }: AppShellProps
       <SidebarInset>
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur-sm lg:px-6">
           <SidebarTrigger className="md:hidden" />
-          {(title || description) && (
-            <div className="flex flex-1 flex-col gap-1">
-              {title && <h1 className="text-lg font-semibold leading-tight md:text-xl">{title}</h1>}
-              {description && <p className="text-sm text-muted-foreground">{description}</p>}
-            </div>
+          {headerContent ? (
+            <>
+              <div className="flex flex-1">{headerContent}</div>
+              <div className="ml-auto flex items-center gap-2">
+                <UserNav />
+              </div>
+            </>
+          ) : (
+            <>
+              {(title || description) && (
+                <div className="flex flex-1 flex-col gap-1">
+                  {title && <h1 className="text-lg font-semibold leading-tight md:text-xl">{title}</h1>}
+                  {description && <p className="text-sm text-muted-foreground">{description}</p>}
+                </div>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                {action}
+                <UserNav />
+              </div>
+            </>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            {action}
-            <UserNav />
-          </div>
         </header>
         <main className="flex-1 p-4 pb-24 sm:p-6 sm:pb-28 md:p-8 md:pb-10">{children}</main>
         <MobileBottomNav />
