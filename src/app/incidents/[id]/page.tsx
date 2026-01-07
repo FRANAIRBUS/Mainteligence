@@ -59,8 +59,12 @@ export default function IncidentDetailPage() {
   const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
   
   // Fetch all collections needed for display unconditionally
-  const { data: createdByUser, loading: createdByLoading } = useDoc<User>(ticket ? `users/${ticket.createdBy}` : null);
-  const { data: assignedToUser, loading: assignedToLoading } = useDoc<User>(ticket && ticket.assignedTo ? `users/${ticket.assignedTo}` : null);
+  const canReadLegacyUser = (targetUserId?: string | null) =>
+    Boolean(targetUserId && (ticket?.organizationId || targetUserId === user?.uid));
+  const createdByUserPath = canReadLegacyUser(ticket?.createdBy) ? `users/${ticket?.createdBy}` : null;
+  const assignedToUserPath = canReadLegacyUser(ticket?.assignedTo) ? `users/${ticket?.assignedTo}` : null;
+  const { data: createdByUser, loading: createdByLoading } = useDoc<User>(createdByUserPath);
+  const { data: assignedToUser, loading: assignedToLoading } = useDoc<User>(assignedToUserPath);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
