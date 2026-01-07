@@ -15,14 +15,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { AppShell } from "@/components/app-shell";
 import { Icons } from "@/components/icons";
 import { useCollection } from "@/lib/firebase";
@@ -222,81 +214,56 @@ export default function TasksPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tarea</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Prioridad</TableHead>
-                <TableHead>Vencimiento</TableHead>
-                <TableHead>Responsable</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading && (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                    <div className="flex items-center justify-center gap-2">
-                      <Icons.spinner className="h-4 w-4 animate-spin" />
-                      Cargando tareas...
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-              {!loading && paginated.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                    No hay tareas que coincidan con los filtros.
-                  </TableCell>
-                </TableRow>
-              )}
-              {!loading &&
-                paginated.map((task) => (
-                  <TableRow
-                    key={task.id}
-                    className="cursor-pointer hover:bg-muted/40"
-                    onClick={() => router.push(`/tasks/${task.id}`)}
-                  >
-                    <TableCell className="font-medium">
-                      <div className="space-y-1">
-                        <p>{task.title}</p>
-                        {task.category && (
-                          <p className="text-xs text-muted-foreground">{task.category}</p>
-                        )}
+        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+          {isLoading && (
+            <div className="flex h-24 items-center justify-center gap-2 rounded-lg border text-muted-foreground lg:col-span-2 xl:col-span-3">
+              <Icons.spinner className="h-4 w-4 animate-spin" />
+              Cargando tareas...
+            </div>
+          )}
+          {!loading && paginated.length === 0 && (
+            <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground lg:col-span-2 xl:col-span-3">
+              No hay tareas que coincidan con los filtros.
+            </div>
+          )}
+          {!loading &&
+            paginated.map((task) => {
+              const assignedToLabel =
+                task.assignedTo && userNameMap[task.assignedTo]
+                  ? userNameMap[task.assignedTo]
+                  : "No asignada";
+              return (
+                <Link
+                  key={task.id}
+                  href={`/tasks/${task.id}`}
+                  className="block rounded-lg border bg-card p-4 shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-base font-semibold text-foreground">{task.title}</p>
+                        <Badge variant="outline">{statusCopy[task.status]}</Badge>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{statusCopy[task.status]}</Badge>
-                    </TableCell>
-                    <TableCell>
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {task.description || task.category || "Sin descripción"}
+                      </p>
+                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <span>Vence: {formatDueDate(task)}</span>
+                        <span>Responsable: {assignedToLabel}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={task.priority === "alta" ? "destructive" : "secondary"}>
-                        {priorityCopy[task.priority]}
+                        Prioridad {priorityCopy[task.priority]}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {formatDueDate(task)}
-                    </TableCell>
-                    <TableCell>
-                      {task.assignedTo && userNameMap[task.assignedTo]
-                        ? userNameMap[task.assignedTo]
-                        : "No asignada"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        asChild
-                        variant="outline"
-                        size="sm"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <Link href={`/tasks/${task.id}`}>Ver</Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
+                      {task.category && (
+                        <Badge variant="outline">{task.category}</Badge>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
         </div>
 
         <div className="flex flex-col gap-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
