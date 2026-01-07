@@ -51,12 +51,18 @@ export default function Home() {
 
   return (
     <AppShell
-      title="Panel de Control"
-      description="Seguimiento de tareas e inspecciones de mantenimiento."
-      action={
-        <Button asChild>
-          <Link href="/tasks/new">Crear tarea</Link>
-        </Button>
+      headerContent={
+        <div className="flex w-full flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <h1 className="text-lg font-semibold leading-tight md:text-xl">Panel de Control</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild>
+              <Link href="/tasks/new">Crear tarea</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/incidents">Crear incidencia</Link>
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -90,12 +96,12 @@ export default function Home() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xl">Próximas inspecciones</CardTitle>
+            <CardTitle className="text-xl">Próximas tareas</CardTitle>
             {loading && <Icons.spinner className="h-4 w-4 animate-spin text-muted-foreground" />}
           </CardHeader>
           <CardContent className="space-y-4">
             {!loading && nextInspections.length === 0 && (
-              <EmptyState message="No hay inspecciones programadas" />
+              <EmptyState message="No hay tareas programadas" />
             )}
             {loading && (
               <div className="space-y-2">
@@ -134,7 +140,7 @@ export default function Home() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-xl">Alertas de mantenimiento</CardTitle>
+            <CardTitle className="text-xl">Incidencias pendientes</CardTitle>
             {overdueTasks.length > 0 && (
               <Badge variant="destructive">{overdueTasks.length} críticas</Badge>
             )}
@@ -147,7 +153,7 @@ export default function Home() {
               </div>
             )}
             {!loading && overdueTasks.length === 0 && (
-              <EmptyState message="No hay alertas activas" />
+              <EmptyState message="No hay incidencias pendientes" />
             )}
             {!loading &&
               overdueTasks.slice(0, 4).map((task) => {
