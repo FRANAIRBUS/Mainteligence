@@ -55,7 +55,7 @@ export default function IncidentDetailPage() {
   const ticketId = Array.isArray(id) ? id[0] : id;
   const firestore = useFirestore();
 
-  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
+  const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
   
   // Fetch all collections needed for display unconditionally
@@ -92,16 +92,16 @@ export default function IncidentDetailPage() {
 
 
   useEffect(() => {
-    if (isLoaded && !user) {
+    if (!userLoading && !user) {
       router.push('/login');
     }
     // Authorization check after data has loaded
-    if (isLoaded && !ticketLoading && ticket && user && userProfile && permissions) {
+    if (!userLoading && !ticketLoading && ticket && user && userProfile && permissions) {
       if (!permissions.canView) {
         router.push('/incidents');
       }
     }
-  }, [isLoaded, permissions, router, ticket, ticketLoading, user, userProfile]);
+  }, [permissions, router, ticket, ticketLoading, user, userProfile, userLoading]);
 
   const handleAddReport = async () => {
     if (!firestore || !ticket?.id) {
@@ -185,7 +185,7 @@ export default function IncidentDetailPage() {
   };
 
   const isLoading =
-    !isLoaded ||
+    userLoading ||
     ticketLoading ||
     createdByLoading ||
     sitesLoading ||
