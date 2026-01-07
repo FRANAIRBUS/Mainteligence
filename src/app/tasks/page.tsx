@@ -214,15 +214,15 @@ export default function TasksPage() {
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
           {isLoading && (
-            <div className="flex h-24 items-center justify-center gap-2 rounded-lg border text-muted-foreground">
+            <div className="flex h-24 items-center justify-center gap-2 rounded-lg border text-muted-foreground lg:col-span-2 xl:col-span-3">
               <Icons.spinner className="h-4 w-4 animate-spin" />
               Cargando tareas...
             </div>
           )}
           {!loading && paginated.length === 0 && (
-            <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground">
+            <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground lg:col-span-2 xl:col-span-3">
               No hay tareas que coincidan con los filtros.
             </div>
           )}
