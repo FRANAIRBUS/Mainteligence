@@ -27,6 +27,7 @@ import { AddIncidentDialog } from '@/components/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import Link from 'next/link';
 
 const incidentPriorityOrder: Record<Ticket['priority'], number> = {
   Crítica: 3,
