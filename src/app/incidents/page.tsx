@@ -172,15 +172,15 @@ export default function IncidentsPage() {
             <CardDescription>Consulta, edita y prioriza incidencias en curso.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {tableDataIsLoading && (
-                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border text-muted-foreground lg:col-span-2 xl:col-span-3">
+                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
                   <Icons.spinner className="h-4 w-4 animate-spin" />
                   Cargando incidencias...
                 </div>
               )}
               {!tableDataIsLoading && sortedTickets.length === 0 && (
-                <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground lg:col-span-2 xl:col-span-3">
+                <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
                   No se encontraron incidencias.
                 </div>
               )}
@@ -194,10 +194,18 @@ export default function IncidentsPage() {
                   const departmentLabel = departmentsMap[ticket.departmentId] || 'N/A';
                   const ticketIdLabel = ticket.displayId || ticket.id.substring(0, 6);
                   return (
-                    <Link
+                    <div
                       key={ticket.id}
-                      href={`/incidents/${ticket.id}`}
-                      className="block rounded-lg border bg-card p-4 shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleViewDetails(ticket.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          handleViewDetails(ticket.id);
+                        }
+                      }}
+                      className="block rounded-lg border bg-card p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     >
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div className="space-y-2">
@@ -260,7 +268,7 @@ export default function IncidentsPage() {
                           </DropdownMenu>
                         </div>
                       </div>
-                    </Link>
+                    </div>
                   );
                 })}
             </div>
