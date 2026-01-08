@@ -137,8 +137,6 @@ export default function TasksPage() {
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
-  const isLoading = loading || usersLoading || !isLoaded;
-
   if (!user || userLoading || !userProfile || (!organizationId && normalizedRole !== "super_admin")) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
@@ -159,7 +157,7 @@ export default function TasksPage() {
   return (
     <AppShell
       title="Tareas"
-      description="Lista de tareas de mantenimiento con filtros y edición."
+      description="Lista de Tareas pendientes"
       action={
         <Button asChild>
           <Link href="/tasks/new">Nueva tarea</Link>
@@ -215,12 +213,6 @@ export default function TasksPage() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {isLoading && (
-            <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
-              <Icons.spinner className="h-4 w-4 animate-spin" />
-              Cargando tareas...
-            </div>
-          )}
           {!loading && paginated.length === 0 && (
             <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
               No hay tareas que coincidan con los filtros.
