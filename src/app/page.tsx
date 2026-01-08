@@ -67,7 +67,7 @@ export default function Home() {
               <Link href="/tasks/new">Crear tarea</Link>
             </Button>
             <Button asChild variant="outline">
-              <Link href="/incidents">Crear incidencia</Link>
+              <Link href="/incidents?new=true">Crear incidencia</Link>
             </Button>
           </div>
         </div>
@@ -122,7 +122,7 @@ export default function Home() {
               nextInspections.map((task) => (
                 <div
                   key={task.id}
-                  className="flex items-start justify-between rounded-lg border border-white/30 bg-background p-3"
+                  className="flex items-start justify-between rounded-lg border border-white/30 bg-transparent p-3"
                 >
                   <div className="space-y-1">
                     <p className="font-medium">{task.title}</p>
