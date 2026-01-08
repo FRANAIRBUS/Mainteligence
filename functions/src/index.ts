@@ -960,7 +960,7 @@ export const orgUpdateUserProfile = functions.https.onCall(async (data, context)
   const departmentId = String(data?.departmentId ?? '').trim();
 
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
-  if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
+  if (!requestId) throw httpsError('invalid-argument', 'uid requerido.');
 
   if (!isRoot) {
     await requireCallerSuperAdminInOrg(actorUid, orgId);
