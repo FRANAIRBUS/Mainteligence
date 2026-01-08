@@ -5,8 +5,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { useFirestore, useUser } from '@/lib/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useFirebaseApp, useUser } from '@/lib/firebase';
 import type { Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
@@ -80,7 +80,7 @@ interface AddUserDialogProps {
 
 export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialogProps) {
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const app = useFirebaseApp();
   const { user: currentUser, organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
 
@@ -94,15 +94,6 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
   });
 
   const onSubmit = async (data: AddUserFormValues) => {
-    if (!firestore) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Firestore no está disponible. Por favor, intente de nuevo más tarde.',
-      });
-      return;
-    }
-
     if (!currentUser) {
       toast({
         variant: 'destructive',
@@ -117,32 +108,33 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     }
     setIsPending(true);
 
-    const normalizedRole = normalizeRole(data.role);
-    const docData = {
-      ...data,
-      role: normalizedRole,
-      active: true,
-      isMaintenanceLead: ['super_admin', 'admin', 'maintenance'].includes(normalizedRole ?? ''),
-      organizationId,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-    
     try {
-      const collectionRef = collection(firestore, "users");
-      await addDoc(collectionRef, docData);
+      const normalizedRole = normalizeRole(data.role);
+      const fn = httpsCallable(getFunctions(app), 'orgInviteUser');
+      await fn({
+        organizationId,
+        displayName: data.displayName,
+        email: data.email,
+        role: normalizedRole,
+        departmentId: data.departmentId || null,
+      });
       toast({
           title: 'Éxito',
-          description: `Perfil para ${data.displayName} creado. El usuario ahora debe registrarse o iniciar sesión con el email ${data.email}.`,
+          description: `Invitación enviada a ${data.email}. Se añadirá cuando complete el registro.`,
       });
       onOpenChange(false);
       form.reset();
     } catch (error: any) {
         if (error.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
-            path: 'users',
+            path: `organizations/${organizationId}/joinRequests`,
             operation: 'create',
-            requestResourceData: docData,
+            requestResourceData: {
+              displayName: data.displayName,
+              email: data.email,
+              role: data.role,
+              departmentId: data.departmentId || null,
+            },
           });
           errorEmitter.emit('permission-error', permissionError);
         } else {
@@ -172,9 +164,9 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Añadir Perfil de Usuario</DialogTitle>
+          <DialogTitle>Invitar Usuario</DialogTitle>
           <DialogDescription>
-            Crea un perfil con un rol para un nuevo usuario. El usuario deberá registrarse usando este mismo email.
+            Envía una invitación con rol y departamento. El usuario deberá registrarse usando este mismo email.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -270,7 +262,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                 {isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                Crear Perfil
+                Enviar Invitación
               </Button>
             </DialogFooter>
           </form>
