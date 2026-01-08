@@ -63,7 +63,7 @@ function LocationsTable({
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {sites.length > 0 ? (
         sites.map((site) => (
-          <div key={site.id} className="rounded-lg border bg-card p-4 shadow-sm">
+          <div key={site.id} className="rounded-lg border border-white/20 bg-background p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-1">
                 <p className="text-base font-semibold">{site.name}</p>
@@ -93,7 +93,7 @@ function LocationsTable({
           </div>
         ))
       ) : (
-        <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+        <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
           No se encontraron ubicaciones.
         </div>
       )}
@@ -179,7 +179,7 @@ export default function LocationsPage() {
       }
     >
       {canManage ? (
-        <Card>
+        <Card className="border-sky-500/20 bg-sky-500/10">
           <CardHeader>
             <div>
               <CardTitle>Ubicaciones</CardTitle>
@@ -199,7 +199,7 @@ export default function LocationsPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="mt-8">
+        <Card className="mt-8 border-sky-500/20 bg-sky-500/10">
           <CardContent className="pt-6">
             <div className="text-center text-muted-foreground">
               <p>No tienes permiso para ver esta página.</p>

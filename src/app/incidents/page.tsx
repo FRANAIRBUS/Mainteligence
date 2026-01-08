@@ -173,7 +173,7 @@ export default function IncidentsPage() {
           </Button>
         }
       >
-        <Card>
+        <Card className="border-sky-500/20 bg-sky-500/10">
           <CardHeader>
             <CardTitle>Listado de incidencias</CardTitle>
             <CardDescription>Consulta, edita y prioriza incidencias en curso.</CardDescription>
@@ -181,13 +181,13 @@ export default function IncidentsPage() {
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {tableDataIsLoading && (
-                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
                   <Icons.spinner className="h-4 w-4 animate-spin" />
                   Cargando incidencias...
                 </div>
               )}
               {!tableDataIsLoading && sortedTickets.length === 0 && (
-                <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+                <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
                   No se encontraron incidencias.
                 </div>
               )}
@@ -212,7 +212,7 @@ export default function IncidentsPage() {
                           handleViewDetails(ticket.id);
                         }
                       }}
-                      className="block rounded-lg border bg-card p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      className="block rounded-lg border border-white/20 bg-background p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     >
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div className="space-y-2">

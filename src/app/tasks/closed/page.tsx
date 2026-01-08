@@ -197,7 +197,7 @@ export default function ClosedTasksPage() {
       title="Tareas cerradas"
       description="Historial de tareas completadas con filtros avanzados."
     >
-      <div className="flex flex-col gap-4 rounded-lg border bg-card p-4 shadow-sm">
+      <div className="flex flex-col gap-4 rounded-lg border border-sky-500/20 bg-sky-500/10 p-4 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <Input
             placeholder="Buscar por título"
@@ -248,12 +248,12 @@ export default function ClosedTasksPage() {
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {isLoading && (
-            <div className="flex h-24 items-center justify-center gap-2 rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+            <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
               <Icons.spinner className="h-4 w-4 animate-spin" /> Cargando tareas...
             </div>
           )}
           {!isLoading && filteredTasks.length === 0 && (
-            <div className="flex h-24 items-center justify-center rounded-lg border text-muted-foreground sm:col-span-2 xl:col-span-3">
+            <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
               No se encontraron tareas cerradas con esos filtros.
             </div>
           )}
@@ -276,7 +276,7 @@ export default function ClosedTasksPage() {
                       router.push(`/tasks/${task.id}`);
                     }
                   }}
-                  className="block rounded-lg border bg-card p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="block rounded-lg border border-white/20 bg-background p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="space-y-2">

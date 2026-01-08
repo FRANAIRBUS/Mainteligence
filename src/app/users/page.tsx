@@ -307,7 +307,7 @@ export default function UsersPage() {
     >
       <div className="flex flex-1 flex-col gap-4 lg:gap-6">
         {!organizationId && !isRoot && (
-          <Card>
+          <Card className="border-sky-500/20 bg-sky-500/10">
             <CardHeader>
               <CardTitle>Sin organización activa</CardTitle>
               <CardDescription>
@@ -321,7 +321,7 @@ export default function UsersPage() {
         )}
 
         {organizationId && !canManage && (
-          <Card>
+          <Card className="border-sky-500/20 bg-sky-500/10">
             <CardHeader>
               <CardTitle>Permisos insuficientes</CardTitle>
               <CardDescription>
@@ -343,7 +343,7 @@ export default function UsersPage() {
             </TabsList>
 
             <TabsContent value="requests" className="mt-4">
-              <Card>
+              <Card className="border-sky-500/20 bg-sky-500/10">
                 <CardHeader>
                   <CardTitle>Solicitudes pendientes</CardTitle>
                   <CardDescription>
@@ -358,7 +358,7 @@ export default function UsersPage() {
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {pendingRequests.map((r) => (
-                        <div key={r.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                        <div key={r.id} className="rounded-lg border border-white/20 bg-background p-4 shadow-sm">
                           <div className="space-y-3">
                             <div>
                               <p className="text-base font-semibold">{safeText(r.displayName)}</p>
@@ -406,7 +406,7 @@ export default function UsersPage() {
             </TabsContent>
 
             <TabsContent value="members" className="mt-4">
-              <Card>
+              <Card className="border-sky-500/20 bg-sky-500/10">
                 <CardHeader>
                   <CardTitle>Miembros de la organización</CardTitle>
                   <CardDescription>
@@ -421,7 +421,7 @@ export default function UsersPage() {
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {activeMembers.map((m) => (
-                        <div key={m.id} className="rounded-lg border bg-card p-4 shadow-sm">
+                        <div key={m.id} className="rounded-lg border border-white/20 bg-background p-4 shadow-sm">
                           <div className="space-y-3">
                             <div>
                               <p className="text-base font-semibold">{safeText(m.displayName)}</p>
