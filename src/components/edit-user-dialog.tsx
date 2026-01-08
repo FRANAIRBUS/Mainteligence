@@ -83,7 +83,7 @@ interface EditUserDialogProps {
 export function EditUserDialog({ open, onOpenChange, user, departments }: EditUserDialogProps) {
   const { toast } = useToast();
   const app = useFirebaseApp();
-  const { organizationId } = useUser();
+  const { organizationId, user: currentUser } = useUser();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<EditUserFormValues>({
@@ -106,6 +106,24 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
   }, [form, user]);
 
   const onSubmit = async (data: EditUserFormValues) => {
+    if (!currentUser) {
+      toast({
+        variant: 'destructive',
+        title: 'Error de autenticación',
+        description: 'No se ha encontrado una sesión válida.',
+      });
+      return;
+    }
+
+    if (!app?.options?.projectId) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Firebase no está inicializado correctamente.',
+      });
+      return;
+    }
+
     if (!user || !organizationId || (user.organizationId && user.organizationId !== organizationId)) {
         toast({
             variant: 'destructive',
@@ -133,8 +151,23 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
         await fn({ organizationId, uid: user.id, role: normalizedRole });
       }
 
-      const updateFn = httpsCallable(getFunctions(app), 'orgUpdateUserProfile');
-      await updateFn(updateData);
+      const token = await currentUser.getIdToken();
+      const functionUrl = `https://us-central1-${app.options.projectId}.cloudfunctions.net/orgUpdateUserProfile`;
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || 'No se pudo actualizar el usuario.');
+      }
+
+      await response.json().catch(() => null);
       toast({
           title: 'Éxito',
           description: `Usuario ${data.displayName} actualizado correctamente.`,

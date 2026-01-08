@@ -5,7 +5,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirebaseApp, useUser } from '@/lib/firebase';
 import type { Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
@@ -106,6 +105,15 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       return;
     }
 
+    if (!app?.options?.projectId) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Firebase no está inicializado correctamente.',
+      });
+      return;
+    }
+
     if (!organizationId) {
       throw new Error('Critical: Missing organizationId in transaction');
     }
@@ -113,56 +121,73 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
 
     try {
       const normalizedRole = normalizeRole(data.role);
-      const fn = httpsCallable(getFunctions(app), 'orgInviteUser');
       const selectedDepartmentId =
         data.departmentId && data.departmentId !== departmentNoneValue ? data.departmentId : null;
-      await fn({
-        organizationId,
-        displayName: data.displayName,
-        email: data.email,
-        role: normalizedRole,
-        departmentId: selectedDepartmentId,
+
+      const token = await currentUser.getIdToken();
+      const functionUrl = `https://us-central1-${app.options.projectId}.cloudfunctions.net/orgInviteUser`;
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          organizationId,
+          displayName: data.displayName,
+          email: data.email,
+          role: normalizedRole,
+          departmentId: selectedDepartmentId,
+        }),
       });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || 'No se pudo enviar la invitación.');
+      }
+
+      await response.json().catch(() => null);
+
       toast({
-          title: 'Éxito',
-          description: `Invitación enviada a ${data.email}. Se añadirá cuando complete el registro.`,
+        title: 'Éxito',
+        description: `Invitación enviada a ${data.email}. Se añadirá cuando complete el registro.`,
       });
       onOpenChange(false);
       form.reset();
     } catch (error: any) {
-        if (error.code === 'permission-denied') {
-          const permissionError = new FirestorePermissionError({
-            path: `organizations/${organizationId}/joinRequests`,
-            operation: 'create',
-            requestResourceData: {
-              displayName: data.displayName,
-              email: data.email,
-              role: data.role,
-              departmentId:
-                data.departmentId && data.departmentId !== departmentNoneValue ? data.departmentId : null,
-            },
-          });
-          errorEmitter.emit('permission-error', permissionError);
-        } else {
-            toast({
-                variant: 'destructive',
-                title: 'Error',
-                description: error.message || 'No se pudo crear el perfil de usuario.',
-            });
-        }
+      if (error.code === 'permission-denied') {
+        const permissionError = new FirestorePermissionError({
+          path: `organizations/${organizationId}/joinRequests`,
+          operation: 'create',
+          requestResourceData: {
+            displayName: data.displayName,
+            email: data.email,
+            role: data.role,
+            departmentId:
+              data.departmentId && data.departmentId !== departmentNoneValue ? data.departmentId : null,
+          },
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: error.message || 'No se pudo crear el perfil de usuario.',
+        });
+      }
     } finally {
-        setIsPending(false);
+      setIsPending(false);
     }
   };
-  
+
   const handleOpenChange = (isOpen: boolean) => {
     if (!isPending) {
-        onOpenChange(isOpen);
-        if(!isOpen) {
-            form.reset();
-        }
+      onOpenChange(isOpen);
+      if (!isOpen) {
+        form.reset();
+      }
     }
-  }
+  };
 
   const departmentOptions = departments ?? [];
 
@@ -204,17 +229,13 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
               )}
             />
             <div className="grid grid-cols-2 gap-4">
-               <FormField
+              <FormField
                 control={form.control}
                 name="role"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Rol</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                      name={field.name}
-                    >
+                    <Select onValueChange={field.onChange} defaultValue={field.value} name={field.name}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecciona un rol" />
@@ -232,7 +253,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                   </FormItem>
                 )}
               />
-               <FormField
+              <FormField
                 control={form.control}
                 name="departmentId"
                 render={({ field }) => (
@@ -263,11 +284,11 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
               />
             </div>
             <DialogFooter>
-               <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)} disabled={isPending}>Cancelar</Button>
+              <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)} disabled={isPending}>
+                Cancelar
+              </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
+                {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Enviar Invitación
               </Button>
             </DialogFooter>
