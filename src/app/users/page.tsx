@@ -76,6 +76,7 @@ export default function UsersPage() {
   const app = useFirebaseApp();
 
   const { user, organizationId, isRoot, isSuperAdmin, loading: userLoading } = useUser();
+  const canManage = Boolean(isRoot || isSuperAdmin);
 
   const [members, setMembers] = useState<OrgMemberRow[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
@@ -97,8 +98,6 @@ export default function UsersPage() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<JoinRequestRow | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-
-  const canManage = Boolean(isRoot || isSuperAdmin);
 
   useEffect(() => {
     if (!userLoading && user && !organizationId && !isRoot) {
