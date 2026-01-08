@@ -4,7 +4,7 @@ import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
 import type { Ticket, Site, Department, User } from '@/lib/firebase/models';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,6 +39,7 @@ const incidentPriorityOrder: Record<Ticket['priority'], number> = {
 export default function IncidentsPage() {
   const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
@@ -50,6 +51,12 @@ export default function IncidentsPage() {
       router.push('/login');
     }
   }, [userLoading, user, router]);
+
+  useEffect(() => {
+    if (searchParams?.get('new') === 'true') {
+      setIsAddIncidentOpen(true);
+    }
+  }, [searchParams]);
   
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
