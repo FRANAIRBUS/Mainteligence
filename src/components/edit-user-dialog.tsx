@@ -108,7 +108,7 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
   }, [form, user]);
 
   const onSubmit = async (data: EditUserFormValues) => {
-    if (!firestore || !user || !organizationId || user.organizationId !== organizationId) {
+    if (!firestore || !user || !organizationId || (user.organizationId && user.organizationId !== organizationId)) {
         toast({
             variant: 'destructive',
             title: 'Error',
