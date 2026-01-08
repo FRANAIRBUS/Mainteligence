@@ -52,8 +52,9 @@ export default function IncidentsPage() {
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
-  const [statusFilter, setStatusFilter] = useState('todas');
-  const [priorityFilter, setPriorityFilter] = useState('todas');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Phase 1: Wait for user authentication to complete.
@@ -135,6 +136,7 @@ export default function IncidentsPage() {
 
   const sortedTickets = useMemo(() => {
     const openTickets = tickets.filter((ticket) => ticket.status !== 'Cerrada');
+    const effectiveDateFilter = dateFilter || 'recientes';
 
     return [...openTickets].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
@@ -145,19 +147,21 @@ export default function IncidentsPage() {
         ?? 0;
 
       if (bCreatedAt !== aCreatedAt) {
-        return bCreatedAt - aCreatedAt;
+        return effectiveDateFilter === 'antiguas'
+          ? aCreatedAt - bCreatedAt
+          : bCreatedAt - aCreatedAt;
       }
 
       return incidentPriorityOrder[b.priority] - incidentPriorityOrder[a.priority];
     });
-  }, [tickets]);
+  }, [dateFilter, tickets]);
 
   const filteredTickets = useMemo(() => {
     return sortedTickets.filter((ticket) => {
       const matchesStatus =
-        statusFilter === 'todas' || ticket.status === statusFilter;
+        statusFilter === '' || statusFilter === 'todas' || ticket.status === statusFilter;
       const matchesPriority =
-        priorityFilter === 'todas' || ticket.priority === priorityFilter;
+        priorityFilter === '' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
       const query = searchQuery.toLowerCase();
       const matchesQuery =
         !query ||
@@ -218,7 +222,7 @@ export default function IncidentsPage() {
               <div className="flex flex-wrap gap-3">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Estado" />
+                    <SelectValue placeholder="Estados" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todas">Todos los estados</SelectItem>
@@ -239,6 +243,15 @@ export default function IncidentsPage() {
                     <SelectItem value="Alta">Alta</SelectItem>
                     <SelectItem value="Media">Media</SelectItem>
                     <SelectItem value="Baja">Baja</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={dateFilter} onValueChange={setDateFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Fecha" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recientes">Más recientes</SelectItem>
+                    <SelectItem value="antiguas">Más antiguas</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
