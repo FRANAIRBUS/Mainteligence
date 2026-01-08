@@ -72,6 +72,8 @@ const formSchema = z.object({
 
 type AddUserFormValues = z.infer<typeof formSchema>;
 
+const departmentNoneValue = '__none__';
+
 interface AddUserDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -90,6 +92,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       displayName: '',
       email: '',
       role: 'operator',
+      departmentId: departmentNoneValue,
     },
   });
 
@@ -111,12 +114,14 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     try {
       const normalizedRole = normalizeRole(data.role);
       const fn = httpsCallable(getFunctions(app), 'orgInviteUser');
+      const selectedDepartmentId =
+        data.departmentId && data.departmentId !== departmentNoneValue ? data.departmentId : null;
       await fn({
         organizationId,
         displayName: data.displayName,
         email: data.email,
         role: normalizedRole,
-        departmentId: data.departmentId || null,
+        departmentId: selectedDepartmentId,
       });
       toast({
           title: 'Éxito',
@@ -133,7 +138,8 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
               displayName: data.displayName,
               email: data.email,
               role: data.role,
-              departmentId: data.departmentId || null,
+              departmentId:
+                data.departmentId && data.departmentId !== departmentNoneValue ? data.departmentId : null,
             },
           });
           errorEmitter.emit('permission-error', permissionError);
@@ -235,7 +241,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                     <Select
                       name={field.name}
                       onValueChange={field.onChange}
-                      defaultValue={field.value}
+                      value={field.value ?? departmentNoneValue}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -243,7 +249,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">Ninguno</SelectItem>
+                        <SelectItem value={departmentNoneValue}>Ninguno</SelectItem>
                         {departmentOptions.map((dept) => (
                           <SelectItem key={dept.id} value={dept.id}>
                             {dept.name}
