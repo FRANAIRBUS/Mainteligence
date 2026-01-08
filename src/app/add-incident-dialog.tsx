@@ -68,6 +68,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
   const { user, organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
+  const canSubmit = Boolean(firestore && storage && user && organizationId);
 
   // These hooks now safely wait for user auth before fetching
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
@@ -90,7 +91,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
   };
 
   const onSubmit = async (data: AddIncidentFormValues) => {
-    if (!firestore || !user || !storage || !organizationId) {
+    if (!canSubmit) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -331,7 +332,7 @@ function AddIncidentForm({ onOpenChange }: { onOpenChange: (open: boolean) => vo
         
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isPending}>Cancelar</Button>
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={!canSubmit || isPending}>
             {isPending && (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             )}

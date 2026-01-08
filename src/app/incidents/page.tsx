@@ -23,7 +23,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AddIncidentDialog } from '@/components/add-incident-dialog';
+import { AddIncidentDialog } from '@/app/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
