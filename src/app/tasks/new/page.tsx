@@ -111,7 +111,7 @@ export default function NewTaskPage() {
       title="Nueva tarea"
       description="Crear una tarea de mantenimiento en Firestore"
     >
-      <div className="rounded-lg border bg-card p-6 shadow-sm">
+      <div className="rounded-lg border border-white/80 bg-card p-6 shadow-sm">
         <TaskForm
           defaultValues={emptyValues}
           onSubmit={handleSubmit}

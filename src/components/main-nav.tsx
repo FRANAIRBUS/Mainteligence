@@ -174,7 +174,7 @@ export function MainNav() {
 
       <div className="md:hidden space-y-4">
         {menuItems.map((group) => (
-          <div key={group.label} className="rounded-2xl border bg-card shadow-sm">
+          <div key={group.label} className="rounded-2xl border border-white/80 bg-card shadow-sm">
             <div className="flex items-center justify-between px-4 py-3">
               <p className="text-sm font-semibold text-foreground">{group.label}</p>
               <span className="text-xs font-medium text-muted-foreground">{group.items.length} opciones</span>
