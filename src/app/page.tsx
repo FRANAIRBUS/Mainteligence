@@ -102,7 +102,7 @@ export default function Home() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card>
+        <Card className="border-sky-500/20 bg-sky-500/10">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xl">Próximas tareas</CardTitle>
             {loading && <Icons.spinner className="h-4 w-4 animate-spin text-muted-foreground" />}
@@ -122,7 +122,7 @@ export default function Home() {
               nextInspections.map((task) => (
                 <div
                   key={task.id}
-                  className="flex items-start justify-between rounded-lg border p-3"
+                  className="flex items-start justify-between rounded-lg border border-white/30 bg-transparent p-3"
                 >
                   <div className="space-y-1">
                     <p className="font-medium">{task.title}</p>
@@ -146,7 +146,7 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-sky-500/20 bg-sky-500/10">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xl">Incidencias pendientes</CardTitle>
             {overdueTasks.length > 0 && (
@@ -177,7 +177,7 @@ export default function Home() {
                 return (
                   <div
                     key={task.id}
-                    className="flex items-start justify-between rounded-lg border border-destructive/40 bg-destructive/5 p-3"
+                    className="flex items-start justify-between rounded-lg border border-destructive/70 bg-destructive/15 p-3"
                   >
                     <div className="space-y-1">
                       <p className="font-medium">{task.title}</p>
