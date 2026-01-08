@@ -1093,6 +1093,7 @@ export const orgUpdateUserProfile = functions.https.onRequest(async (req, res) =
 export const orgApproveJoinRequest = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const isRoot = isRootClaim(context);
 
   const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
   const requestId = String(data?.uid ?? data?.requestId ?? '').trim();
