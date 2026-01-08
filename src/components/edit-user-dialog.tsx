@@ -6,7 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { useFirestore } from '@/lib/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useFirebaseApp, useFirestore } from '@/lib/firebase';
 import { useUser } from '@/lib/firebase/auth/use-user';
 import type { User, Department } from '@/lib/firebase/models';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
@@ -83,6 +84,7 @@ interface EditUserDialogProps {
 export function EditUserDialog({ open, onOpenChange, user, departments }: EditUserDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
+  const app = useFirebaseApp();
   const { organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
 
@@ -96,6 +98,15 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
     },
   });
 
+  useEffect(() => {
+    form.reset({
+      displayName: user.displayName || '',
+      email: user.email || '',
+      role: normalizeRole(user.role) ?? user.role ?? 'operator',
+      departmentId: user.departmentId || '',
+    });
+  }, [form, user]);
+
   const onSubmit = async (data: EditUserFormValues) => {
     if (!firestore || !user || !organizationId || user.organizationId !== organizationId) {
         toast({
@@ -108,15 +119,25 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
     setIsPending(true);
 
     const userRef = doc(firestore, "users", user.id);
-    const normalizedRole = normalizeRole(data.role);
-    const updateData = {
-        ...data,
-        role: normalizedRole,
-        organizationId,
-        updatedAt: serverTimestamp(),
+    const normalizedRole = normalizeRole(data.role) ?? data.role;
+    const currentRole = normalizeRole(user.role) ?? user.role ?? 'operator';
+    const roleChanged = normalizedRole !== currentRole;
+    const updateData: Record<string, unknown> = {
+      displayName: data.displayName,
+      email: data.email,
+      departmentId: data.departmentId || null,
+      organizationId,
+      updatedAt: serverTimestamp(),
     };
 
     try {
+      if (roleChanged) {
+        const fn = httpsCallable(getFunctions(app), 'setRoleWithinOrg');
+        await fn({ organizationId, uid: user.id, role: normalizedRole });
+      } else if (user.role !== normalizedRole) {
+        updateData.role = normalizedRole;
+      }
+
       await updateDoc(userRef, updateData);
       toast({
           title: 'Éxito',

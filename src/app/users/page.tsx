@@ -6,6 +6,8 @@ import { collection, onSnapshot, type DocumentData } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 import { AppShell } from '@/components/app-shell';
+import { AddUserDialog } from '@/components/add-user-dialog';
+import { EditUserDialog } from '@/components/edit-user-dialog';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,11 +34,10 @@ import {
 } from '@/components/ui/alert-dialog';
 
 import { useToast } from '@/hooks/use-toast';
-import { useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
+import { useCollection, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
+import type { Department, User } from '@/lib/firebase/models';
 
 type Role = 'super_admin' | 'admin' | 'maintenance' | 'operator';
-type JoinStatus = 'pending' | 'active' | 'revoked' | 'rejected' | 'approved';
-
 type OrgMemberRow = {
   id: string; // uid
   role?: Role;
@@ -75,12 +76,19 @@ export default function UsersPage() {
   const app = useFirebaseApp();
 
   const { user, organizationId, isRoot, isSuperAdmin, loading: userLoading } = useUser();
+  const canManage = Boolean(isRoot || isSuperAdmin);
 
   const [members, setMembers] = useState<OrgMemberRow[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
 
   const [joinRequests, setJoinRequests] = useState<JoinRequestRow[]>([]);
   const [joinLoading, setJoinLoading] = useState(true);
+  const { data: users = [], loading: usersLoading } = useCollection<User>(canManage ? 'users' : null);
+  const { data: departments = [] } = useCollection<Department>(canManage ? 'departments' : null);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   // Per-request role selection (approve as role)
   const [approveRoleByUid, setApproveRoleByUid] = useState<Record<string, Role>>({});
@@ -90,8 +98,6 @@ export default function UsersPage() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<JoinRequestRow | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-
-  const canManage = Boolean(isRoot || isSuperAdmin);
 
   useEffect(() => {
     if (!userLoading && user && !organizationId && !isRoot) {
@@ -220,6 +226,32 @@ export default function UsersPage() {
     () => members.filter((m) => (m.status ?? 'active') === 'active'),
     [members]
   );
+  const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+
+  const openEdit = (member: OrgMemberRow) => {
+    const profile = usersById.get(member.id);
+    if (profile) {
+      setSelectedUser(profile);
+      setEditOpen(true);
+      return;
+    }
+
+    if (!organizationId) return;
+
+    setSelectedUser({
+      id: member.id,
+      organizationId,
+      displayName: String(member.displayName ?? ''),
+      email: String(member.email ?? ''),
+      role: (member.role ?? 'operator') as User['role'],
+      departmentId: undefined,
+      isMaintenanceLead: ['super_admin', 'admin', 'maintenance'].includes(member.role ?? 'operator'),
+      active: (member.status ?? 'active') === 'active',
+      createdAt: member.createdAt as any,
+      updatedAt: member.updatedAt as any,
+    });
+    setEditOpen(true);
+  };
 
   const openApprove = (req: JoinRequestRow) => {
     setSelectedRequest(req);
@@ -407,11 +439,16 @@ export default function UsersPage() {
 
             <TabsContent value="members" className="mt-4">
               <Card className="border-white/60 bg-sky-400/15">
-                <CardHeader>
-                  <CardTitle>Miembros de la organización</CardTitle>
-                  <CardDescription>
-                    Listado de miembros activos. La gestión avanzada (cambios de rol / bajas) se realiza por Cloud Function.
-                  </CardDescription>
+                <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Miembros de la organización</CardTitle>
+                    <CardDescription>
+                      Pulsa un miembro para editar su rol, datos y departamento. La gestión de roles se aplica con Cloud Function.
+                    </CardDescription>
+                  </div>
+                  <Button size="sm" onClick={() => setAddOpen(true)}>
+                    Invitar usuario
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   {membersLoading ? (
@@ -421,21 +458,31 @@ export default function UsersPage() {
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {activeMembers.map((m) => (
-                        <div key={m.id} className="rounded-lg border border-white/20 bg-background p-4 shadow-sm">
+                        <button
+                          key={m.id}
+                          type="button"
+                          className="rounded-lg border border-white/20 bg-background p-4 text-left shadow-sm transition hover:border-white/40"
+                          onClick={() => openEdit(m)}
+                          disabled={usersLoading && !usersById.get(m.id)}
+                        >
                           <div className="space-y-3">
                             <div>
-                              <p className="text-base font-semibold">{safeText(m.displayName)}</p>
+                              <p className="text-base font-semibold">
+                                {safeText(usersById.get(m.id)?.displayName ?? m.displayName)}
+                              </p>
                               <p className="text-xs text-muted-foreground">uid: {m.id}</p>
-                              <p className="text-sm text-muted-foreground">{safeText(m.email)}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {safeText(usersById.get(m.id)?.email ?? m.email)}
+                              </p>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              <Badge variant="outline">{m.role ?? 'operator'}</Badge>
+                              <Badge variant="outline">{usersById.get(m.id)?.role ?? (m.role ?? 'operator')}</Badge>
                               <Badge variant={(m.status ?? 'active') === 'active' ? 'default' : 'secondary'}>
                                 {m.status ?? 'active'}
                               </Badge>
                             </div>
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -526,6 +573,11 @@ export default function UsersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AddUserDialog open={addOpen} onOpenChange={setAddOpen} departments={departments} />
+      {selectedUser ? (
+        <EditUserDialog open={editOpen} onOpenChange={setEditOpen} user={selectedUser} departments={departments} />
+      ) : null}
     </AppShell>
   );
 }
