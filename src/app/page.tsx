@@ -102,7 +102,7 @@ export default function Home() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <Card className="border-sky-500/20 bg-sky-500/10">
+        <Card className="border-white/60 bg-sky-400/15">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xl">Próximas tareas</CardTitle>
             {loading && <Icons.spinner className="h-4 w-4 animate-spin text-muted-foreground" />}
@@ -146,7 +146,7 @@ export default function Home() {
           </CardContent>
         </Card>
 
-        <Card className="border-sky-500/20 bg-sky-500/10">
+        <Card className="border-white/60 bg-sky-400/15">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xl">Incidencias pendientes</CardTitle>
             {overdueTasks.length > 0 && (

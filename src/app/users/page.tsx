@@ -307,7 +307,7 @@ export default function UsersPage() {
     >
       <div className="flex flex-1 flex-col gap-4 lg:gap-6">
         {!organizationId && !isRoot && (
-          <Card className="border-sky-500/20 bg-sky-500/10">
+          <Card className="border-white/60 bg-sky-400/15">
             <CardHeader>
               <CardTitle>Sin organización activa</CardTitle>
               <CardDescription>
@@ -321,7 +321,7 @@ export default function UsersPage() {
         )}
 
         {organizationId && !canManage && (
-          <Card className="border-sky-500/20 bg-sky-500/10">
+          <Card className="border-white/60 bg-sky-400/15">
             <CardHeader>
               <CardTitle>Permisos insuficientes</CardTitle>
               <CardDescription>
@@ -343,7 +343,7 @@ export default function UsersPage() {
             </TabsList>
 
             <TabsContent value="requests" className="mt-4">
-              <Card className="border-sky-500/20 bg-sky-500/10">
+              <Card className="border-white/60 bg-sky-400/15">
                 <CardHeader>
                   <CardTitle>Solicitudes pendientes</CardTitle>
                   <CardDescription>
@@ -406,7 +406,7 @@ export default function UsersPage() {
             </TabsContent>
 
             <TabsContent value="members" className="mt-4">
-              <Card className="border-sky-500/20 bg-sky-500/10">
+              <Card className="border-white/60 bg-sky-400/15">
                 <CardHeader>
                   <CardTitle>Miembros de la organización</CardTitle>
                   <CardDescription>

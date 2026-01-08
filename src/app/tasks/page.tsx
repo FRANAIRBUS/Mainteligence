@@ -166,7 +166,7 @@ export default function TasksPage() {
         </Button>
       }
     >
-      <div className="flex flex-col gap-4 rounded-lg border border-sky-500/20 bg-sky-500/10 p-4 shadow-sm">
+      <div className="flex flex-col gap-4 rounded-lg border border-white/60 bg-sky-400/15 p-4 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <Input
             placeholder="Buscar por título o responsable"

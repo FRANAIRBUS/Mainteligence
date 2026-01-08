@@ -173,7 +173,7 @@ export default function IncidentsPage() {
           </Button>
         }
       >
-        <Card className="border-sky-500/20 bg-sky-500/10">
+        <Card className="border-white/60 bg-sky-400/15">
           <CardHeader>
             <CardTitle>Listado de incidencias</CardTitle>
             <CardDescription>Consulta, edita y prioriza incidencias en curso.</CardDescription>

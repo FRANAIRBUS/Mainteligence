@@ -179,7 +179,7 @@ export default function LocationsPage() {
       }
     >
       {canManage ? (
-        <Card className="border-sky-500/20 bg-sky-500/10">
+        <Card className="border-white/60 bg-sky-400/15">
           <CardHeader>
             <div>
               <CardTitle>Ubicaciones</CardTitle>
@@ -199,7 +199,7 @@ export default function LocationsPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="mt-8 border-sky-500/20 bg-sky-500/10">
+        <Card className="mt-8 border-white/60 bg-sky-400/15">
           <CardContent className="pt-6">
             <div className="text-center text-muted-foreground">
               <p>No tienes permiso para ver esta página.</p>
