@@ -5,9 +5,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useFirebaseApp, useFirestore } from '@/lib/firebase';
+import { useFirebaseApp } from '@/lib/firebase';
 import { useUser } from '@/lib/firebase/auth/use-user';
 import type { User, Department } from '@/lib/firebase/models';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
@@ -83,9 +82,8 @@ interface EditUserDialogProps {
 
 export function EditUserDialog({ open, onOpenChange, user, departments }: EditUserDialogProps) {
   const { toast } = useToast();
-  const firestore = useFirestore();
   const app = useFirebaseApp();
-  const { organizationId } = useUser();
+  const { organizationId, user: currentUser } = useUser();
   const [isPending, setIsPending] = useState(false);
 
   const form = useForm<EditUserFormValues>({
@@ -108,37 +106,68 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
   }, [form, user]);
 
   const onSubmit = async (data: EditUserFormValues) => {
-    if (!firestore || !user || !organizationId || user.organizationId !== organizationId) {
+    if (!currentUser) {
+      toast({
+        variant: 'destructive',
+        title: 'Error de autenticación',
+        description: 'No se ha encontrado una sesión válida.',
+      });
+      return;
+    }
+
+    if (!app?.options?.projectId) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Firebase no está inicializado correctamente.',
+      });
+      return;
+    }
+
+    if (!user || !organizationId || (user.organizationId && user.organizationId !== organizationId)) {
         toast({
             variant: 'destructive',
             title: 'Error',
-            description: 'Firestore no está disponible, falta organizationId o el usuario pertenece a otra organización.',
+            description: 'Falta organizationId o el usuario pertenece a otra organización.',
         });
         return;
     }
     setIsPending(true);
 
-    const userRef = doc(firestore, "users", user.id);
     const normalizedRole = normalizeRole(data.role) ?? data.role;
     const currentRole = normalizeRole(user.role) ?? user.role ?? 'operator';
     const roleChanged = normalizedRole !== currentRole;
     const updateData: Record<string, unknown> = {
+      organizationId,
+      uid: user.id,
       displayName: data.displayName,
       email: data.email,
       departmentId: data.departmentId || null,
-      organizationId,
-      updatedAt: serverTimestamp(),
     };
 
     try {
       if (roleChanged) {
         const fn = httpsCallable(getFunctions(app), 'setRoleWithinOrg');
         await fn({ organizationId, uid: user.id, role: normalizedRole });
-      } else if (user.role !== normalizedRole) {
-        updateData.role = normalizedRole;
       }
 
-      await updateDoc(userRef, updateData);
+      const token = await currentUser.getIdToken();
+      const functionUrl = `https://us-central1-${app.options.projectId}.cloudfunctions.net/orgUpdateUserProfile`;
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || 'No se pudo actualizar el usuario.');
+      }
+
+      await response.json().catch(() => null);
       toast({
           title: 'Éxito',
           description: `Usuario ${data.displayName} actualizado correctamente.`,
@@ -147,7 +176,7 @@ export function EditUserDialog({ open, onOpenChange, user, departments }: EditUs
     } catch(error: any) {
         if (error.code === 'permission-denied') {
             const permissionError = new FirestorePermissionError({
-                path: userRef.path,
+                path: `organizations/${organizationId}/members`,
                 operation: 'update',
                 requestResourceData: updateData,
             });

@@ -227,6 +227,7 @@ export default function UsersPage() {
     [members]
   );
   const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+  const departmentsById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments]);
 
   const openEdit = (member: OrgMemberRow) => {
     const profile = usersById.get(member.id);
@@ -394,7 +395,6 @@ export default function UsersPage() {
                           <div className="space-y-3">
                             <div>
                               <p className="text-base font-semibold">{safeText(r.displayName)}</p>
-                              <p className="text-xs text-muted-foreground">uid: {r.id}</p>
                               <p className="text-sm text-muted-foreground">{safeText(r.email)}</p>
                             </div>
                             <div className="space-y-2">
@@ -470,10 +470,15 @@ export default function UsersPage() {
                               <p className="text-base font-semibold">
                                 {safeText(usersById.get(m.id)?.displayName ?? m.displayName)}
                               </p>
-                              <p className="text-xs text-muted-foreground">uid: {m.id}</p>
                               <p className="text-sm text-muted-foreground">
                                 {safeText(usersById.get(m.id)?.email ?? m.email)}
                               </p>
+                              {usersById.get(m.id)?.departmentId ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Departamento:{' '}
+                                  {safeText(departmentsById.get(usersById.get(m.id)?.departmentId ?? '')?.name)}
+                                </p>
+                              ) : null}
                             </div>
                             <div className="flex flex-wrap gap-2">
                               <Badge variant="outline">{usersById.get(m.id)?.role ?? (m.role ?? 'operator')}</Badge>
