@@ -177,7 +177,7 @@ export default function Home() {
                 return (
                   <div
                     key={task.id}
-                    className="flex items-start justify-between rounded-lg border border-destructive/40 bg-destructive/5 p-3"
+                    className="flex items-start justify-between rounded-lg border border-destructive/70 bg-destructive/15 p-3"
                   >
                     <div className="space-y-1">
                       <p className="font-medium">{task.title}</p>
