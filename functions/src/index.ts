@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import type { Request, Response } from 'express';
+import { sendAssignmentEmail } from './assignment-email';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -235,7 +236,23 @@ export const onTicketAssign = functions.firestore
 
     if (before.assignedTo === after.assignedTo) return;
 
-    console.log('[onTicketAssign]', context.params.ticketId, before.assignedTo, '->', after.assignedTo);
+    try {
+      await sendAssignmentEmail({
+        organizationId: after.organizationId ?? null,
+        assignedTo: after.assignedTo ?? null,
+        departmentId: after.departmentId ?? null,
+        title: after.title ?? '(sin título)',
+        link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+        type: 'incidencia',
+        identifier: after.displayId ?? context.params.ticketId,
+        description: after.description ?? '',
+        priority: after.priority ?? '',
+        status: after.status ?? '',
+        location: after.departmentId ?? null,
+      });
+    } catch (error) {
+      console.error('[onTicketAssign] Error enviando email de asignación', error);
+    }
   });
 
 export const onTaskAssign = functions.firestore
@@ -247,7 +264,25 @@ export const onTaskAssign = functions.firestore
 
     if (before.assignedTo === after.assignedTo) return;
 
-    console.log('[onTaskAssign]', context.params.taskId, before.assignedTo, '->', after.assignedTo);
+    try {
+      await sendAssignmentEmail({
+        organizationId: after.organizationId ?? null,
+        assignedTo: after.assignedTo ?? null,
+        departmentId: after.location ?? null,
+        title: after.title ?? '(sin título)',
+        link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+        type: 'tarea',
+        identifier: context.params.taskId,
+        description: after.description ?? '',
+        priority: after.priority ?? '',
+        status: after.status ?? '',
+        dueDate: after.dueDate ?? null,
+        location: after.location ?? null,
+        category: after.category ?? null,
+      });
+    } catch (error) {
+      console.error('[onTaskAssign] Error enviando email de asignación', error);
+    }
   });
 
 export const onTicketClosed = functions.firestore

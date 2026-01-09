@@ -31,7 +31,6 @@ import { useAuth, useCollection, useDoc, useFirestore, useUser } from "@/lib/fir
 import { addTaskReport, updateTask } from "@/lib/firestore-tasks";
 import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
-import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRole } from "@/lib/rbac";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
@@ -46,14 +45,6 @@ const priorityCopy: Record<MaintenanceTask["priority"], string> = {
   alta: "Alta",
   media: "Media",
   baja: "Baja",
-};
-
-const buildAbsoluteLink = (path: string) => {
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  if (typeof window === "undefined") {
-    return normalizedPath;
-  }
-  return new URL(normalizedPath, window.location.origin).toString();
 };
 
 function InfoRow({ icon: Icon, label, value }: { icon: ElementType; label: string; value: string }) {
@@ -251,32 +242,7 @@ export default function TaskDetailPage() {
     };
 
     try {
-      const previousAssignee = task.assignedTo?.trim() ?? "";
-      const nextAssignee = updates.assignedTo.trim();
-
       await updateTask(firestore, auth, task.id, updates);
-
-      if (previousAssignee !== nextAssignee) {
-        const assignmentLink = buildAbsoluteLink(`/tasks/${task.id}`);
-        void sendAssignmentEmail({
-          users,
-          departments,
-          assignedTo: nextAssignee || null,
-          departmentId: updates.location || null,
-          title: updates.title,
-          link: assignmentLink,
-          type: "tarea",
-          identifier: task.id,
-          description: updates.description,
-          priority: updates.priority,
-          status: updates.status,
-          dueDate: updates.dueDate ? updates.dueDate.toDate() : null,
-          location: updates.location,
-          category: updates.category,
-        }).catch((error) => {
-          console.warn("No se pudo enviar el correo de asignación de la tarea", error);
-        });
-      }
 
       toast({
         title: "Tarea actualizada",
