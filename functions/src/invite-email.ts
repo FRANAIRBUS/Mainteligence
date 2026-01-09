@@ -1,3 +1,4 @@
+import * as functions from 'firebase-functions/v1';
 import { Resend } from 'resend';
 
 type InviteEmailInput = {
@@ -41,8 +42,8 @@ const buildInviteEmailContent = ({ orgName, role, inviteLink }: InviteEmailInput
 };
 
 export const sendInviteEmail = async (input: InviteEmailInput) => {
-  const resendKey = process.env.RESEND_API_KEY;
-  const resendFrom = process.env.RESEND_FROM;
+  const resendKey = functions.config().resend?.api_key;
+  const resendFrom = functions.config().resend?.from;
 
   if (!resendKey || !resendFrom) {
     console.warn('Resend no configurado: RESEND_API_KEY/RESEND_FROM faltante.');
