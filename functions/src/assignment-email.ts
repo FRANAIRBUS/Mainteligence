@@ -1,4 +1,5 @@
 import * as admin from 'firebase-admin';
+import * as functions from 'firebase-functions/v1';
 import { Resend } from 'resend';
 
 type AssignmentType = 'tarea' | 'incidencia';
@@ -252,8 +253,8 @@ const resolveFallbackAssignedUser = async (
 };
 
 export const sendAssignmentEmail = async (input: AssignmentEmailInput) => {
-  const resendKey = process.env.RESEND_API_KEY;
-  const resendFrom = process.env.RESEND_FROM;
+  const resendKey = functions.config().resend?.api_key;
+  const resendFrom = functions.config().resend?.from;
 
   if (!resendKey || !resendFrom) {
     console.warn('Resend no configurado: RESEND_API_KEY/RESEND_FROM faltante.');
@@ -295,4 +296,3 @@ export const sendAssignmentEmail = async (input: AssignmentEmailInput) => {
     text,
   });
 };
-
