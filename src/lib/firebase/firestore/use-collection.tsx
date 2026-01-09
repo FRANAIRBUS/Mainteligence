@@ -1,26 +1,18 @@
 'use client';
 import { useState, useEffect } from 'react';
-import {
-  collection,
-  onSnapshot,
-  QueryConstraint,
-  query,
-  where,
-} from 'firebase/firestore';
+import { collection, onSnapshot, QueryConstraint, query, where } from 'firebase/firestore';
 import { useFirestore } from '../provider';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 import { useUser } from '../auth/use-user';
-import { normalizeRole } from '@/lib/rbac';
 
 export function useCollection<T>(path: string | null, ...queries: QueryConstraint[]) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
   const db = useFirestore();
-  const { user, loading: userLoading, organizationId, profile, isRoot } = useUser();
-  const normalizedRole = normalizeRole(profile?.role);
-  const allowCrossOrg = normalizedRole === 'super_admin';
+  const { user, loading: userLoading, organizationId, isRoot } = useUser();
 
   useEffect(() => {
     try {
@@ -53,7 +45,7 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
         return;
       }
 
-      if (organizationId === null && !allowCrossOrg) {
+      if (!organizationId) {
         const organizationError = new Error('Critical: Missing organizationId in transaction');
         setError(organizationError);
         setData([]);
@@ -62,20 +54,17 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
       }
 
       setLoading(true);
-      const orgScope = allowCrossOrg ? [] : [where('organizationId', '==', organizationId)];
-      const collectionQuery = query(
-        collection(db, path),
-        ...orgScope,
-        ...queries
-      );
+      const orgScope = [where('organizationId', '==', organizationId)];
+
+      const collectionQuery = query(collection(db, path), ...orgScope, ...queries);
 
       const unsubscribe = onSnapshot(
         collectionQuery,
         (snapshot) => {
           try {
-            const newData = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
+            const newData = snapshot.docs.map((docSnap) => ({
+              id: docSnap.id,
+              ...docSnap.data(),
             })) as T[];
             setData(newData);
             setLoading(false);
@@ -86,8 +75,8 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
             setLoading(false);
           }
         },
-        (err) => {
-          if (err.code === 'permission-denied') {
+        (err: any) => {
+          if (err?.code === 'permission-denied') {
             const permissionError = new FirestorePermissionError({
               path,
               operation: 'list',
@@ -107,23 +96,19 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
       setData([]);
       setLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allowCrossOrg, db, path, user, userLoading, organizationId, ...queries]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, path, user, userLoading, organizationId, isRoot, ...queries]);
 
   return { data, loading, error };
 }
 
-export function useCollectionQuery<T>(
-  path: string | null,
-  ...queries: QueryConstraint[]
-) {
+export function useCollectionQuery<T>(path: string | null, ...queries: QueryConstraint[]) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
   const db = useFirestore();
-  const { user, loading: userLoading, organizationId, profile } = useUser();
-  const normalizedRole = normalizeRole(profile?.role);
-  const allowCrossOrg = normalizedRole === 'super_admin';
+  const { user, loading: userLoading, organizationId, isRoot } = useUser();
 
   useEffect(() => {
     try {
@@ -148,7 +133,14 @@ export function useCollectionQuery<T>(
         return;
       }
 
-      if (organizationId === null && !allowCrossOrg) {
+      if (isRoot) {
+        setLoading(false);
+        setData([]);
+        setError(null);
+        return;
+      }
+
+      if (!organizationId) {
         const organizationError = new Error('Critical: Missing organizationId in transaction');
         setError(organizationError);
         setData([]);
@@ -156,21 +148,16 @@ export function useCollectionQuery<T>(
         return;
       }
 
-      const orgScope = allowCrossOrg ? [] : [where('organizationId', '==', organizationId)];
-      const preparedQuery = query(
-        collection(db, path),
-        ...orgScope,
-        ...queries
-      );
+      const preparedQuery = query(collection(db, path), where('organizationId', '==', organizationId), ...queries);
 
       setLoading(true);
       const unsubscribe = onSnapshot(
         preparedQuery,
         (snapshot) => {
           try {
-            const newData = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
+            const newData = snapshot.docs.map((docSnap) => ({
+              id: docSnap.id,
+              ...docSnap.data(),
             })) as T[];
             setData(newData);
             setLoading(false);
@@ -181,8 +168,8 @@ export function useCollectionQuery<T>(
             setLoading(false);
           }
         },
-        (err) => {
-          if (err.code === 'permission-denied') {
+        (err: any) => {
+          if (err?.code === 'permission-denied') {
             const permissionError = new FirestorePermissionError({
               path,
               operation: 'list',
@@ -202,7 +189,7 @@ export function useCollectionQuery<T>(
       setData([]);
       setLoading(false);
     }
-  }, [allowCrossOrg, db, organizationId, path, user, userLoading, ...queries]);
+  }, [db, organizationId, path, user, userLoading, isRoot, ...queries]);
 
   return { data, loading, error };
 }

@@ -1,29 +1,13 @@
 'use client';
 
-import { MainNav } from '@/components/main-nav';
-import { UserNav } from '@/components/user-nav';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from '@/components/ui/sidebar';
+import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useDoc, useCollectionQuery } from '@/lib/firebase';
-import type { Ticket, Site, Department, Asset, User } from '@/lib/firebase/models';
-import { useRouter } from 'next/navigation';
+import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
+import type { Ticket, Site, Department, User } from '@/lib/firebase/models';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +15,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { CalendarRange, ListFilter, MapPin, MoreHorizontal, ShieldAlert } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -40,11 +31,11 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AddIncidentDialog } from '@/components/add-incident-dialog';
+import { AddIncidentDialog } from '@/app/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
-import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import Link from 'next/link';
 
 const incidentPriorityOrder: Record<Ticket['priority'], number> = {
   Crítica: 3,
@@ -53,119 +44,32 @@ const incidentPriorityOrder: Record<Ticket['priority'], number> = {
   Baja: 0,
 };
 
-function IncidentsTable({
-  tickets,
-  sites,
-  departments,
-  loading,
-  onViewDetails,
-  onEdit,
-  currentUser,
-  userId,
-}: {
-  tickets: Ticket[];
-  sites: Record<string, string>;
-  departments: Record<string, string>;
-  loading: boolean;
-  onViewDetails: (ticketId: string) => void;
-  onEdit: (ticket: Ticket) => void;
-  currentUser?: User | null;
-  userId?: string;
-}) {
-  if (loading) {
-    return (
-      <div className="flex h-64 w-full items-center justify-center">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>ID</TableHead>
-          <TableHead>Título</TableHead>
-          <TableHead>Estado</TableHead>
-          <TableHead>Prioridad</TableHead>
-          <TableHead>Ubicación</TableHead>
-          <TableHead>Departamento</TableHead>
-          <TableHead>Creado</TableHead>
-          <TableHead>
-            <span className="sr-only">Acciones</span>
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {tickets.length > 0 ? (
-          tickets.map((ticket) => {
-            const permissions = getTicketPermissions(ticket, currentUser ?? null, userId ?? null);
-            return (
-              <TableRow key={ticket.id} className="cursor-pointer" onClick={() => onViewDetails(ticket.id)}>
-                <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0,6)}</TableCell>
-                <TableCell>{ticket.title}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">{ticket.status}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{ticket.priority}</Badge>
-                </TableCell>
-                <TableCell>{sites[ticket.siteId] || 'N/A'}</TableCell>
-                <TableCell>{departments[ticket.departmentId] || 'N/A'}</TableCell>
-                <TableCell>
-                  {ticket.createdAt?.toDate ? ticket.createdAt.toDate().toLocaleDateString() : 'N/A'}
-                </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        aria-haspopup="true"
-                        size="icon"
-                        variant="ghost"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Menú de acciones</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                      <DropdownMenuItem onClick={() => onViewDetails(ticket.id)}>Ver Detalles</DropdownMenuItem>
-                      {permissions.canEditContent && (
-                        <DropdownMenuItem onClick={() => onEdit(ticket)}>Editar</DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            );
-          })
-        ) : (
-          <TableRow>
-            <TableCell colSpan={8} className="h-24 text-center">
-              No se encontraron incidencias.
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-    </Table>
-  );
-}
-
-
 export default function IncidentsPage() {
-  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
+  const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [locationFilter, setLocationFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Phase 1: Wait for user authentication to complete.
   useEffect(() => {
-    if (isLoaded && !user) {
+    if (!userLoading && !user) {
       router.push('/login');
     }
-  }, [isLoaded, user, router]);
+  }, [userLoading, user, router]);
+
+  useEffect(() => {
+    if (searchParams?.get('new') === 'true') {
+      setIsAddIncidentOpen(true);
+    }
+  }, [searchParams]);
   
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
@@ -173,7 +77,7 @@ export default function IncidentsPage() {
 
   // Phase 3: Construct the tickets query only when user and userProfile are ready.
   const ticketsConstraints = useMemo(() => {
-    if (!user || !userProfile || (!organizationId && !isSuperAdmin) || !normalizedRole) return null;
+    if (userLoading || !user || !userProfile || (!organizationId && !isSuperAdmin) || !normalizedRole) return null;
 
     if (isSuperAdmin) {
       return [] as const;
@@ -233,6 +137,7 @@ export default function IncidentsPage() {
 
   const sortedTickets = useMemo(() => {
     const openTickets = tickets.filter((ticket) => ticket.status !== 'Cerrada');
+    const effectiveDateFilter = dateFilter === 'all' ? 'recientes' : dateFilter || 'recientes';
 
     return [...openTickets].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
@@ -243,12 +148,33 @@ export default function IncidentsPage() {
         ?? 0;
 
       if (bCreatedAt !== aCreatedAt) {
-        return bCreatedAt - aCreatedAt;
+        return effectiveDateFilter === 'antiguas'
+          ? aCreatedAt - bCreatedAt
+          : bCreatedAt - aCreatedAt;
       }
 
       return incidentPriorityOrder[b.priority] - incidentPriorityOrder[a.priority];
     });
-  }, [tickets]);
+  }, [dateFilter, tickets]);
+
+  const filteredTickets = useMemo(() => {
+    return sortedTickets.filter((ticket) => {
+      const matchesStatus =
+        statusFilter === 'all' || statusFilter === 'todas' || ticket.status === statusFilter;
+      const matchesPriority =
+        priorityFilter === 'all' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
+      const matchesLocation = locationFilter === 'all' || ticket.siteId === locationFilter;
+      const query = searchQuery.toLowerCase();
+      const matchesQuery =
+        !query ||
+        ticket.title.toLowerCase().includes(query) ||
+        ticket.description.toLowerCase().includes(query) ||
+        ticket.displayId?.toLowerCase().includes(query) ||
+        ticket.id.toLowerCase().includes(query);
+
+      return matchesStatus && matchesPriority && matchesLocation && matchesQuery;
+    });
+  }, [locationFilter, priorityFilter, searchQuery, sortedTickets, statusFilter]);
 
   const handleViewDetails = (ticketId: string) => {
     router.push(`/incidents/${ticketId}`);
@@ -259,7 +185,7 @@ export default function IncidentsPage() {
     setIsEditIncidentOpen(true);
   };
   
-  const initialLoading = !isLoaded;
+  const initialLoading = userLoading;
   
   if (initialLoading) {
     return (
@@ -272,65 +198,217 @@ export default function IncidentsPage() {
   const tableDataIsLoading = ticketsLoading || sitesLoading || deptsLoading || (isMantenimiento && usersLoading);
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader className="p-4 text-center">
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <DynamicClientLogo />
+    <>
+      <AppShell
+        title="Incidencias"
+        description="Visualiza y gestiona todas las incidencias correctivas."
+        action={
+          <Button className="w-full sm:w-auto" onClick={() => setIsAddIncidentOpen(true)}>
+            Crear Incidencia
+          </Button>
+        }
+      >
+        <Card className="border-white/60 bg-sky-400/15">
+          <CardHeader className="p-4 pb-0">
+            <CardTitle>Listado de incidencias</CardTitle>
+            <CardDescription>Consulta, edita y prioriza incidencias en curso.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 p-4 pt-0">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <Input
+                placeholder="Buscar por título"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="md:max-w-xs"
+              />
+              <div className="flex flex-wrap gap-2">
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger
+                    className={`h-10 w-12 justify-center border border-white/60 p-0 [&>svg:last-child]:hidden ${
+                      statusFilter !== 'all'
+                        ? 'border-primary/70 bg-primary/10 text-primary'
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    <SelectValue className="sr-only" />
+                    <ListFilter className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">Estados</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
+                    <SelectItem value="Abierta">Abiertas</SelectItem>
+                    <SelectItem value="En curso">En curso</SelectItem>
+                    <SelectItem value="En espera">En espera</SelectItem>
+                    <SelectItem value="Resuelta">Resueltas</SelectItem>
+                    <SelectItem value="Cierre solicitado">Cierre solicitado</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                  <SelectTrigger
+                    className={`h-10 w-12 justify-center border border-white/60 p-0 [&>svg:last-child]:hidden ${
+                      priorityFilter !== 'all'
+                        ? 'border-primary/70 bg-primary/10 text-primary'
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    <SelectValue className="sr-only" />
+                    <ShieldAlert className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">Prioridad</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
+                    <SelectItem value="Crítica">Crítica</SelectItem>
+                    <SelectItem value="Alta">Alta</SelectItem>
+                    <SelectItem value="Media">Media</SelectItem>
+                    <SelectItem value="Baja">Baja</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={dateFilter} onValueChange={setDateFilter}>
+                  <SelectTrigger
+                    className={`h-10 w-12 justify-center border border-white/60 p-0 [&>svg:last-child]:hidden ${
+                      dateFilter !== 'all'
+                        ? 'border-primary/70 bg-primary/10 text-primary'
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    <SelectValue className="sr-only" />
+                    <CalendarRange className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">Fecha</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
+                    <SelectItem value="recientes">Más recientes</SelectItem>
+                    <SelectItem value="antiguas">Más antiguas</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={locationFilter} onValueChange={setLocationFilter}>
+                  <SelectTrigger
+                    className={`h-10 w-12 justify-center border border-white/60 p-0 [&>svg:last-child]:hidden ${
+                      locationFilter !== 'all'
+                        ? 'border-primary/70 bg-primary/10 text-primary'
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    <SelectValue className="sr-only" />
+                    <MapPin className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">Ubicaciones</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
+                    {sites.map((site) => (
+                      <SelectItem key={site.id} value={site.id}>
+                        {site.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <a href="/" className="flex flex-col items-center gap-2">
-                <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-                Maintelligence
-                </span>
-            </a>
-        </SidebarHeader>
-        <SidebarContent>
-          <MainNav />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
-          <div className="flex w-full items-center justify-end">
-            <UserNav />
-          </div>
-        </header>
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
-           <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle>Incidencias</CardTitle>
-                  <CardDescription className="mt-2">
-                    Visualiza y gestiona todas las incidencias correctivas.
-                  </CardDescription>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {tableDataIsLoading && (
+                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+                  <Icons.spinner className="h-4 w-4 animate-spin" />
+                  Cargando incidencias...
                 </div>
-                <Button className="w-full sm:w-auto" onClick={() => setIsAddIncidentOpen(true)}>
-                  Crear Incidencia
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <IncidentsTable
-                  tickets={sortedTickets}
-                  sites={sitesMap}
-                  departments={departmentsMap}
-                  loading={tableDataIsLoading}
-                  onViewDetails={handleViewDetails}
-                  onEdit={handleEditRequest}
-                  currentUser={userProfile}
-                  userId={user?.uid}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </main>
-      </SidebarInset>
-      <AddIncidentDialog
-        open={isAddIncidentOpen}
-        onOpenChange={setIsAddIncidentOpen}
-      />
+              )}
+              {!tableDataIsLoading && filteredTickets.length === 0 && (
+                <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+                  No se encontraron incidencias con esos filtros.
+                </div>
+              )}
+              {!tableDataIsLoading &&
+                filteredTickets.map((ticket) => {
+                  const permissions = getTicketPermissions(ticket, userProfile ?? null, user?.uid ?? null);
+                  const createdAtLabel = ticket.createdAt?.toDate
+                    ? ticket.createdAt.toDate().toLocaleDateString()
+                    : 'N/A';
+                  const siteLabel = sitesMap[ticket.siteId] || 'N/A';
+                  const departmentLabel = departmentsMap[ticket.departmentId] || 'N/A';
+                  const ticketIdLabel = ticket.displayId || ticket.id.substring(0, 6);
+                  return (
+                    <div
+                      key={ticket.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleViewDetails(ticket.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          handleViewDetails(ticket.id);
+                        }
+                      }}
+                      className="block rounded-lg border border-white/20 bg-background p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-base font-semibold text-foreground">{ticket.title}</p>
+                            <Badge variant="outline">{ticket.status}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground line-clamp-2">
+                            {ticket.description || 'Sin descripción'}
+                          </p>
+                          <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                            <span>ID: {ticketIdLabel}</span>
+                            <span>Ubicación: {siteLabel}</span>
+                            <span>Departamento: {departmentLabel}</span>
+                            <span>Creado: {createdAtLabel}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant={ticket.priority === 'Crítica' ? 'destructive' : 'secondary'}>
+                            Prioridad {ticket.priority}
+                          </Badge>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                aria-haspopup="true"
+                                size="icon"
+                                variant="ghost"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                }}
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span className="sr-only">Menú de acciones</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                              <DropdownMenuItem
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  handleViewDetails(ticket.id);
+                                }}
+                              >
+                                Ver Detalles
+                              </DropdownMenuItem>
+                              {permissions.canEditContent && (
+                                <DropdownMenuItem
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleEditRequest(ticket);
+                                  }}
+                                >
+                                  Editar
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </CardContent>
+        </Card>
+      </AppShell>
+
+      <AddIncidentDialog open={isAddIncidentOpen} onOpenChange={setIsAddIncidentOpen} />
       {editingTicket && (
         <EditIncidentDialog
           open={isEditIncidentOpen}
@@ -340,6 +418,6 @@ export default function IncidentsPage() {
           departments={departments}
         />
       )}
-    </SidebarProvider>
+    </>
   );
 }

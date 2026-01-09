@@ -1,89 +1,130 @@
-"use client";
+'use client';
 
-import { useEffect, type ReactNode } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import { Icons } from "@/components/icons";
-import { MainNav } from "@/components/main-nav";
-import { UserNav } from "@/components/user-nav";
-import { useUser } from "@/lib/firebase";
-import { DynamicClientLogo } from "@/components/dynamic-client-logo";
+import { useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Sidebar, SidebarContent, SidebarHeader, SidebarInset } from '@/components/ui/sidebar';
+import { ClientLogo } from '@/components/client-logo';
+import { MainNav } from '@/components/main-nav';
+import { MobileBottomNav } from '@/components/mobile-bottom-nav';
+import { OrgSwitcher } from '@/components/org-switcher';
+import { UserNav } from '@/components/user-nav';
+import { useUser } from '@/lib/firebase/auth/use-user';
 
-interface AppShellProps {
-  title: string;
+type AppShellProps = {
+  children: React.ReactNode;
+  title?: string;
   description?: string;
-  action?: ReactNode;
-  children: ReactNode;
-}
+  action?: React.ReactNode;
+  headerContent?: React.ReactNode;
+};
 
-export function AppShell({ title, description, action, children }: AppShellProps) {
-  const { user, loading, isRoot } = useUser();
+export function AppShell({ children, title, description, action, headerContent }: AppShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const { user, profile, organizationId, activeMembership, loading, isRoot } = useUser();
+
+  const isOnboarding = pathname === '/onboarding';
 
   useEffect(() => {
-    // Root users are redirected to the hidden root console.
-    if (!loading && isRoot) {
-      router.replace('/root');
+    if (loading) return;
+
+    if (!user) {
+      router.push('/login');
       return;
     }
-    if (!loading && !user) {
-      router.replace("/login");
-    }
-  }, [loading, router, user, isRoot]);
 
-  if (loading || !user || isRoot) {
+    if (isRoot) {
+      router.push('/root');
+      return;
+    }
+
+    // No profile yet: user hasn't completed bootstrap signup / onboarding.
+    if (!profile) {
+      if (!isOnboarding) router.push('/onboarding');
+      return;
+    }
+
+    if (profile.active === false) {
+      if (!isOnboarding) router.push('/onboarding');
+      return;
+    }
+
+    if (!organizationId) {
+      if (!isOnboarding) router.push('/onboarding');
+      return;
+    }
+
+    // Membership gate: only active members can enter the app.
+    if (!activeMembership || activeMembership.status !== 'active') {
+      if (!isOnboarding) router.push('/onboarding');
+      return;
+    }
+
+    if (isOnboarding) {
+      router.push('/');
+    }
+  }, [user, profile, organizationId, activeMembership, loading, isRoot, router, pathname, isOnboarding]);
+
+  // Full-page loading (avoid blocking onboarding flow)
+  if (loading || (!isOnboarding && user && !isRoot && !profile)) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
+          <p className="text-muted-foreground">Cargando...</p>
+        </div>
       </div>
     );
   }
 
+  // Root has its own console
+  if (isRoot) return null;
+
   return (
-    <SidebarProvider>
+    <div className="flex min-h-screen bg-background">
       <Sidebar>
-        <SidebarHeader className="p-4 text-center">
-          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-            <DynamicClientLogo />
+        <SidebarHeader className="border-b p-4">
+          <div className="flex items-center justify-between gap-2">
+            <ClientLogo />
+            <div className="hidden md:block">
+              <UserNav />
+            </div>
           </div>
-          <Link href="/" className="flex flex-col items-center gap-2">
-            <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-              Maintelligence
-            </span>
-          </Link>
+          <div className="mt-4">
+            <OrgSwitcher />
+          </div>
         </SidebarHeader>
-        <SidebarContent>
+        <SidebarContent className="px-2 pb-4">
           <MainNav />
         </SidebarContent>
       </Sidebar>
       <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
-          <div className="flex w-full items-center justify-end">{user && <UserNav />}</div>
-        </header>
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
-          <div className="mx-auto flex max-w-6xl flex-col gap-6">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h1 className="font-headline text-3xl font-bold tracking-tight md:text-4xl">{title}</h1>
-                {description && (
-                  <p className="mt-2 text-muted-foreground">{description}</p>
-                )}
+        <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur-sm lg:px-6">
+          {headerContent ? (
+            <>
+              <div className="flex flex-1">{headerContent}</div>
+              <div className="ml-auto flex items-center gap-2">
+                <UserNav />
               </div>
-              {action}
-            </div>
-            {children}
-          </div>
-        </main>
+            </>
+          ) : (
+            <>
+              {(title || description) && (
+                <div className="flex flex-1 flex-col gap-1">
+                  {title && <h1 className="text-lg font-semibold leading-tight md:text-xl">{title}</h1>}
+                  {description && <p className="text-sm text-muted-foreground">{description}</p>}
+                </div>
+              )}
+              <div className="ml-auto flex items-center gap-2">
+                {action}
+                <UserNav />
+              </div>
+            </>
+          )}
+        </header>
+        <main className="flex-1 p-4 pb-24 sm:p-6 sm:pb-28 md:p-8 md:pb-10">{children}</main>
+        <MobileBottomNav />
       </SidebarInset>
-    </SidebarProvider>
+    </div>
   );
 }

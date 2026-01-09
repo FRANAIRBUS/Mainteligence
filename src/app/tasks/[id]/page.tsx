@@ -539,7 +539,9 @@ export default function TaskDetailPage() {
         title={task?.title || "Detalle de tarea"}
         description="Consulta y gestiona la tarea, agrega informes y edita la información."
       >
-        <div className="rounded-lg border bg-card p-6 shadow-sm">{renderContent()}</div>
+        <div className="rounded-lg border border-white/80 bg-card p-6 shadow-sm">
+          {renderContent()}
+        </div>
       </AppShell>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>

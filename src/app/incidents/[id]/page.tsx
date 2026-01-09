@@ -55,20 +55,24 @@ export default function IncidentDetailPage() {
   const ticketId = Array.isArray(id) ? id[0] : id;
   const firestore = useFirestore();
 
-  const { user, profile: userProfile, organizationId, isLoaded } = useUser();
+  const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
   
   // Fetch all collections needed for display unconditionally
-  const { data: createdByUser, loading: createdByLoading } = useDoc<User>(ticket ? `users/${ticket.createdBy}` : null);
-  const { data: assignedToUser, loading: assignedToLoading } = useDoc<User>(ticket && ticket.assignedTo ? `users/${ticket.assignedTo}` : null);
+  const canReadLegacyUser = (targetUserId?: string | null) =>
+    Boolean(targetUserId && (ticket?.organizationId || targetUserId === user?.uid));
+  const createdByUserPath = canReadLegacyUser(ticket?.createdBy) ? `users/${ticket?.createdBy}` : null;
+  const assignedToUserPath = canReadLegacyUser(ticket?.assignedTo) ? `users/${ticket?.assignedTo}` : null;
+  const { data: createdByUser, loading: createdByLoading } = useDoc<User>(createdByUserPath);
+  const { data: assignedToUser, loading: assignedToLoading } = useDoc<User>(assignedToUserPath);
   const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
   const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
   const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
-  // Only fetch users if the current user is an admin or maintenance staff.
+  // Fetch users for report attribution and assignment display.
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
   const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
-  const { data: users, loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
+  const { data: users, loading: usersLoading } = useCollection<User>('users');
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [reportDescription, setReportDescription] = useState('');
@@ -84,6 +88,29 @@ export default function IncidentDetailPage() {
   }, [ticket?.reports]);
   const isClosed = ticket?.status === 'Cerrada';
   const permissions = ticket && userProfile ? getTicketPermissions(ticket, userProfile, user?.uid ?? null) : null;
+  const userNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+
+    users.forEach((item) => {
+      map[item.id] = item.displayName || item.email || item.id;
+    });
+
+    if (user && userProfile) {
+      map[user.uid] = userProfile.displayName || user.email || user.uid;
+    }
+
+    if (createdByUser) {
+      map[createdByUser.id] =
+        createdByUser.displayName || createdByUser.email || createdByUser.id;
+    }
+
+    if (assignedToUser) {
+      map[assignedToUser.id] =
+        assignedToUser.displayName || assignedToUser.email || assignedToUser.id;
+    }
+
+    return map;
+  }, [assignedToUser, createdByUser, user, userProfile, users]);
 
   // Memoize derived data
   const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
@@ -92,16 +119,16 @@ export default function IncidentDetailPage() {
 
 
   useEffect(() => {
-    if (isLoaded && !user) {
+    if (!userLoading && !user) {
       router.push('/login');
     }
     // Authorization check after data has loaded
-    if (isLoaded && !ticketLoading && ticket && user && userProfile && permissions) {
+    if (!userLoading && !ticketLoading && ticket && user && userProfile && permissions) {
       if (!permissions.canView) {
         router.push('/incidents');
       }
     }
-  }, [isLoaded, permissions, router, ticket, ticketLoading, user, userProfile]);
+  }, [permissions, router, ticket, ticketLoading, user, userProfile, userLoading]);
 
   const handleAddReport = async () => {
     if (!firestore || !ticket?.id) {
@@ -185,13 +212,13 @@ export default function IncidentDetailPage() {
   };
 
   const isLoading =
-    !isLoaded ||
+    userLoading ||
     ticketLoading ||
     createdByLoading ||
     sitesLoading ||
     deptsLoading ||
     assetsLoading ||
-    (isMantenimiento && usersLoading) ||
+    usersLoading ||
     assignedToLoading;
 
   if (isLoading || !userProfile) { // Also check for userProfile, since it's needed for auth
@@ -320,7 +347,7 @@ export default function IncidentDetailPage() {
                                     <div key={index} className="rounded-lg border bg-muted/40 p-3">
                                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                                         <span>{format(date, 'PPPp')}</span>
-                                        {report.createdBy ? <span>Por {report.createdBy}</span> : null}
+                                        {report.createdBy ? <span>Por {userNameMap[report.createdBy] || report.createdBy}</span> : null}
                                       </div>
                                       <p className="mt-2 text-sm whitespace-pre-line text-foreground">{report.description}</p>
                                     </div>

@@ -4,14 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -200,14 +192,12 @@ export default function ClosedTasksPage() {
   };
 
   const isLoading = loading || userLoading || profileLoading;
-  const totalColumns = isAdmin ? 6 : 5;
-
   return (
     <AppShell
       title="Tareas cerradas"
       description="Historial de tareas completadas con filtros avanzados."
     >
-      <div className="flex flex-col gap-4 rounded-lg border bg-card p-4 shadow-sm">
+      <div className="flex flex-col gap-4 rounded-lg border border-white/60 bg-sky-400/15 p-4 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <Input
             placeholder="Buscar por título"
@@ -256,96 +246,87 @@ export default function ClosedTasksPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Tarea</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Prioridad</TableHead>
-                <TableHead>Departamento</TableHead>
-                <TableHead>Creada</TableHead>
-                {isAdmin && <TableHead className="text-right">Acciones</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading && (
-                <TableRow>
-                  <TableCell colSpan={totalColumns} className="h-24 text-center text-muted-foreground">
-                    <div className="flex items-center justify-center gap-2">
-                      <Icons.spinner className="h-4 w-4 animate-spin" /> Cargando tareas...
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-              {!isLoading && filteredTasks.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={totalColumns} className="h-24 text-center text-muted-foreground">
-                    No se encontraron tareas cerradas con esos filtros.
-                  </TableCell>
-                </TableRow>
-              )}
-              {!isLoading &&
-                filteredTasks.map((task) => (
-                  <TableRow
-                    key={task.id}
-                    className="cursor-pointer hover:bg-muted/40"
-                    onClick={() => router.push(`/tasks/${task.id}`)}
-                  >
-                    <TableCell className="font-medium">
-                      <div className="space-y-1">
-                        <p>{task.title}</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {isLoading && (
+            <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+              <Icons.spinner className="h-4 w-4 animate-spin" /> Cargando tareas...
+            </div>
+          )}
+          {!isLoading && filteredTasks.length === 0 && (
+            <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+              No se encontraron tareas cerradas con esos filtros.
+            </div>
+          )}
+          {!isLoading &&
+            filteredTasks.map((task) => {
+              const departmentLabel =
+                departments.find((dept) => dept.id === task.location)?.name || "Sin departamento";
+              const createdAtLabel = task.createdAt?.toDate
+                ? format(task.createdAt.toDate(), "dd/MM/yyyy", { locale: es })
+                : "Sin fecha";
+              return (
+                <div
+                  key={task.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => router.push(`/tasks/${task.id}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      router.push(`/tasks/${task.id}`);
+                    }
+                  }}
+                  className="block rounded-lg border border-white/20 bg-background p-4 text-left shadow-sm transition hover:border-primary/40 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-base font-semibold text-foreground">{task.title}</p>
+                        <Badge variant="outline">{statusCopy[task.status]}</Badge>
                         {task.reopened && (
                           <Badge variant="outline" className="text-xs">
                             Reabierta
                           </Badge>
                         )}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{statusCopy[task.status]}</Badge>
-                    </TableCell>
-                    <TableCell>
+                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <span>Departamento: {departmentLabel}</span>
+                        <span>Creada: {createdAtLabel}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={task.priority === "alta" ? "destructive" : "secondary"}>
-                        {priorityCopy[task.priority]}
+                        Prioridad {priorityCopy[task.priority]}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {departments.find((dept) => dept.id === task.location)?.name || "Sin departamento"}
-                    </TableCell>
-                    <TableCell>
-                      {task.createdAt?.toDate
-                        ? format(task.createdAt.toDate(), "dd/MM/yyyy", { locale: es })
-                        : "Sin fecha"}
-                    </TableCell>
-                    {isAdmin && (
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleReopen(task);
-                          }}
-                        >
-                          Reabrir
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleDuplicate(task);
-                          }}
-                        >
-                          Duplicar
-                        </Button>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-            </TableBody>
-          </Table>
+                      {isAdmin && (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleReopen(task);
+                            }}
+                          >
+                            Reabrir
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleDuplicate(task);
+                            }}
+                          >
+                            Duplicar
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
         </div>
       </div>
     </AppShell>

@@ -1,49 +1,27 @@
 'use client';
 
-import { MainNav } from '@/components/main-nav';
-import { UserNav } from '@/components/user-nav';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from '@/components/ui/sidebar';
-import { Icons } from '@/components/icons';
-import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
-import type { User, Department } from '@/lib/firebase/models';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { doc, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
-import { MoreHorizontal, AlertTriangle, Loader2 } from 'lucide-react';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
+import { collection, onSnapshot, type DocumentData } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+
+import { AppShell } from '@/components/app-shell';
 import { AddUserDialog } from '@/components/add-user-dialog';
 import { EditUserDialog } from '@/components/edit-user-dialog';
-import { useToast } from '@/hooks/use-toast';
+
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,414 +31,558 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
+} from '@/components/ui/alert-dialog';
 
-function UserTable({
-  users,
-  loading,
-  onEditUser,
-  onDeleteUser,
-}: {
-  users: User[];
-  loading: boolean;
-  onEditUser: (user: User) => void;
-  onDeleteUser: (userId: string) => void;
-}) {
-  if (loading) {
-    return (
-      <div className="flex h-64 w-full items-center justify-center">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
+import { useToast } from '@/hooks/use-toast';
+import { useCollection, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
+import type { Department, User } from '@/lib/firebase/models';
 
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Nombre</TableHead>
-          <TableHead>Correo electrónico</TableHead>
-          <TableHead>Rol</TableHead>
-          <TableHead>Estado</TableHead>
-          <TableHead>
-            <span className="sr-only">Acciones</span>
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {users.length > 0 ? (
-          users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell className="font-medium">
-                {user.displayName}
-              </TableCell>
-              <TableCell>{user.email}</TableCell>
-              <TableCell>
-                <Badge variant="outline">{user.role}</Badge>
-              </TableCell>
-              <TableCell>
-                <Badge variant={user.active ? 'default' : 'secondary'}>
-                  {user.active ? 'Activo' : 'Inactivo'}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-haspopup="true"
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Menú de acciones</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem onClick={() => onEditUser(user)}>Editar</DropdownMenuItem>
-                    <DropdownMenuItem 
-                      className="text-red-600"
-                      onClick={() => onDeleteUser(user.id)}
-                    >
-                        Eliminar
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          ))
-        ) : (
-          <TableRow>
-            <TableCell colSpan={5} className="h-24 text-center">
-              No se encontraron usuarios.
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-    </Table>
-  );
+type Role = 'super_admin' | 'admin' | 'maintenance' | 'operator';
+type OrgMemberRow = {
+  id: string; // uid
+  role?: Role;
+  status?: 'active' | 'pending' | 'revoked';
+  email?: string | null;
+  displayName?: string | null;
+  updatedAt?: any;
+  createdAt?: any;
+};
+
+type JoinRequestRow = {
+  id: string; // uid
+  email?: string | null;
+  displayName?: string | null;
+  requestedRole?: Role | null;
+  status?: 'pending' | 'approved' | 'rejected';
+  createdAt?: any;
+  updatedAt?: any;
+};
+
+function normalizeRole(input: unknown): Role {
+  const v = String(input ?? '').trim();
+  if (v === 'super_admin' || v === 'admin' || v === 'maintenance' || v === 'operator') return v;
+  return 'operator';
 }
 
-function CreateAdminProfile() {
-  const { user, organizationId } = useUser();
-  const firestore = useFirestore();
-  const { toast } = useToast();
-  const [isCreating, setIsCreating] = useState(false);
-
-  const handleCreateAdmin = async () => {
-    if (!user || !firestore || !organizationId) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Usuario, base de datos u organizationId no disponibles.',
-      });
-      return;
-    }
-    setIsCreating(true);
-    try {
-      const userRef = doc(firestore, 'users', user.uid);
-      await setDoc(userRef, {
-        displayName: user.displayName || user.email,
-        email: user.email,
-        role: 'admin',
-        active: true,
-        isMaintenanceLead: true,
-        organizationId,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-
-      const membershipRef = doc(firestore, 'memberships', `${user.uid}_${organizationId}`);
-      await setDoc(
-        membershipRef,
-        {
-          userId: user.uid,
-          organizationId,
-          organizationName: organizationId,
-          role: 'admin',
-          status: 'active',
-          primary: true,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      toast({
-        title: '¡Éxito!',
-        description: 'Tu perfil de administrador ha sido creado.',
-      });
-      // Consider a page reload or state update to refresh the view
-      window.location.reload();
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error de Permiso',
-        description:
-          'No se pudo crear el perfil de administrador. Revisa las reglas de seguridad de Firestore.',
-      });
-      console.error(error);
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  return (
-    <Card className="mb-8 border-amber-500/50 bg-amber-500/5">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <AlertTriangle className="text-amber-500" />
-          Completar configuración de administrador
-        </CardTitle>
-        <CardDescription>
-          No encontramos un perfil asociado a tu usuario. Crearemos uno con los siguientes ajustes para la
-          organización <strong>{organizationId}</strong>:
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <ul className="list-disc space-y-1 pl-6 text-sm text-muted-foreground">
-          <li>Rol: <span className="font-medium text-foreground">admin</span></li>
-          <li>Estado: activo y líder de mantenimiento</li>
-          <li>organizationId: <span className="font-mono text-foreground">{organizationId}</span></li>
-        </ul>
-        <Button onClick={handleCreateAdmin} disabled={isCreating}>
-          {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Crear mi perfil de administrador
-        </Button>
-      </CardContent>
-    </Card>
-  );
+function safeText(v: unknown): string {
+  const s = String(v ?? '').trim();
+  return s || '-';
 }
 
 export default function UsersPage() {
-  const { user, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
-
-  // Phase 1: Wait for user authentication
-  useEffect(() => {
-    if (!userLoading && !user) {
-      router.push('/login');
-    }
-  }, [user, userLoading, router]);
-
-  const firestore = useFirestore();
   const { toast } = useToast();
-  
-  // Phase 2: Load user profile, but only if user is authenticated
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(
-    user ? `users/${user.uid}` : null
-  );
+  const db = useFirestore();
+  const app = useFirebaseApp();
 
-  const normalizedRole = normalizeRole(userProfile?.role);
-  const canManage = isAdminLikeRole(normalizedRole);
-  
-  // Phase 3: Load app data, but only if the current user is an admin
-  const { data: users, loading: usersLoading } = useCollection<User>(
-    canManage ? 'users' : null
-  );
-  
-  const {
-    data: departments,
-    loading: deptsLoading,
-    error: departmentsError,
-  } = useCollection<Department>(canManage ? 'departments' : null);
+  const { user, organizationId, isRoot, isSuperAdmin, loading: userLoading } = useUser();
+  const canManage = Boolean(isRoot || isSuperAdmin);
 
-  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
-  const [isEditUserOpen, setIsEditUserOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
+  const [members, setMembers] = useState<OrgMemberRow[]>([]);
+  const [membersLoading, setMembersLoading] = useState(true);
+
+  const [joinRequests, setJoinRequests] = useState<JoinRequestRow[]>([]);
+  const [joinLoading, setJoinLoading] = useState(true);
+  const { data: users = [], loading: usersLoading } = useCollection<User>(canManage ? 'users' : null);
+  const { data: departments = [] } = useCollection<Department>(canManage ? 'departments' : null);
+
+  const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+
+  // Per-request role selection (approve as role)
+  const [approveRoleByUid, setApproveRoleByUid] = useState<Record<string, Role>>({});
+
+  // Dialog state
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<JoinRequestRow | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   useEffect(() => {
-    if (departmentsError) {
-      toast({
-        variant: 'destructive',
-        title: 'Error al cargar departamentos',
-        description: 'No se pudieron obtener los departamentos para asignar el usuario.',
-      });
+    if (!userLoading && user && !organizationId && !isRoot) {
+      router.replace('/onboarding');
     }
-  }, [departmentsError, toast]);
+  }, [userLoading, user, organizationId, isRoot, router]);
 
-  const handleEditUser = (userToEdit: User) => {
-    setEditingUser(userToEdit);
-    setIsEditUserOpen(true);
-  };
-  
-  const handleDeleteRequest = (userId: string) => {
-    if (userId === user?.uid) {
-        toast({
-            variant: "destructive",
-            title: "Acción no permitida",
-            description: "No puedes eliminar tu propia cuenta de usuario.",
-        });
-        return;
-    }
-    setDeletingUserId(userId);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!deletingUserId || !firestore || !organizationId) {
-      toast({
-        variant: 'destructive',
-        title: 'Falta organizationId',
-        description: 'No podemos eliminar usuarios sin un organizationId válido.',
-      });
+  // Subscribe: members (organizations/{orgId}/members)
+  useEffect(() => {
+    if (userLoading) return;
+    if (!user || !organizationId) {
+      setMembers([]);
+      setMembersLoading(false);
       return;
     }
+    if (!canManage) {
+      setMembers([]);
+      setMembersLoading(false);
+      return;
+    }
+
+    setMembersLoading(true);
+    const colRef = collection(db, 'organizations', organizationId, 'members');
+
+    const unsub = onSnapshot(
+      colRef,
+      (snap) => {
+        const rows = snap.docs.map((d) => {
+          const data = d.data() as DocumentData;
+          return {
+            id: d.id,
+            role: normalizeRole(data?.role),
+            status: String(data?.status ?? 'active') as any,
+            email: (data?.email ?? null) as any,
+            displayName: (data?.displayName ?? null) as any,
+            createdAt: data?.createdAt,
+            updatedAt: data?.updatedAt,
+          } satisfies OrgMemberRow;
+        });
+
+        rows.sort((a, b) => safeText(a.displayName || a.email).localeCompare(safeText(b.displayName || b.email)));
+        setMembers(rows);
+        setMembersLoading(false);
+      },
+      (err) => {
+        console.error('Error loading org members:', err);
+        setMembers([]);
+        setMembersLoading(false);
+      }
+    );
+
+    return () => unsub();
+  }, [db, userLoading, user, organizationId, canManage]);
+
+  // Subscribe: joinRequests (organizations/{orgId}/joinRequests)
+  useEffect(() => {
+    if (userLoading) return;
+    if (!user || !organizationId) {
+      setJoinRequests([]);
+      setJoinLoading(false);
+      return;
+    }
+    if (!canManage) {
+      setJoinRequests([]);
+      setJoinLoading(false);
+      return;
+    }
+
+    setJoinLoading(true);
+    const colRef = collection(db, 'organizations', organizationId, 'joinRequests');
+
+    const unsub = onSnapshot(
+      colRef,
+      (snap) => {
+        const rows = snap.docs.map((d) => {
+          const data = d.data() as DocumentData;
+          const row: JoinRequestRow = {
+            id: d.id,
+            email: (data?.email ?? null) as any,
+            displayName: (data?.displayName ?? null) as any,
+            requestedRole: data?.requestedRole ? normalizeRole(data?.requestedRole) : null,
+            status: String(data?.status ?? 'pending') as any,
+            createdAt: data?.createdAt,
+            updatedAt: data?.updatedAt,
+          };
+          return row;
+        });
+
+        // Sort newest first if createdAt exists, otherwise by email
+        rows.sort((a, b) => {
+          const at = (a.createdAt?.toMillis?.() ?? 0) as number;
+          const bt = (b.createdAt?.toMillis?.() ?? 0) as number;
+          if (bt !== at) return bt - at;
+          return safeText(a.email).localeCompare(safeText(b.email));
+        });
+
+        setJoinRequests(rows);
+
+        // Seed approveRoleByUid with requestedRole (or operator)
+        setApproveRoleByUid((prev) => {
+          const next = { ...prev };
+          for (const r of rows) {
+            if (!next[r.id]) next[r.id] = r.requestedRole ?? 'operator';
+          }
+          return next;
+        });
+
+        setJoinLoading(false);
+      },
+      (err) => {
+        console.error('Error loading join requests:', err);
+        setJoinRequests([]);
+        setJoinLoading(false);
+      }
+    );
+
+    return () => unsub();
+  }, [db, userLoading, user, organizationId, canManage]);
+
+  const pendingRequests = useMemo(
+    () => joinRequests.filter((r) => (r.status ?? 'pending') === 'pending'),
+    [joinRequests]
+  );
+
+  const activeMembers = useMemo(
+    () => members.filter((m) => (m.status ?? 'active') === 'active'),
+    [members]
+  );
+  const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
+  const departmentsById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments]);
+
+  const openEdit = (member: OrgMemberRow) => {
+    const profile = usersById.get(member.id);
+    if (profile) {
+      setSelectedUser(profile);
+      setEditOpen(true);
+      return;
+    }
+
+    if (!organizationId) return;
+
+    setSelectedUser({
+      id: member.id,
+      organizationId,
+      displayName: String(member.displayName ?? ''),
+      email: String(member.email ?? ''),
+      role: (member.role ?? 'operator') as User['role'],
+      departmentId: undefined,
+      isMaintenanceLead: ['super_admin', 'admin', 'maintenance'].includes(member.role ?? 'operator'),
+      active: (member.status ?? 'active') === 'active',
+      createdAt: member.createdAt as any,
+      updatedAt: member.updatedAt as any,
+    });
+    setEditOpen(true);
+  };
+
+  const openApprove = (req: JoinRequestRow) => {
+    setSelectedRequest(req);
+    setApproveOpen(true);
+  };
+
+  const openReject = (req: JoinRequestRow) => {
+    setSelectedRequest(req);
+    setRejectReason('');
+    setRejectOpen(true);
+  };
+
+  const doApprove = async () => {
+    if (!organizationId || !selectedRequest) return;
+
+    const role = approveRoleByUid[selectedRequest.id] ?? (selectedRequest.requestedRole ?? 'operator');
+
     try {
-      await deleteDoc(doc(firestore, 'users', deletingUserId));
+      const fn = httpsCallable(getFunctions(app), 'orgApproveJoinRequest');
+      await fn({ organizationId, uid: selectedRequest.id, role });
+
       toast({
-        title: 'Éxito',
-        description: 'Usuario eliminado correctamente.',
+        title: 'Solicitud aprobada',
+        description: `${safeText(selectedRequest.email)} añadido como ${role}.`,
       });
-    } catch (error: any) {
+
+      setApproveOpen(false);
+      setSelectedRequest(null);
+    } catch (err: any) {
+      console.error('Approve failed:', err);
       toast({
+        title: 'Error aprobando solicitud',
+        description: err?.message ?? 'No se pudo aprobar la solicitud.',
         variant: 'destructive',
-        title: 'Error',
-        description: 'No se pudo eliminar el usuario.',
       });
-    } finally {
-      setIsDeleteDialogOpen(false);
-      setDeletingUserId(null);
     }
   };
 
-  // Initial loading is true if we are waiting for auth or profile info
-  const initialLoading = userLoading || profileLoading || organizationId === undefined;
+  const doReject = async () => {
+    if (!organizationId || !selectedRequest) return;
 
-  if (initialLoading) {
+    try {
+      const fn = httpsCallable(getFunctions(app), 'orgRejectJoinRequest');
+      await fn({
+        organizationId,
+        uid: selectedRequest.id,
+        reason: rejectReason.trim() || null,
+      });
+
+      toast({
+        title: 'Solicitud rechazada',
+        description: `${safeText(selectedRequest.email)} ha sido rechazada.`,
+      });
+
+      setRejectOpen(false);
+      setSelectedRequest(null);
+      setRejectReason('');
+    } catch (err: any) {
+      console.error('Reject failed:', err);
+      toast({
+        title: 'Error rechazando solicitud',
+        description: err?.message ?? 'No se pudo rechazar la solicitud.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  if (userLoading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-sm text-muted-foreground">Cargando…</div>
       </div>
     );
   }
 
-  if (organizationId === null) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center px-4">
-        <Card className="max-w-lg">
-          <CardHeader className="flex flex-col items-center gap-3 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-              <AlertTriangle className="h-6 w-6" />
-            </div>
-            <CardTitle>Falta el ID de organización</CardTitle>
-            <CardDescription className="text-balance">
-              No encontramos un organizationId en tu sesión. Inicia sesión nuevamente para continuar.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center pb-6">
-            <Button onClick={() => router.push('/login')}>Volver al inicio de sesión</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
+  if (!user) {
+    router.replace('/login');
+    return null;
   }
-
-  // This is a specific state: user is authenticated but has no profile document.
-  const showCreateAdminProfile = !profileLoading && !userProfile;
-  const tableIsLoading = canManage && (usersLoading || deptsLoading);
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader className="p-4 text-center">
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <DynamicClientLogo />
-            </div>
-            <a href="/" className="flex flex-col items-center gap-2">
-                <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-                Maintelligence
-                </span>
-            </a>
-        </SidebarHeader>
-        <SidebarContent>
-          <MainNav />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
-          <div className="flex w-full items-center justify-end">
-            <UserNav />
-          </div>
-        </header>
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
-          {showCreateAdminProfile && <CreateAdminProfile />}
+    <AppShell
+      title="Usuarios y roles"
+      description="Gestiona miembros y solicitudes de acceso de la organización activa."
+    >
+      <div className="flex flex-1 flex-col gap-4 lg:gap-6">
+        {!organizationId && !isRoot && (
+          <Card className="border-white/60 bg-sky-400/15">
+            <CardHeader>
+              <CardTitle>Sin organización activa</CardTitle>
+              <CardDescription>
+                No tienes una organización activa seleccionada. Ve a onboarding o cambia de organización.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => router.push('/onboarding')}>Ir a onboarding</Button>
+            </CardContent>
+          </Card>
+        )}
 
-          {canManage ? (
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>Usuarios y Roles</CardTitle>
-                    <CardDescription className="mt-2">
-                      Gestiona todos los usuarios y sus permisos.
-                    </CardDescription>
-                  </div>
-                    <Button
-                      onClick={() => setIsAddUserOpen(true)}
-                      disabled={deptsLoading || !!departmentsError}
-                    >
-                      Añadir Usuario
-                    </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <UserTable users={users} loading={tableIsLoading} onEditUser={handleEditUser} onDeleteUser={handleDeleteRequest} />
-              </CardContent>
-            </Card>
-          ) : (
-            !showCreateAdminProfile && (
-              <Card className="mt-8">
-                <CardContent className="pt-6">
-                  <div className="text-center text-muted-foreground">
-                    <p>No tienes permiso para ver esta página.</p>
-                    <p className="text-sm">
-                      Pide a un administrador que te cree o actualice en el panel de Usuarios con el rol
-                      adecuado. Si tu cuenta no aparece, inicia sesión y crea tu perfil con el botón de
-                      "Crear Mi Perfil de Administrador".
-                    </p>
-                  </div>
+        {organizationId && !canManage && (
+          <Card className="border-white/60 bg-sky-400/15">
+            <CardHeader>
+              <CardTitle>Permisos insuficientes</CardTitle>
+              <CardDescription>
+                Esta sección está reservada a super_admin (o root). Si has solicitado acceso, espera a que lo aprueben.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        )}
+
+        {organizationId && canManage && (
+          <Tabs defaultValue="requests" className="w-full">
+            <TabsList>
+              <TabsTrigger value="requests">
+                Solicitudes <span className="ml-2 text-xs text-muted-foreground">({pendingRequests.length})</span>
+              </TabsTrigger>
+              <TabsTrigger value="members">
+                Miembros <span className="ml-2 text-xs text-muted-foreground">({activeMembers.length})</span>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="requests" className="mt-4">
+              <Card className="border-white/60 bg-sky-400/15">
+                <CardHeader>
+                  <CardTitle>Solicitudes pendientes</CardTitle>
+                  <CardDescription>
+                    Aprueba o rechaza peticiones para unirse a esta organización. La aprobación crea/activa la membresía.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {joinLoading ? (
+                    <div className="text-sm text-muted-foreground">Cargando solicitudes…</div>
+                  ) : pendingRequests.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No hay solicitudes pendientes.</div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {pendingRequests.map((r) => (
+                        <div key={r.id} className="rounded-lg border border-white/20 bg-background p-4 shadow-sm">
+                          <div className="space-y-3">
+                            <div>
+                              <p className="text-base font-semibold">{safeText(r.displayName)}</p>
+                              <p className="text-sm text-muted-foreground">{safeText(r.email)}</p>
+                            </div>
+                            <div className="space-y-2">
+                              <Select
+                                value={approveRoleByUid[r.id] ?? (r.requestedRole ?? 'operator')}
+                                onValueChange={(v) =>
+                                  setApproveRoleByUid((prev) => ({ ...prev, [r.id]: normalizeRole(v) }))
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Rol" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="operator">operator</SelectItem>
+                                  <SelectItem value="maintenance">maintenance</SelectItem>
+                                  <SelectItem value="admin">admin</SelectItem>
+                                  <SelectItem value="super_admin">super_admin</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {r.requestedRole && (
+                                <div className="text-xs text-muted-foreground">
+                                  Solicitado: {r.requestedRole}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Button size="sm" onClick={() => openApprove(r)}>
+                                Aprobar
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => openReject(r)}>
+                                Rechazar
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
-            )
-          )}
-        </main>
-      </SidebarInset>
-      {canManage && (
-        <AddUserDialog
-          open={isAddUserOpen}
-          onOpenChange={setIsAddUserOpen}
-          departments={departments}
-        />
-      )}
-      {editingUser && canManage && departments && (
-        <EditUserDialog
-          key={editingUser.id}
-          open={isEditUserOpen}
-          onOpenChange={setIsEditUserOpen}
-          user={editingUser}
-          departments={departments}
-        />
-      )}
-       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+            </TabsContent>
+
+            <TabsContent value="members" className="mt-4">
+              <Card className="border-white/60 bg-sky-400/15">
+                <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Miembros de la organización</CardTitle>
+                    <CardDescription>
+                      Pulsa un miembro para editar su rol, datos y departamento. La gestión de roles se aplica con Cloud Function.
+                    </CardDescription>
+                  </div>
+                  <Button size="sm" onClick={() => setAddOpen(true)}>
+                    Invitar usuario
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {membersLoading ? (
+                    <div className="text-sm text-muted-foreground">Cargando miembros…</div>
+                  ) : activeMembers.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No hay miembros activos.</div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {activeMembers.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          className="rounded-lg border border-white/20 bg-background p-4 text-left shadow-sm transition hover:border-white/40"
+                          onClick={() => openEdit(m)}
+                          disabled={usersLoading && !usersById.get(m.id)}
+                        >
+                          <div className="space-y-3">
+                            <div>
+                              <p className="text-base font-semibold">
+                                {safeText(usersById.get(m.id)?.displayName ?? m.displayName)}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {safeText(usersById.get(m.id)?.email ?? m.email)}
+                              </p>
+                              {usersById.get(m.id)?.departmentId ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Departamento:{' '}
+                                  {safeText(departmentsById.get(usersById.get(m.id)?.departmentId ?? '')?.name)}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge variant="outline">{usersById.get(m.id)?.role ?? (m.role ?? 'operator')}</Badge>
+                              <Badge variant={(m.status ?? 'active') === 'active' ? 'default' : 'secondary'}>
+                                {m.status ?? 'active'}
+                              </Badge>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        )}
+      </div>
+
+      <AlertDialog open={approveOpen} onOpenChange={setApproveOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Estás absolutamente seguro?</AlertDialogTitle>
+            <AlertDialogTitle>Aprobar solicitud</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. Esto eliminará permanentemente al usuario
-              de la base de datos de la aplicación (pero no de Firebase Authentication).
+              Esto activará la membresía del usuario en la organización y le dará acceso según el rol seleccionado.
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          <div className="grid gap-3 py-2">
+            <div className="text-sm">
+              <span className="font-medium">Usuario:</span>{' '}
+              {safeText(selectedRequest?.displayName)} ({safeText(selectedRequest?.email)})
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Rol a asignar</Label>
+              <Select
+                value={
+                  selectedRequest
+                    ? approveRoleByUid[selectedRequest.id] ?? (selectedRequest.requestedRole ?? 'operator')
+                    : 'operator'
+                }
+                onValueChange={(v) => {
+                  if (!selectedRequest) return;
+                  setApproveRoleByUid((prev) => ({ ...prev, [selectedRequest.id]: normalizeRole(v) }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Rol" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="operator">operator</SelectItem>
+                  <SelectItem value="maintenance">maintenance</SelectItem>
+                  <SelectItem value="admin">admin</SelectItem>
+                  <SelectItem value="super_admin">super_admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm}>Continuar</AlertDialogAction>
+            <AlertDialogAction onClick={doApprove}>Aprobar</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </SidebarProvider>
+
+      <AlertDialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rechazar solicitud</AlertDialogTitle>
+            <AlertDialogDescription>
+              La solicitud se marcará como rechazada. Puedes indicar un motivo opcional.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="grid gap-3 py-2">
+            <div className="text-sm">
+              <span className="font-medium">Usuario:</span>{' '}
+              {safeText(selectedRequest?.displayName)} ({safeText(selectedRequest?.email)})
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="rejectReason">Motivo (opcional)</Label>
+              <Input
+                id="rejectReason"
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Ej.: dominio no autorizado"
+              />
+            </div>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={doReject}>Rechazar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AddUserDialog open={addOpen} onOpenChange={setAddOpen} departments={departments} />
+      {selectedUser ? (
+        <EditUserDialog open={editOpen} onOpenChange={setEditOpen} user={selectedUser} departments={departments} />
+      ) : null}
+    </AppShell>
   );
 }

@@ -1,28 +1,11 @@
 'use client';
 
-import { MainNav } from '@/components/main-nav';
-import { UserNav } from '@/components/user-nav';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from '@/components/ui/sidebar';
+import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
 import type { Asset, Site, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -53,7 +36,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
 
 function AssetsTable({
@@ -85,69 +67,51 @@ function AssetsTable({
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Nombre</TableHead>
-          <TableHead>Código</TableHead>
-          <TableHead>Ubicación</TableHead>
-          {canEdit && (
-            <TableHead>
-              <span className="sr-only">Acciones</span>
-            </TableHead>
-          )}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {assets.length > 0 ? (
-          assets.map((asset) => (
-            <TableRow key={asset.id}>
-              <TableCell className="font-medium">{asset.name}</TableCell>
-              <TableCell>{asset.code}</TableCell>
-              <TableCell>
-                {sitesById[asset.siteId] ? (
-                  <Badge variant="outline">{sitesById[asset.siteId]}</Badge>
-                ) : (
-                  'N/A'
-                )}
-              </TableCell>
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {assets.length > 0 ? (
+        assets.map((asset) => (
+          <div key={asset.id} className="rounded-lg border border-white/20 bg-background p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-base font-semibold">{asset.name}</p>
+                <p className="text-sm text-muted-foreground">Código: {asset.code}</p>
+                <div>
+                  {sitesById[asset.siteId] ? (
+                    <Badge variant="outline">{sitesById[asset.siteId]}</Badge>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Ubicación: N/A</span>
+                  )}
+                </div>
+              </div>
               {canEdit && (
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        aria-haspopup="true"
-                        size="icon"
-                        variant="ghost"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Menú de acciones</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                      <DropdownMenuItem disabled>Editar</DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-red-600"
-                        onClick={() => onDelete(asset.id)}
-                      >
-                        Eliminar
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-haspopup="true" size="icon" variant="ghost">
+                      <MoreHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Menú de acciones</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-red-600"
+                      onClick={() => onDelete(asset.id)}
+                    >
+                      Eliminar
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
-            </TableRow>
-          ))
-        ) : (
-          <TableRow>
-            <TableCell colSpan={canEdit ? 4 : 3} className="h-24 text-center">
-              No se encontraron activos.
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-    </Table>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+          No se encontraron activos.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -213,59 +177,39 @@ export default function AssetsPage() {
   const tableIsLoading = assetsLoading || sitesLoading;
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader className="p-4 text-center">
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <DynamicClientLogo />
+    <AppShell
+      title="Activos"
+      description="Gestiona todos los activos y equipos de la empresa."
+      action={
+        canManage ? (
+          <Button onClick={() => setIsAddAssetOpen(true)}>Añadir Activo</Button>
+        ) : null
+      }
+    >
+      {canManage ? (
+        <Card className="border-white/60 bg-sky-400/15">
+          <CardHeader>
+            <div>
+              <CardTitle>Activos</CardTitle>
+              <CardDescription className="mt-2">
+                Gestiona todos los activos y equipos de la empresa.
+              </CardDescription>
             </div>
-            <a href="/" className="flex flex-col items-center gap-2">
-                <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-                Maintelligence
-                </span>
-            </a>
-        </SidebarHeader>
-        <SidebarContent>
-          <MainNav />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
-          <div className="flex w-full items-center justify-end">
-            <UserNav />
-          </div>
-        </header>        
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
-          {canManage ? (
-          <Card>
-            <CardHeader>
-               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <CardTitle>Activos</CardTitle>
-                  <CardDescription className="mt-2">
-                    Gestiona todos los activos y equipos de la empresa.
-                  </CardDescription>
-                </div>
-                {canManage && <Button onClick={() => setIsAddAssetOpen(true)}>Añadir Activo</Button>}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <AssetsTable assets={assets} sites={sites} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={canManage} />
-            </CardContent>
-          </Card>
-          ) : (
-            <Card className="mt-8">
-              <CardContent className="pt-6">
-                <div className="text-center text-muted-foreground">
-                  <p>No tienes permiso para ver esta página.</p>
-                  <p className="text-sm">Por favor, contacta a un administrador.</p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </main>
-      </SidebarInset>
+          </CardHeader>
+          <CardContent>
+            <AssetsTable assets={assets} sites={sites} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={canManage} />
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="mt-8 border-white/60 bg-sky-400/15">
+          <CardContent className="pt-6">
+            <div className="text-center text-muted-foreground">
+              <p>No tienes permiso para ver esta página.</p>
+              <p className="text-sm">Por favor, contacta a un administrador.</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {canManage && <AddAssetDialog open={isAddAssetOpen} onOpenChange={setIsAddAssetOpen} sites={sites} />}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
@@ -282,6 +226,6 @@ export default function AssetsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </SidebarProvider>
+    </AppShell>
   );
 }
