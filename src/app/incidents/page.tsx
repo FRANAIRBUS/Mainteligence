@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CalendarRange, ListFilter, MoreHorizontal, ShieldAlert } from 'lucide-react';
+import { CalendarRange, ListFilter, MapPin, MoreHorizontal, ShieldAlert } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -55,6 +55,7 @@ export default function IncidentsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
+  const [locationFilter, setLocationFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Phase 1: Wait for user authentication to complete.
@@ -162,6 +163,7 @@ export default function IncidentsPage() {
         statusFilter === 'all' || statusFilter === 'todas' || ticket.status === statusFilter;
       const matchesPriority =
         priorityFilter === 'all' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
+      const matchesLocation = locationFilter === 'all' || ticket.siteId === locationFilter;
       const query = searchQuery.toLowerCase();
       const matchesQuery =
         !query ||
@@ -170,9 +172,9 @@ export default function IncidentsPage() {
         ticket.displayId?.toLowerCase().includes(query) ||
         ticket.id.toLowerCase().includes(query);
 
-      return matchesStatus && matchesPriority && matchesQuery;
+      return matchesStatus && matchesPriority && matchesLocation && matchesQuery;
     });
-  }, [priorityFilter, searchQuery, sortedTickets, statusFilter]);
+  }, [locationFilter, priorityFilter, searchQuery, sortedTickets, statusFilter]);
 
   const handleViewDetails = (ticketId: string) => {
     router.push(`/incidents/${ticketId}`);
@@ -214,15 +216,21 @@ export default function IncidentsPage() {
           <CardContent className="space-y-4 p-4 pt-0">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <Input
-                placeholder="Buscar por título o ID"
+                placeholder="Buscar por título"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="md:max-w-xs"
               />
               <div className="flex flex-wrap gap-2">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-10 w-14 justify-center border border-white/60 p-0">
-                    <SelectValue placeholder="" className="sr-only" />
+                  <SelectTrigger
+                    className={`h-10 w-12 justify-center border border-white/60 p-0 [&>svg:last-child]:hidden ${
+                      statusFilter !== 'all'
+                        ? 'border-primary/70 bg-primary/10 text-primary'
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    <SelectValue className="sr-only" />
                     <ListFilter className="h-5 w-5" aria-hidden="true" />
                     <span className="sr-only">Estados</span>
                   </SelectTrigger>
@@ -236,8 +244,14 @@ export default function IncidentsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                  <SelectTrigger className="h-10 w-14 justify-center border border-white/60 p-0">
-                    <SelectValue placeholder="" className="sr-only" />
+                  <SelectTrigger
+                    className={`h-10 w-12 justify-center border border-white/60 p-0 [&>svg:last-child]:hidden ${
+                      priorityFilter !== 'all'
+                        ? 'border-primary/70 bg-primary/10 text-primary'
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    <SelectValue className="sr-only" />
                     <ShieldAlert className="h-5 w-5" aria-hidden="true" />
                     <span className="sr-only">Prioridad</span>
                   </SelectTrigger>
@@ -250,8 +264,14 @@ export default function IncidentsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={dateFilter} onValueChange={setDateFilter}>
-                  <SelectTrigger className="h-10 w-14 justify-center border border-white/60 p-0">
-                    <SelectValue placeholder="" className="sr-only" />
+                  <SelectTrigger
+                    className={`h-10 w-12 justify-center border border-white/60 p-0 [&>svg:last-child]:hidden ${
+                      dateFilter !== 'all'
+                        ? 'border-primary/70 bg-primary/10 text-primary'
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    <SelectValue className="sr-only" />
                     <CalendarRange className="h-5 w-5" aria-hidden="true" />
                     <span className="sr-only">Fecha</span>
                   </SelectTrigger>
@@ -259,6 +279,27 @@ export default function IncidentsPage() {
                     <SelectItem value="all">Sin Filtro</SelectItem>
                     <SelectItem value="recientes">Más recientes</SelectItem>
                     <SelectItem value="antiguas">Más antiguas</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={locationFilter} onValueChange={setLocationFilter}>
+                  <SelectTrigger
+                    className={`h-10 w-12 justify-center border border-white/60 p-0 [&>svg:last-child]:hidden ${
+                      locationFilter !== 'all'
+                        ? 'border-primary/70 bg-primary/10 text-primary'
+                        : 'bg-transparent'
+                    }`}
+                  >
+                    <SelectValue className="sr-only" />
+                    <MapPin className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">Ubicaciones</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
+                    {sites.map((site) => (
+                      <SelectItem key={site.id} value={site.id}>
+                        {site.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
