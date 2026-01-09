@@ -31,4 +31,8 @@ env:
     value: production
     availability: [BUILD, RUNTIME]
   - variable: RESEND_API_KEY
-    value: "re_J5wZymJq_2Kk9UbUSK9NzrNpFeJMfTeeb" 
+    value: "re_ayevNEZP_AAErLT47BjxU5vTxnkTzDQhn"
+    availability: [BUILD, RUNTIME]
+  - variable: RESEND_FROM
+    value: "avisos@maintelligence.app"
+    availability: [BUILD, RUNTIME]
