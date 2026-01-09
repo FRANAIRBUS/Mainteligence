@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { MoreHorizontal } from 'lucide-react';
+import { CalendarRange, ListFilter, MoreHorizontal, ShieldAlert } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -52,9 +52,9 @@ export default function IncidentsPage() {
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Phase 1: Wait for user authentication to complete.
@@ -136,7 +136,7 @@ export default function IncidentsPage() {
 
   const sortedTickets = useMemo(() => {
     const openTickets = tickets.filter((ticket) => ticket.status !== 'Cerrada');
-    const effectiveDateFilter = dateFilter || 'recientes';
+    const effectiveDateFilter = dateFilter === 'all' ? 'recientes' : dateFilter || 'recientes';
 
     return [...openTickets].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
@@ -159,9 +159,9 @@ export default function IncidentsPage() {
   const filteredTickets = useMemo(() => {
     return sortedTickets.filter((ticket) => {
       const matchesStatus =
-        statusFilter === '' || statusFilter === 'todas' || ticket.status === statusFilter;
+        statusFilter === 'all' || statusFilter === 'todas' || ticket.status === statusFilter;
       const matchesPriority =
-        priorityFilter === '' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
+        priorityFilter === 'all' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
       const query = searchQuery.toLowerCase();
       const matchesQuery =
         !query ||
@@ -207,11 +207,11 @@ export default function IncidentsPage() {
         }
       >
         <Card className="border-white/60 bg-sky-400/15">
-          <CardHeader>
+          <CardHeader className="p-4 pb-0">
             <CardTitle>Listado de incidencias</CardTitle>
             <CardDescription>Consulta, edita y prioriza incidencias en curso.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 p-4 pt-0">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <Input
                 placeholder="Buscar por título o ID"
@@ -219,13 +219,15 @@ export default function IncidentsPage() {
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="md:max-w-xs"
               />
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-2">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Estados" />
+                  <SelectTrigger className="h-10 w-14 justify-center border border-white/60 p-0">
+                    <SelectValue placeholder="" className="sr-only" />
+                    <ListFilter className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">Estados</span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todas">Todos los estados</SelectItem>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
                     <SelectItem value="Abierta">Abiertas</SelectItem>
                     <SelectItem value="En curso">En curso</SelectItem>
                     <SelectItem value="En espera">En espera</SelectItem>
@@ -234,11 +236,13 @@ export default function IncidentsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Prioridad" />
+                  <SelectTrigger className="h-10 w-14 justify-center border border-white/60 p-0">
+                    <SelectValue placeholder="" className="sr-only" />
+                    <ShieldAlert className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">Prioridad</span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todas">Todas las prioridades</SelectItem>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
                     <SelectItem value="Crítica">Crítica</SelectItem>
                     <SelectItem value="Alta">Alta</SelectItem>
                     <SelectItem value="Media">Media</SelectItem>
@@ -246,10 +250,13 @@ export default function IncidentsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={dateFilter} onValueChange={setDateFilter}>
-                  <SelectTrigger className="w-[160px]">
-                    <SelectValue placeholder="Fecha" />
+                  <SelectTrigger className="h-10 w-14 justify-center border border-white/60 p-0">
+                    <SelectValue placeholder="" className="sr-only" />
+                    <CalendarRange className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">Fecha</span>
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
                     <SelectItem value="recientes">Más recientes</SelectItem>
                     <SelectItem value="antiguas">Más antiguas</SelectItem>
                   </SelectContent>
