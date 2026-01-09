@@ -52,9 +52,9 @@ export default function IncidentsPage() {
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Phase 1: Wait for user authentication to complete.
@@ -136,7 +136,7 @@ export default function IncidentsPage() {
 
   const sortedTickets = useMemo(() => {
     const openTickets = tickets.filter((ticket) => ticket.status !== 'Cerrada');
-    const effectiveDateFilter = dateFilter || 'recientes';
+    const effectiveDateFilter = dateFilter === 'all' ? 'recientes' : dateFilter || 'recientes';
 
     return [...openTickets].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
@@ -159,9 +159,9 @@ export default function IncidentsPage() {
   const filteredTickets = useMemo(() => {
     return sortedTickets.filter((ticket) => {
       const matchesStatus =
-        statusFilter === '' || statusFilter === 'todas' || ticket.status === statusFilter;
+        statusFilter === 'all' || statusFilter === 'todas' || ticket.status === statusFilter;
       const matchesPriority =
-        priorityFilter === '' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
+        priorityFilter === 'all' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
       const query = searchQuery.toLowerCase();
       const matchesQuery =
         !query ||
@@ -227,7 +227,7 @@ export default function IncidentsPage() {
                     <span className="sr-only">Estados</span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin Filtro</SelectItem>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
                     <SelectItem value="Abierta">Abiertas</SelectItem>
                     <SelectItem value="En curso">En curso</SelectItem>
                     <SelectItem value="En espera">En espera</SelectItem>
@@ -242,7 +242,7 @@ export default function IncidentsPage() {
                     <span className="sr-only">Prioridad</span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin Filtro</SelectItem>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
                     <SelectItem value="Crítica">Crítica</SelectItem>
                     <SelectItem value="Alta">Alta</SelectItem>
                     <SelectItem value="Media">Media</SelectItem>
@@ -256,7 +256,7 @@ export default function IncidentsPage() {
                     <span className="sr-only">Fecha</span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin Filtro</SelectItem>
+                    <SelectItem value="all">Sin Filtro</SelectItem>
                     <SelectItem value="recientes">Más recientes</SelectItem>
                     <SelectItem value="antiguas">Más antiguas</SelectItem>
                   </SelectContent>
