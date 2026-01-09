@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import type { Request, Response } from 'express';
 import { sendAssignmentEmail } from './assignment-email';
+import { sendInviteEmail } from './invite-email';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -1109,6 +1110,17 @@ export const orgInviteUser = functions.https.onRequest(async (req, res) => {
       },
       { merge: true }
     );
+
+    try {
+      await sendInviteEmail({
+        recipientEmail: email,
+        orgName,
+        role: requestedRole,
+        inviteLink: 'https://multi.maintelligence.app/login',
+      });
+    } catch (error) {
+      console.warn('Error enviando email de invitación.', error);
+    }
 
     await auditLog({
       action: 'orgInviteUser',
