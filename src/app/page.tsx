@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { format, isBefore, addDays, isWithinInterval } from "date-fns";
+import { format, isBefore, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { AlertTriangle, CalendarDays, CheckCircle2, Inbox, ListChecks } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,9 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
 import { AppShell } from "@/components/app-shell";
-import { ClientLogo } from "@/components/client-logo";
-import { useCollection, useUser } from "@/lib/firebase";
+import { useCollection, useCollectionQuery, useUser } from "@/lib/firebase";
+import type { Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
+import { where } from "firebase/firestore";
 
 const priorityLabel: Record<string, string> = {
   alta: "Alta",
@@ -25,9 +26,20 @@ const statusLabel: Record<string, string> = {
   completada: "Completada",
 };
 
+const incidentPriorityOrder: Record<Ticket["priority"], number> = {
+  Crítica: 3,
+  Alta: 2,
+  Media: 1,
+  Baja: 0,
+};
+
 export default function Home() {
   const { activeMembership, organizationId } = useUser();
   const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
+  const { data: tickets = [], loading: ticketsLoading } = useCollectionQuery<Ticket>(
+    organizationId ? "tickets" : null,
+    ...(organizationId ? [where("organizationId", "==", organizationId)] : [])
+  );
 
   const organizationLabel =
     activeMembership?.organizationName ??
@@ -56,6 +68,19 @@ export default function Home() {
       return a.dueDate.toMillis() - b.dueDate.toMillis();
     })
     .slice(0, 5);
+
+  const openTickets = tickets.filter((ticket) => ticket.status !== "Cerrada");
+  const criticalTickets = openTickets.filter((ticket) => ticket.priority === "Crítica");
+  const pendingIncidents = [...openTickets].sort((a, b) => {
+    if (incidentPriorityOrder[b.priority] !== incidentPriorityOrder[a.priority]) {
+      return incidentPriorityOrder[b.priority] - incidentPriorityOrder[a.priority];
+    }
+
+    const aCreatedAt = a.createdAt?.toMillis?.() ?? 0;
+    const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
+
+    return bCreatedAt - aCreatedAt;
+  });
 
   return (
     <AppShell
@@ -120,28 +145,31 @@ export default function Home() {
             )}
             {!loading &&
               nextInspections.map((task) => (
-                <div
+                <Link
                   key={task.id}
-                  className="flex items-start justify-between rounded-lg border border-white/60 bg-background p-3"
+                  href={task.id ? `/tasks/${task.id}` : "/tasks"}
+                  className="block"
                 >
-                  <div className="space-y-1">
-                    <p className="font-medium">{task.title}</p>
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {task.description || "Sin descripción"}
-                    </p>
-                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span>
-                        {task.dueDate
-                          ? format(task.dueDate.toDate(), "PPP", { locale: es })
-                          : "Sin fecha"}
-                      </span>
-                      {task.priority && (
-                        <Badge variant="secondary">Prioridad {priorityLabel[task.priority]}</Badge>
-                      )}
+                  <div className="flex items-start justify-between rounded-lg border border-white/60 bg-background p-3 transition hover:bg-muted/40">
+                    <div className="space-y-1">
+                      <p className="font-medium">{task.title}</p>
+                      <p className="text-sm text-muted-foreground line-clamp-2">
+                        {task.description || "Sin descripción"}
+                      </p>
+                      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        <span>
+                          {task.dueDate
+                            ? format(task.dueDate.toDate(), "PPP", { locale: es })
+                            : "Sin fecha"}
+                        </span>
+                        {task.priority && (
+                          <Badge variant="secondary">Prioridad {priorityLabel[task.priority]}</Badge>
+                        )}
+                      </div>
                     </div>
+                    <Badge>{statusLabel[task.status]}</Badge>
                   </div>
-                  <Badge>{statusLabel[task.status]}</Badge>
-                </div>
+                </Link>
               ))}
           </CardContent>
         </Card>
@@ -149,61 +177,48 @@ export default function Home() {
         <Card className="border-white/80 bg-sky-300/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-xl">Incidencias pendientes</CardTitle>
-            {overdueTasks.length > 0 && (
-              <Badge variant="destructive">{overdueTasks.length} críticas</Badge>
+            {criticalTickets.length > 0 && (
+              <Badge variant="destructive">{criticalTickets.length} críticas</Badge>
             )}
           </CardHeader>
           <CardContent className="space-y-4">
-            {loading && (
+            {ticketsLoading && (
               <div className="space-y-2">
                 <SkeletonRow />
                 <SkeletonRow />
               </div>
             )}
-            {!loading && overdueTasks.length === 0 && (
+            {!ticketsLoading && pendingIncidents.length === 0 && (
               <EmptyState message="No hay incidencias pendientes" />
             )}
-            {!loading &&
-              overdueTasks.slice(0, 4).map((task) => {
-                const isOverdue = task.dueDate
-                  ? isBefore(task.dueDate.toDate(), new Date())
-                  : false;
-                const isDueToday = task.dueDate
-                  ? isWithinInterval(new Date(), {
-                      start: task.dueDate.toDate(),
-                      end: addDays(task.dueDate.toDate(), 1),
-                    })
-                  : false;
-                return (
-                  <div
-                    key={task.id}
-                    className="flex items-start justify-between rounded-lg border border-destructive/80 bg-destructive/30 p-3"
-                  >
+            {!ticketsLoading &&
+              pendingIncidents.slice(0, 4).map((ticket) => (
+                <Link
+                  key={ticket.id}
+                  href={`/incidents/${ticket.id}`}
+                  className="block"
+                >
+                  <div className="flex items-start justify-between rounded-lg border border-destructive/80 bg-destructive/30 p-3 transition hover:bg-destructive/40">
                     <div className="space-y-1">
-                      <p className="font-medium">{task.title}</p>
+                      <p className="font-medium">{ticket.title}</p>
                       <p className="text-sm text-muted-foreground line-clamp-2">
-                        {task.description || "Sin descripción"}
+                        {ticket.description || "Sin descripción"}
                       </p>
                       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        <Badge
-                          variant={isOverdue && !isDueToday ? "destructive" : "outline"}
-                          className={
-                            isOverdue && !isDueToday ? "text-white" : "border-destructive text-destructive"
-                          }
-                        >
-                          {isDueToday ? "Vence hoy" : isOverdue ? "Atrasada" : "Próxima"}
+                        <Badge variant="outline" className="border-destructive text-destructive">
+                          {ticket.status}
                         </Badge>
-                        {task.dueDate && (
+                        {ticket.createdAt && (
                           <span>
-                            Fecha límite: {format(task.dueDate.toDate(), "PPP", { locale: es })}
+                            Creada: {format(ticket.createdAt.toDate(), "PPP", { locale: es })}
                           </span>
                         )}
                       </div>
                     </div>
-                    <Badge variant="destructive">{priorityLabel[task.priority]}</Badge>
+                    <Badge variant="destructive">{ticket.priority}</Badge>
                   </div>
-                );
-              })}
+                </Link>
+              ))}
           </CardContent>
         </Card>
       </div>
