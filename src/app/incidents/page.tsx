@@ -221,8 +221,8 @@ export default function IncidentsPage() {
               />
               <div className="flex flex-wrap gap-2">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-10 w-10 justify-center p-0">
-                    <SelectValue placeholder="Estados" className="sr-only" />
+                  <SelectTrigger className="h-10 w-10 justify-center border border-white/60 p-0">
+                    <SelectValue placeholder="" className="sr-only" />
                     <ListFilter className="h-5 w-5" aria-hidden="true" />
                     <span className="sr-only">Estados</span>
                   </SelectTrigger>
@@ -236,8 +236,8 @@ export default function IncidentsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                  <SelectTrigger className="h-10 w-10 justify-center p-0">
-                    <SelectValue placeholder="Prioridad" className="sr-only" />
+                  <SelectTrigger className="h-10 w-10 justify-center border border-white/60 p-0">
+                    <SelectValue placeholder="" className="sr-only" />
                     <ShieldAlert className="h-5 w-5" aria-hidden="true" />
                     <span className="sr-only">Prioridad</span>
                   </SelectTrigger>
@@ -250,8 +250,8 @@ export default function IncidentsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={dateFilter} onValueChange={setDateFilter}>
-                  <SelectTrigger className="h-10 w-10 justify-center p-0">
-                    <SelectValue placeholder="Fecha" className="sr-only" />
+                  <SelectTrigger className="h-10 w-10 justify-center border border-white/60 p-0">
+                    <SelectValue placeholder="" className="sr-only" />
                     <CalendarRange className="h-5 w-5" aria-hidden="true" />
                     <span className="sr-only">Fecha</span>
                   </SelectTrigger>
