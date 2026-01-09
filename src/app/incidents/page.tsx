@@ -207,11 +207,11 @@ export default function IncidentsPage() {
         }
       >
         <Card className="border-white/60 bg-sky-400/15">
-          <CardHeader>
+          <CardHeader className="p-4 pb-0">
             <CardTitle>Listado de incidencias</CardTitle>
             <CardDescription>Consulta, edita y prioriza incidencias en curso.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 p-4 pt-0">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <Input
                 placeholder="Buscar por título o ID"
