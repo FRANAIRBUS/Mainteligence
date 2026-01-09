@@ -10,7 +10,6 @@ import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
-import { sendAssignmentEmail } from '@/lib/assignment-email';
 import { getTicketPermissions } from '@/lib/rbac';
 
 import { Button } from '@/components/ui/button';
@@ -55,14 +54,6 @@ interface EditIncidentDialogProps {
   users: User[];
   departments: Department[];
 }
-
-const buildAbsoluteLink = (path: string) => {
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  if (typeof window === 'undefined') {
-    return normalizedPath;
-  }
-  return new URL(normalizedPath, window.location.origin).toString();
-};
 
 export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], departments = [] }: EditIncidentDialogProps) {
   const { toast } = useToast();
@@ -145,30 +136,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     }
     
     try {
-      const previousAssignee = ticket.assignedTo ?? null;
-      const resolvedDepartmentId = (canEditDepartment ? data.departmentId : ticket.departmentId) || null;
-      const assignmentLink = buildAbsoluteLink(`/incidents/${ticket.id}`);
-
       await updateDoc(ticketRef, updateData);
-
-      if (previousAssignee !== newAssignee) {
-        void sendAssignmentEmail({
-          users,
-          departments,
-          assignedTo: newAssignee,
-          departmentId: resolvedDepartmentId,
-          title: ticket.title,
-          link: assignmentLink,
-          type: 'incidencia',
-          identifier: ticket.displayId || ticket.id,
-          description: ticket.description,
-          priority: canEditPriority ? data.priority : ticket.priority,
-          status: canEditStatus ? data.status : ticket.status,
-          location: resolvedDepartmentId ?? undefined,
-        }).catch((error) => {
-          console.warn('No se pudo enviar el correo de asignación de la incidencia', error);
-        });
-      }
 
       toast({
         title: 'Éxito',
