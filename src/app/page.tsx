@@ -12,6 +12,7 @@ import { AppShell } from "@/components/app-shell";
 import { useCollection, useUser } from "@/lib/firebase";
 import type { Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
+import { where } from "firebase/firestore";
 
 const priorityLabel: Record<string, string> = {
   alta: "Alta",
