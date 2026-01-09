@@ -221,13 +221,13 @@ export default function IncidentsPage() {
               />
               <div className="flex flex-wrap gap-2">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-10 w-10 justify-center border border-white/60 p-0">
+                  <SelectTrigger className="h-10 w-14 justify-center border border-white/60 p-0">
                     <SelectValue placeholder="" className="sr-only" />
                     <ListFilter className="h-5 w-5" aria-hidden="true" />
                     <span className="sr-only">Estados</span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todas">Todos los estados</SelectItem>
+                    <SelectItem value="">Sin Filtro</SelectItem>
                     <SelectItem value="Abierta">Abiertas</SelectItem>
                     <SelectItem value="En curso">En curso</SelectItem>
                     <SelectItem value="En espera">En espera</SelectItem>
@@ -236,13 +236,13 @@ export default function IncidentsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                  <SelectTrigger className="h-10 w-10 justify-center border border-white/60 p-0">
+                  <SelectTrigger className="h-10 w-14 justify-center border border-white/60 p-0">
                     <SelectValue placeholder="" className="sr-only" />
                     <ShieldAlert className="h-5 w-5" aria-hidden="true" />
                     <span className="sr-only">Prioridad</span>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="todas">Todas las prioridades</SelectItem>
+                    <SelectItem value="">Sin Filtro</SelectItem>
                     <SelectItem value="Crítica">Crítica</SelectItem>
                     <SelectItem value="Alta">Alta</SelectItem>
                     <SelectItem value="Media">Media</SelectItem>
@@ -250,12 +250,13 @@ export default function IncidentsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={dateFilter} onValueChange={setDateFilter}>
-                  <SelectTrigger className="h-10 w-10 justify-center border border-white/60 p-0">
+                  <SelectTrigger className="h-10 w-14 justify-center border border-white/60 p-0">
                     <SelectValue placeholder="" className="sr-only" />
                     <CalendarRange className="h-5 w-5" aria-hidden="true" />
                     <span className="sr-only">Fecha</span>
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="">Sin Filtro</SelectItem>
                     <SelectItem value="recientes">Más recientes</SelectItem>
                     <SelectItem value="antiguas">Más antiguas</SelectItem>
                   </SelectContent>
