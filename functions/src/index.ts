@@ -28,7 +28,13 @@ function applyCors(req: Request, res: Response): boolean {
   }
   res.set('Vary', 'Origin');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  const requestedHeaders = req.headers['access-control-request-headers'];
+  res.set(
+    'Access-Control-Allow-Headers',
+    typeof requestedHeaders === 'string' && requestedHeaders.trim()
+      ? requestedHeaders
+      : 'Content-Type, Authorization'
+  );
   res.set('Access-Control-Max-Age', '3600');
 
   if (req.method === 'OPTIONS') {
