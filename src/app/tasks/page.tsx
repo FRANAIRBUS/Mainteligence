@@ -20,8 +20,9 @@ import { Icons } from "@/components/icons";
 import { useCollection } from "@/lib/firebase";
 import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
-import type { User } from "@/lib/firebase/models";
+import type { Department, User } from "@/lib/firebase/models";
 import { normalizeRole } from "@/lib/rbac";
+import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -54,8 +55,11 @@ export default function TasksPage() {
 
   const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
   const { data: users, loading: usersLoading } = useCollection<User>("users");
+  const { data: departments } = useCollection<Department>("departments");
   const [statusFilter, setStatusFilter] = useState<string>("todas");
   const [priorityFilter, setPriorityFilter] = useState<string>("todas");
+  const [dateFilter, setDateFilter] = useState<string>("recientes");
+  const [locationFilter, setLocationFilter] = useState<string>("todas");
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 6;
@@ -111,7 +115,7 @@ export default function TasksPage() {
         ?? 0;
 
       if (bCreatedAt !== aCreatedAt) {
-        return bCreatedAt - aCreatedAt;
+        return dateFilter === "antiguas" ? aCreatedAt - bCreatedAt : bCreatedAt - aCreatedAt;
       }
 
       return priorityOrder[b.priority] - priorityOrder[a.priority];
@@ -122,6 +126,8 @@ export default function TasksPage() {
         statusFilter === "todas" || task.status === statusFilter;
       const matchesPriority =
         priorityFilter === "todas" || task.priority === priorityFilter;
+      const matchesLocation =
+        locationFilter === "todas" || task.location === locationFilter;
       const assignedName =
         task.assignedTo && userNameMap[task.assignedTo]
           ? userNameMap[task.assignedTo]
@@ -131,9 +137,9 @@ export default function TasksPage() {
         task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         assignedName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         "no asignada".includes(searchQuery.toLowerCase());
-      return matchesStatus && matchesPriority && matchesQuery;
+      return matchesStatus && matchesPriority && matchesLocation && matchesQuery;
     });
-  }, [canViewAllTasks, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile?.departmentId, userProfile?.departmentIds]);
+  }, [canViewAllTasks, dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile?.departmentId, userProfile?.departmentIds]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
@@ -183,8 +189,16 @@ export default function TasksPage() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Estado" />
+              <SelectTrigger
+                className={`h-10 w-12 justify-center border border-white/60 p-0 [&>span]:sr-only [&>svg:last-child]:hidden ${
+                  statusFilter !== "todas"
+                    ? "border-primary/70 bg-primary/10 text-primary"
+                    : "bg-transparent"
+                }`}
+              >
+                <SelectValue className="sr-only" />
+                <ListFilter className="h-5 w-5" aria-hidden="true" />
+                <span className="sr-only">Estados</span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todas">Todos los estados</SelectItem>
@@ -199,14 +213,72 @@ export default function TasksPage() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Prioridad" />
+              <SelectTrigger
+                className={`h-10 w-12 justify-center border border-white/60 p-0 [&>span]:sr-only [&>svg:last-child]:hidden ${
+                  priorityFilter !== "todas"
+                    ? "border-primary/70 bg-primary/10 text-primary"
+                    : "bg-transparent"
+                }`}
+              >
+                <SelectValue className="sr-only" />
+                <ShieldAlert className="h-5 w-5" aria-hidden="true" />
+                <span className="sr-only">Prioridad</span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todas">Todas las prioridades</SelectItem>
                 <SelectItem value="alta">Alta</SelectItem>
                 <SelectItem value="media">Media</SelectItem>
                 <SelectItem value="baja">Baja</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={dateFilter}
+              onValueChange={(value) => {
+                setDateFilter(value);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                className={`h-10 w-12 justify-center border border-white/60 p-0 [&>span]:sr-only [&>svg:last-child]:hidden ${
+                  dateFilter !== "recientes"
+                    ? "border-primary/70 bg-primary/10 text-primary"
+                    : "bg-transparent"
+                }`}
+              >
+                <SelectValue className="sr-only" />
+                <CalendarRange className="h-5 w-5" aria-hidden="true" />
+                <span className="sr-only">Fecha</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="recientes">Más recientes</SelectItem>
+                <SelectItem value="antiguas">Más antiguas</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={locationFilter}
+              onValueChange={(value) => {
+                setLocationFilter(value);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                className={`h-10 w-12 justify-center border border-white/60 p-0 [&>span]:sr-only [&>svg:last-child]:hidden ${
+                  locationFilter !== "todas"
+                    ? "border-primary/70 bg-primary/10 text-primary"
+                    : "bg-transparent"
+                }`}
+              >
+                <SelectValue className="sr-only" />
+                <MapPin className="h-5 w-5" aria-hidden="true" />
+                <span className="sr-only">Ubicaciones</span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todas">Todas las ubicaciones</SelectItem>
+                {departments.map((department) => (
+                  <SelectItem key={department.id} value={department.id}>
+                    {department.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
