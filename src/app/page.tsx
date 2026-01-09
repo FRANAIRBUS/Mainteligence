@@ -177,7 +177,7 @@ export default function Home() {
                 return (
                   <div
                     key={task.id}
-                    className="flex items-start justify-between rounded-lg border border-destructive/70 bg-destructive/15 p-3"
+                    className="flex items-start justify-between rounded-lg border border-destructive/80 bg-destructive/30 p-3"
                   >
                     <div className="space-y-1">
                       <p className="font-medium">{task.title}</p>
@@ -185,12 +185,13 @@ export default function Home() {
                         {task.description || "Sin descripción"}
                       </p>
                       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                        <Badge variant="outline" className="border-destructive text-destructive">
-                          {isDueToday
-                            ? "Vence hoy"
-                            : isOverdue
-                              ? "Atrasada"
-                              : "Próxima"}
+                        <Badge
+                          variant={isOverdue && !isDueToday ? "destructive" : "outline"}
+                          className={
+                            isOverdue && !isDueToday ? "text-white" : "border-destructive text-destructive"
+                          }
+                        >
+                          {isDueToday ? "Vence hoy" : isOverdue ? "Atrasada" : "Próxima"}
                         </Badge>
                         {task.dueDate && (
                           <span>
