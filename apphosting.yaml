@@ -32,3 +32,7 @@ env:
     availability: [BUILD, RUNTIME]
   - variable: RESEND_API_KEY
     value: "re_J5wZymJq_2Kk9UbUSK9NzrNpFeJMfTeeb" 
+    availability: [BUILD, RUNTIME]
+  - variable: RESEND_FROM
+    value: "avisos@tudominio.com"
+    availability: [BUILD, RUNTIME]
