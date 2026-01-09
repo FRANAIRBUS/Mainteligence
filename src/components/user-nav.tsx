@@ -39,6 +39,15 @@ export function UserNav() {
     return null;
   }
 
+  const getInitials = (name?: string | null) => {
+    if (!name) return 'AD';
+    const names = name.split(' ');
+    if (names.length > 1) {
+      return names[0][0] + names[names.length - 1][0];
+    }
+    return name.substring(0, 2);
+  };
+
   const activeOrganizationName = activeMembership?.organizationName || organizationId || 'Org sin nombre';
 
   return (
