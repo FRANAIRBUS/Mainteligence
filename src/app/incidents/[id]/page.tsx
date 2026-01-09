@@ -88,6 +88,29 @@ export default function IncidentDetailPage() {
   }, [ticket?.reports]);
   const isClosed = ticket?.status === 'Cerrada';
   const permissions = ticket && userProfile ? getTicketPermissions(ticket, userProfile, user?.uid ?? null) : null;
+  const userNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+
+    users.forEach((item) => {
+      map[item.id] = item.displayName || item.email || item.id;
+    });
+
+    if (user && userProfile) {
+      map[user.uid] = userProfile.displayName || user.email || user.uid;
+    }
+
+    if (createdByUser) {
+      map[createdByUser.id] =
+        createdByUser.displayName || createdByUser.email || createdByUser.id;
+    }
+
+    if (assignedToUser) {
+      map[assignedToUser.id] =
+        assignedToUser.displayName || assignedToUser.email || assignedToUser.id;
+    }
+
+    return map;
+  }, [assignedToUser, createdByUser, user, userProfile, users]);
 
   // Memoize derived data
   const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
@@ -324,7 +347,7 @@ export default function IncidentDetailPage() {
                                     <div key={index} className="rounded-lg border bg-muted/40 p-3">
                                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                                         <span>{format(date, 'PPPp')}</span>
-                                        {report.createdBy ? <span>Por {report.createdBy}</span> : null}
+                                        {report.createdBy ? <span>Por {userNameMap[report.createdBy] || report.createdBy}</span> : null}
                                       </div>
                                       <p className="mt-2 text-sm whitespace-pre-line text-foreground">{report.description}</p>
                                     </div>
