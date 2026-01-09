@@ -28,7 +28,13 @@ function applyCors(req: Request, res: Response): boolean {
   }
   res.set('Vary', 'Origin');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  const requestedHeaders = req.headers['access-control-request-headers'];
+  res.set(
+    'Access-Control-Allow-Headers',
+    typeof requestedHeaders === 'string' && requestedHeaders.trim()
+      ? requestedHeaders
+      : 'Content-Type, Authorization'
+  );
   res.set('Access-Control-Max-Age', '3600');
 
   if (req.method === 'OPTIONS') {
@@ -44,6 +50,73 @@ async function requireAuthFromRequest(req: Request) {
   const match = authHeader.match(/^Bearer (.+)$/i);
   if (!match) throw httpsError('unauthenticated', 'Debes iniciar sesión.');
   return admin.auth().verifyIdToken(match[1]);
+}
+
+async function updateOrganizationUserProfile({
+  actorUid,
+  actorEmail,
+  isRoot,
+  orgId,
+  targetUid,
+  displayName,
+  email,
+  departmentId,
+}: {
+  actorUid: string;
+  actorEmail: string | null;
+  isRoot: boolean;
+  orgId: string;
+  targetUid: string;
+  displayName: string;
+  email: string;
+  departmentId: string;
+}) {
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
+
+  if (!isRoot) {
+    await requireCallerSuperAdminInOrg(actorUid, orgId);
+  }
+
+  const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+  const membershipSnap = await membershipRef.get();
+  if (!membershipSnap.exists) {
+    throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización.');
+  }
+
+  const userRef = db.collection('users').doc(targetUid);
+  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const userPayload = {
+    displayName: displayName || null,
+    email: email || null,
+    departmentId: departmentId || null,
+    updatedAt: now,
+    source: 'orgUpdateUserProfile_v1',
+  };
+
+  const memberPayload = {
+    displayName: displayName || null,
+    email: email || null,
+    updatedAt: now,
+    source: 'orgUpdateUserProfile_v1',
+  };
+
+  const batch = db.batch();
+  batch.set(userRef, userPayload, { merge: true });
+  batch.set(memberRef, memberPayload, { merge: true });
+  await batch.commit();
+
+  await auditLog({
+    action: 'orgUpdateUserProfile',
+    actorUid,
+    actorEmail,
+    orgId,
+    targetUid,
+    targetEmail: email || null,
+    after: { displayName: displayName || null, email: email || null, departmentId: departmentId || null },
+  });
 }
 
 function sendHttpError(res: Response, err: any) {
@@ -1037,57 +1110,46 @@ export const orgUpdateUserProfile = functions.https.onRequest(async (req, res) =
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const departmentId = String(req.body?.departmentId ?? '').trim();
 
-    if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
-    if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
-
-    if (!isRoot) {
-      await requireCallerSuperAdminInOrg(actorUid, orgId);
-    }
-
-    const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
-    const membershipSnap = await membershipRef.get();
-    if (!membershipSnap.exists) {
-      throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización.');
-    }
-
-    const userRef = db.collection('users').doc(targetUid);
-    const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
-    const now = admin.firestore.FieldValue.serverTimestamp();
-
-    const userPayload = {
-      displayName: displayName || null,
-      email: email || null,
-      departmentId: departmentId || null,
-      updatedAt: now,
-      source: 'orgUpdateUserProfile_v1',
-    };
-
-    const memberPayload = {
-      displayName: displayName || null,
-      email: email || null,
-      updatedAt: now,
-      source: 'orgUpdateUserProfile_v1',
-    };
-
-    const batch = db.batch();
-    batch.set(userRef, userPayload, { merge: true });
-    batch.set(memberRef, memberPayload, { merge: true });
-    await batch.commit();
-
-    await auditLog({
-      action: 'orgUpdateUserProfile',
+    await updateOrganizationUserProfile({
       actorUid,
       actorEmail,
+      isRoot,
       orgId,
       targetUid,
-      targetEmail: email || null,
-      after: { displayName: displayName || null, email: email || null, departmentId: departmentId || null },
+      displayName,
+      email,
+      departmentId,
     });
 
     res.status(200).json({ ok: true, organizationId: orgId, uid: targetUid });
   } catch (err) {
     sendHttpError(res, err);
   }
+});
+
+export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const isRoot = isRootClaim(context);
+
+  const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
+  const targetUid = String(data?.uid ?? '').trim();
+  const displayName = String(data?.displayName ?? '').trim();
+  const email = String(data?.email ?? '').trim().toLowerCase();
+  const departmentId = String(data?.departmentId ?? '').trim();
+
+  await updateOrganizationUserProfile({
+    actorUid,
+    actorEmail,
+    isRoot,
+    orgId,
+    targetUid,
+    displayName,
+    email,
+    departmentId,
+  });
+
+  return { ok: true, organizationId: orgId, uid: targetUid };
 });
 
 export const orgApproveJoinRequest = functions.https.onCall(async (data, context) => {
