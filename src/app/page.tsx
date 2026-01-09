@@ -240,11 +240,11 @@ function DashboardCard({
 }) {
   return (
     <Card
-      className={`border-white/80 bg-sky-300/20${highlight ? " border-destructive/50" : ""}`}
+      className="border-white/80 bg-sky-300/20"
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <div className={highlight ? "text-destructive" : "text-muted-foreground"}>{icon}</div>
+        <div className={highlight ? "text-white" : "text-muted-foreground"}>{icon}</div>
       </CardHeader>
       <CardContent>
         <div className="text-3xl font-bold">{value}</div>
