@@ -1,6 +1,6 @@
 'use client';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,14 +54,11 @@ export function UserNav() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-          <Avatar className="h-8 w-8">
-            <AvatarImage
-              src={user.photoURL ?? ''}
-              alt={user.displayName ?? 'avatar de usuario'}
-              data-ai-hint="user avatar"
-            />
-            <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>
-          </Avatar>
+          <DynamicClientLogo
+            width={32}
+            height={32}
+            className="h-8 w-8 rounded-full bg-muted p-1"
+          />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>

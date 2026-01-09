@@ -7,6 +7,7 @@ import type { Ticket, Site, Department, User } from '@/lib/firebase/models';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +15,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { MoreHorizontal } from 'lucide-react';
 import {
   Card,
@@ -44,6 +52,10 @@ export default function IncidentsPage() {
   const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Phase 1: Wait for user authentication to complete.
   useEffect(() => {
@@ -124,6 +136,7 @@ export default function IncidentsPage() {
 
   const sortedTickets = useMemo(() => {
     const openTickets = tickets.filter((ticket) => ticket.status !== 'Cerrada');
+    const effectiveDateFilter = dateFilter || 'recientes';
 
     return [...openTickets].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
@@ -134,12 +147,32 @@ export default function IncidentsPage() {
         ?? 0;
 
       if (bCreatedAt !== aCreatedAt) {
-        return bCreatedAt - aCreatedAt;
+        return effectiveDateFilter === 'antiguas'
+          ? aCreatedAt - bCreatedAt
+          : bCreatedAt - aCreatedAt;
       }
 
       return incidentPriorityOrder[b.priority] - incidentPriorityOrder[a.priority];
     });
-  }, [tickets]);
+  }, [dateFilter, tickets]);
+
+  const filteredTickets = useMemo(() => {
+    return sortedTickets.filter((ticket) => {
+      const matchesStatus =
+        statusFilter === '' || statusFilter === 'todas' || ticket.status === statusFilter;
+      const matchesPriority =
+        priorityFilter === '' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
+      const query = searchQuery.toLowerCase();
+      const matchesQuery =
+        !query ||
+        ticket.title.toLowerCase().includes(query) ||
+        ticket.description.toLowerCase().includes(query) ||
+        ticket.displayId?.toLowerCase().includes(query) ||
+        ticket.id.toLowerCase().includes(query);
+
+      return matchesStatus && matchesPriority && matchesQuery;
+    });
+  }, [priorityFilter, searchQuery, sortedTickets, statusFilter]);
 
   const handleViewDetails = (ticketId: string) => {
     router.push(`/incidents/${ticketId}`);
@@ -178,7 +211,51 @@ export default function IncidentsPage() {
             <CardTitle>Listado de incidencias</CardTitle>
             <CardDescription>Consulta, edita y prioriza incidencias en curso.</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <Input
+                placeholder="Buscar por título o ID"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="md:max-w-xs"
+              />
+              <div className="flex flex-wrap gap-3">
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Estados" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todos los estados</SelectItem>
+                    <SelectItem value="Abierta">Abiertas</SelectItem>
+                    <SelectItem value="En curso">En curso</SelectItem>
+                    <SelectItem value="En espera">En espera</SelectItem>
+                    <SelectItem value="Resuelta">Resueltas</SelectItem>
+                    <SelectItem value="Cierre solicitado">Cierre solicitado</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Prioridad" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas las prioridades</SelectItem>
+                    <SelectItem value="Crítica">Crítica</SelectItem>
+                    <SelectItem value="Alta">Alta</SelectItem>
+                    <SelectItem value="Media">Media</SelectItem>
+                    <SelectItem value="Baja">Baja</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={dateFilter} onValueChange={setDateFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Fecha" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recientes">Más recientes</SelectItem>
+                    <SelectItem value="antiguas">Más antiguas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {tableDataIsLoading && (
                 <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
@@ -186,13 +263,13 @@ export default function IncidentsPage() {
                   Cargando incidencias...
                 </div>
               )}
-              {!tableDataIsLoading && sortedTickets.length === 0 && (
+              {!tableDataIsLoading && filteredTickets.length === 0 && (
                 <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
-                  No se encontraron incidencias.
+                  No se encontraron incidencias con esos filtros.
                 </div>
               )}
               {!tableDataIsLoading &&
-                sortedTickets.map((ticket) => {
+                filteredTickets.map((ticket) => {
                   const permissions = getTicketPermissions(ticket, userProfile ?? null, user?.uid ?? null);
                   const createdAtLabel = ticket.createdAt?.toDate
                     ? ticket.createdAt.toDate().toLocaleDateString()
