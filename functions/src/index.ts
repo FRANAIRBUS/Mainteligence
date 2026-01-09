@@ -235,7 +235,7 @@ export const onTicketAssign = functions.firestore
     const after = change.after.data() as any;
     if (!before || !after) return;
 
-    if (before.assignedTo === after.assignedTo) return;
+    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo) return;
 
     try {
       await sendAssignmentEmail({
@@ -263,7 +263,7 @@ export const onTaskAssign = functions.firestore
     const after = change.after.data() as any;
     if (!before || !after) return;
 
-    if (before.assignedTo === after.assignedTo) return;
+    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo) return;
 
     try {
       await sendAssignmentEmail({
@@ -283,6 +283,58 @@ export const onTaskAssign = functions.firestore
       });
     } catch (error) {
       console.error('[onTaskAssign] Error enviando email de asignación', error);
+    }
+  });
+
+export const onTicketCreate = functions.firestore
+  .document('tickets/{ticketId}')
+  .onCreate(async (snap, context) => {
+    const data = snap.data() as any;
+    if (!data?.assignedTo) return;
+
+    try {
+      await sendAssignmentEmail({
+        organizationId: data.organizationId ?? null,
+        assignedTo: data.assignedTo ?? null,
+        departmentId: data.departmentId ?? null,
+        title: data.title ?? '(sin título)',
+        link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+        type: 'incidencia',
+        identifier: data.displayId ?? context.params.ticketId,
+        description: data.description ?? '',
+        priority: data.priority ?? '',
+        status: data.status ?? '',
+        location: data.departmentId ?? null,
+      });
+    } catch (error) {
+      console.error('[onTicketCreate] Error enviando email de asignación', error);
+    }
+  });
+
+export const onTaskCreate = functions.firestore
+  .document('tasks/{taskId}')
+  .onCreate(async (snap, context) => {
+    const data = snap.data() as any;
+    if (!data?.assignedTo) return;
+
+    try {
+      await sendAssignmentEmail({
+        organizationId: data.organizationId ?? null,
+        assignedTo: data.assignedTo ?? null,
+        departmentId: data.location ?? null,
+        title: data.title ?? '(sin título)',
+        link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+        type: 'tarea',
+        identifier: context.params.taskId,
+        description: data.description ?? '',
+        priority: data.priority ?? '',
+        status: data.status ?? '',
+        dueDate: data.dueDate ?? null,
+        location: data.location ?? null,
+        category: data.category ?? null,
+      });
+    } catch (error) {
+      console.error('[onTaskCreate] Error enviando email de asignación', error);
     }
   });
 
