@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
 import { AppShell } from "@/components/app-shell";
-import { useCollection, useCollectionQuery, useUser } from "@/lib/firebase";
+import { useCollection, useUser } from "@/lib/firebase";
 import type { Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import { where } from "firebase/firestore";
@@ -36,9 +36,8 @@ const incidentPriorityOrder: Record<Ticket["priority"], number> = {
 export default function Home() {
   const { activeMembership, organizationId } = useUser();
   const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
-  const { data: tickets = [], loading: ticketsLoading } = useCollectionQuery<Ticket>(
-    organizationId ? "tickets" : null,
-    ...(organizationId ? [where("organizationId", "==", organizationId)] : [])
+  const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
+    organizationId ? "tickets" : null
   );
 
   const organizationLabel =
