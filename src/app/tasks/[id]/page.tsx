@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ElementType } from "react";
-import { Timestamp } from "firebase/firestore";
+import { Timestamp, serverTimestamp } from "firebase/firestore";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -19,6 +19,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -83,6 +84,11 @@ export default function TaskDetailPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reportDescription, setReportDescription] = useState("");
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [closeSubmitting, setCloseSubmitting] = useState(false);
+  const [isCloseDialogOpen, setIsCloseDialogOpen] = useState(false);
+  const [closeReason, setCloseReason] = useState("");
+  const [closeReasonError, setCloseReasonError] = useState("");
   const [assignmentChecked, setAssignmentChecked] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const { toast } = useToast();
@@ -388,6 +394,7 @@ export default function TaskDetailPage() {
         createdBy: user.uid,
       });
       setReportDescription("");
+      setIsReportDialogOpen(false);
       toast({
         title: "Informe agregado",
         description: "Se registró el seguimiento de la tarea.",
@@ -402,6 +409,88 @@ export default function TaskDetailPage() {
     } finally {
       setReportSubmitting(false);
     }
+  };
+
+  const handleCloseTask = async (reason: string) => {
+    if (!firestore || !auth || !task?.id) {
+      toast({
+        title: "No se pudo cerrar la tarea",
+        description: "Inténtalo nuevamente en unos instantes. Faltan datos obligatorios.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!canEdit) {
+      toast({
+        title: "Permisos insuficientes",
+        description: "No tienes permisos para cerrar esta tarea.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!user) {
+      toast({
+        title: "Inicia sesión",
+        description: "Debes iniciar sesión para cerrar la tarea.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCloseSubmitting(true);
+
+    try {
+      await updateTask(firestore, auth, task.id, {
+        status: "completada",
+        closedAt: serverTimestamp(),
+        closedBy: user.uid,
+        closedReason: reason,
+      });
+
+      setCloseReason("");
+      setCloseReasonError("");
+      setIsCloseDialogOpen(false);
+      toast({
+        title: "Tarea cerrada",
+        description: "La tarea se marcó como completada.",
+      });
+    } catch (error) {
+      console.error("Error al cerrar la tarea", error);
+      toast({
+        title: "No se pudo cerrar la tarea",
+        description: "Vuelve a intentarlo en unos segundos.",
+        variant: "destructive",
+      });
+    } finally {
+      setCloseSubmitting(false);
+    }
+  };
+
+  const handleRequestClose = () => {
+    if (!canEdit || isTaskClosed) {
+      return;
+    }
+    setCloseReason("");
+    setCloseReasonError("");
+    setIsCloseDialogOpen(true);
+  };
+
+  const handleConfirmClose = async () => {
+    const reason = closeReason.trim();
+
+    if (!reason) {
+      setCloseReasonError("Agrega un motivo de cierre antes de continuar.");
+      toast({
+        title: "Motivo requerido",
+        description: "Debes indicar el motivo del cierre de la tarea.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await handleCloseTask(reason);
   };
 
   const renderContent = () => {
@@ -440,7 +529,6 @@ export default function TaskDetailPage() {
                 {priorityCopy[task.priority]}
               </Badge>
             </div>
-            <p className="text-sm text-muted-foreground">ID de Tarea: {task.id}</p>
             {task.category && (
               <p className="text-sm text-muted-foreground">Categoría: {task.category}</p>
             )}
@@ -448,10 +536,6 @@ export default function TaskDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" asChild>
               <Link href="/tasks">Volver</Link>
-            </Button>
-            <Button onClick={() => setIsEditDialogOpen(true)} disabled={!canEdit}>
-              <Icons.edit className="mr-2 h-4 w-4" />
-              Editar tarea
             </Button>
           </div>
         </div>
@@ -469,7 +553,7 @@ export default function TaskDetailPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card className="bg-transparent">
               <CardHeader>
                 <CardTitle>Informes</CardTitle>
                 <CardDescription>
@@ -486,7 +570,7 @@ export default function TaskDetailPage() {
                         : "";
 
                       return (
-                        <div key={index} className="rounded-lg border bg-muted/40 p-3">
+                        <div key={index} className="rounded-lg border border-white/80 bg-sky-300/20 p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                             <span>{format(date, "PPPp", { locale: es })}</span>
                             {reporterName ? <span>Por {reporterName}</span> : null}
@@ -501,26 +585,23 @@ export default function TaskDetailPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="task-report">Nuevo informe</Label>
-                  <Textarea
-                    id="task-report"
-                    placeholder="Describe el avance o el aviso que quieres registrar"
-                    value={reportDescription}
-                    onChange={(event) => setReportDescription(event.target.value)}
-                    disabled={reportSubmitting || isTaskClosed}
-                  />
-                  {isTaskClosed && (
-                    <p className="text-xs text-muted-foreground">
-                      La tarea está completada. No se pueden agregar más informes.
-                    </p>
-                  )}
-                  <Button
-                    onClick={handleAddReport}
-                    disabled={reportSubmitting || isTaskClosed || !userProfile}
-                  >
-                    {reportSubmitting && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
-                    Informar
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      onClick={() => setIsReportDialogOpen(true)}
+                      disabled={reportSubmitting || isTaskClosed || !userProfile}
+                    >
+                      {reportSubmitting && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
+                      Informar
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleRequestClose}
+                      disabled={!canEdit || isTaskClosed || closeSubmitting}
+                    >
+                      {closeSubmitting && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
+                      Cerrar tarea
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -532,6 +613,15 @@ export default function TaskDetailPage() {
                 <CardTitle>Detalles</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
+                {canEdit && (
+                  <Button
+                    onClick={() => setIsEditDialogOpen(true)}
+                    className="w-full"
+                  >
+                    <Icons.edit className="mr-2 h-4 w-4" />
+                    Editar tarea
+                  </Button>
+                )}
                 <InfoRow
                   icon={ClipboardList}
                   label="Estado"
@@ -598,6 +688,98 @@ export default function TaskDetailPage() {
             onSuccess={() => setIsEditDialogOpen(false)}
             disabled={!canEdit}
           />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuevo informe</DialogTitle>
+            <DialogDescription>
+              Describe el informe o avance que deseas registrar para esta tarea.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="task-report">Detalle del informe</Label>
+            <Textarea
+              id="task-report"
+              placeholder="Describe el avance o el aviso que quieres registrar"
+              value={reportDescription}
+              onChange={(event) => setReportDescription(event.target.value)}
+              disabled={reportSubmitting || isTaskClosed}
+            />
+            {isTaskClosed && (
+              <p className="text-xs text-muted-foreground">
+                La tarea está completada. No se pueden agregar más informes.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsReportDialogOpen(false)}
+              disabled={reportSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleAddReport}
+              disabled={reportSubmitting || isTaskClosed}
+            >
+              {reportSubmitting && (
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Informar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCloseDialogOpen} onOpenChange={setIsCloseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cerrar tarea</DialogTitle>
+            <DialogDescription>
+              Indica el motivo del cierre antes de marcar la tarea como completada.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="task-close-reason">Motivo de cierre</Label>
+            <Textarea
+              id="task-close-reason"
+              placeholder="Ej. Trabajo completado, tarea resuelta, etc."
+              value={closeReason}
+              onChange={(event) => {
+                setCloseReason(event.target.value);
+                if (closeReasonError) {
+                  setCloseReasonError("");
+                }
+              }}
+              disabled={closeSubmitting}
+            />
+            {closeReasonError && (
+              <p className="text-xs text-destructive">{closeReasonError}</p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsCloseDialogOpen(false)}
+              disabled={closeSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmClose}
+              disabled={closeSubmitting}
+            >
+              {closeSubmitting && (
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Confirmar cierre
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
