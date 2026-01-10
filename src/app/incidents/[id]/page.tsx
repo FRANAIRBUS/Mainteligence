@@ -444,7 +444,7 @@ export default function IncidentDetailPage() {
                                 <p className="text-sm text-foreground/80">{ticket.description}</p>
                             </CardContent>
                         </Card>
-                        <Card className="border-blue-100 bg-blue-50">
+                        <Card className="bg-transparent">
                           <CardHeader>
                             <CardTitle>Informes</CardTitle>
                             <CardDescription className="text-foreground/70">
