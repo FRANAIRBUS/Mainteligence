@@ -165,8 +165,9 @@ async function getUserDoc(uid: string) {
   return { ref, snap, data: snap.data() as any | undefined };
 }
 
-function normalizeRole(input: any): Role {
+function normalizeRoleOrNull(input: any): Role | null {
   const r = String(input ?? '').trim().toLowerCase();
+  if (!r) return null;
 
   if (r === 'super_admin' || r === 'superadmin') return 'super_admin';
   if (r === 'admin' || r === 'administrator') return 'admin';
@@ -203,7 +204,11 @@ function normalizeRole(input: any): Role {
 
   if (r === 'operator' || r === 'operario' || r === 'op') return 'operator';
 
-  return 'operator';
+  return null;
+}
+
+function normalizeRole(input: any): Role {
+  return normalizeRoleOrNull(input) ?? 'operator';
 }
 
 async function ensureDefaultOrganizationExists() {
@@ -916,7 +921,9 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const organizationId = sanitizeOrganizationId(orgIdIn);
   if (!organizationId) throw httpsError('invalid-argument', 'organizationId requerido.');
 
-  const requestedRole: Role = normalizeRole(data?.requestedRole) ?? 'operator';
+  const requestedRoleRaw = data?.requestedRole;
+  const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operator';
+  if (!requestedRole) throw httpsError('invalid-argument', 'requestedRole inválido.');
 
   const authUser = await admin.auth().getUser(uid).catch(() => null);
   const email = (authUser?.email ?? String(data?.email ?? '')).trim().toLowerCase();
@@ -1049,7 +1056,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       organizationId,
       email: email || null,
       displayName: displayName || email || 'Usuario',
-      role: 'operator',
+      role: requestedRole,
       active: true,
       updatedAt: now,
       createdAt: now,
@@ -1064,6 +1071,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       userId: uid,
       organizationId,
       organizationName: orgName,
+      // El rol solicitado queda pendiente hasta aprobación.
       role: requestedRole,
       status: 'pending',
       primary: false,
