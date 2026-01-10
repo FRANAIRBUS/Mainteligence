@@ -260,7 +260,7 @@ export default function ReportsPage() {
         <Card>
           <CardHeader className="gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <CardTitle>Panel de métricas</CardTitle>
+              <CardTitle className="text-lg sm:text-xl">Panel de métricas</CardTitle>
               <CardDescription className="mt-2">
                 Ajusta los filtros globales para analizar el desempeño.
               </CardDescription>
@@ -281,7 +281,7 @@ export default function ReportsPage() {
               <span className="text-sm font-medium text-muted-foreground">
                 Rango de fechas
               </span>
-              <div className="flex flex-col gap-2 md:flex-row">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="date"
                   value={startDate}
@@ -338,58 +338,66 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Incidencias abiertas
               </CardTitle>
               <Activity className="h-5 w-5 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{metrics.openIncidents}</div>
+              <div className="text-2xl font-semibold sm:text-3xl">
+                {metrics.openIncidents}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Incidencias en curso según filtros.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Incidencias cerradas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-emerald-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{metrics.closedIncidents}</div>
+              <div className="text-2xl font-semibold sm:text-3xl">
+                {metrics.closedIncidents}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Cierres completados en el rango.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Tareas pendientes
               </CardTitle>
               <ClipboardList className="h-5 w-5 text-amber-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{metrics.pendingTasks}</div>
+              <div className="text-2xl font-semibold sm:text-3xl">
+                {metrics.pendingTasks}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Actividades aún sin completar.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Tareas completadas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-sky-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{metrics.completedTasks}</div>
+              <div className="text-2xl font-semibold sm:text-3xl">
+                {metrics.completedTasks}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Tareas resueltas en el rango.
               </p>
@@ -410,7 +418,7 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent>
               <ChartContainer
-                className="h-[320px]"
+                className="h-[260px] sm:h-[320px]"
                 config={{
                   closedIncidents: { label: "Incidencias", color: "hsl(var(--chart-1))" },
                   completedTasks: { label: "Tareas", color: "hsl(var(--chart-2))" },
@@ -459,7 +467,7 @@ export default function ReportsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="text-4xl font-semibold">{averageMttrLabel}</div>
+              <div className="text-3xl font-semibold sm:text-4xl">{averageMttrLabel}</div>
               <p className="text-sm text-muted-foreground">
                 Calculado con las fechas de creación y cierre disponibles.
               </p>
@@ -486,7 +494,7 @@ export default function ReportsPage() {
                 </span>
               </div>
               <ChartContainer
-                className="h-[220px]"
+                className="h-[200px] sm:h-[220px]"
                 config={{
                   onTime: { label: 'En plazo', color: 'hsl(var(--chart-2))' },
                   late: { label: 'Fuera de plazo', color: 'hsl(var(--chart-5))' },
@@ -526,8 +534,8 @@ export default function ReportsPage() {
               <h3 className="text-sm font-semibold text-muted-foreground">
                 Cumplimiento por plantilla
               </h3>
-              <div className="rounded-lg border">
-                <Table>
+              <div className="overflow-x-auto rounded-lg border">
+                <Table className="min-w-[420px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Plantilla</TableHead>
@@ -577,8 +585,8 @@ export default function ReportsPage() {
               Ranking de cierres por usuario según incidencias y tareas.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Table>
+          <CardContent className="overflow-x-auto">
+            <Table className="min-w-[420px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Operario</TableHead>
@@ -619,7 +627,8 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Table>
+            <div className="overflow-x-auto">
+              <Table className="min-w-[520px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Ticket</TableHead>
@@ -691,7 +700,8 @@ export default function ReportsPage() {
                   </TableRow>
                 )}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
             <p className="text-xs text-muted-foreground">
               El listado prioriza los últimos cierres registrados y muestra eventos clave
               disponibles en el historial.
@@ -715,7 +725,7 @@ export default function ReportsPage() {
               </div>
               {departmentIncidents.length ? (
                 <ChartContainer
-                  className="h-[280px]"
+                  className="h-[240px] sm:h-[280px]"
                   config={{
                     openIncidents: {
                       label: "Abiertas",
@@ -770,7 +780,7 @@ export default function ReportsPage() {
               </div>
               {siteIncidents.length ? (
                 <ChartContainer
-                  className="h-[280px]"
+                  className="h-[240px] sm:h-[280px]"
                   config={{
                     openIncidents: {
                       label: "Abiertas",
