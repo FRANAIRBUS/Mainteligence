@@ -309,14 +309,7 @@ export default function IncidentDetailPage() {
                             <Badge variant="outline">{ticket.status}</Badge>
                             <Badge variant="secondary">{ticket.priority}</Badge>
                         </div>
-                        <p className="text-muted-foreground">ID de Incidencia: {ticket.displayId}</p>
                     </div>
-                     {canEdit && (
-                        <Button onClick={() => setIsEditDialogOpen(true)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Editar Incidencia
-                        </Button>
-                     )}
                 </div>
 
                 {/* Main Content */}
@@ -393,6 +386,15 @@ export default function IncidentDetailPage() {
                                 <CardTitle>Detalles</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-6">
+                                {canEdit && (
+                                  <Button
+                                    onClick={() => setIsEditDialogOpen(true)}
+                                    className="w-full"
+                                  >
+                                      <Edit className="mr-2 h-4 w-4" />
+                                      Editar Incidencia
+                                  </Button>
+                                )}
                                 <InfoCard 
                                     icon={CalendarIcon}
                                     label="Fecha de Creación"
