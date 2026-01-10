@@ -353,7 +353,7 @@ export default function ReportsPage() {
       title="Informes"
       description="Genera y visualiza informes detallados del mantenimiento."
     >
-      <div className="space-y-6">
+      <div className="w-full max-w-full space-y-6 overflow-hidden">
         <Card>
           <CardHeader className="gap-2 md:flex-row md:items-center md:justify-between">
             <div>
@@ -373,7 +373,7 @@ export default function ReportsPage() {
               </Badge>
             )}
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+          <CardContent className="grid min-w-0 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
             <div className="space-y-1">
               <span className="text-sm font-medium text-muted-foreground">
                 Rango de fechas
@@ -458,7 +458,7 @@ export default function ReportsPage() {
               )}
             </Button>
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+          <CardContent className="grid min-w-0 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
             <div className="space-y-1">
               <span className="text-sm font-medium text-muted-foreground">
                 Rango aplicado
@@ -500,7 +500,7 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -567,7 +567,7 @@ export default function ReportsPage() {
           </Card>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -647,7 +647,7 @@ export default function ReportsPage() {
               Comparativa de preventivos completados en plazo y fuera de plazo.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+          <CardContent className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>Cumplimiento global</span>
@@ -696,8 +696,8 @@ export default function ReportsPage() {
               <h3 className="text-sm font-semibold text-muted-foreground">
                 Cumplimiento por plantilla
               </h3>
-              <div className="overflow-x-auto rounded-lg border">
-                <Table className="min-w-[420px]">
+              <div className="w-full max-w-full overflow-x-auto rounded-lg border">
+                <Table className="w-full min-w-0">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Plantilla</TableHead>
@@ -747,8 +747,8 @@ export default function ReportsPage() {
               Ranking de cierres por usuario según incidencias y tareas.
             </CardDescription>
           </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table className="min-w-[420px]">
+          <CardContent className="w-full max-w-full overflow-x-auto">
+            <Table className="w-full min-w-0">
               <TableHeader>
                 <TableRow>
                   <TableHead>Operario</TableHead>
@@ -789,8 +789,8 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="overflow-x-auto">
-              <Table className="min-w-[520px]">
+            <div className="w-full max-w-full overflow-x-auto">
+              <Table className="w-full min-w-0">
               <TableHeader>
                 <TableRow>
                   <TableHead>Ticket</TableHead>
@@ -878,7 +878,7 @@ export default function ReportsPage() {
               Distribución de incidencias abiertas y cerradas según los filtros globales.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-6 lg:grid-cols-2">
+          <CardContent className="grid min-w-0 gap-6 lg:grid-cols-2">
             <div className="space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-muted-foreground">
@@ -1000,7 +1000,7 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid min-w-0 gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
