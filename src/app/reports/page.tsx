@@ -7,6 +7,8 @@ import type { Ticket, Department, Site, User } from '@/lib/firebase/models';
 import type { MaintenanceTask } from '@/types/maintenance-task';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import type { Timestamp } from 'firebase/firestore';
+import Link from 'next/link';
 import {
   Card,
   CardContent,
@@ -145,6 +147,51 @@ export default function ReportsPage() {
       return acc;
     }, new Map<string, User>());
   }, [users]);
+
+  const toDate = (value?: Timestamp | Date | null) => {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    return value.toDate?.() ?? null;
+  };
+
+  const formatDateTime = (value?: Timestamp | Date | null) => {
+    const date = toDate(value);
+    if (!date) return 'Sin fecha';
+    return new Intl.DateTimeFormat('es-ES', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(date);
+  };
+
+  const operatorLabelForTicket = (ticket: Ticket) => {
+    const reportAuthor = [...(ticket.reports ?? [])]
+      .reverse()
+      .find((entry) => entry.createdBy)?.createdBy;
+    const operatorId =
+      ticket.closedBy ?? reportAuthor ?? ticket.assignedTo ?? ticket.createdBy;
+    if (!operatorId) return 'Sin asignar';
+    const operator = usersById.get(operatorId);
+    return operator?.displayName ?? operator?.email ?? operatorId;
+  };
+
+  const keyEventLabels: Record<string, string> = {
+    status_changed: 'Cambio de estado',
+    report_generated: 'Informe generado',
+  };
+
+  const recentClosures = useMemo(() => {
+    return filteredTickets
+      .filter((ticket) => ticket.status === 'Cerrada' || ticket.closedAt)
+      .map((ticket) => ({
+        ticket,
+        closedAt: toDate(ticket.closedAt ?? ticket.updatedAt ?? ticket.createdAt),
+      }))
+      .sort(
+        (a, b) =>
+          (b.closedAt?.getTime() ?? 0) - (a.closedAt?.getTime() ?? 0)
+      )
+      .slice(0, 8);
+  }, [filteredTickets]);
 
   const trendData = useMemo(
     () => buildTrendData(filteredTickets, filteredTasks, filters),
@@ -560,6 +607,94 @@ export default function ReportsPage() {
                 )}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Auditoría</CardTitle>
+            <CardDescription>
+              Últimos cierres con acceso directo al informe generado.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Ticket</TableHead>
+                  <TableHead>Fecha cierre</TableHead>
+                  <TableHead>Operario</TableHead>
+                  <TableHead className="text-right">PDF</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentClosures.length > 0 ? (
+                  recentClosures.map(({ ticket }) => {
+                    const ticketEvents =
+                      (ticket as Ticket & {
+                        events?: { type?: string }[] | null;
+                      }).events ?? [];
+                    const keyEvents = ticketEvents.filter((event) => {
+                      const type = event?.type;
+                      return type
+                        ? Object.prototype.hasOwnProperty.call(keyEventLabels, type)
+                        : false;
+                    });
+                    return (
+                      <TableRow key={ticket.id}>
+                        <TableCell className="font-medium">
+                          <div className="space-y-1">
+                            <Link
+                              href={`/incidents/${ticket.id}`}
+                              className="text-primary hover:underline"
+                            >
+                              {ticket.displayId ?? ticket.title}
+                            </Link>
+                            {keyEvents.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {keyEvents.map((event, index) => (
+                                  <Badge key={`${ticket.id}-${index}`} variant="secondary">
+                                    {keyEventLabels[event.type ?? ''] ?? event.type}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{formatDateTime(ticket.closedAt)}</TableCell>
+                        <TableCell>{operatorLabelForTicket(ticket)}</TableCell>
+                        <TableCell className="text-right">
+                          {ticket.reportPdfUrl ? (
+                            <a
+                              href={ticket.reportPdfUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary hover:underline"
+                            >
+                              Ver PDF
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              No disponible
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-24 text-center">
+                      No hay cierres recientes para mostrar.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            <p className="text-xs text-muted-foreground">
+              El listado prioriza los últimos cierres registrados y muestra eventos clave
+              disponibles en el historial.
+            </p>
           </CardContent>
         </Card>
 
