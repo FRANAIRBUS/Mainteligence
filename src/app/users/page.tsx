@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -66,6 +67,14 @@ function normalizeRole(input: unknown): Role {
 function safeText(v: unknown): string {
   const s = String(v ?? '').trim();
   return s || '-';
+}
+
+function getInitials(name?: string | null): string {
+  if (!name) return 'US';
+  const parts = name.trim().split(' ').filter(Boolean);
+  if (parts.length === 0) return 'US';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
 export default function UsersPage() {
@@ -437,19 +446,30 @@ export default function UsersPage() {
                           disabled={usersLoading && !usersById.get(m.id)}
                         >
                           <div className="space-y-3">
-                            <div>
-                              <p className="text-base font-semibold">
-                                {safeText(usersById.get(m.id)?.displayName ?? m.displayName)}
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                {safeText(usersById.get(m.id)?.email ?? m.email)}
-                              </p>
-                              {usersById.get(m.id)?.departmentId ? (
-                                <p className="text-xs text-muted-foreground">
-                                  Departamento:{' '}
-                                  {safeText(departmentsById.get(usersById.get(m.id)?.departmentId ?? '')?.name)}
+                            <div className="flex items-start gap-3">
+                              <Avatar className="h-10 w-10">
+                                <AvatarImage
+                                  src={usersById.get(m.id)?.avatarUrl ?? undefined}
+                                  alt="Avatar de usuario"
+                                />
+                                <AvatarFallback>
+                                  {getInitials(usersById.get(m.id)?.displayName ?? m.displayName)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <p className="text-base font-semibold">
+                                  {safeText(usersById.get(m.id)?.displayName ?? m.displayName)}
                                 </p>
-                              ) : null}
+                                <p className="text-sm text-muted-foreground">
+                                  {safeText(usersById.get(m.id)?.email ?? m.email)}
+                                </p>
+                                {usersById.get(m.id)?.departmentId ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    Departamento:{' '}
+                                    {safeText(departmentsById.get(usersById.get(m.id)?.departmentId ?? '')?.name)}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
                               <Badge variant="outline">{usersById.get(m.id)?.role ?? (m.role ?? 'operator')}</Badge>
