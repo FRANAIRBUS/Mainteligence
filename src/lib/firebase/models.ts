@@ -110,6 +110,7 @@ export interface Ticket extends BaseEntity {
   reportPdfUrl?: string;
   emailSentAt?: Timestamp;
   templateId?: string;
+  preventiveTemplateId?: string;
   templateSnapshot?: {
     name: string;
     frequencyDays: number;
