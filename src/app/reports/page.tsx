@@ -98,7 +98,7 @@ export default function ReportsPage() {
 
   if (loading || !user) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center">
+      <div className="flex h-screen w-full max-w-full items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
       </div>
     );
@@ -696,7 +696,7 @@ export default function ReportsPage() {
               <h3 className="text-sm font-semibold text-muted-foreground">
                 Cumplimiento por plantilla
               </h3>
-              <div className="w-full max-w-full overflow-x-auto rounded-lg border">
+              <div className="w-full max-w-full overflow-x-auto rounded-lg border md:overflow-visible">
                 <Table className="w-full min-w-0">
                   <TableHeader>
                     <TableRow>
@@ -747,7 +747,7 @@ export default function ReportsPage() {
               Ranking de cierres por usuario según incidencias y tareas.
             </CardDescription>
           </CardHeader>
-          <CardContent className="w-full max-w-full overflow-x-auto">
+          <CardContent className="w-full max-w-full overflow-x-auto md:overflow-visible">
             <Table className="w-full min-w-0">
               <TableHeader>
                 <TableRow>
@@ -789,7 +789,7 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="w-full max-w-full overflow-x-auto">
+            <div className="w-full max-w-full overflow-x-auto md:overflow-visible">
               <Table className="w-full min-w-0">
               <TableHeader>
                 <TableRow>
