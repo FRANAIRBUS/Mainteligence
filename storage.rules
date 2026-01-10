@@ -112,9 +112,9 @@ service firebase.storage {
     // 👆👆👆 FIN DEL BLOQUE NUEVO 👆👆👆
 
     // 3. Avatares de usuario
-    match /users/{userId}/avatar.png {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == userId;
+    match /users/{userId}/{fileName} {
+      allow read: if isSignedIn() && fileName.matches('avatar\\..+');
+      allow write: if isSignedIn() && request.auth.uid == userId && fileName.matches('avatar\\..+');
     }
   }
 }
