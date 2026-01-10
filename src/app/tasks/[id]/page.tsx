@@ -613,14 +613,15 @@ export default function TaskDetailPage() {
                 <CardTitle>Detalles</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                <Button
-                  onClick={() => setIsEditDialogOpen(true)}
-                  disabled={!canEdit}
-                  className="w-full"
-                >
-                  <Icons.edit className="mr-2 h-4 w-4" />
-                  Editar tarea
-                </Button>
+                {canEdit && (
+                  <Button
+                    onClick={() => setIsEditDialogOpen(true)}
+                    className="w-full"
+                  >
+                    <Icons.edit className="mr-2 h-4 w-4" />
+                    Editar tarea
+                  </Button>
+                )}
                 <InfoRow
                   icon={ClipboardList}
                   label="Estado"
