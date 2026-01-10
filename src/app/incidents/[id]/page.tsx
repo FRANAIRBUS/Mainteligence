@@ -77,6 +77,7 @@ export default function IncidentDetailPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [closeSubmitting, setCloseSubmitting] = useState(false);
   const { toast } = useToast();
 
   const sortedReports = useMemo(() => {
@@ -211,6 +212,82 @@ export default function IncidentDetailPage() {
     }
   };
 
+  const handleCloseIncident = async () => {
+    if (!firestore || !ticket?.id) {
+      toast({
+        title: 'No se pudo cerrar la incidencia',
+        description: 'Inténtalo nuevamente en unos instantes. Faltan datos obligatorios.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!permissions?.canClose) {
+      toast({
+        title: 'Permisos insuficientes',
+        description: 'No tienes permisos para cerrar esta incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const targetOrganizationId = ticket.organizationId ?? organizationId;
+
+    if (!targetOrganizationId) {
+      toast({
+        title: 'No se pudo cerrar la incidencia',
+        description: 'No se encontró la organización asociada a la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!user) {
+      toast({
+        title: 'Inicia sesión',
+        description: 'Debes iniciar sesión para cerrar la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!isSuperAdmin && ticket.organizationId !== organizationId) {
+      toast({
+        title: 'Organización no válida',
+        description: 'Tu sesión no coincide con la organización de la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCloseSubmitting(true);
+
+    try {
+      const ticketRef = doc(firestore, 'tickets', ticket.id);
+      await updateDoc(ticketRef, {
+        status: 'Cerrada',
+        closedAt: serverTimestamp(),
+        closedBy: user.uid,
+        organizationId: targetOrganizationId,
+        updatedAt: serverTimestamp(),
+      });
+
+      toast({
+        title: 'Incidencia cerrada',
+        description: 'La incidencia se marcó como cerrada.',
+      });
+    } catch (error) {
+      console.error('Error al cerrar la incidencia', error);
+      toast({
+        title: 'No se pudo cerrar la incidencia',
+        description: 'Vuelve a intentarlo en unos segundos.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCloseSubmitting(false);
+    }
+  };
+
   const isLoading =
     userLoading ||
     ticketLoading ||
@@ -266,6 +343,7 @@ export default function IncidentDetailPage() {
   }
 
   const canEdit = !!permissions?.canEditContent && !isClosed;
+  const canClose = !!permissions?.canClose && !isClosed;
 
   return (
     <SidebarProvider>
@@ -365,15 +443,27 @@ export default function IncidentDetailPage() {
                                   La incidencia está cerrada. No se pueden agregar más informes.
                                 </p>
                               )}
-                              <Button
-                                onClick={handleAddReport}
-                                disabled={reportSubmitting || isClosed}
-                              >
-                                {reportSubmitting && (
-                                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
-                                )}
-                                Informar
-                              </Button>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  onClick={handleAddReport}
+                                  disabled={reportSubmitting || isClosed}
+                                >
+                                  {reportSubmitting && (
+                                    <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                                  )}
+                                  Informar
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  onClick={handleCloseIncident}
+                                  disabled={!canClose || closeSubmitting}
+                                >
+                                  {closeSubmitting && (
+                                    <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                                  )}
+                                  Cerrar incidencia
+                                </Button>
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
