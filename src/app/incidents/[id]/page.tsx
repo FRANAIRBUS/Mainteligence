@@ -31,6 +31,14 @@ import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { arrayUnion, doc, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
 
@@ -75,8 +83,13 @@ export default function IncidentDetailPage() {
   const { data: users, loading: usersLoading } = useCollection<User>('users');
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [closeSubmitting, setCloseSubmitting] = useState(false);
+  const [isCloseDialogOpen, setIsCloseDialogOpen] = useState(false);
+  const [closeReason, setCloseReason] = useState('');
+  const [closeReasonError, setCloseReasonError] = useState('');
   const { toast } = useToast();
 
   const sortedReports = useMemo(() => {
@@ -195,6 +208,7 @@ export default function IncidentDetailPage() {
       });
 
       setReportDescription('');
+      setIsReportDialogOpen(false);
       toast({
         title: 'Informe agregado',
         description: 'Se registró el seguimiento de la incidencia.',
@@ -209,6 +223,111 @@ export default function IncidentDetailPage() {
     } finally {
       setReportSubmitting(false);
     }
+  };
+
+  const handleCloseIncident = async (reason: string) => {
+    if (!firestore || !ticket?.id) {
+      toast({
+        title: 'No se pudo cerrar la incidencia',
+        description: 'Inténtalo nuevamente en unos instantes. Faltan datos obligatorios.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!permissions?.canClose) {
+      toast({
+        title: 'Permisos insuficientes',
+        description: 'No tienes permisos para cerrar esta incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const targetOrganizationId = ticket.organizationId ?? organizationId;
+
+    if (!targetOrganizationId) {
+      toast({
+        title: 'No se pudo cerrar la incidencia',
+        description: 'No se encontró la organización asociada a la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!user) {
+      toast({
+        title: 'Inicia sesión',
+        description: 'Debes iniciar sesión para cerrar la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!isSuperAdmin && ticket.organizationId !== organizationId) {
+      toast({
+        title: 'Organización no válida',
+        description: 'Tu sesión no coincide con la organización de la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCloseSubmitting(true);
+
+    try {
+      const ticketRef = doc(firestore, 'tickets', ticket.id);
+      await updateDoc(ticketRef, {
+        status: 'Cerrada',
+        closedAt: serverTimestamp(),
+        closedBy: user.uid,
+        closedReason: reason,
+        organizationId: targetOrganizationId,
+        updatedAt: serverTimestamp(),
+      });
+
+      setCloseReason('');
+      setCloseReasonError('');
+      setIsCloseDialogOpen(false);
+      toast({
+        title: 'Incidencia cerrada',
+        description: 'La incidencia se marcó como cerrada.',
+      });
+    } catch (error) {
+      console.error('Error al cerrar la incidencia', error);
+      toast({
+        title: 'No se pudo cerrar la incidencia',
+        description: 'Vuelve a intentarlo en unos segundos.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCloseSubmitting(false);
+    }
+  };
+
+  const handleRequestClose = () => {
+    if (!canClose) {
+      return;
+    }
+    setCloseReason('');
+    setCloseReasonError('');
+    setIsCloseDialogOpen(true);
+  };
+
+  const handleConfirmClose = async () => {
+    const reason = closeReason.trim();
+
+    if (!reason) {
+      setCloseReasonError('Agrega un motivo de cierre antes de continuar.');
+      toast({
+        title: 'Motivo requerido',
+        description: 'Debes indicar el motivo del cierre de la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    await handleCloseIncident(reason);
   };
 
   const isLoading =
@@ -266,6 +385,7 @@ export default function IncidentDetailPage() {
   }
 
   const canEdit = !!permissions?.canEditContent && !isClosed;
+  const canClose = !!permissions?.canClose && !isClosed;
 
   return (
     <SidebarProvider>
@@ -309,14 +429,7 @@ export default function IncidentDetailPage() {
                             <Badge variant="outline">{ticket.status}</Badge>
                             <Badge variant="secondary">{ticket.priority}</Badge>
                         </div>
-                        <p className="text-muted-foreground">ID de Incidencia: {ticket.displayId}</p>
                     </div>
-                     {canEdit && (
-                        <Button onClick={() => setIsEditDialogOpen(true)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            Editar Incidencia
-                        </Button>
-                     )}
                 </div>
 
                 {/* Main Content */}
@@ -334,7 +447,7 @@ export default function IncidentDetailPage() {
                         <Card className="bg-transparent">
                           <CardHeader>
                             <CardTitle>Informes</CardTitle>
-                            <CardDescription>
+                            <CardDescription className="text-foreground/70">
                               Registra los avisos o seguimientos de esta incidencia. Cada informe se agrega con fecha y descripción.
                             </CardDescription>
                           </CardHeader>
@@ -358,29 +471,25 @@ export default function IncidentDetailPage() {
                               )}
                             </div>
 
-                            <div className="space-y-2">
-                              <Label htmlFor="incident-report">Nuevo informe</Label>
-                              <Textarea
-                                id="incident-report"
-                                placeholder="Describe el informe o avance que deseas registrar"
-                                value={reportDescription}
-                                onChange={(event) => setReportDescription(event.target.value)}
-                                disabled={reportSubmitting || isClosed}
-                              />
-                              {isClosed && (
-                                <p className="text-xs text-muted-foreground">
-                                  La incidencia está cerrada. No se pueden agregar más informes.
-                                </p>
-                              )}
-                              <Button
-                                onClick={handleAddReport}
-                                disabled={reportSubmitting || isClosed}
-                              >
-                                {reportSubmitting && (
-                                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
-                                )}
-                                Informar
-                              </Button>
+                              <div className="space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  onClick={() => setIsReportDialogOpen(true)}
+                                  disabled={isClosed}
+                                >
+                                  Informar
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  onClick={handleRequestClose}
+                                  disabled={!canClose || closeSubmitting}
+                                >
+                                  {closeSubmitting && (
+                                    <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                                  )}
+                                  Cerrar incidencia
+                                </Button>
+                              </div>
                             </div>
                           </CardContent>
                         </Card>
@@ -393,6 +502,15 @@ export default function IncidentDetailPage() {
                                 <CardTitle>Detalles</CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-6">
+                                {canEdit && (
+                                  <Button
+                                    onClick={() => setIsEditDialogOpen(true)}
+                                    className="w-full"
+                                  >
+                                      <Edit className="mr-2 h-4 w-4" />
+                                      Editar Incidencia
+                                  </Button>
+                                )}
                                 <InfoCard 
                                     icon={CalendarIcon}
                                     label="Fecha de Creación"
@@ -443,6 +561,96 @@ export default function IncidentDetailPage() {
             departments={departments}
         />
       )}
+      <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuevo informe</DialogTitle>
+            <DialogDescription>
+              Describe el informe o avance que deseas registrar para esta incidencia.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="incident-report">Detalle del informe</Label>
+            <Textarea
+              id="incident-report"
+              placeholder="Describe el informe o avance que deseas registrar"
+              value={reportDescription}
+              onChange={(event) => setReportDescription(event.target.value)}
+              disabled={reportSubmitting || isClosed}
+            />
+            {isClosed && (
+              <p className="text-xs text-muted-foreground">
+                La incidencia está cerrada. No se pueden agregar más informes.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsReportDialogOpen(false)}
+              disabled={reportSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleAddReport}
+              disabled={reportSubmitting || isClosed}
+            >
+              {reportSubmitting && (
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Informar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isCloseDialogOpen} onOpenChange={setIsCloseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cerrar incidencia</DialogTitle>
+            <DialogDescription>
+              Indica el motivo del cierre antes de marcar la incidencia como cerrada.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="incident-close-reason">Motivo de cierre</Label>
+            <Textarea
+              id="incident-close-reason"
+              placeholder="Ej. Trabajo completado, incidencia resuelta, etc."
+              value={closeReason}
+              onChange={(event) => {
+                setCloseReason(event.target.value);
+                if (closeReasonError) {
+                  setCloseReasonError('');
+                }
+              }}
+              disabled={closeSubmitting}
+            />
+            {closeReasonError && (
+              <p className="text-xs text-destructive">{closeReasonError}</p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsCloseDialogOpen(false)}
+              disabled={closeSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmClose}
+              disabled={closeSubmitting}
+            >
+              {closeSubmitting && (
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Confirmar cierre
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   );
 }
