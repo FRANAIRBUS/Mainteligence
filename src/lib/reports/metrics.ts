@@ -17,6 +17,27 @@ export type ReportMetrics = {
   averageMttrHours: number | null;
 };
 
+export type PreventiveCompliance = {
+  onTime: number;
+  late: number;
+  total: number;
+  complianceRate: number | null;
+};
+
+export type PreventiveTemplateCompliance = {
+  templateId: string;
+  templateName: string;
+  onTime: number;
+  late: number;
+  total: number;
+  complianceRate: number | null;
+};
+
+export type PreventiveComplianceResult = {
+  summary: PreventiveCompliance;
+  templates: PreventiveTemplateCompliance[];
+};
+
 export type OperatorPerformance = {
   userId: string;
   closedCount: number;
@@ -205,6 +226,81 @@ export const buildOperatorPerformance = (
       if (b.averageMttrHours === null) return -1;
       return a.averageMttrHours - b.averageMttrHours;
     });
+};
+
+export const calculatePreventiveCompliance = (
+  tickets: Ticket[]
+): PreventiveComplianceResult => {
+  const summary: PreventiveCompliance = {
+    onTime: 0,
+    late: 0,
+    total: 0,
+    complianceRate: null,
+  };
+
+  const templateSummary = new Map<
+    string,
+    { templateName: string; onTime: number; late: number }
+  >();
+
+  const completedPreventives = tickets.filter(
+    (ticket) => ticket.type === "preventivo" && (ticket.status === "Cerrada" || ticket.closedAt)
+  );
+
+  completedPreventives.forEach((ticket) => {
+    const closedAt = toDate(ticket.closedAt);
+    const scheduledFor = toDate(ticket.preventive?.scheduledFor);
+    if (!closedAt || !scheduledFor) return;
+
+    const isOnTime = closedAt <= endOfDay(scheduledFor);
+    if (isOnTime) {
+      summary.onTime += 1;
+    } else {
+      summary.late += 1;
+    }
+    summary.total += 1;
+
+    const templateId = ticket.preventiveTemplateId ?? ticket.templateId;
+    if (!templateId) return;
+
+    const existing = templateSummary.get(templateId) ?? {
+      templateName: ticket.templateSnapshot?.name ?? templateId,
+      onTime: 0,
+      late: 0,
+    };
+
+    if (isOnTime) {
+      existing.onTime += 1;
+    } else {
+      existing.late += 1;
+    }
+    templateSummary.set(templateId, existing);
+  });
+
+  summary.complianceRate = summary.total
+    ? (summary.onTime / summary.total) * 100
+    : null;
+
+  const templates = Array.from(templateSummary.entries())
+    .map(([templateId, data]) => {
+      const total = data.onTime + data.late;
+      return {
+        templateId,
+        templateName: data.templateName,
+        onTime: data.onTime,
+        late: data.late,
+        total,
+        complianceRate: total ? (data.onTime / total) * 100 : null,
+      };
+    })
+    .sort((a, b) => {
+      if (b.complianceRate === null && a.complianceRate === null) return 0;
+      if (b.complianceRate === null) return -1;
+      if (a.complianceRate === null) return 1;
+      return b.complianceRate - a.complianceRate;
+    });
+
+  return { summary, templates };
 };
 
 export const buildTrendData = (

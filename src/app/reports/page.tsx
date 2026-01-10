@@ -50,6 +50,7 @@ import {
   buildTrendData,
   buildOperatorPerformance,
   calculateReportMetrics,
+  calculatePreventiveCompliance,
   buildIncidentGrouping,
   filterTasks,
   filterTickets,
@@ -160,6 +161,11 @@ export default function ReportsPage() {
     [filteredTickets, siteNameById]
   );
 
+  const preventiveCompliance = useMemo(
+    () => calculatePreventiveCompliance(filteredTickets),
+    [filteredTickets]
+  );
+
   const averageMttrLabel =
     metrics.averageMttrHours !== null
       ? `${metrics.averageMttrHours.toFixed(1)} h`
@@ -183,6 +189,19 @@ export default function ReportsPage() {
           : 'Sin datos',
     };
   });
+
+  const preventiveSummaryData = [
+    {
+      label: 'Preventivos',
+      onTime: preventiveCompliance.summary.onTime,
+      late: preventiveCompliance.summary.late,
+    },
+  ];
+
+  const preventiveSummaryLabel =
+    preventiveCompliance.summary.complianceRate !== null
+      ? `${preventiveCompliance.summary.complianceRate.toFixed(1)}%`
+      : 'Sin datos';
 
   return (
     <AppShell
@@ -399,6 +418,109 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-primary" />
+              Preventivos y cumplimiento
+            </CardTitle>
+            <CardDescription>
+              Comparativa de preventivos completados en plazo y fuera de plazo.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <span>Cumplimiento global</span>
+                <span className="font-medium text-foreground">
+                  {preventiveSummaryLabel}
+                </span>
+              </div>
+              <ChartContainer
+                className="h-[220px]"
+                config={{
+                  onTime: { label: 'En plazo', color: 'hsl(var(--chart-2))' },
+                  late: { label: 'Fuera de plazo', color: 'hsl(var(--chart-5))' },
+                }}
+              >
+                <BarChart
+                  data={preventiveSummaryData}
+                  margin={{ left: 12, right: 12 }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                  />
+                  <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent indicator="dot" />}
+                  />
+                  <Bar
+                    dataKey="onTime"
+                    fill="var(--color-onTime)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="late"
+                    fill="var(--color-late)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ChartContainer>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-muted-foreground">
+                Cumplimiento por plantilla
+              </h3>
+              <div className="rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Plantilla</TableHead>
+                      <TableHead className="text-right">En plazo</TableHead>
+                      <TableHead className="text-right">Fuera</TableHead>
+                      <TableHead className="text-right">% Cumpl.</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {preventiveCompliance.templates.length ? (
+                      preventiveCompliance.templates.map((template) => (
+                        <TableRow key={template.templateId}>
+                          <TableCell className="font-medium">
+                            {template.templateName}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {template.onTime}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {template.late}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {template.complianceRate !== null
+                              ? `${template.complianceRate.toFixed(1)}%`
+                              : 'Sin datos'}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={4} className="h-24 text-center">
+                          No hay preventivos completados con plantilla.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
