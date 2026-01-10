@@ -43,6 +43,7 @@ import {
   CheckCircle2,
   Clock,
   ClipboardList,
+  Coins,
   LineChart as LineChartIcon,
   MapPin,
   Workflow,
@@ -814,6 +815,64 @@ export default function ReportsPage() {
                   No hay incidencias para el rango seleccionado.
                 </div>
               )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Partes de trabajo (próximamente)</CardTitle>
+            <CardDescription>
+              Consolidaremos los partes de trabajo para visualizar horas y costes
+              imputados por activo y departamento.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Clock className="h-4 w-4 text-primary" />
+                    Horas imputadas
+                  </CardTitle>
+                  <CardDescription>
+                    Totales y desglose por operario, activo y periodo.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                    En desarrollo
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Coins className="h-4 w-4 text-primary" />
+                    Coste por activo/departamento
+                  </CardTitle>
+                  <CardDescription>
+                    Comparativa de costes directos e indirectos imputados.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                    En desarrollo
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="rounded-lg border border-dashed bg-muted/40 p-4">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                <Badge variant="secondary">En desarrollo</Badge>
+                Roadmap corto
+              </div>
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                <li>Integración de partes de trabajo con activos y centros de coste.</li>
+                <li>Cálculo de horas imputadas y costes por departamento.</li>
+                <li>Visualizaciones comparativas por periodos y filtros globales.</li>
+              </ul>
             </div>
           </CardContent>
         </Card>
