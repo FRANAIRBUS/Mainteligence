@@ -17,6 +17,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -44,6 +45,7 @@ import {
   Clock,
   ClipboardList,
   Coins,
+  Download,
   LineChart as LineChartIcon,
   MapPin,
   Workflow,
@@ -59,6 +61,12 @@ import {
   filterTickets,
   type MetricsFilters,
 } from '@/lib/reports/metrics';
+import {
+  buildReportCsv,
+  buildReportExportRows,
+  type ExportSortOrder,
+} from '@/lib/reports/export';
+import { useToast } from '@/hooks/use-toast';
 
 export default function ReportsPage() {
   const { user, loading } = useUser();
@@ -67,6 +75,9 @@ export default function ReportsPage() {
   const [endDate, setEndDate] = useState('');
   const [locationFilter, setLocationFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [exportSortOrder, setExportSortOrder] = useState<ExportSortOrder>('desc');
+  const [isExporting, setIsExporting] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -105,6 +116,20 @@ export default function ReportsPage() {
       (acc, department) => ({ ...acc, [department.id]: department.name }),
       {} as Record<string, string>
     );
+  }, [departments]);
+
+  const sitesById = useMemo(() => {
+    return sites.reduce((acc, site) => {
+      acc.set(site.id, site);
+      return acc;
+    }, new Map<string, Site>());
+  }, [sites]);
+
+  const departmentsById = useMemo(() => {
+    return departments.reduce((acc, department) => {
+      acc.set(department.id, department);
+      return acc;
+    }, new Map<string, Department>());
   }, [departments]);
 
   const locationOptions = useMemo(() => {
@@ -251,6 +276,78 @@ export default function ReportsPage() {
       ? `${preventiveCompliance.summary.complianceRate.toFixed(1)}%`
       : 'Sin datos';
 
+  const exportRows = useMemo(
+    () =>
+      buildReportExportRows({
+        tickets,
+        tasks,
+        usersById,
+        departmentsById,
+        sitesById,
+        filters: {
+          startDate: startDate ? new Date(`${startDate}T00:00:00`) : null,
+          endDate: endDate ? new Date(`${endDate}T23:59:59`) : null,
+          location: locationFilter === 'all' ? undefined : locationFilter,
+          departmentId: departmentFilter === 'all' ? undefined : departmentFilter,
+        },
+        sortOrder: exportSortOrder,
+      }),
+    [
+      tickets,
+      tasks,
+      usersById,
+      departmentsById,
+      sitesById,
+      startDate,
+      endDate,
+      locationFilter,
+      departmentFilter,
+      exportSortOrder,
+    ]
+  );
+
+  const handleExport = () => {
+    if (isExporting) return;
+
+    if (!exportRows.length) {
+      toast({
+        title: 'Sin registros para exportar',
+        description: 'Ajusta los filtros para obtener resultados.',
+      });
+      return;
+    }
+
+    const needsFeedback = exportRows.length >= 500;
+    const exportToast = needsFeedback
+      ? toast({
+          title: 'Generando exportación',
+          description: 'Preparando el archivo para descarga.',
+        })
+      : null;
+
+    setIsExporting(true);
+
+    const csvContent = buildReportCsv(exportRows);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `reporte-mantenimiento-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    if (exportToast) {
+      exportToast.update({
+        title: 'Exportación lista',
+        description: 'El archivo se ha descargado correctamente.',
+      });
+    }
+
+    setIsExporting(false);
+  };
+
   return (
     <AppShell
       title="Informes"
@@ -334,6 +431,71 @@ export default function ReportsPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="text-lg sm:text-xl">Exportación</CardTitle>
+              <CardDescription className="mt-2">
+                Descarga un CSV con incidencias, tareas y preventivos según los filtros
+                actuales.
+              </CardDescription>
+            </div>
+            <Button onClick={handleExport} disabled={isExporting || dataLoading}>
+              {isExporting ? (
+                <>
+                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                  Generando
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  Descargar
+                </>
+              )}
+            </Button>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+            <div className="space-y-1">
+              <span className="text-sm font-medium text-muted-foreground">
+                Rango aplicado
+              </span>
+              <p className="text-sm text-foreground">
+                {startDate || endDate
+                  ? `${startDate || 'Inicio'} → ${endDate || 'Hoy'}`
+                  : 'Sin filtro de fechas'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Usa el rango global de fechas para limitar la exportación.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-sm font-medium text-muted-foreground">
+                Orden por creación
+              </span>
+              <Select value={exportSortOrder} onValueChange={setExportSortOrder}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona orden" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desc">Más recientes primero</SelectItem>
+                  <SelectItem value="asc">Más antiguos primero</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <span className="text-sm font-medium text-muted-foreground">
+                Registros incluidos
+              </span>
+              <p className="text-sm text-foreground">
+                {exportRows.length} elementos
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Incidencias, tareas y preventivos del rango seleccionado.
+              </p>
             </div>
           </CardContent>
         </Card>
