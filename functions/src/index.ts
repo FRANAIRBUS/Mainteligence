@@ -91,6 +91,20 @@ async function updateOrganizationUserProfile({
   if (!membershipSnap.exists) {
     throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización.');
   }
+  const membership = membershipSnap.data() as any;
+  const rawStatus = String(membership?.status ?? '').trim().toLowerCase();
+  const membershipStatus =
+    rawStatus || (typeof membership?.active === 'boolean' ? (membership.active ? 'active' : 'inactive') : '');
+  if (membershipStatus !== 'active') {
+    if (membershipStatus === 'pending' || membershipStatus === 'revoked') {
+      console.warn('updateOrganizationUserProfile blocked for inactive membership', {
+        orgId,
+        targetUid,
+        membershipStatus,
+      });
+    }
+    throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía activa en esa organización.');
+  }
 
   const userRef = db.collection('users').doc(targetUid);
   const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
