@@ -556,7 +556,7 @@ export default function TaskDetailPage() {
             <Card className="bg-transparent">
               <CardHeader>
                 <CardTitle>Informes</CardTitle>
-                <CardDescription>
+                <CardDescription className="text-foreground/70">
                   Registra los avisos e informes asociados a la tarea. Cada envío se guardará con la fecha y hora.
                 </CardDescription>
               </CardHeader>
@@ -570,7 +570,10 @@ export default function TaskDetailPage() {
                         : "";
 
                       return (
-                        <div key={index} className="rounded-lg border border-white/80 bg-sky-300/20 p-3">
+                        <div
+                          key={index}
+                          className="rounded-lg border border-white/80 bg-sky-300/20 p-3 text-foreground"
+                        >
                           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                             <span>{format(date, "PPPp", { locale: es })}</span>
                             {reporterName ? <span>Por {reporterName}</span> : null}
@@ -613,7 +616,7 @@ export default function TaskDetailPage() {
                 <CardTitle>Detalles</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {canEdit && (
+                {canEdit && !isTaskClosed && (
                   <Button
                     onClick={() => setIsEditDialogOpen(true)}
                     className="w-full"
@@ -686,7 +689,7 @@ export default function TaskDetailPage() {
             departments={departments}
             submitLabel="Guardar cambios"
             onSuccess={() => setIsEditDialogOpen(false)}
-            disabled={!canEdit}
+            disabled={!canEdit || isTaskClosed}
           />
         </DialogContent>
       </Dialog>
