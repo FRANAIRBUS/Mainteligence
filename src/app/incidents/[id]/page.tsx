@@ -331,7 +331,7 @@ export default function IncidentDetailPage() {
                                 <p className="text-sm text-foreground/80">{ticket.description}</p>
                             </CardContent>
                         </Card>
-                        <Card>
+                        <Card className="bg-transparent">
                           <CardHeader>
                             <CardTitle>Informes</CardTitle>
                             <CardDescription>
@@ -344,7 +344,7 @@ export default function IncidentDetailPage() {
                                 sortedReports.map((report, index) => {
                                   const date = report.createdAt?.toDate?.() ?? new Date();
                                   return (
-                                    <div key={index} className="rounded-lg border bg-muted/40 p-3">
+                                    <div key={index} className="rounded-lg border border-white/80 bg-sky-300/20 p-3 text-foreground">
                                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                                         <span>{format(date, 'PPPp')}</span>
                                         {report.createdBy ? <span>Por {userNameMap[report.createdBy] || report.createdBy}</span> : null}
