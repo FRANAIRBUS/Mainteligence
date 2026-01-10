@@ -457,7 +457,7 @@ export default function IncidentDetailPage() {
                                 sortedReports.map((report, index) => {
                                   const date = report.createdAt?.toDate?.() ?? new Date();
                                   return (
-                                    <div key={index} className="rounded-lg border border-blue-100 bg-blue-50/80 p-3 text-foreground">
+                                    <div key={index} className="rounded-lg border border-white/80 bg-sky-300/20 p-3 text-foreground">
                                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                                         <span>{format(date, 'PPPp')}</span>
                                         {report.createdBy ? <span>Por {userNameMap[report.createdBy] || report.createdBy}</span> : null}
