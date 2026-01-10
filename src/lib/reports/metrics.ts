@@ -17,6 +17,12 @@ export type ReportMetrics = {
   averageMttrHours: number | null;
 };
 
+export type OperatorPerformance = {
+  userId: string;
+  closedCount: number;
+  averageMttrHours: number | null;
+};
+
 export type TrendDatum = {
   date: string;
   closedIncidents: number;
@@ -55,6 +61,14 @@ const endOfDay = (value: Date) => {
 };
 
 const dateKey = (value: Date) => value.toISOString().split("T")[0];
+
+const resolveReportAuthor = (
+  reports?: { createdBy?: string }[] | null
+) => {
+  if (!reports?.length) return null;
+  const report = [...reports].reverse().find((entry) => entry.createdBy);
+  return report?.createdBy ?? null;
+};
 
 export const filterTickets = (
   tickets: Ticket[],
@@ -122,6 +136,67 @@ export const calculateReportMetrics = (
     completedTasks,
     averageMttrHours,
   };
+};
+
+export const buildOperatorPerformance = (
+  tickets: Ticket[],
+  tasks: MaintenanceTask[]
+): OperatorPerformance[] => {
+  const summary = new Map<
+    string,
+    { closedCount: number; mttrSamples: number[] }
+  >();
+
+  const register = (
+    userId: string | null,
+    createdAt?: Timestamp | Date | null,
+    closedAt?: Timestamp | Date | null
+  ) => {
+    if (!userId) return;
+    const entry = summary.get(userId) ?? { closedCount: 0, mttrSamples: [] };
+    entry.closedCount += 1;
+    const start = toDate(createdAt);
+    const end = toDate(closedAt);
+    if (start && end) {
+      entry.mttrSamples.push((end.getTime() - start.getTime()) / 3600000);
+    }
+    summary.set(userId, entry);
+  };
+
+  tickets
+    .filter((ticket) => ticket.status === "Cerrada")
+    .forEach((ticket) => {
+      const userId = ticket.assignedTo ?? resolveReportAuthor(ticket.reports);
+      register(userId, ticket.createdAt, ticket.closedAt);
+    });
+
+  tasks
+    .filter((task) => task.status === "completada")
+    .forEach((task) => {
+      const userId = task.assignedTo ?? resolveReportAuthor(task.reports);
+      register(userId, task.createdAt, task.closedAt);
+    });
+
+  return Array.from(summary.entries())
+    .map(([userId, data]) => ({
+      userId,
+      closedCount: data.closedCount,
+      averageMttrHours: data.mttrSamples.length
+        ? data.mttrSamples.reduce((sum, value) => sum + value, 0) /
+          data.mttrSamples.length
+        : null,
+    }))
+    .sort((a, b) => {
+      if (b.closedCount !== a.closedCount) {
+        return b.closedCount - a.closedCount;
+      }
+      if (a.averageMttrHours === null && b.averageMttrHours === null) {
+        return 0;
+      }
+      if (a.averageMttrHours === null) return 1;
+      if (b.averageMttrHours === null) return -1;
+      return a.averageMttrHours - b.averageMttrHours;
+    });
 };
 
 export const buildTrendData = (
