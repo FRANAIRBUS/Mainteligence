@@ -3,7 +3,7 @@
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useCollection, useUser } from '@/lib/firebase';
-import type { Ticket, Department, Site } from '@/lib/firebase/models';
+import type { Ticket, Department, Site, User } from '@/lib/firebase/models';
 import type { MaintenanceTask } from '@/types/maintenance-task';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -29,6 +29,14 @@ import {
 } from '@/components/ui/chart';
 import { Badge } from '@/components/ui/badge';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
   Activity,
   CheckCircle2,
   Clock,
@@ -40,6 +48,7 @@ import {
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import {
   buildTrendData,
+  buildOperatorPerformance,
   calculateReportMetrics,
   filterTasks,
   filterTickets,
@@ -68,6 +77,8 @@ export default function ReportsPage() {
     useCollection<Department>('departments');
   const { data: sites = [], loading: sitesLoading } =
     useCollection<Site>('sites');
+  const { data: users = [], loading: usersLoading } =
+    useCollection<User>('users');
 
   if (loading || !user) {
     return (
@@ -114,6 +125,18 @@ export default function ReportsPage() {
     [filteredTickets, filteredTasks]
   );
 
+  const operatorPerformance = useMemo(
+    () => buildOperatorPerformance(filteredTickets, filteredTasks),
+    [filteredTickets, filteredTasks]
+  );
+
+  const usersById = useMemo(() => {
+    return users.reduce((acc, user) => {
+      acc.set(user.id, user);
+      return acc;
+    }, new Map<string, User>());
+  }, [users]);
+
   const trendData = useMemo(
     () => buildTrendData(filteredTickets, filteredTasks, filters),
     [filteredTickets, filteredTasks, filters]
@@ -125,7 +148,23 @@ export default function ReportsPage() {
       : 'Sin datos';
 
   const dataLoading =
-    ticketsLoading || tasksLoading || departmentsLoading || sitesLoading;
+    ticketsLoading ||
+    tasksLoading ||
+    departmentsLoading ||
+    sitesLoading ||
+    usersLoading;
+
+  const operatorRows = operatorPerformance.map((entry) => {
+    const user = usersById.get(entry.userId);
+    return {
+      ...entry,
+      label: user?.displayName ?? user?.email ?? entry.userId,
+      mttrLabel:
+        entry.averageMttrHours !== null
+          ? `${entry.averageMttrHours.toFixed(1)} h`
+          : 'Sin datos',
+    };
+  });
 
   return (
     <AppShell
@@ -342,6 +381,47 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Rendimiento por operario</CardTitle>
+            <CardDescription>
+              Ranking de cierres por usuario según incidencias y tareas.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Operario</TableHead>
+                  <TableHead className="text-right">Cerradas</TableHead>
+                  <TableHead className="text-right">MTTR</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {operatorRows.length > 0 ? (
+                  operatorRows.map((row) => (
+                    <TableRow key={row.userId}>
+                      <TableCell className="font-medium">{row.label}</TableCell>
+                      <TableCell className="text-right">
+                        {row.closedCount}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {row.mttrLabel}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="h-24 text-center">
+                      No hay cierres en el rango seleccionado.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
     </AppShell>
   );
