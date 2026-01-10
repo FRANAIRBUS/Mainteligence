@@ -10,8 +10,8 @@ import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
-// Assignment notifications are sent server-side (Cloud Functions)
 import { getTicketPermissions } from '@/lib/rbac';
+import { sendAssignmentEmail } from '@/lib/assignment-email';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -132,16 +132,50 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       updateData.departmentId = data.departmentId;
     }
 
-    if (canEditAssignment) {
+    const assignmentChanged = canEditAssignment && newAssignee !== (ticket.assignedTo ?? null);
+
+    if (assignmentChanged) {
       updateData.assignedTo = newAssignee;
+
+      if (newAssignee) {
+        updateData.assignmentEmailSource = 'client';
+      }
     }
     
     try {
-      const previousAssignee = ticket.assignedTo ?? null;
-
       await updateDoc(ticketRef, updateData);
 
-      // Notifications are handled server-side.
+      if (assignmentChanged && newAssignee) {
+        const baseUrl =
+          typeof window !== 'undefined'
+            ? window.location.origin
+            : 'https://multi.maintelligence.app';
+        const departmentName = data.departmentId
+          ? departments.find((dept) => dept.id === data.departmentId)?.name || data.departmentId
+          : '';
+
+        void (async () => {
+          try {
+            await sendAssignmentEmail({
+              users,
+              departments,
+              assignedTo: newAssignee,
+              departmentId: data.departmentId || null,
+              title: ticket.title,
+              link: `${baseUrl}/incidents/${ticket.id}`,
+              type: 'incidencia',
+              identifier: ticket.displayId || ticket.id,
+              description: ticket.description ?? '',
+              priority: data.priority,
+              status: data.status,
+              location: departmentName,
+            });
+          } catch (error) {
+            console.error('No se pudo enviar el email de asignación de incidencia', error);
+          }
+        })();
+      }
+
       toast({
         title: 'Éxito',
         description: `Incidencia '${ticket.title}' actualizada.`,

@@ -97,7 +97,7 @@ export default function Home() {
         </div>
       }
     >
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <DashboardCard
           title="Tareas pendientes"
           value={pendingTasks.length}
@@ -239,10 +239,12 @@ function DashboardCard({
   highlight?: boolean;
 }) {
   return (
-    <Card className={highlight ? "border-destructive/50" : undefined}>
+    <Card
+      className="border-white/80 bg-sky-300/20"
+    >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <div className={highlight ? "text-destructive" : "text-muted-foreground"}>{icon}</div>
+        <div className={highlight ? "text-white" : "text-muted-foreground"}>{icon}</div>
       </CardHeader>
       <CardContent>
         <div className="text-3xl font-bold">{value}</div>

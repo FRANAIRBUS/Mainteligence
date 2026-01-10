@@ -7,7 +7,6 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 
 import { AppShell } from '@/components/app-shell';
 import { AddUserDialog } from '@/components/add-user-dialog';
-import { EditUserDialog } from '@/components/edit-user-dialog';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -87,9 +86,6 @@ export default function UsersPage() {
   const { data: departments = [] } = useCollection<Department>(canManage ? 'departments' : null);
 
   const [addOpen, setAddOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-
   // Per-request role selection (approve as role)
   const [approveRoleByUid, setApproveRoleByUid] = useState<Record<string, Role>>({});
 
@@ -228,31 +224,6 @@ export default function UsersPage() {
   );
   const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
   const departmentsById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments]);
-
-  const openEdit = (member: OrgMemberRow) => {
-    const profile = usersById.get(member.id);
-    if (profile) {
-      setSelectedUser(profile);
-      setEditOpen(true);
-      return;
-    }
-
-    if (!organizationId) return;
-
-    setSelectedUser({
-      id: member.id,
-      organizationId,
-      displayName: String(member.displayName ?? ''),
-      email: String(member.email ?? ''),
-      role: (member.role ?? 'operator') as User['role'],
-      departmentId: undefined,
-      isMaintenanceLead: ['super_admin', 'admin', 'maintenance'].includes(member.role ?? 'operator'),
-      active: (member.status ?? 'active') === 'active',
-      createdAt: member.createdAt as any,
-      updatedAt: member.updatedAt as any,
-    });
-    setEditOpen(true);
-  };
 
   const openApprove = (req: JoinRequestRow) => {
     setSelectedRequest(req);
@@ -462,7 +433,7 @@ export default function UsersPage() {
                           key={m.id}
                           type="button"
                           className="rounded-lg border border-white/20 bg-background p-4 text-left shadow-sm transition hover:border-white/40"
-                          onClick={() => openEdit(m)}
+                          onClick={() => router.push(`/users/${m.id}`)}
                           disabled={usersLoading && !usersById.get(m.id)}
                         >
                           <div className="space-y-3">
@@ -580,9 +551,6 @@ export default function UsersPage() {
       </AlertDialog>
 
       <AddUserDialog open={addOpen} onOpenChange={setAddOpen} departments={departments} />
-      {selectedUser ? (
-        <EditUserDialog open={editOpen} onOpenChange={setEditOpen} user={selectedUser} departments={departments} />
-      ) : null}
     </AppShell>
   );
 }

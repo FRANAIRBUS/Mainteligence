@@ -1,11 +1,19 @@
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import type { Request, Response } from 'express';
+import { sendAssignmentEmail } from './assignment-email';
+import { sendInviteEmail } from './invite-email';
 
 admin.initializeApp();
 const db = admin.firestore();
 
-type Role = 'super_admin' | 'admin' | 'maintenance' | 'operator';
+type Role =
+  | 'super_admin'
+  | 'admin'
+  | 'maintenance'
+  | 'dept_head_multi'
+  | 'dept_head_single'
+  | 'operator';
 
 function httpsError(code: functions.https.FunctionsErrorCode, message: string) {
   return new functions.https.HttpsError(code, message);
@@ -52,6 +60,114 @@ async function requireAuthFromRequest(req: Request) {
   return admin.auth().verifyIdToken(match[1]);
 }
 
+async function updateOrganizationUserProfile({
+  actorUid,
+  actorEmail,
+  isRoot,
+  orgId,
+  targetUid,
+  displayName,
+  email,
+  departmentId,
+}: {
+  actorUid: string;
+  actorEmail: string | null;
+  isRoot: boolean;
+  orgId: string;
+  targetUid: string;
+  displayName: string;
+  email: string;
+  departmentId: string;
+}) {
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
+
+  if (!isRoot) {
+    await requireCallerSuperAdminInOrg(actorUid, orgId);
+  }
+
+  const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+  const membershipSnap = await membershipRef.get();
+  if (!membershipSnap.exists) {
+    throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización.');
+  }
+  const membership = membershipSnap.data() as any;
+  const rawStatus = String(membership?.status ?? '').trim().toLowerCase();
+  const membershipStatus =
+    rawStatus || (typeof membership?.active === 'boolean' ? (membership.active ? 'active' : 'inactive') : '');
+  if (membershipStatus !== 'active') {
+    if (membershipStatus === 'pending' || membershipStatus === 'revoked') {
+      console.warn('updateOrganizationUserProfile blocked for inactive membership', {
+        orgId,
+        targetUid,
+        membershipStatus,
+      });
+    }
+    throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía activa en esa organización.');
+  }
+
+  const userRef = db.collection('users').doc(targetUid);
+  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const normalizedEmail = String(email ?? '').trim();
+
+  const userSnap = await userRef.get();
+  const currentEmail = String(userSnap.data()?.email ?? '').trim();
+
+  if (normalizedEmail && normalizedEmail !== currentEmail) {
+    try {
+      await admin.auth().updateUser(targetUid, { email: normalizedEmail });
+    } catch (err: any) {
+      const code = String(err?.code ?? '');
+      if (code === 'auth/email-already-exists') {
+        throw httpsError('failed-precondition', 'El correo electrónico ya está en uso.');
+      }
+      if (code === 'auth/invalid-email') {
+        throw httpsError('invalid-argument', 'El correo electrónico no es válido.');
+      }
+      if (code === 'auth/user-not-found') {
+        throw httpsError('not-found', 'No se encontró el usuario en Auth.');
+      }
+      console.error('updateOrganizationUserProfile auth update failed', { targetUid, orgId, code, err });
+      throw httpsError('internal', 'No se pudo actualizar el correo electrónico en Auth.');
+    }
+  }
+
+  const userPayload = {
+    displayName: displayName || null,
+    email: normalizedEmail || null,
+    departmentId: departmentId || null,
+    updatedAt: now,
+    source: 'orgUpdateUserProfile_v1',
+  };
+
+  const memberPayload = {
+    displayName: displayName || null,
+    email: normalizedEmail || null,
+    updatedAt: now,
+    source: 'orgUpdateUserProfile_v1',
+  };
+
+  const batch = db.batch();
+  batch.set(userRef, userPayload, { merge: true });
+  batch.set(memberRef, memberPayload, { merge: true });
+  await batch.commit();
+
+  await auditLog({
+    action: 'orgUpdateUserProfile',
+    actorUid,
+    actorEmail,
+    orgId,
+    targetUid,
+    targetEmail: normalizedEmail || null,
+    after: {
+      displayName: displayName || null,
+      email: normalizedEmail || null,
+      departmentId: departmentId || null,
+    },
+  });
+}
+
 function sendHttpError(res: Response, err: any) {
   const code = String(err?.code ?? 'internal');
   const message = String(err?.message ?? 'Error inesperado.');
@@ -90,16 +206,50 @@ async function getUserDoc(uid: string) {
   return { ref, snap, data: snap.data() as any | undefined };
 }
 
-function normalizeRole(input: any): Role {
+function normalizeRoleOrNull(input: any): Role | null {
   const r = String(input ?? '').trim().toLowerCase();
+  if (!r) return null;
 
   if (r === 'super_admin' || r === 'superadmin') return 'super_admin';
   if (r === 'admin' || r === 'administrator') return 'admin';
 
   if (r === 'maintenance' || r === 'mantenimiento' || r === 'maint' || r === 'maintainer') return 'maintenance';
+
+  if (
+    r === 'dept_head_multi' ||
+    r === 'deptheadmulti' ||
+    r === 'dept-head-multi' ||
+    r === 'dept head multi' ||
+    r === 'department_head_multi' ||
+    r === 'departmentheadmulti' ||
+    r === 'jefe_departamento_multi' ||
+    r === 'jefe de departamento multi'
+  ) {
+    return 'dept_head_multi';
+  }
+
+  if (
+    r === 'dept_head_single' ||
+    r === 'deptheadsingle' ||
+    r === 'dept-head-single' ||
+    r === 'dept head single' ||
+    r === 'dept_head' ||
+    r === 'depthead' ||
+    r === 'department_head_single' ||
+    r === 'departmentheadsingle' ||
+    r === 'jefe_departamento' ||
+    r === 'jefe de departamento'
+  ) {
+    return 'dept_head_single';
+  }
+
   if (r === 'operator' || r === 'operario' || r === 'op') return 'operator';
 
-  return 'operator';
+  return null;
+}
+
+function normalizeRole(input: any): Role {
+  return normalizeRoleOrNull(input) ?? 'operator';
 }
 
 async function ensureDefaultOrganizationExists() {
@@ -166,9 +316,26 @@ export const onTicketAssign = functions.firestore
     const after = change.after.data() as any;
     if (!before || !after) return;
 
-    if (before.assignedTo === after.assignedTo) return;
+    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo) return;
+    if (after.assignmentEmailSource === 'client') return;
 
-    console.log('[onTicketAssign]', context.params.ticketId, before.assignedTo, '->', after.assignedTo);
+    try {
+      await sendAssignmentEmail({
+        organizationId: after.organizationId ?? null,
+        assignedTo: after.assignedTo ?? null,
+        departmentId: after.departmentId ?? null,
+        title: after.title ?? '(sin título)',
+        link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+        type: 'incidencia',
+        identifier: after.displayId ?? context.params.ticketId,
+        description: after.description ?? '',
+        priority: after.priority ?? '',
+        status: after.status ?? '',
+        location: after.departmentId ?? null,
+      });
+    } catch (error) {
+      console.error('[onTicketAssign] Error enviando email de asignación', error);
+    }
   });
 
 export const onTaskAssign = functions.firestore
@@ -178,9 +345,82 @@ export const onTaskAssign = functions.firestore
     const after = change.after.data() as any;
     if (!before || !after) return;
 
-    if (before.assignedTo === after.assignedTo) return;
+    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo) return;
+    if (after.assignmentEmailSource === 'client') return;
 
-    console.log('[onTaskAssign]', context.params.taskId, before.assignedTo, '->', after.assignedTo);
+    try {
+      await sendAssignmentEmail({
+        organizationId: after.organizationId ?? null,
+        assignedTo: after.assignedTo ?? null,
+        departmentId: after.location ?? null,
+        title: after.title ?? '(sin título)',
+        link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+        type: 'tarea',
+        identifier: context.params.taskId,
+        description: after.description ?? '',
+        priority: after.priority ?? '',
+        status: after.status ?? '',
+        dueDate: after.dueDate ?? null,
+        location: after.location ?? null,
+        category: after.category ?? null,
+      });
+    } catch (error) {
+      console.error('[onTaskAssign] Error enviando email de asignación', error);
+    }
+  });
+
+export const onTicketCreate = functions.firestore
+  .document('tickets/{ticketId}')
+  .onCreate(async (snap, context) => {
+    const data = snap.data() as any;
+    if (!data?.assignedTo) return;
+    if (data.assignmentEmailSource === 'client') return;
+
+    try {
+      await sendAssignmentEmail({
+        organizationId: data.organizationId ?? null,
+        assignedTo: data.assignedTo ?? null,
+        departmentId: data.departmentId ?? null,
+        title: data.title ?? '(sin título)',
+        link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+        type: 'incidencia',
+        identifier: data.displayId ?? context.params.ticketId,
+        description: data.description ?? '',
+        priority: data.priority ?? '',
+        status: data.status ?? '',
+        location: data.departmentId ?? null,
+      });
+    } catch (error) {
+      console.error('[onTicketCreate] Error enviando email de asignación', error);
+    }
+  });
+
+export const onTaskCreate = functions.firestore
+  .document('tasks/{taskId}')
+  .onCreate(async (snap, context) => {
+    const data = snap.data() as any;
+    if (!data?.assignedTo) return;
+    if (data.assignmentEmailSource === 'client') return;
+
+    try {
+      await sendAssignmentEmail({
+        organizationId: data.organizationId ?? null,
+        assignedTo: data.assignedTo ?? null,
+        departmentId: data.location ?? null,
+        title: data.title ?? '(sin título)',
+        link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+        type: 'tarea',
+        identifier: context.params.taskId,
+        description: data.description ?? '',
+        priority: data.priority ?? '',
+        status: data.status ?? '',
+        dueDate: data.dueDate ?? null,
+        location: data.location ?? null,
+        category: data.category ?? null,
+      });
+    } catch (error) {
+      console.error('[onTaskCreate] Error enviando email de asignación', error);
+    }
   });
 
 export const onTicketClosed = functions.firestore
@@ -722,7 +962,9 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const organizationId = sanitizeOrganizationId(orgIdIn);
   if (!organizationId) throw httpsError('invalid-argument', 'organizationId requerido.');
 
-  const requestedRole: Role = normalizeRole(data?.requestedRole) ?? 'operator';
+  const requestedRoleRaw = data?.requestedRole;
+  const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operator';
+  if (!requestedRole) throw httpsError('invalid-argument', 'requestedRole inválido.');
 
   const authUser = await admin.auth().getUser(uid).catch(() => null);
   const email = (authUser?.email ?? String(data?.email ?? '')).trim().toLowerCase();
@@ -855,7 +1097,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       organizationId,
       email: email || null,
       displayName: displayName || email || 'Usuario',
-      role: 'operator',
+      role: requestedRole,
       active: true,
       updatedAt: now,
       createdAt: now,
@@ -870,6 +1112,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       userId: uid,
       organizationId,
       organizationName: orgName,
+      // El rol solicitado queda pendiente hasta aprobación.
       role: requestedRole,
       status: 'pending',
       primary: false,
@@ -1008,6 +1251,17 @@ export const orgInviteUser = functions.https.onRequest(async (req, res) => {
       { merge: true }
     );
 
+    try {
+      await sendInviteEmail({
+        recipientEmail: email,
+        orgName,
+        role: requestedRole,
+        inviteLink: 'https://multi.maintelligence.app/login',
+      });
+    } catch (error) {
+      console.warn('Error enviando email de invitación.', error);
+    }
+
     await auditLog({
       action: 'orgInviteUser',
       actorUid,
@@ -1043,57 +1297,46 @@ export const orgUpdateUserProfile = functions.https.onRequest(async (req, res) =
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const departmentId = String(req.body?.departmentId ?? '').trim();
 
-    if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
-    if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
-
-    if (!isRoot) {
-      await requireCallerSuperAdminInOrg(actorUid, orgId);
-    }
-
-    const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
-    const membershipSnap = await membershipRef.get();
-    if (!membershipSnap.exists) {
-      throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización.');
-    }
-
-    const userRef = db.collection('users').doc(targetUid);
-    const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
-    const now = admin.firestore.FieldValue.serverTimestamp();
-
-    const userPayload = {
-      displayName: displayName || null,
-      email: email || null,
-      departmentId: departmentId || null,
-      updatedAt: now,
-      source: 'orgUpdateUserProfile_v1',
-    };
-
-    const memberPayload = {
-      displayName: displayName || null,
-      email: email || null,
-      updatedAt: now,
-      source: 'orgUpdateUserProfile_v1',
-    };
-
-    const batch = db.batch();
-    batch.set(userRef, userPayload, { merge: true });
-    batch.set(memberRef, memberPayload, { merge: true });
-    await batch.commit();
-
-    await auditLog({
-      action: 'orgUpdateUserProfile',
+    await updateOrganizationUserProfile({
       actorUid,
       actorEmail,
+      isRoot,
       orgId,
       targetUid,
-      targetEmail: email || null,
-      after: { displayName: displayName || null, email: email || null, departmentId: departmentId || null },
+      displayName,
+      email,
+      departmentId,
     });
 
     res.status(200).json({ ok: true, organizationId: orgId, uid: targetUid });
   } catch (err) {
     sendHttpError(res, err);
   }
+});
+
+export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const isRoot = isRootClaim(context);
+
+  const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
+  const targetUid = String(data?.uid ?? '').trim();
+  const displayName = String(data?.displayName ?? '').trim();
+  const email = String(data?.email ?? '').trim().toLowerCase();
+  const departmentId = String(data?.departmentId ?? '').trim();
+
+  await updateOrganizationUserProfile({
+    actorUid,
+    actorEmail,
+    isRoot,
+    orgId,
+    targetUid,
+    displayName,
+    email,
+    departmentId,
+  });
+
+  return { ok: true, organizationId: orgId, uid: targetUid };
 });
 
 export const orgApproveJoinRequest = functions.https.onCall(async (data, context) => {

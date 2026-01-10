@@ -19,13 +19,12 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import type { Auth } from "firebase/auth";
-import type {
-  MaintenanceTask,
-  MaintenanceTaskInput,
-} from "@/types/maintenance-task";
+import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import type { User, Department } from "@/lib/firebase/models";
-// Email notifications are handled server-side (Cloud Functions) to avoid
-// duplicates and ensure delivery even if the client disconnects.
+
+type MaintenanceTaskWrite = MaintenanceTaskInput & {
+  assignmentEmailSource?: "client" | "server";
+};
 
 const TASKS_COLLECTION = "tasks";
 
@@ -94,7 +93,7 @@ export const getTask = async (db: Firestore, id: string) => {
 export const createTask = async (
   db: Firestore,
   auth: Auth,
-  payload: MaintenanceTaskInput,
+  payload: MaintenanceTaskWrite,
   options?: { users: User[]; departments: Department[] }
 ): Promise<string> => {
   if (!payload.organizationId) {
@@ -109,8 +108,6 @@ export const createTask = async (
     status: payload.status || "pendiente",
     priority: payload.priority || "media",
   });
-
-  // Notifications are sent by Cloud Functions (functions/src/index.ts)
 
   return docRef.id;
 };
@@ -131,14 +128,12 @@ export const updateTask = async (
   db: Firestore,
   auth: Auth,
   id: string,
-  updates: Partial<MaintenanceTaskInput>,
+  updates: Partial<MaintenanceTaskWrite>,
   options?: { users: User[]; departments: Department[] }
 ) => {
   await ensureAuthenticatedUser(auth);
   const docRef = doc(db, TASKS_COLLECTION, id);
   await updateDoc(docRef, { ...updates, updatedAt: serverTimestamp() });
-
-  // Notifications are sent by Cloud Functions (functions/src/index.ts)
 
   return id;
 };

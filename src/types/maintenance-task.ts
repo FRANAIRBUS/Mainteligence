@@ -18,6 +18,9 @@ export interface MaintenanceTask {
   createdBy?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
+  closedAt?: Timestamp;
+  closedBy?: string;
+  closedReason?: string;
   reports?: ReportEntry[];
 }
 
