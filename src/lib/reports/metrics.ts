@@ -29,6 +29,14 @@ export type TrendDatum = {
   completedTasks: number;
 };
 
+export type IncidentGrouping = {
+  id: string;
+  label: string;
+  openIncidents: number;
+  closedIncidents: number;
+  total: number;
+};
+
 const toDate = (value?: Timestamp | Date | null) => {
   if (!value) return null;
   if (value instanceof Date) return value;
@@ -245,4 +253,42 @@ export const buildTrendData = (
     });
 
   return rangeDays.map((day) => buckets[day]);
+};
+
+export const buildIncidentGrouping = (
+  tickets: Ticket[],
+  groupingKey: "departmentId" | "siteId",
+  labelById: Record<string, string>
+): IncidentGrouping[] => {
+  const summary = new Map<
+    string,
+    { label: string; openIncidents: number; closedIncidents: number }
+  >();
+
+  tickets.forEach((ticket) => {
+    const id = ticket[groupingKey];
+    if (!id) return;
+    const label = labelById[id] ?? id;
+    const current = summary.get(id) ?? {
+      label,
+      openIncidents: 0,
+      closedIncidents: 0,
+    };
+    if (ticket.status === "Cerrada") {
+      current.closedIncidents += 1;
+    } else {
+      current.openIncidents += 1;
+    }
+    summary.set(id, current);
+  });
+
+  return Array.from(summary.entries())
+    .map(([id, data]) => ({
+      id,
+      label: data.label,
+      openIncidents: data.openIncidents,
+      closedIncidents: data.closedIncidents,
+      total: data.openIncidents + data.closedIncidents,
+    }))
+    .sort((a, b) => b.total - a.total);
 };

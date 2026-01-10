@@ -45,11 +45,12 @@ import {
   MapPin,
   Workflow,
 } from 'lucide-react';
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import {
   buildTrendData,
   buildOperatorPerformance,
   calculateReportMetrics,
+  buildIncidentGrouping,
   filterTasks,
   filterTickets,
   type MetricsFilters,
@@ -94,6 +95,13 @@ export default function ReportsPage() {
       {} as Record<string, string>
     );
   }, [sites]);
+
+  const departmentNameById = useMemo(() => {
+    return departments.reduce(
+      (acc, department) => ({ ...acc, [department.id]: department.name }),
+      {} as Record<string, string>
+    );
+  }, [departments]);
 
   const locationOptions = useMemo(() => {
     const locationSet = new Set<string>();
@@ -140,6 +148,16 @@ export default function ReportsPage() {
   const trendData = useMemo(
     () => buildTrendData(filteredTickets, filteredTasks, filters),
     [filteredTickets, filteredTasks, filters]
+  );
+
+  const departmentIncidents = useMemo(
+    () => buildIncidentGrouping(filteredTickets, 'departmentId', departmentNameById),
+    [filteredTickets, departmentNameById]
+  );
+
+  const siteIncidents = useMemo(
+    () => buildIncidentGrouping(filteredTickets, 'siteId', siteNameById),
+    [filteredTickets, siteNameById]
   );
 
   const averageMttrLabel =
@@ -420,6 +438,126 @@ export default function ReportsPage() {
                 )}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Incidencias por departamento/ubicación</CardTitle>
+            <CardDescription>
+              Distribución de incidencias abiertas y cerradas según los filtros globales.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6 lg:grid-cols-2">
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground">
+                  Departamentos con más incidencias
+                </h3>
+              </div>
+              {departmentIncidents.length ? (
+                <ChartContainer
+                  className="h-[280px]"
+                  config={{
+                    openIncidents: {
+                      label: "Abiertas",
+                      color: "hsl(var(--chart-3))",
+                    },
+                    closedIncidents: {
+                      label: "Cerradas",
+                      color: "hsl(var(--chart-1))",
+                    },
+                  }}
+                >
+                  <BarChart data={departmentIncidents} margin={{ left: 12, right: 12 }}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      tickMargin={8}
+                    />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent indicator="dot" />}
+                    />
+                    <Bar
+                      dataKey="openIncidents"
+                      stackId="incidents"
+                      fill="var(--color-openIncidents)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="closedIncidents"
+                      stackId="incidents"
+                      fill="var(--color-closedIncidents)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex h-[280px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                  No hay incidencias para el rango seleccionado.
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground">
+                  Ubicaciones con más incidencias
+                </h3>
+              </div>
+              {siteIncidents.length ? (
+                <ChartContainer
+                  className="h-[280px]"
+                  config={{
+                    openIncidents: {
+                      label: "Abiertas",
+                      color: "hsl(var(--chart-3))",
+                    },
+                    closedIncidents: {
+                      label: "Cerradas",
+                      color: "hsl(var(--chart-1))",
+                    },
+                  }}
+                >
+                  <BarChart data={siteIncidents} margin={{ left: 12, right: 12 }}>
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      interval={0}
+                      tickMargin={8}
+                    />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent indicator="dot" />}
+                    />
+                    <Bar
+                      dataKey="openIncidents"
+                      stackId="incidents"
+                      fill="var(--color-openIncidents)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="closedIncidents"
+                      stackId="incidents"
+                      fill="var(--color-closedIncidents)"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex h-[280px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                  No hay incidencias para el rango seleccionado.
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
