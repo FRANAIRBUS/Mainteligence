@@ -1,5 +1,6 @@
 'use client';
 
+import type { ChangeEvent } from 'react';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -7,7 +8,8 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { updateProfile } from 'firebase/auth';
-import { useAuth, useFirestore, useUser } from '@/lib/firebase';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { useAuth, useFirestore, useStorage, useUser } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 import {
@@ -29,6 +31,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Sidebar,
   SidebarContent,
@@ -63,8 +66,11 @@ export default function ProfilePage() {
   
   const firestore = useFirestore();
   const auth = useAuth();
+  const storage = useStorage();
   const { toast } = useToast();
   const [isPending, setIsPending] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
@@ -82,9 +88,27 @@ export default function ProfilePage() {
       });
     }
   }, [user, form]);
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreviewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarPreviewUrl);
+      }
+    };
+  }, [avatarPreviewUrl]);
   
   const resolvedOrganizationId =
     organizationId ?? profile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
+
+  const handleAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (avatarPreviewUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(avatarPreviewUrl);
+    }
+    setAvatarFile(file);
+    setAvatarPreviewUrl(URL.createObjectURL(file));
+  };
 
   const onSubmit = async (data: ProfileFormValues) => {
     if (!user || !firestore || !auth?.currentUser) {
@@ -97,6 +121,10 @@ export default function ProfilePage() {
     }
 
     setIsPending(true);
+    toast({
+      title: 'Guardando cambios...',
+      description: 'Estamos actualizando tu perfil.',
+    });
     try {
       // Use setDoc with merge to create or update the document.
       const userDocRef = doc(firestore, 'users', user.uid);
@@ -107,10 +135,36 @@ export default function ProfilePage() {
         updatedAt: serverTimestamp(),
       }, { merge: true });
       
-      // Update Firebase Auth profile
-      await updateProfile(auth.currentUser, {
+      let uploadedAvatarUrl: string | null = null;
+      if (avatarFile) {
+        if (!storage) {
+          throw new Error('Firebase Storage no está disponible.');
+        }
+        const avatarRef = ref(storage, `users/${user.uid}/avatar.jpg`);
+        await uploadBytes(avatarRef, avatarFile, {
+          contentType: avatarFile.type || 'image/jpeg',
+        });
+        uploadedAvatarUrl = await getDownloadURL(avatarRef);
+        await setDoc(userDocRef, {
+          avatarUrl: uploadedAvatarUrl,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        if (avatarPreviewUrl?.startsWith('blob:')) {
+          URL.revokeObjectURL(avatarPreviewUrl);
+        }
+        setAvatarFile(null);
+        setAvatarPreviewUrl(uploadedAvatarUrl);
+      }
+
+      const profileUpdate: { displayName?: string; photoURL?: string } = {
         displayName: data.displayName,
-      });
+      };
+      if (uploadedAvatarUrl) {
+        profileUpdate.photoURL = uploadedAvatarUrl;
+      }
+
+      // Update Firebase Auth profile
+      await updateProfile(auth.currentUser, profileUpdate);
 
       toast({
         title: '¡Éxito!',
@@ -134,6 +188,9 @@ export default function ProfilePage() {
       </div>
     );
   }
+
+  const avatarUrl = avatarPreviewUrl ?? profile?.avatarUrl ?? user.photoURL ?? null;
+  const initials = (user.displayName || user.email || 'Usuario').slice(0, 2).toUpperCase();
 
   return (
      <SidebarProvider>
@@ -174,6 +231,22 @@ export default function ProfilePage() {
                         </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                        <FormItem>
+                          <FormLabel>Avatar</FormLabel>
+                          <div className="flex items-center gap-4">
+                            <Avatar className="h-16 w-16">
+                              <AvatarImage src={avatarUrl ?? undefined} alt="Avatar de usuario" />
+                              <AvatarFallback>{initials}</AvatarFallback>
+                            </Avatar>
+                            <FormControl>
+                              <Input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleAvatarChange}
+                              />
+                            </FormControl>
+                          </div>
+                        </FormItem>
                         <FormField
                             control={form.control}
                             name="displayName"

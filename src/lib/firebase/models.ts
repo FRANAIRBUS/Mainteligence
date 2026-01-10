@@ -40,6 +40,7 @@ export interface User extends BaseEntity {
   displayName: string;
   email: string;
   role: UserRole;
+  avatarUrl?: string;
   departmentId?: string;
   departmentIds?: string[];
   siteId?: string;
