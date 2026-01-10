@@ -109,10 +109,33 @@ async function updateOrganizationUserProfile({
   const userRef = db.collection('users').doc(targetUid);
   const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
   const now = admin.firestore.FieldValue.serverTimestamp();
+  const normalizedEmail = String(email ?? '').trim();
+
+  const userSnap = await userRef.get();
+  const currentEmail = String(userSnap.data()?.email ?? '').trim();
+
+  if (normalizedEmail && normalizedEmail !== currentEmail) {
+    try {
+      await admin.auth().updateUser(targetUid, { email: normalizedEmail });
+    } catch (err: any) {
+      const code = String(err?.code ?? '');
+      if (code === 'auth/email-already-exists') {
+        throw httpsError('failed-precondition', 'El correo electrónico ya está en uso.');
+      }
+      if (code === 'auth/invalid-email') {
+        throw httpsError('invalid-argument', 'El correo electrónico no es válido.');
+      }
+      if (code === 'auth/user-not-found') {
+        throw httpsError('not-found', 'No se encontró el usuario en Auth.');
+      }
+      console.error('updateOrganizationUserProfile auth update failed', { targetUid, orgId, code, err });
+      throw httpsError('internal', 'No se pudo actualizar el correo electrónico en Auth.');
+    }
+  }
 
   const userPayload = {
     displayName: displayName || null,
-    email: email || null,
+    email: normalizedEmail || null,
     departmentId: departmentId || null,
     updatedAt: now,
     source: 'orgUpdateUserProfile_v1',
@@ -120,7 +143,7 @@ async function updateOrganizationUserProfile({
 
   const memberPayload = {
     displayName: displayName || null,
-    email: email || null,
+    email: normalizedEmail || null,
     updatedAt: now,
     source: 'orgUpdateUserProfile_v1',
   };
@@ -136,8 +159,12 @@ async function updateOrganizationUserProfile({
     actorEmail,
     orgId,
     targetUid,
-    targetEmail: email || null,
-    after: { displayName: displayName || null, email: email || null, departmentId: departmentId || null },
+    targetEmail: normalizedEmail || null,
+    after: {
+      displayName: displayName || null,
+      email: normalizedEmail || null,
+      departmentId: departmentId || null,
+    },
   });
 }
 
