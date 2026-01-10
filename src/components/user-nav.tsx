@@ -1,6 +1,7 @@
 'use client';
 import { Button } from '@/components/ui/button';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +18,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 export function UserNav() {
-  const { user, loading, organizationId, memberships, setActiveOrganizationId, activeMembership } = useUser();
+  const { user, profile, loading, organizationId, memberships, setActiveOrganizationId, activeMembership } = useUser();
   const auth = useAuth();
   const router = useRouter();
 
@@ -49,16 +50,24 @@ export function UserNav() {
   };
 
   const activeOrganizationName = activeMembership?.organizationName || organizationId || 'Org sin nombre';
+  const avatarUrl = profile?.avatarUrl || user.photoURL || null;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-          <DynamicClientLogo
-            width={32}
-            height={32}
-            className="h-8 w-8 rounded-full bg-muted p-1"
-          />
+          {avatarUrl ? (
+            <Avatar className="h-8 w-8">
+              <AvatarImage src={avatarUrl} alt="Avatar de usuario" />
+              <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>
+            </Avatar>
+          ) : (
+            <DynamicClientLogo
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-full bg-muted p-1"
+            />
+          )}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>
