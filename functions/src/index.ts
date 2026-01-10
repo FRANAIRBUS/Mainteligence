@@ -236,6 +236,7 @@ export const onTicketAssign = functions.firestore
     if (!before || !after) return;
 
     if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo) return;
+    if (after.assignmentEmailSource === 'client') return;
 
     try {
       await sendAssignmentEmail({
@@ -264,6 +265,7 @@ export const onTaskAssign = functions.firestore
     if (!before || !after) return;
 
     if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo) return;
+    if (after.assignmentEmailSource === 'client') return;
 
     try {
       await sendAssignmentEmail({
@@ -291,6 +293,7 @@ export const onTicketCreate = functions.firestore
   .onCreate(async (snap, context) => {
     const data = snap.data() as any;
     if (!data?.assignedTo) return;
+    if (data.assignmentEmailSource === 'client') return;
 
     try {
       await sendAssignmentEmail({
@@ -316,6 +319,7 @@ export const onTaskCreate = functions.firestore
   .onCreate(async (snap, context) => {
     const data = snap.data() as any;
     if (!data?.assignedTo) return;
+    if (data.assignmentEmailSource === 'client') return;
 
     try {
       await sendAssignmentEmail({
