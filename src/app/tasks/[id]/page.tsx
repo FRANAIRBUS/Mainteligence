@@ -616,7 +616,7 @@ export default function TaskDetailPage() {
                 <CardTitle>Detalles</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {canEdit && (
+                {canEdit && !isTaskClosed && (
                   <Button
                     onClick={() => setIsEditDialogOpen(true)}
                     className="w-full"
@@ -689,7 +689,7 @@ export default function TaskDetailPage() {
             departments={departments}
             submitLabel="Guardar cambios"
             onSuccess={() => setIsEditDialogOpen(false)}
-            disabled={!canEdit}
+            disabled={!canEdit || isTaskClosed}
           />
         </DialogContent>
       </Dialog>
