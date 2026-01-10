@@ -7,7 +7,13 @@ import { sendInviteEmail } from './invite-email';
 admin.initializeApp();
 const db = admin.firestore();
 
-type Role = 'super_admin' | 'admin' | 'maintenance' | 'operator';
+type Role =
+  | 'super_admin'
+  | 'admin'
+  | 'maintenance'
+  | 'dept_head_multi'
+  | 'dept_head_single'
+  | 'operator';
 
 function httpsError(code: functions.https.FunctionsErrorCode, message: string) {
   return new functions.https.HttpsError(code, message);
@@ -166,6 +172,35 @@ function normalizeRole(input: any): Role {
   if (r === 'admin' || r === 'administrator') return 'admin';
 
   if (r === 'maintenance' || r === 'mantenimiento' || r === 'maint' || r === 'maintainer') return 'maintenance';
+
+  if (
+    r === 'dept_head_multi' ||
+    r === 'deptheadmulti' ||
+    r === 'dept-head-multi' ||
+    r === 'dept head multi' ||
+    r === 'department_head_multi' ||
+    r === 'departmentheadmulti' ||
+    r === 'jefe_departamento_multi' ||
+    r === 'jefe de departamento multi'
+  ) {
+    return 'dept_head_multi';
+  }
+
+  if (
+    r === 'dept_head_single' ||
+    r === 'deptheadsingle' ||
+    r === 'dept-head-single' ||
+    r === 'dept head single' ||
+    r === 'dept_head' ||
+    r === 'depthead' ||
+    r === 'department_head_single' ||
+    r === 'departmentheadsingle' ||
+    r === 'jefe_departamento' ||
+    r === 'jefe de departamento'
+  ) {
+    return 'dept_head_single';
+  }
+
   if (r === 'operator' || r === 'operario' || r === 'op') return 'operator';
 
   return 'operator';
