@@ -33,6 +33,7 @@ import type { Department, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRole } from "@/lib/rbac";
+import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
@@ -230,19 +231,60 @@ export default function TaskDetailPage() {
     setSubmitting(true);
     setErrorMessage(null);
 
-    const updates: MaintenanceTaskInput = {
+    const trimmedAssignedTo = values.assignedTo.trim();
+    const assignmentChanged = trimmedAssignedTo !== (task?.assignedTo ?? "");
+    const assignmentDepartmentName = values.location.trim()
+      ? departments.find((dept) => dept.id === values.location.trim())?.name ||
+        values.location.trim()
+      : "";
+
+    const updates: MaintenanceTaskInput & { assignmentEmailSource?: "client" | "server" } = {
       title: values.title.trim(),
       description: values.description.trim(),
       priority: values.priority,
       status: values.status,
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
-      assignedTo: values.assignedTo.trim(),
+      assignedTo: trimmedAssignedTo,
       location: values.location.trim(),
       category: values.category.trim(),
     };
 
+    if (assignmentChanged && trimmedAssignedTo) {
+      updates.assignmentEmailSource = "client";
+    }
+
     try {
       await updateTask(firestore, auth, task.id, updates);
+
+      if (assignmentChanged && trimmedAssignedTo) {
+        const baseUrl =
+          typeof window !== "undefined"
+            ? window.location.origin
+            : "https://multi.maintelligence.app";
+
+        void (async () => {
+          try {
+            await sendAssignmentEmail({
+              users,
+              departments,
+              assignedTo: trimmedAssignedTo,
+              departmentId: values.location.trim() || null,
+              title: values.title.trim(),
+              link: `${baseUrl}/tasks/${task.id}`,
+              type: "tarea",
+              identifier: task.id,
+              description: values.description.trim(),
+              priority: values.priority,
+              status: values.status,
+              dueDate: values.dueDate ? new Date(values.dueDate) : null,
+              location: assignmentDepartmentName,
+              category: values.category.trim(),
+            });
+          } catch (error) {
+            console.error("No se pudo enviar el email de asignación de tarea", error);
+          }
+        })();
+      }
 
       toast({
         title: "Tarea actualizada",
