@@ -97,6 +97,7 @@ export interface Ticket extends BaseEntity {
   photoUrls?: string[];
   closedAt?: Timestamp;
   closedBy?: string;
+  closedReason?: string;
   closureRequestedBy?: string;
   closureRequestedAt?: Timestamp;
   waiting?: {

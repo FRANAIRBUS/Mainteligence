@@ -87,6 +87,9 @@ export default function IncidentDetailPage() {
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [closeSubmitting, setCloseSubmitting] = useState(false);
+  const [isCloseDialogOpen, setIsCloseDialogOpen] = useState(false);
+  const [closeReason, setCloseReason] = useState('');
+  const [closeReasonError, setCloseReasonError] = useState('');
   const { toast } = useToast();
 
   const sortedReports = useMemo(() => {
@@ -222,7 +225,7 @@ export default function IncidentDetailPage() {
     }
   };
 
-  const handleCloseIncident = async () => {
+  const handleCloseIncident = async (reason: string) => {
     if (!firestore || !ticket?.id) {
       toast({
         title: 'No se pudo cerrar la incidencia',
@@ -278,10 +281,14 @@ export default function IncidentDetailPage() {
         status: 'Cerrada',
         closedAt: serverTimestamp(),
         closedBy: user.uid,
+        closedReason: reason,
         organizationId: targetOrganizationId,
         updatedAt: serverTimestamp(),
       });
 
+      setCloseReason('');
+      setCloseReasonError('');
+      setIsCloseDialogOpen(false);
       toast({
         title: 'Incidencia cerrada',
         description: 'La incidencia se marcó como cerrada.',
@@ -296,6 +303,31 @@ export default function IncidentDetailPage() {
     } finally {
       setCloseSubmitting(false);
     }
+  };
+
+  const handleRequestClose = () => {
+    if (!canClose) {
+      return;
+    }
+    setCloseReason('');
+    setCloseReasonError('');
+    setIsCloseDialogOpen(true);
+  };
+
+  const handleConfirmClose = async () => {
+    const reason = closeReason.trim();
+
+    if (!reason) {
+      setCloseReasonError('Agrega un motivo de cierre antes de continuar.');
+      toast({
+        title: 'Motivo requerido',
+        description: 'Debes indicar el motivo del cierre de la incidencia.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    await handleCloseIncident(reason);
   };
 
   const isLoading =
@@ -449,7 +481,7 @@ export default function IncidentDetailPage() {
                                 </Button>
                                 <Button
                                   variant="destructive"
-                                  onClick={handleCloseIncident}
+                                  onClick={handleRequestClose}
                                   disabled={!canClose || closeSubmitting}
                                 >
                                   {closeSubmitting && (
@@ -568,6 +600,53 @@ export default function IncidentDetailPage() {
                 <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
               )}
               Informar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={isCloseDialogOpen} onOpenChange={setIsCloseDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cerrar incidencia</DialogTitle>
+            <DialogDescription>
+              Indica el motivo del cierre antes de marcar la incidencia como cerrada.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="incident-close-reason">Motivo de cierre</Label>
+            <Textarea
+              id="incident-close-reason"
+              placeholder="Ej. Trabajo completado, incidencia resuelta, etc."
+              value={closeReason}
+              onChange={(event) => {
+                setCloseReason(event.target.value);
+                if (closeReasonError) {
+                  setCloseReasonError('');
+                }
+              }}
+              disabled={closeSubmitting}
+            />
+            {closeReasonError && (
+              <p className="text-xs text-destructive">{closeReasonError}</p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsCloseDialogOpen(false)}
+              disabled={closeSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmClose}
+              disabled={closeSubmitting}
+            >
+              {closeSubmitting && (
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Confirmar cierre
             </Button>
           </DialogFooter>
         </DialogContent>
