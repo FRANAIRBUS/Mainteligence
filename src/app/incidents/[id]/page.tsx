@@ -331,10 +331,10 @@ export default function IncidentDetailPage() {
                                 <p className="text-sm text-foreground/80">{ticket.description}</p>
                             </CardContent>
                         </Card>
-                        <Card>
+                        <Card className="border-blue-100 bg-blue-50">
                           <CardHeader>
                             <CardTitle>Informes</CardTitle>
-                            <CardDescription>
+                            <CardDescription className="text-foreground/70">
                               Registra los avisos o seguimientos de esta incidencia. Cada informe se agrega con fecha y descripción.
                             </CardDescription>
                           </CardHeader>
