@@ -31,6 +31,14 @@ import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { arrayUnion, doc, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
 
@@ -75,6 +83,7 @@ export default function IncidentDetailPage() {
   const { data: users, loading: usersLoading } = useCollection<User>('users');
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [closeSubmitting, setCloseSubmitting] = useState(false);
@@ -196,6 +205,7 @@ export default function IncidentDetailPage() {
       });
 
       setReportDescription('');
+      setIsReportDialogOpen(false);
       toast({
         title: 'Informe agregado',
         description: 'Se registró el seguimiento de la incidencia.',
@@ -429,28 +439,12 @@ export default function IncidentDetailPage() {
                               )}
                             </div>
 
-                            <div className="space-y-2">
-                              <Label htmlFor="incident-report">Nuevo informe</Label>
-                              <Textarea
-                                id="incident-report"
-                                placeholder="Describe el informe o avance que deseas registrar"
-                                value={reportDescription}
-                                onChange={(event) => setReportDescription(event.target.value)}
-                                disabled={reportSubmitting || isClosed}
-                              />
-                              {isClosed && (
-                                <p className="text-xs text-muted-foreground">
-                                  La incidencia está cerrada. No se pueden agregar más informes.
-                                </p>
-                              )}
+                              <div className="space-y-2">
                               <div className="flex flex-wrap items-center gap-2">
                                 <Button
-                                  onClick={handleAddReport}
-                                  disabled={reportSubmitting || isClosed}
+                                  onClick={() => setIsReportDialogOpen(true)}
+                                  disabled={isClosed}
                                 >
-                                  {reportSubmitting && (
-                                    <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
-                                  )}
                                   Informar
                                 </Button>
                                 <Button
@@ -535,6 +529,49 @@ export default function IncidentDetailPage() {
             departments={departments}
         />
       )}
+      <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuevo informe</DialogTitle>
+            <DialogDescription>
+              Describe el informe o avance que deseas registrar para esta incidencia.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="incident-report">Detalle del informe</Label>
+            <Textarea
+              id="incident-report"
+              placeholder="Describe el informe o avance que deseas registrar"
+              value={reportDescription}
+              onChange={(event) => setReportDescription(event.target.value)}
+              disabled={reportSubmitting || isClosed}
+            />
+            {isClosed && (
+              <p className="text-xs text-muted-foreground">
+                La incidencia está cerrada. No se pueden agregar más informes.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsReportDialogOpen(false)}
+              disabled={reportSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleAddReport}
+              disabled={reportSubmitting || isClosed}
+            >
+              {reportSubmitting && (
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Informar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarProvider>
   );
 }
