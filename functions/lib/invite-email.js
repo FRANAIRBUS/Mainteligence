@@ -1,21 +1,15 @@
-import { defineString } from 'firebase-functions/params';
-import { Resend } from 'resend';
-
-type InviteEmailInput = {
-  recipientEmail: string;
-  orgName: string;
-  role: string;
-  inviteLink: string;
-};
-
-const buildInviteEmailContent = ({ orgName, role, inviteLink }: InviteEmailInput) => {
-  const subject = `Invitación a ${orgName} en Maintelligence`;
-  const text = [
-    `Has sido invitado a unirte a ${orgName} como ${role}.`,
-    `Accede aquí para registrarte o iniciar sesión: ${inviteLink}`,
-  ].join('\n');
-
-  const html = `
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.sendInviteEmail = void 0;
+const params_1 = require("firebase-functions/params");
+const resend_1 = require("resend");
+const buildInviteEmailContent = ({ orgName, role, inviteLink }) => {
+    const subject = `Invitación a ${orgName} en Maintelligence`;
+    const text = [
+        `Has sido invitado a unirte a ${orgName} como ${role}.`,
+        `Accede aquí para registrarte o iniciar sesión: ${inviteLink}`,
+    ].join('\n');
+    const html = `
     <table style="width:100%; max-width:640px; margin:0 auto; font-family: 'Inter', system-ui, -apple-system, sans-serif; border:1px solid #e5e7eb; border-radius: 12px; overflow:hidden;">
       <tr>
         <td style="background:linear-gradient(135deg, #111827, #1f2937); padding:24px 24px; color:#f9fafb;">
@@ -37,30 +31,26 @@ const buildInviteEmailContent = ({ orgName, role, inviteLink }: InviteEmailInput
       </tr>
     </table>
   `;
-
-  return { subject, text, html };
+    return { subject, text, html };
 };
-
-const RESEND_API_KEY = defineString('RESEND_API_KEY');
-const RESEND_FROM = defineString('RESEND_FROM');
-
-export const sendInviteEmail = async (input: InviteEmailInput) => {
-  const resendKey = RESEND_API_KEY.value();
-  const resendFrom = RESEND_FROM.value();
-
-  if (!resendKey || !resendFrom) {
-    console.warn('Resend no configurado: RESEND_API_KEY/RESEND_FROM faltante.');
-    return;
-  }
-
-  const { subject, html, text } = buildInviteEmailContent(input);
-  const resend = new Resend(resendKey);
-
-  await resend.emails.send({
-    from: resendFrom,
-    to: input.recipientEmail,
-    subject,
-    html,
-    text,
-  });
+const RESEND_API_KEY = (0, params_1.defineString)('RESEND_API_KEY');
+const RESEND_FROM = (0, params_1.defineString)('RESEND_FROM');
+const sendInviteEmail = async (input) => {
+    const resendKey = RESEND_API_KEY.value();
+    const resendFrom = RESEND_FROM.value();
+    if (!resendKey || !resendFrom) {
+        console.warn('Resend no configurado: RESEND_API_KEY/RESEND_FROM faltante.');
+        return;
+    }
+    const { subject, html, text } = buildInviteEmailContent(input);
+    const resend = new resend_1.Resend(resendKey);
+    await resend.emails.send({
+        from: resendFrom,
+        to: input.recipientEmail,
+        subject,
+        html,
+        text,
+    });
 };
+exports.sendInviteEmail = sendInviteEmail;
+//# sourceMappingURL=invite-email.js.map
