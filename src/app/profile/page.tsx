@@ -11,7 +11,6 @@ import { updateProfile } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { useAuth, useFirestore, useStorage, useUser } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
-import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 import {
   Card,
   CardContent,
@@ -97,8 +96,7 @@ export default function ProfilePage() {
     };
   }, [avatarPreviewUrl]);
   
-  const resolvedOrganizationId =
-    organizationId ?? profile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
+  const resolvedOrganizationId = organizationId ?? profile?.organizationId ?? null;
 
   const handleAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -140,6 +138,9 @@ export default function ProfilePage() {
       };
 
       if (!profile) {
+        if (!resolvedOrganizationId) {
+          throw new Error('Completa el alta de organización antes de guardar tu perfil.');
+        }
         basePayload.organizationId = resolvedOrganizationId;
       }
 
