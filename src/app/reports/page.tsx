@@ -41,6 +41,8 @@ import {
 } from '@/components/ui/table';
 import {
   Activity,
+  CalendarCheck,
+  CalendarDays,
   CheckCircle2,
   Clock,
   ClipboardList,
@@ -353,7 +355,7 @@ export default function ReportsPage() {
       title="Informes"
       description="Genera y visualiza informes detallados del mantenimiento."
     >
-      <div className="w-full max-w-full space-y-6 overflow-hidden">
+      <div className="w-full max-w-full space-y-6">
         <Card>
           <CardHeader className="gap-2 md:flex-row md:items-center md:justify-between">
             <div>
@@ -373,22 +375,38 @@ export default function ReportsPage() {
               </Badge>
             )}
           </CardHeader>
-          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
-            <div className="space-y-1">
-              <span className="text-sm font-medium text-muted-foreground">
-                Rango de fechas
+          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                Fechas
               </span>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                />
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                />
+              <div className="flex w-full flex-col gap-2 sm:w-fit sm:flex-row sm:items-end">
+                <div className="w-full space-y-1 sm:w-fit">
+                  <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:text-xs">
+                    <CalendarDays className="h-3 w-3" />
+                    Desde
+                  </span>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                    className="h-9 w-full text-xs sm:w-[140px] sm:text-sm"
+                    aria-label="Fecha de inicio"
+                  />
+                </div>
+                <div className="w-full space-y-1 sm:w-fit">
+                  <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:text-xs">
+                    <CalendarCheck className="h-3 w-3" />
+                    Hasta
+                  </span>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                    className="h-9 w-full text-xs sm:w-[140px] sm:text-sm"
+                    aria-label="Fecha de fin"
+                  />
+                </div>
               </div>
             </div>
             <div className="space-y-1">
@@ -397,7 +415,7 @@ export default function ReportsPage() {
                 Ubicación
               </span>
               <Select value={locationFilter} onValueChange={setLocationFilter}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[220px]">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -419,7 +437,7 @@ export default function ReportsPage() {
                 value={departmentFilter}
                 onValueChange={setDepartmentFilter}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[220px]">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -444,7 +462,11 @@ export default function ReportsPage() {
                 actuales.
               </CardDescription>
             </div>
-            <Button onClick={handleExport} disabled={isExporting || dataLoading}>
+            <Button
+              onClick={handleExport}
+              disabled={isExporting || dataLoading}
+              className="w-fit px-4"
+            >
               {isExporting ? (
                 <>
                   <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
@@ -458,7 +480,7 @@ export default function ReportsPage() {
               )}
             </Button>
           </CardHeader>
-          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
             <div className="space-y-1">
               <span className="text-sm font-medium text-muted-foreground">
                 Rango aplicado
@@ -477,7 +499,7 @@ export default function ReportsPage() {
                 Orden por creación
               </span>
               <Select value={exportSortOrder} onValueChange={setExportSortOrder}>
-                <SelectTrigger>
+                <SelectTrigger className="min-w-0">
                   <SelectValue placeholder="Selecciona orden" />
                 </SelectTrigger>
                 <SelectContent>
@@ -500,10 +522,10 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid min-w-0 grid-cols-2 gap-4 lg:grid-cols-4">
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex min-w-0 flex-col gap-2 space-y-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <CardTitle className="min-w-0 break-words text-sm font-medium text-muted-foreground">
                 Incidencias abiertas
               </CardTitle>
               <Activity className="h-5 w-5 text-primary" />
@@ -512,14 +534,14 @@ export default function ReportsPage() {
               <div className="text-2xl font-semibold sm:text-3xl">
                 {metrics.openIncidents}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="break-words text-xs text-muted-foreground">
                 Incidencias en curso según filtros.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex min-w-0 flex-col gap-2 space-y-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <CardTitle className="min-w-0 break-words text-sm font-medium text-muted-foreground">
                 Incidencias cerradas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-emerald-500" />
@@ -528,14 +550,14 @@ export default function ReportsPage() {
               <div className="text-2xl font-semibold sm:text-3xl">
                 {metrics.closedIncidents}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="break-words text-xs text-muted-foreground">
                 Cierres completados en el rango.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex min-w-0 flex-col gap-2 space-y-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <CardTitle className="min-w-0 break-words text-sm font-medium text-muted-foreground">
                 Tareas pendientes
               </CardTitle>
               <ClipboardList className="h-5 w-5 text-amber-500" />
@@ -544,14 +566,14 @@ export default function ReportsPage() {
               <div className="text-2xl font-semibold sm:text-3xl">
                 {metrics.pendingTasks}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="break-words text-xs text-muted-foreground">
                 Actividades aún sin completar.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex min-w-0 flex-col gap-2 space-y-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <CardTitle className="min-w-0 break-words text-sm font-medium text-muted-foreground">
                 Tareas completadas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-sky-500" />
@@ -560,21 +582,21 @@ export default function ReportsPage() {
               <div className="text-2xl font-semibold sm:text-3xl">
                 {metrics.completedTasks}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="break-words text-xs text-muted-foreground">
                 Tareas resueltas en el rango.
               </p>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <Card>
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
                 <LineChartIcon className="h-5 w-5 text-primary" />
-                Tendencia de cierres
+                <span className="min-w-0 break-words">Tendencia de cierres</span>
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="break-words">
                 Evolución diaria de incidencias cerradas y tareas completadas.
               </CardDescription>
             </CardHeader>
@@ -618,13 +640,13 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="lg:col-span-1">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
                 <Clock className="h-5 w-5 text-primary" />
-                MTTR promedio
+                <span className="min-w-0 break-words">MTTR promedio</span>
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="break-words">
                 Tiempo medio de resolución basado en cierres.
               </CardDescription>
             </CardHeader>
@@ -647,7 +669,7 @@ export default function ReportsPage() {
               Comparativa de preventivos completados en plazo y fuera de plazo.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>Cumplimiento global</span>
@@ -697,7 +719,7 @@ export default function ReportsPage() {
                 Cumplimiento por plantilla
               </h3>
               <div className="w-full max-w-full overflow-x-auto rounded-lg border md:overflow-visible">
-                <Table className="w-full min-w-0">
+                <Table className="w-full min-w-[640px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Plantilla</TableHead>
@@ -748,7 +770,7 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="w-full max-w-full overflow-x-auto md:overflow-visible">
-            <Table className="w-full min-w-0">
+            <Table className="w-full min-w-[560px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Operario</TableHead>
@@ -790,7 +812,7 @@ export default function ReportsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="w-full max-w-full overflow-x-auto md:overflow-visible">
-              <Table className="w-full min-w-0">
+              <Table className="w-full min-w-[720px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Ticket</TableHead>
@@ -887,7 +909,7 @@ export default function ReportsPage() {
               </div>
               {departmentIncidents.length ? (
                 <ChartContainer
-                  className="h-[240px] sm:h-[280px]"
+                  className="h-[240px] justify-start sm:h-[280px]"
                   config={{
                     openIncidents: {
                       label: "Abiertas",
@@ -899,7 +921,7 @@ export default function ReportsPage() {
                     },
                   }}
                 >
-                  <BarChart data={departmentIncidents} margin={{ left: 12, right: 12 }}>
+                  <BarChart data={departmentIncidents} margin={{ left: 0, right: 12 }}>
                     <CartesianGrid vertical={false} />
                     <XAxis
                       dataKey="label"
@@ -908,7 +930,7 @@ export default function ReportsPage() {
                       interval={0}
                       tickMargin={8}
                     />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={2} />
                     <ChartTooltip
                       cursor={false}
                       content={<ChartTooltipContent indicator="dot" />}
@@ -942,7 +964,7 @@ export default function ReportsPage() {
               </div>
               {siteIncidents.length ? (
                 <ChartContainer
-                  className="h-[240px] sm:h-[280px]"
+                  className="h-[240px] justify-start sm:h-[280px]"
                   config={{
                     openIncidents: {
                       label: "Abiertas",
@@ -954,7 +976,7 @@ export default function ReportsPage() {
                     },
                   }}
                 >
-                  <BarChart data={siteIncidents} margin={{ left: 12, right: 12 }}>
+                  <BarChart data={siteIncidents} margin={{ left: 0, right: 12 }}>
                     <CartesianGrid vertical={false} />
                     <XAxis
                       dataKey="label"
@@ -963,7 +985,7 @@ export default function ReportsPage() {
                       interval={0}
                       tickMargin={8}
                     />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={2} />
                     <ChartTooltip
                       cursor={false}
                       content={<ChartTooltipContent indicator="dot" />}

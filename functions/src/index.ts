@@ -144,6 +144,7 @@ async function updateOrganizationUserProfile({
   const memberPayload = {
     displayName: displayName || null,
     email: normalizedEmail || null,
+    departmentId: departmentId || null,
     updatedAt: now,
     source: 'orgUpdateUserProfile_v1',
   };
@@ -198,12 +199,6 @@ function requireAuth(context: functions.https.CallableContext) {
 
 function isRootClaim(context: functions.https.CallableContext): boolean {
   return Boolean((context.auth?.token as any)?.root === true);
-}
-
-async function getUserDoc(uid: string) {
-  const ref = db.collection('users').doc(uid);
-  const snap = await ref.get();
-  return { ref, snap, data: snap.data() as any | undefined };
 }
 
 function normalizeRoleOrNull(input: any): Role | null {
@@ -1345,7 +1340,6 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
 export const orgApproveJoinRequest = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
-  const isRoot = isRootClaim(context);
 
   const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
   const requestId = String(data?.uid ?? data?.requestId ?? '').trim();

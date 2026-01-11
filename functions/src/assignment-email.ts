@@ -1,5 +1,5 @@
 import * as admin from 'firebase-admin';
-import * as functions from 'firebase-functions/v1';
+import { defineString } from 'firebase-functions/params';
 import { Resend } from 'resend';
 
 type AssignmentType = 'tarea' | 'incidencia';
@@ -11,8 +11,10 @@ interface RecipientOptions {
   departmentId?: string | null;
 }
 
-interface AssignmentEmailInput extends RecipientOptions {
+interface AssignmentEmailInput {
   organizationId?: string | null;
+  assignedTo?: string | null;
+  departmentId?: string | null;
   title: string;
   link: string;
   type: AssignmentType;
@@ -38,6 +40,9 @@ interface BackendDepartment {
   name?: string | null;
   code?: string | null;
 }
+
+const RESEND_API_KEY = defineString('RESEND_API_KEY');
+const RESEND_FROM = defineString('RESEND_FROM');
 
 const resolveAssignedUser = (users: BackendUser[], assignedTo?: string | null) =>
   users.find(
@@ -253,8 +258,8 @@ const resolveFallbackAssignedUser = async (
 };
 
 export const sendAssignmentEmail = async (input: AssignmentEmailInput) => {
-  const resendKey = functions.config().resend?.api_key;
-  const resendFrom = functions.config().resend?.from;
+  const resendKey = RESEND_API_KEY.value();
+  const resendFrom = RESEND_FROM.value();
 
   if (!resendKey || !resendFrom) {
     console.warn('Resend no configurado: RESEND_API_KEY/RESEND_FROM faltante.');

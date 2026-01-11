@@ -19,17 +19,16 @@ export function MobileBottomNav() {
   const allItems = menuItems.flatMap((group) => group.items);
   if (!allItems.length) return null;
 
-  const selected = new Set<string>();
-  const primaryItems = PRIMARY_PATHS.map((path) => allItems.find((item) => item.href === path)).filter(
+  const primaryCandidates = PRIMARY_PATHS.map((path) => allItems.find((item) => item.href === path)).filter(
     (item): item is (typeof allItems)[number] => Boolean(item)
   );
-
-  primaryItems.forEach((item) => selected.add(item.href));
+  const displayPrimary = primaryCandidates.slice(0, 3);
+  const selected = new Set(displayPrimary.map((item) => item.href));
 
   for (const item of allItems) {
-    if (primaryItems.length >= 3) break;
+    if (displayPrimary.length >= 3) break;
     if (selected.has(item.href)) continue;
-    primaryItems.push(item);
+    displayPrimary.push(item);
     selected.add(item.href);
   }
 
@@ -40,7 +39,7 @@ export function MobileBottomNav() {
     <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
       <nav className="md:hidden fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="grid grid-cols-4 divide-x divide-border text-xs font-semibold text-muted-foreground">
-          {primaryItems.slice(0, 3).map((item) => (
+          {displayPrimary.map((item) => (
             <MobileNavButton key={item.href} href={item.href} label={item.label} icon={item.icon} active={item.active} />
           ))}
           {showMore ? (
@@ -116,4 +115,3 @@ function MobileNavButton({ href, label, icon: Icon, active, onSelect }: MobileNa
     </Link>
   );
 }
-
