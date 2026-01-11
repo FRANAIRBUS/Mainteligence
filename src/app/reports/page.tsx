@@ -917,7 +917,7 @@ export default function ReportsPage() {
                     },
                   }}
                 >
-                  <BarChart data={departmentIncidents} margin={{ left: 12, right: 12 }}>
+                  <BarChart data={departmentIncidents} margin={{ left: 4, right: 12 }}>
                     <CartesianGrid vertical={false} />
                     <XAxis
                       dataKey="label"
@@ -926,7 +926,7 @@ export default function ReportsPage() {
                       interval={0}
                       tickMargin={8}
                     />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={4} />
                     <ChartTooltip
                       cursor={false}
                       content={<ChartTooltipContent indicator="dot" />}
@@ -972,7 +972,7 @@ export default function ReportsPage() {
                     },
                   }}
                 >
-                  <BarChart data={siteIncidents} margin={{ left: 12, right: 12 }}>
+                  <BarChart data={siteIncidents} margin={{ left: 4, right: 12 }}>
                     <CartesianGrid vertical={false} />
                     <XAxis
                       dataKey="label"
@@ -981,7 +981,7 @@ export default function ReportsPage() {
                       interval={0}
                       tickMargin={8}
                     />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={4} />
                     <ChartTooltip
                       cursor={false}
                       content={<ChartTooltipContent indicator="dot" />}
