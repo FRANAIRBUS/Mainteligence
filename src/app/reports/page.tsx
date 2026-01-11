@@ -375,7 +375,7 @@ export default function ReportsPage() {
               </Badge>
             )}
           </CardHeader>
-          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
             <div className="space-y-2">
               <span className="text-xs font-medium text-muted-foreground sm:text-sm">
                 Fechas
@@ -480,7 +480,7 @@ export default function ReportsPage() {
               )}
             </Button>
           </CardHeader>
-          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
             <div className="space-y-1">
               <span className="text-sm font-medium text-muted-foreground">
                 Rango aplicado
@@ -522,7 +522,7 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid min-w-0 grid-cols-2 gap-4 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex min-w-0 flex-col gap-2 space-y-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
               <CardTitle className="min-w-0 break-words text-sm font-medium text-muted-foreground">
@@ -589,8 +589,8 @@ export default function ReportsPage() {
           </Card>
         </div>
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <Card>
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
                 <LineChartIcon className="h-5 w-5 text-primary" />
@@ -640,7 +640,7 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="lg:col-span-1">
             <CardHeader>
               <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
                 <Clock className="h-5 w-5 text-primary" />
@@ -669,7 +669,7 @@ export default function ReportsPage() {
               Comparativa de preventivos completados en plazo y fuera de plazo.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>Cumplimiento global</span>
