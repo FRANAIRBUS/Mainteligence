@@ -415,7 +415,7 @@ export default function ReportsPage() {
                 Ubicación
               </span>
               <Select value={locationFilter} onValueChange={setLocationFilter}>
-                <SelectTrigger className="min-w-0">
+                <SelectTrigger className="min-w-0 w-[220px] max-w-full">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -437,7 +437,7 @@ export default function ReportsPage() {
                 value={departmentFilter}
                 onValueChange={setDepartmentFilter}
               >
-                <SelectTrigger className="min-w-0">
+                <SelectTrigger className="min-w-0 w-[220px] max-w-full">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -462,7 +462,11 @@ export default function ReportsPage() {
                 actuales.
               </CardDescription>
             </div>
-            <Button onClick={handleExport} disabled={isExporting || dataLoading}>
+            <Button
+              onClick={handleExport}
+              disabled={isExporting || dataLoading}
+              className="w-fit px-4"
+            >
               {isExporting ? (
                 <>
                   <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
