@@ -1195,7 +1195,8 @@ export const orgInviteUser = functions.https.onRequest(async (req, res) => {
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const displayName = String(req.body?.displayName ?? '').trim();
     const requestedRole: Role = normalizeRole(req.body?.role) ?? 'operator';
-    const departmentId = String(req.body?.departmentId ?? '').trim();
+    const departmentId =
+      typeof req.body?.departmentId === 'string' ? req.body.departmentId.trim() : '';
 
     if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
     if (!email) throw httpsError('invalid-argument', 'email requerido.');
@@ -1295,7 +1296,8 @@ export const orgUpdateUserProfile = functions.https.onRequest(async (req, res) =
     const targetUid = String(req.body?.uid ?? '').trim();
     const displayName = String(req.body?.displayName ?? '').trim();
     const email = String(req.body?.email ?? '').trim().toLowerCase();
-    const departmentId = String(req.body?.departmentId ?? '').trim();
+    const departmentId =
+      typeof req.body?.departmentId === 'string' ? req.body.departmentId.trim() : '';
 
     await updateOrganizationUserProfile({
       actorUid,
@@ -1323,7 +1325,8 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
   const targetUid = String(data?.uid ?? '').trim();
   const displayName = String(data?.displayName ?? '').trim();
   const email = String(data?.email ?? '').trim().toLowerCase();
-  const departmentId = String(data?.departmentId ?? '').trim();
+  const departmentId =
+    typeof data?.departmentId === 'string' ? data.departmentId.trim() : '';
 
   await updateOrganizationUserProfile({
     actorUid,

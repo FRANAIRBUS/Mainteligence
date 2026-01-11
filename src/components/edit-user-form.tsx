@@ -152,7 +152,8 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
       });
       onSuccess?.();
     } catch (error: any) {
-      if (error.code === 'permission-denied') {
+      const errorCode = String(error?.code ?? '');
+      if (errorCode === 'permission-denied') {
         const permissionError = new FirestorePermissionError({
           path: `organizations/${organizationId}/members`,
           operation: 'update',
@@ -163,7 +164,7 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
         toast({
           variant: 'destructive',
           title: 'Error',
-          description: error.message || 'No se pudo actualizar el usuario.',
+          description: error?.message || 'No se pudo actualizar el usuario.',
         });
       }
     } finally {
