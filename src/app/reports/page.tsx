@@ -378,16 +378,18 @@ export default function ReportsPage() {
               <span className="text-sm font-medium text-muted-foreground">
                 Rango de fechas
               </span>
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
                 <Input
                   type="date"
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
+                  className="min-w-0"
                 />
                 <Input
                   type="date"
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
+                  className="min-w-0"
                 />
               </div>
             </div>
@@ -397,7 +399,7 @@ export default function ReportsPage() {
                 Ubicación
               </span>
               <Select value={locationFilter} onValueChange={setLocationFilter}>
-                <SelectTrigger>
+                <SelectTrigger className="min-w-0">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -419,7 +421,7 @@ export default function ReportsPage() {
                 value={departmentFilter}
                 onValueChange={setDepartmentFilter}
               >
-                <SelectTrigger>
+                <SelectTrigger className="min-w-0">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -477,7 +479,7 @@ export default function ReportsPage() {
                 Orden por creación
               </span>
               <Select value={exportSortOrder} onValueChange={setExportSortOrder}>
-                <SelectTrigger>
+                <SelectTrigger className="min-w-0">
                   <SelectValue placeholder="Selecciona orden" />
                 </SelectTrigger>
                 <SelectContent>
