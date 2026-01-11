@@ -41,6 +41,8 @@ import {
 } from '@/components/ui/table';
 import {
   Activity,
+  CalendarCheck,
+  CalendarDays,
   CheckCircle2,
   Clock,
   ClipboardList,
@@ -374,23 +376,37 @@ export default function ReportsPage() {
             )}
           </CardHeader>
           <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
-            <div className="space-y-1">
-              <span className="text-sm font-medium text-muted-foreground">
-                Rango de fechas
+            <div className="space-y-2">
+              <span className="text-xs font-medium text-muted-foreground sm:text-sm">
+                Fechas
               </span>
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  className="min-w-0"
-                />
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  className="min-w-0"
-                />
+              <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-row">
+                <div className="min-w-0 space-y-1">
+                  <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:text-xs">
+                    <CalendarDays className="h-3 w-3" />
+                    Desde
+                  </span>
+                  <Input
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                    className="h-9 w-full min-w-0 text-xs sm:text-sm"
+                    aria-label="Fecha de inicio"
+                  />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:text-xs">
+                    <CalendarCheck className="h-3 w-3" />
+                    Hasta
+                  </span>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                    className="h-9 w-full min-w-0 text-xs sm:text-sm"
+                    aria-label="Fecha de fin"
+                  />
+                </div>
               </div>
             </div>
             <div className="space-y-1">
