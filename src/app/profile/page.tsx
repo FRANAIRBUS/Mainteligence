@@ -128,12 +128,22 @@ export default function ProfilePage() {
     try {
       // Use setDoc with merge to create or update the document.
       const userDocRef = doc(firestore, 'users', user.uid);
-      await setDoc(userDocRef, {
+      const basePayload: {
+        displayName: string;
+        email: string;
+        organizationId?: string | null;
+        updatedAt: ReturnType<typeof serverTimestamp>;
+      } = {
         displayName: data.displayName,
         email: data.email || user.email || '',
-        organizationId: resolvedOrganizationId,
         updatedAt: serverTimestamp(),
-      }, { merge: true });
+      };
+
+      if (!profile) {
+        basePayload.organizationId = resolvedOrganizationId;
+      }
+
+      await setDoc(userDocRef, basePayload, { merge: true });
       
       let uploadedAvatarUrl: string | null = null;
       if (avatarFile) {
