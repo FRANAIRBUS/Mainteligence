@@ -383,13 +383,15 @@ export default function ReportsPage() {
               </Badge>
             )}
           </CardHeader>
-          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-4 overflow-hidden md:grid-cols-[repeat(3,minmax(0,1fr))]">
             <div className="space-y-2">
               <span className="text-xs font-medium text-muted-foreground sm:text-sm">
                 Fechas
               </span>
-              <div className="flex min-w-0 flex-col gap-2 sm:w-fit sm:flex-row sm:items-end">
-                <div className="min-w-0 space-y-1 sm:w-fit">
+
+              {/* Mobile: 2 columns to avoid iOS date input overflow */}
+              <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:w-fit sm:flex-row sm:items-end">
+                <div className="min-w-0 space-y-1">
                   <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:text-xs">
                     <CalendarDays className="h-3 w-3" />
                     Desde
@@ -398,11 +400,12 @@ export default function ReportsPage() {
                     type="date"
                     value={startDate}
                     onChange={(event) => setStartDate(event.target.value)}
-                    className="h-9 w-full min-w-0 text-xs sm:w-[140px] sm:text-sm"
+                    className="h-9 w-full max-w-full min-w-0 text-xs sm:w-[140px] sm:text-sm"
                     aria-label="Fecha de inicio"
                   />
                 </div>
-                <div className="min-w-0 space-y-1 sm:w-fit">
+
+                <div className="min-w-0 space-y-1">
                   <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:text-xs">
                     <CalendarCheck className="h-3 w-3" />
                     Hasta
@@ -411,7 +414,7 @@ export default function ReportsPage() {
                     type="date"
                     value={endDate}
                     onChange={(event) => setEndDate(event.target.value)}
-                    className="h-9 w-full min-w-0 text-xs sm:w-[140px] sm:text-sm"
+                    className="h-9 w-full max-w-full min-w-0 text-xs sm:w-[140px] sm:text-sm"
                     aria-label="Fecha de fin"
                   />
                 </div>
