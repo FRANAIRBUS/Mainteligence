@@ -86,30 +86,72 @@ async function updateOrganizationUserProfile({
     await requireCallerSuperAdminInOrg(actorUid, orgId);
   }
 
-  const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
-  const membershipSnap = await membershipRef.get();
-  if (!membershipSnap.exists) {
-    throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización.');
-  }
-  const membership = membershipSnap.data() as any;
-  const rawStatus = String(membership?.status ?? '').trim().toLowerCase();
-  const membershipStatus =
-    rawStatus || (typeof membership?.active === 'boolean' ? (membership.active ? 'active' : 'inactive') : '');
-  if (membershipStatus !== 'active') {
-    if (membershipStatus === 'pending' || membershipStatus === 'revoked') {
-      console.warn('updateOrganizationUserProfile blocked for inactive membership', {
-        orgId,
-        targetUid,
-        membershipStatus,
-      });
-    }
-    throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía activa en esa organización.');
-  }
-
   const userRef = db.collection('users').doc(targetUid);
   const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
   const now = admin.firestore.FieldValue.serverTimestamp();
   const normalizedEmail = String(email ?? '').trim();
+
+  // ---
+  // Backward-compat / safety:
+  // In some historical datasets there are member docs under organizations/{orgId}/members
+  // but the corresponding memberships/{uid}_{orgId} doc does not exist yet.
+  // The admin UI should still be able to edit a member profile, so we:
+  //   1) Validate the target is a member of the org (membership OR member doc exists)
+  //   2) Enforce "active" status
+  //   3) If membership doc is missing but the member doc exists, we create the membership
+  //      doc (backfill) and continue.
+  // ---
+  const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+  const membershipSnap = await membershipRef.get();
+
+  if (!membershipSnap.exists) {
+    const memberSnap = await memberRef.get();
+    if (!memberSnap.exists) {
+      throw httpsError(
+        'failed-precondition',
+        'El usuario objetivo no tiene membresía en esa organización (ni registro de miembro).'
+      );
+    }
+
+    const member = memberSnap.data() as any;
+    const rawStatus = String(member?.status ?? '').trim().toLowerCase();
+    const status = rawStatus || (typeof member?.active === 'boolean' ? (member.active ? 'active' : 'pending') : 'active');
+    if (status !== 'active') {
+      throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía activa en esa organización.');
+    }
+
+    // Backfill membership doc so future RBAC checks are consistent.
+    await membershipRef.set(
+      {
+        organizationId: orgId,
+        uid: targetUid,
+        role: normalizeRole(member?.role),
+        status: 'active',
+        email: member?.email ?? normalizedEmail ?? null,
+        displayName: member?.displayName ?? null,
+        departmentId: member?.departmentId ?? null,
+        createdAt: member?.createdAt ?? now,
+        updatedAt: now,
+        source: 'orgUpdateUserProfile_backfill_membership_v1',
+      },
+      { merge: true }
+    );
+  } else {
+    const membership = membershipSnap.data() as any;
+    const rawStatus = String(membership?.status ?? '').trim().toLowerCase();
+    const membershipStatus =
+      rawStatus || (typeof membership?.active === 'boolean' ? (membership.active ? 'active' : 'inactive') : '');
+    if (membershipStatus !== 'active') {
+      if (membershipStatus === 'pending' || membershipStatus === 'revoked') {
+        console.warn('updateOrganizationUserProfile blocked for inactive membership', {
+          orgId,
+          targetUid,
+          membershipStatus,
+        });
+      }
+      throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía activa en esa organización.');
+    }
+  }
 
   const userSnap = await userRef.get();
   const currentEmail = String(userSnap.data()?.email ?? '').trim();
