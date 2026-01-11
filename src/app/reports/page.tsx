@@ -524,8 +524,8 @@ export default function ReportsPage() {
 
         <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex min-w-0 flex-col gap-2 space-y-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <CardTitle className="min-w-0 break-words text-sm font-medium text-muted-foreground">
                 Incidencias abiertas
               </CardTitle>
               <Activity className="h-5 w-5 text-primary" />
@@ -534,14 +534,14 @@ export default function ReportsPage() {
               <div className="text-2xl font-semibold sm:text-3xl">
                 {metrics.openIncidents}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="break-words text-xs text-muted-foreground">
                 Incidencias en curso según filtros.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex min-w-0 flex-col gap-2 space-y-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <CardTitle className="min-w-0 break-words text-sm font-medium text-muted-foreground">
                 Incidencias cerradas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-emerald-500" />
@@ -550,14 +550,14 @@ export default function ReportsPage() {
               <div className="text-2xl font-semibold sm:text-3xl">
                 {metrics.closedIncidents}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="break-words text-xs text-muted-foreground">
                 Cierres completados en el rango.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex min-w-0 flex-col gap-2 space-y-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <CardTitle className="min-w-0 break-words text-sm font-medium text-muted-foreground">
                 Tareas pendientes
               </CardTitle>
               <ClipboardList className="h-5 w-5 text-amber-500" />
@@ -566,14 +566,14 @@ export default function ReportsPage() {
               <div className="text-2xl font-semibold sm:text-3xl">
                 {metrics.pendingTasks}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="break-words text-xs text-muted-foreground">
                 Actividades aún sin completar.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardHeader className="flex min-w-0 flex-col gap-2 space-y-0 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+              <CardTitle className="min-w-0 break-words text-sm font-medium text-muted-foreground">
                 Tareas completadas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-sky-500" />
@@ -582,7 +582,7 @@ export default function ReportsPage() {
               <div className="text-2xl font-semibold sm:text-3xl">
                 {metrics.completedTasks}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="break-words text-xs text-muted-foreground">
                 Tareas resueltas en el rango.
               </p>
             </CardContent>
@@ -592,11 +592,11 @@ export default function ReportsPage() {
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
                 <LineChartIcon className="h-5 w-5 text-primary" />
-                Tendencia de cierres
+                <span className="min-w-0 break-words">Tendencia de cierres</span>
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="break-words">
                 Evolución diaria de incidencias cerradas y tareas completadas.
               </CardDescription>
             </CardHeader>
@@ -642,11 +642,11 @@ export default function ReportsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+              <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
                 <Clock className="h-5 w-5 text-primary" />
-                MTTR promedio
+                <span className="min-w-0 break-words">MTTR promedio</span>
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="break-words">
                 Tiempo medio de resolución basado en cierres.
               </CardDescription>
             </CardHeader>
