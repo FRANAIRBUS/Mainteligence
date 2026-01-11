@@ -52,10 +52,15 @@ const ChartContainer = React.forwardRef<
         data-chart={chartId}
         ref={ref}
         className={cn(
-          // Key fix for iOS/mobile: ensure charts and tooltip/cursor never paint outside the card
-          "relative flex aspect-video justify-center overflow-hidden text-xs " +
+          // Key fixes for mobile (iOS Safari):
+          // - Ensure the chart container never overflows horizontally (w-full/max-w-full/min-w-0)
+          // - Clip SVG/cursor/tooltip to the container (overflow-hidden)
+          "relative w-full max-w-full min-w-0 flex aspect-video justify-center overflow-hidden text-xs " +
+            "[&_.recharts-responsive-container]:max-w-full " +
             "[&_.recharts-responsive-container]:overflow-hidden " +
+            "[&_.recharts-wrapper]:max-w-full " +
             "[&_.recharts-wrapper]:overflow-hidden " +
+            "[&_.recharts-surface]:max-w-full " +
             "[&_.recharts-surface]:overflow-hidden " +
             "[&_.recharts-tooltip-wrapper]:max-w-full " +
             "[&_.recharts-tooltip-wrapper]:overflow-hidden " +
@@ -76,7 +81,7 @@ const ChartContainer = React.forwardRef<
         {...props}
       >
         <ChartStyle id={chartId} config={config} />
-        <RechartsPrimitive.ResponsiveContainer>
+        <RechartsPrimitive.ResponsiveContainer width="100%" height="100%">
           {children}
         </RechartsPrimitive.ResponsiveContainer>
       </div>
