@@ -144,32 +144,8 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
         await fn({ organizationId, uid: user.id, role: normalizedRole });
       }
 
-      const token = await currentUser.getIdToken();
-      const functionUrl = `https://us-central1-${app.options.projectId}.cloudfunctions.net/orgUpdateUserProfile`;
-      const response = await fetch(functionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(updateData),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        if (payload?.code === 'permission-denied') {
-          const permissionError = new FirestorePermissionError({
-            path: `organizations/${organizationId}/members`,
-            operation: 'update',
-            requestResourceData: updateData,
-          });
-          errorEmitter.emit('permission-error', permissionError);
-          return;
-        }
-        throw new Error(payload?.error || 'No se pudo actualizar el usuario.');
-      }
-
-      await response.json().catch(() => null);
+      const updateProfile = httpsCallable(getFunctions(app), 'orgUpdateUserProfileCallable');
+      await updateProfile(updateData);
       toast({
         title: 'Éxito',
         description: `Usuario ${data.displayName} actualizado correctamente.`,
