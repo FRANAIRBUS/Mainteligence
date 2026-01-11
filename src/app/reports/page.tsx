@@ -905,7 +905,7 @@ export default function ReportsPage() {
               </div>
               {departmentIncidents.length ? (
                 <ChartContainer
-                  className="h-[240px] sm:h-[280px]"
+                  className="h-[240px] justify-start sm:h-[280px]"
                   config={{
                     openIncidents: {
                       label: "Abiertas",
@@ -917,7 +917,7 @@ export default function ReportsPage() {
                     },
                   }}
                 >
-                  <BarChart data={departmentIncidents} margin={{ left: 12, right: 12 }}>
+                  <BarChart data={departmentIncidents} margin={{ left: 0, right: 12 }}>
                     <CartesianGrid vertical={false} />
                     <XAxis
                       dataKey="label"
@@ -926,7 +926,7 @@ export default function ReportsPage() {
                       interval={0}
                       tickMargin={8}
                     />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={2} />
                     <ChartTooltip
                       cursor={false}
                       content={<ChartTooltipContent indicator="dot" />}
@@ -960,7 +960,7 @@ export default function ReportsPage() {
               </div>
               {siteIncidents.length ? (
                 <ChartContainer
-                  className="h-[240px] sm:h-[280px]"
+                  className="h-[240px] justify-start sm:h-[280px]"
                   config={{
                     openIncidents: {
                       label: "Abiertas",
@@ -972,7 +972,7 @@ export default function ReportsPage() {
                     },
                   }}
                 >
-                  <BarChart data={siteIncidents} margin={{ left: 12, right: 12 }}>
+                  <BarChart data={siteIncidents} margin={{ left: 0, right: 12 }}>
                     <CartesianGrid vertical={false} />
                     <XAxis
                       dataKey="label"
@@ -981,7 +981,7 @@ export default function ReportsPage() {
                       interval={0}
                       tickMargin={8}
                     />
-                    <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+                    <YAxis tickLine={false} axisLine={false} tickMargin={2} />
                     <ChartTooltip
                       cursor={false}
                       content={<ChartTooltipContent indicator="dot" />}
