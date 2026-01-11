@@ -1,12 +1,157 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskAssign = exports.onTicketAssign = void 0;
+exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.setActiveOrganization = exports.bootstrapSignup = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const assignment_email_1 = require("./assignment-email");
+const invite_email_1 = require("./invite-email");
 admin.initializeApp();
 const db = admin.firestore();
 function httpsError(code, message) {
     return new functions.https.HttpsError(code, message);
+}
+const ALLOWED_CORS_ORIGINS = new Set([
+    'https://multi.maintelligence.app',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+]);
+function applyCors(req, res) {
+    var _a;
+    const origin = String((_a = req.headers.origin) !== null && _a !== void 0 ? _a : '');
+    if (origin && ALLOWED_CORS_ORIGINS.has(origin)) {
+        res.set('Access-Control-Allow-Origin', origin);
+    }
+    else if (origin) {
+        res.set('Access-Control-Allow-Origin', origin);
+    }
+    else {
+        res.set('Access-Control-Allow-Origin', 'https://multi.maintelligence.app');
+    }
+    res.set('Vary', 'Origin');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    const requestedHeaders = req.headers['access-control-request-headers'];
+    res.set('Access-Control-Allow-Headers', typeof requestedHeaders === 'string' && requestedHeaders.trim()
+        ? requestedHeaders
+        : 'Content-Type, Authorization');
+    res.set('Access-Control-Max-Age', '3600');
+    if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return true;
+    }
+    return false;
+}
+async function requireAuthFromRequest(req) {
+    var _a;
+    const authHeader = String((_a = req.headers.authorization) !== null && _a !== void 0 ? _a : '');
+    const match = authHeader.match(/^Bearer (.+)$/i);
+    if (!match)
+        throw httpsError('unauthenticated', 'Debes iniciar sesión.');
+    return admin.auth().verifyIdToken(match[1]);
+}
+async function updateOrganizationUserProfile({ actorUid, actorEmail, isRoot, orgId, targetUid, displayName, email, departmentId, }) {
+    var _a, _b, _c, _d;
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    if (!targetUid)
+        throw httpsError('invalid-argument', 'uid requerido.');
+    if (!isRoot) {
+        await requireCallerSuperAdminInOrg(actorUid, orgId);
+    }
+    const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+    const membershipSnap = await membershipRef.get();
+    if (!membershipSnap.exists) {
+        throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización.');
+    }
+    const membership = membershipSnap.data();
+    const rawStatus = String((_a = membership === null || membership === void 0 ? void 0 : membership.status) !== null && _a !== void 0 ? _a : '').trim().toLowerCase();
+    const membershipStatus = rawStatus || (typeof (membership === null || membership === void 0 ? void 0 : membership.active) === 'boolean' ? (membership.active ? 'active' : 'inactive') : '');
+    if (membershipStatus !== 'active') {
+        if (membershipStatus === 'pending' || membershipStatus === 'revoked') {
+            console.warn('updateOrganizationUserProfile blocked for inactive membership', {
+                orgId,
+                targetUid,
+                membershipStatus,
+            });
+        }
+        throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía activa en esa organización.');
+    }
+    const userRef = db.collection('users').doc(targetUid);
+    const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const normalizedEmail = String(email !== null && email !== void 0 ? email : '').trim();
+    const userSnap = await userRef.get();
+    const currentEmail = String((_c = (_b = userSnap.data()) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : '').trim();
+    if (normalizedEmail && normalizedEmail !== currentEmail) {
+        try {
+            await admin.auth().updateUser(targetUid, { email: normalizedEmail });
+        }
+        catch (err) {
+            const code = String((_d = err === null || err === void 0 ? void 0 : err.code) !== null && _d !== void 0 ? _d : '');
+            if (code === 'auth/email-already-exists') {
+                throw httpsError('failed-precondition', 'El correo electrónico ya está en uso.');
+            }
+            if (code === 'auth/invalid-email') {
+                throw httpsError('invalid-argument', 'El correo electrónico no es válido.');
+            }
+            if (code === 'auth/user-not-found') {
+                throw httpsError('not-found', 'No se encontró el usuario en Auth.');
+            }
+            console.error('updateOrganizationUserProfile auth update failed', { targetUid, orgId, code, err });
+            throw httpsError('internal', 'No se pudo actualizar el correo electrónico en Auth.');
+        }
+    }
+    const userPayload = {
+        displayName: displayName || null,
+        email: normalizedEmail || null,
+        departmentId: departmentId || null,
+        updatedAt: now,
+        source: 'orgUpdateUserProfile_v1',
+    };
+    const memberPayload = {
+        displayName: displayName || null,
+        email: normalizedEmail || null,
+        updatedAt: now,
+        source: 'orgUpdateUserProfile_v1',
+    };
+    const batch = db.batch();
+    batch.set(userRef, userPayload, { merge: true });
+    batch.set(memberRef, memberPayload, { merge: true });
+    await batch.commit();
+    await auditLog({
+        action: 'orgUpdateUserProfile',
+        actorUid,
+        actorEmail,
+        orgId,
+        targetUid,
+        targetEmail: normalizedEmail || null,
+        after: {
+            displayName: displayName || null,
+            email: normalizedEmail || null,
+            departmentId: departmentId || null,
+        },
+    });
+}
+function sendHttpError(res, err) {
+    var _a, _b;
+    const code = String((_a = err === null || err === void 0 ? void 0 : err.code) !== null && _a !== void 0 ? _a : 'internal');
+    const message = String((_b = err === null || err === void 0 ? void 0 : err.message) !== null && _b !== void 0 ? _b : 'Error inesperado.');
+    const status = (() => {
+        switch (code) {
+            case 'invalid-argument':
+                return 400;
+            case 'unauthenticated':
+                return 401;
+            case 'permission-denied':
+                return 403;
+            case 'not-found':
+                return 404;
+            case 'failed-precondition':
+                return 400;
+            default:
+                return 500;
+        }
+    })();
+    res.status(status).json({ error: message, code });
 }
 function requireAuth(context) {
     var _a;
@@ -18,22 +163,45 @@ function isRootClaim(context) {
     var _a, _b;
     return Boolean(((_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.root) === true);
 }
-async function getUserDoc(uid) {
-    const ref = db.collection('users').doc(uid);
-    const snap = await ref.get();
-    return { ref, snap, data: snap.data() };
-}
-function normalizeRole(input) {
+function normalizeRoleOrNull(input) {
     const r = String(input !== null && input !== void 0 ? input : '').trim().toLowerCase();
+    if (!r)
+        return null;
     if (r === 'super_admin' || r === 'superadmin')
         return 'super_admin';
     if (r === 'admin' || r === 'administrator')
         return 'admin';
     if (r === 'maintenance' || r === 'mantenimiento' || r === 'maint' || r === 'maintainer')
         return 'maintenance';
+    if (r === 'dept_head_multi' ||
+        r === 'deptheadmulti' ||
+        r === 'dept-head-multi' ||
+        r === 'dept head multi' ||
+        r === 'department_head_multi' ||
+        r === 'departmentheadmulti' ||
+        r === 'jefe_departamento_multi' ||
+        r === 'jefe de departamento multi') {
+        return 'dept_head_multi';
+    }
+    if (r === 'dept_head_single' ||
+        r === 'deptheadsingle' ||
+        r === 'dept-head-single' ||
+        r === 'dept head single' ||
+        r === 'dept_head' ||
+        r === 'depthead' ||
+        r === 'department_head_single' ||
+        r === 'departmentheadsingle' ||
+        r === 'jefe_departamento' ||
+        r === 'jefe de departamento') {
+        return 'dept_head_single';
+    }
     if (r === 'operator' || r === 'operario' || r === 'op')
         return 'operator';
-    return 'operator';
+    return null;
+}
+function normalizeRole(input) {
+    var _a;
+    return (_a = normalizeRoleOrNull(input)) !== null && _a !== void 0 ? _a : 'operator';
 }
 async function ensureDefaultOrganizationExists() {
     const ref = db.collection('organizations').doc('default');
@@ -78,24 +246,124 @@ async function auditLog(params) {
 exports.onTicketAssign = functions.firestore
     .document('tickets/{ticketId}')
     .onUpdate(async (change, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const before = change.before.data();
     const after = change.after.data();
     if (!before || !after)
         return;
-    if (before.assignedTo === after.assignedTo)
+    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo)
         return;
-    console.log('[onTicketAssign]', context.params.ticketId, before.assignedTo, '->', after.assignedTo);
+    if (after.assignmentEmailSource === 'client')
+        return;
+    try {
+        await (0, assignment_email_1.sendAssignmentEmail)({
+            organizationId: (_a = after.organizationId) !== null && _a !== void 0 ? _a : null,
+            assignedTo: (_b = after.assignedTo) !== null && _b !== void 0 ? _b : null,
+            departmentId: (_c = after.departmentId) !== null && _c !== void 0 ? _c : null,
+            title: (_d = after.title) !== null && _d !== void 0 ? _d : '(sin título)',
+            link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+            type: 'incidencia',
+            identifier: (_e = after.displayId) !== null && _e !== void 0 ? _e : context.params.ticketId,
+            description: (_f = after.description) !== null && _f !== void 0 ? _f : '',
+            priority: (_g = after.priority) !== null && _g !== void 0 ? _g : '',
+            status: (_h = after.status) !== null && _h !== void 0 ? _h : '',
+            location: (_j = after.departmentId) !== null && _j !== void 0 ? _j : null,
+        });
+    }
+    catch (error) {
+        console.error('[onTicketAssign] Error enviando email de asignación', error);
+    }
 });
 exports.onTaskAssign = functions.firestore
     .document('tasks/{taskId}')
     .onUpdate(async (change, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const before = change.before.data();
     const after = change.after.data();
     if (!before || !after)
         return;
-    if (before.assignedTo === after.assignedTo)
+    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo)
         return;
-    console.log('[onTaskAssign]', context.params.taskId, before.assignedTo, '->', after.assignedTo);
+    if (after.assignmentEmailSource === 'client')
+        return;
+    try {
+        await (0, assignment_email_1.sendAssignmentEmail)({
+            organizationId: (_a = after.organizationId) !== null && _a !== void 0 ? _a : null,
+            assignedTo: (_b = after.assignedTo) !== null && _b !== void 0 ? _b : null,
+            departmentId: (_c = after.location) !== null && _c !== void 0 ? _c : null,
+            title: (_d = after.title) !== null && _d !== void 0 ? _d : '(sin título)',
+            link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+            type: 'tarea',
+            identifier: context.params.taskId,
+            description: (_e = after.description) !== null && _e !== void 0 ? _e : '',
+            priority: (_f = after.priority) !== null && _f !== void 0 ? _f : '',
+            status: (_g = after.status) !== null && _g !== void 0 ? _g : '',
+            dueDate: (_h = after.dueDate) !== null && _h !== void 0 ? _h : null,
+            location: (_j = after.location) !== null && _j !== void 0 ? _j : null,
+            category: (_k = after.category) !== null && _k !== void 0 ? _k : null,
+        });
+    }
+    catch (error) {
+        console.error('[onTaskAssign] Error enviando email de asignación', error);
+    }
+});
+exports.onTicketCreate = functions.firestore
+    .document('tickets/{ticketId}')
+    .onCreate(async (snap, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+    const data = snap.data();
+    if (!(data === null || data === void 0 ? void 0 : data.assignedTo))
+        return;
+    if (data.assignmentEmailSource === 'client')
+        return;
+    try {
+        await (0, assignment_email_1.sendAssignmentEmail)({
+            organizationId: (_a = data.organizationId) !== null && _a !== void 0 ? _a : null,
+            assignedTo: (_b = data.assignedTo) !== null && _b !== void 0 ? _b : null,
+            departmentId: (_c = data.departmentId) !== null && _c !== void 0 ? _c : null,
+            title: (_d = data.title) !== null && _d !== void 0 ? _d : '(sin título)',
+            link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+            type: 'incidencia',
+            identifier: (_e = data.displayId) !== null && _e !== void 0 ? _e : context.params.ticketId,
+            description: (_f = data.description) !== null && _f !== void 0 ? _f : '',
+            priority: (_g = data.priority) !== null && _g !== void 0 ? _g : '',
+            status: (_h = data.status) !== null && _h !== void 0 ? _h : '',
+            location: (_j = data.departmentId) !== null && _j !== void 0 ? _j : null,
+        });
+    }
+    catch (error) {
+        console.error('[onTicketCreate] Error enviando email de asignación', error);
+    }
+});
+exports.onTaskCreate = functions.firestore
+    .document('tasks/{taskId}')
+    .onCreate(async (snap, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    const data = snap.data();
+    if (!(data === null || data === void 0 ? void 0 : data.assignedTo))
+        return;
+    if (data.assignmentEmailSource === 'client')
+        return;
+    try {
+        await (0, assignment_email_1.sendAssignmentEmail)({
+            organizationId: (_a = data.organizationId) !== null && _a !== void 0 ? _a : null,
+            assignedTo: (_b = data.assignedTo) !== null && _b !== void 0 ? _b : null,
+            departmentId: (_c = data.location) !== null && _c !== void 0 ? _c : null,
+            title: (_d = data.title) !== null && _d !== void 0 ? _d : '(sin título)',
+            link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+            type: 'tarea',
+            identifier: context.params.taskId,
+            description: (_e = data.description) !== null && _e !== void 0 ? _e : '',
+            priority: (_f = data.priority) !== null && _f !== void 0 ? _f : '',
+            status: (_g = data.status) !== null && _g !== void 0 ? _g : '',
+            dueDate: (_h = data.dueDate) !== null && _h !== void 0 ? _h : null,
+            location: (_j = data.location) !== null && _j !== void 0 ? _j : null,
+            category: (_k = data.category) !== null && _k !== void 0 ? _k : null,
+        });
+    }
+    catch (error) {
+        console.error('[onTaskCreate] Error enviando email de asignación', error);
+    }
 });
 exports.onTicketClosed = functions.firestore
     .document('tickets/{ticketId}')
@@ -440,16 +708,19 @@ exports.rootPurgeOrganizationCollection = functions.https.onCall(async (data, co
    (para que el cliente NO toque roles)
 --------------------------------- */
 async function requireCallerSuperAdminInOrg(actorUid, orgId) {
-    var _a, _b, _c, _d;
-    const me = await getUserDoc(actorUid);
-    if (!me.snap.exists)
-        throw httpsError('permission-denied', 'Perfil de usuario no existe.');
-    const myOrg = String((_b = (_a = me.data) === null || _a === void 0 ? void 0 : _a.organizationId) !== null && _b !== void 0 ? _b : '');
-    const myRole = String((_d = (_c = me.data) === null || _c === void 0 ? void 0 : _c.role) !== null && _d !== void 0 ? _d : '');
-    if (myOrg !== orgId)
+    var _a;
+    const mRef = db.collection('memberships').doc(`${actorUid}_${orgId}`);
+    const mSnap = await mRef.get();
+    if (!mSnap.exists)
         throw httpsError('permission-denied', 'No perteneces a esa organización.');
-    if (myRole !== 'super_admin')
-        throw httpsError('permission-denied', 'Solo super_admin puede gestionar roles.');
+    // Backward-compat: some older docs used `active: true` instead of `status: 'active'`.
+    const status = String((_a = mSnap.get('status')) !== null && _a !== void 0 ? _a : '') ||
+        (mSnap.get('active') === true ? 'active' : 'pending');
+    const role = normalizeRole(mSnap.get('role'));
+    if (status !== 'active')
+        throw httpsError('permission-denied', 'Tu membresía no está activa.');
+    if (role !== 'super_admin')
+        throw httpsError('permission-denied', 'Solo super_admin puede gestionar usuarios.');
 }
 async function resolveTargetUidByEmailOrUid(email, uid) {
     const u = String(uid !== null && uid !== void 0 ? uid : '').trim();
@@ -469,21 +740,27 @@ async function setRoleWithinOrgImpl(params) {
     if (!isRoot) {
         await requireCallerSuperAdminInOrg(actorUid, orgId);
     }
-    const target = await getUserDoc(targetUid);
-    if (!target.snap.exists)
-        throw httpsError('not-found', 'El usuario objetivo no tiene perfil /users.');
-    const before = target.data || {};
-    const targetOrg = String((_a = before.organizationId) !== null && _a !== void 0 ? _a : '');
-    if (targetOrg !== orgId)
-        throw httpsError('failed-precondition', 'El usuario objetivo no pertenece a esa organización.');
-    const beforeRole = String((_b = before.role) !== null && _b !== void 0 ? _b : 'operator');
+    // Target must have a membership in this org
+    const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+    const membershipSnap = await membershipRef.get();
+    if (!membershipSnap.exists) {
+        throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización. Debe registrarse y solicitar acceso primero.');
+    }
+    const beforeRole = String((_a = membershipSnap.get('role')) !== null && _a !== void 0 ? _a : 'operator');
+    const beforeStatus = String((_b = membershipSnap.get('status')) !== null && _b !== void 0 ? _b : '') ||
+        (membershipSnap.get('active') === true ? 'active' : 'pending');
+    if (beforeStatus !== 'active') {
+        throw httpsError('failed-precondition', 'La membresía del usuario objetivo no está activa.');
+    }
     if (beforeRole === role) {
         return { ok: true, uid: targetUid, organizationId: orgId, role, noChange: true };
     }
     const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
-    const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+    const userRef = db.collection('users').doc(targetUid);
+    const userSnap = await userRef.get();
+    const userBefore = userSnap.exists ? userSnap.data() : null;
     const batch = db.batch();
-    batch.set(target.ref, {
+    batch.set(userRef, {
         role,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         source: 'setRoleWithinOrg_v1',
@@ -505,12 +782,466 @@ async function setRoleWithinOrgImpl(params) {
         actorEmail,
         orgId,
         targetUid,
-        targetEmail: String((_c = before.email) !== null && _c !== void 0 ? _c : null),
+        targetEmail: String((_c = userBefore === null || userBefore === void 0 ? void 0 : userBefore.email) !== null && _c !== void 0 ? _c : null),
         before: { role: beforeRole },
         after: { role },
     });
     return { ok: true, uid: targetUid, organizationId: orgId, role };
 }
+/* ------------------------------
+   ONBOARDING / JOIN REQUESTS
+--------------------------------- */
+function sanitizeOrganizationId(input) {
+    const raw = String(input !== null && input !== void 0 ? input : '').trim().toLowerCase();
+    // allow a-z0-9, dash, underscore. Convert spaces to dashes, drop others.
+    const spaced = raw.replace(/\s+/g, '-');
+    const cleaned = spaced.replace(/[^a-z0-9_-]/g, '');
+    return cleaned;
+}
+exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+    const uid = requireAuth(context);
+    const orgIdIn = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '');
+    const organizationId = sanitizeOrganizationId(orgIdIn);
+    if (!organizationId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const requestedRoleRaw = data === null || data === void 0 ? void 0 : data.requestedRole;
+    const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operator';
+    if (!requestedRole)
+        throw httpsError('invalid-argument', 'requestedRole inválido.');
+    const authUser = await admin.auth().getUser(uid).catch(() => null);
+    const email = ((_b = authUser === null || authUser === void 0 ? void 0 : authUser.email) !== null && _b !== void 0 ? _b : String((_c = data === null || data === void 0 ? void 0 : data.email) !== null && _c !== void 0 ? _c : '')).trim().toLowerCase();
+    const displayName = ((_d = authUser === null || authUser === void 0 ? void 0 : authUser.displayName) !== null && _d !== void 0 ? _d : String((_e = data === null || data === void 0 ? void 0 : data.displayName) !== null && _e !== void 0 ? _e : '').trim()) || null;
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
+    const orgSnap = await orgRef.get();
+    const userRef = db.collection('users').doc(uid);
+    const memberRef = orgRef.collection('members').doc(uid);
+    const membershipRef = db.collection('memberships').doc(`${uid}_${organizationId}`);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    if (!orgSnap.exists) {
+        const details = ((_f = data === null || data === void 0 ? void 0 : data.organizationDetails) !== null && _f !== void 0 ? _f : {});
+        const orgName = String((_g = details === null || details === void 0 ? void 0 : details.name) !== null && _g !== void 0 ? _g : '').trim() || organizationId;
+        const batch = db.batch();
+        batch.set(orgRef, {
+            organizationId,
+            name: orgName,
+            taxId: String((_h = details === null || details === void 0 ? void 0 : details.taxId) !== null && _h !== void 0 ? _h : '').trim() || null,
+            country: String((_j = details === null || details === void 0 ? void 0 : details.country) !== null && _j !== void 0 ? _j : '').trim() || null,
+            address: String((_k = details === null || details === void 0 ? void 0 : details.address) !== null && _k !== void 0 ? _k : '').trim() || null,
+            billingEmail: String((_l = details === null || details === void 0 ? void 0 : details.billingEmail) !== null && _l !== void 0 ? _l : '').trim() || email || null,
+            contactPhone: String((_m = details === null || details === void 0 ? void 0 : details.phone) !== null && _m !== void 0 ? _m : '').trim() || null,
+            teamSize: Number.isFinite(Number(details === null || details === void 0 ? void 0 : details.teamSize)) ? Number(details === null || details === void 0 ? void 0 : details.teamSize) : null,
+            subscriptionPlan: 'trial',
+            isActive: true,
+            settings: {
+                allowGuestAccess: false,
+                maxUsers: 50,
+            },
+            createdAt: now,
+            updatedAt: now,
+            source: 'bootstrapSignup_v1',
+        }, { merge: true });
+        batch.set(orgPublicRef, {
+            organizationId,
+            name: orgName,
+            isActive: true,
+            createdAt: now,
+            updatedAt: now,
+            source: 'bootstrapSignup_v1',
+        }, { merge: true });
+        batch.set(userRef, {
+            organizationId,
+            email: email || null,
+            displayName: displayName || email || 'Usuario',
+            role: 'super_admin',
+            active: true,
+            updatedAt: now,
+            createdAt: now,
+            source: 'bootstrapSignup_v1',
+        }, { merge: true });
+        batch.set(membershipRef, {
+            userId: uid,
+            organizationId,
+            organizationName: orgName,
+            role: 'super_admin',
+            status: 'active',
+            primary: true,
+            createdAt: now,
+            updatedAt: now,
+            source: 'bootstrapSignup_v1',
+        }, { merge: true });
+        batch.set(memberRef, {
+            uid,
+            orgId: organizationId,
+            email: email || null,
+            displayName: displayName || email || 'Usuario',
+            role: 'super_admin',
+            active: true,
+            createdAt: now,
+            updatedAt: now,
+            source: 'bootstrapSignup_v1',
+        }, { merge: true });
+        await batch.commit();
+        await auditLog({
+            action: 'bootstrapSignup_create_org',
+            actorUid: uid,
+            actorEmail: email || null,
+            orgId: organizationId,
+            after: { organizationId, role: 'super_admin', status: 'active' },
+        });
+        return { ok: true, mode: 'created', organizationId };
+    }
+    const orgData = orgSnap.data();
+    const orgName = String((_o = orgData === null || orgData === void 0 ? void 0 : orgData.name) !== null && _o !== void 0 ? _o : organizationId);
+    const joinReqRef = orgRef.collection('joinRequests').doc(uid);
+    const batch = db.batch();
+    batch.set(userRef, {
+        organizationId,
+        email: email || null,
+        displayName: displayName || email || 'Usuario',
+        role: requestedRole,
+        active: true,
+        updatedAt: now,
+        createdAt: now,
+        source: 'bootstrapSignup_v1',
+    }, { merge: true });
+    batch.set(membershipRef, {
+        userId: uid,
+        organizationId,
+        organizationName: orgName,
+        // El rol solicitado queda pendiente hasta aprobación.
+        role: requestedRole,
+        status: 'pending',
+        primary: false,
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapSignup_v1',
+    }, { merge: true });
+    batch.set(joinReqRef, {
+        userId: uid,
+        organizationId,
+        organizationName: orgName,
+        email: email || null,
+        displayName: displayName || email || 'Usuario',
+        requestedRole,
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapSignup_v1',
+    }, { merge: true });
+    await batch.commit();
+    await auditLog({
+        action: 'bootstrapSignup_join_request',
+        actorUid: uid,
+        actorEmail: email || null,
+        orgId: organizationId,
+        after: { organizationId, requestedRole, status: 'pending' },
+    });
+    return { ok: true, mode: 'pending', organizationId };
+});
+exports.setActiveOrganization = functions.https.onCall(async (data, context) => {
+    var _a, _b;
+    const uid = requireAuth(context);
+    const orgId = sanitizeOrganizationId(String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : ''));
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+    const mSnap = await membershipRef.get();
+    if (!mSnap.exists)
+        throw httpsError('permission-denied', 'No perteneces a esa organización.');
+    const status = String((_b = mSnap.get('status')) !== null && _b !== void 0 ? _b : '') ||
+        (mSnap.get('active') === true ? 'active' : 'pending');
+    if (status !== 'active')
+        throw httpsError('failed-precondition', 'La membresía no está activa.');
+    await db.collection('users').doc(uid).set({
+        organizationId: orgId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'setActiveOrganization_v1',
+    }, { merge: true });
+    return { ok: true, organizationId: orgId };
+});
+exports.orgInviteUser = functions.https.onRequest(async (req, res) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
+    if (applyCors(req, res))
+        return;
+    if (req.method !== 'POST') {
+        res.status(405).json({ error: 'Method Not Allowed' });
+        return;
+    }
+    try {
+        const decoded = await requireAuthFromRequest(req);
+        const actorUid = decoded.uid;
+        const actorEmail = ((_a = decoded.email) !== null && _a !== void 0 ? _a : null);
+        const orgId = sanitizeOrganizationId(String((_c = (_b = req.body) === null || _b === void 0 ? void 0 : _b.organizationId) !== null && _c !== void 0 ? _c : ''));
+        const email = String((_e = (_d = req.body) === null || _d === void 0 ? void 0 : _d.email) !== null && _e !== void 0 ? _e : '').trim().toLowerCase();
+        const displayName = String((_g = (_f = req.body) === null || _f === void 0 ? void 0 : _f.displayName) !== null && _g !== void 0 ? _g : '').trim();
+        const requestedRole = (_j = normalizeRole((_h = req.body) === null || _h === void 0 ? void 0 : _h.role)) !== null && _j !== void 0 ? _j : 'operator';
+        const departmentId = String((_l = (_k = req.body) === null || _k === void 0 ? void 0 : _k.departmentId) !== null && _l !== void 0 ? _l : '').trim();
+        if (!orgId)
+            throw httpsError('invalid-argument', 'organizationId requerido.');
+        if (!email)
+            throw httpsError('invalid-argument', 'email requerido.');
+        await requireCallerSuperAdminInOrg(actorUid, orgId);
+        const orgRef = db.collection('organizations').doc(orgId);
+        const orgSnap = await orgRef.get();
+        const orgName = String((_o = (_m = orgSnap.data()) === null || _m === void 0 ? void 0 : _m.name) !== null && _o !== void 0 ? _o : orgId);
+        let targetUid = '';
+        try {
+            const authUser = await admin.auth().getUserByEmail(email);
+            targetUid = authUser.uid;
+        }
+        catch (_q) {
+            targetUid = '';
+        }
+        if (targetUid) {
+            const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+            const membershipSnap = await membershipRef.get();
+            if (membershipSnap.exists) {
+                const status = String((_p = membershipSnap.get('status')) !== null && _p !== void 0 ? _p : '') ||
+                    (membershipSnap.get('active') === true ? 'active' : 'pending');
+                if (status === 'active') {
+                    throw httpsError('failed-precondition', 'El usuario ya pertenece a la organización.');
+                }
+            }
+        }
+        const inviteId = targetUid || `invite_${email}`;
+        const joinReqRef = orgRef.collection('joinRequests').doc(inviteId);
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        await joinReqRef.set({
+            userId: targetUid || null,
+            organizationId: orgId,
+            organizationName: orgName,
+            email,
+            displayName: displayName || email,
+            requestedRole,
+            status: 'pending',
+            departmentId: departmentId || null,
+            invitedBy: actorUid,
+            invitedByEmail: actorEmail,
+            invitedAt: now,
+            createdAt: now,
+            updatedAt: now,
+            source: 'orgInviteUser_v1',
+        }, { merge: true });
+        try {
+            await (0, invite_email_1.sendInviteEmail)({
+                recipientEmail: email,
+                orgName,
+                role: requestedRole,
+                inviteLink: 'https://multi.maintelligence.app/login',
+            });
+        }
+        catch (error) {
+            console.warn('Error enviando email de invitación.', error);
+        }
+        await auditLog({
+            action: 'orgInviteUser',
+            actorUid,
+            actorEmail,
+            orgId,
+            targetUid: targetUid || null,
+            targetEmail: email,
+            after: { status: 'pending', role: requestedRole },
+        });
+        res.status(200).json({ ok: true, organizationId: orgId, uid: targetUid || null, requestId: inviteId });
+    }
+    catch (err) {
+        sendHttpError(res, err);
+    }
+});
+exports.orgUpdateUserProfile = functions.https.onRequest(async (req, res) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    if (applyCors(req, res))
+        return;
+    if (req.method !== 'POST') {
+        res.status(405).json({ error: 'Method Not Allowed' });
+        return;
+    }
+    try {
+        const decoded = await requireAuthFromRequest(req);
+        const actorUid = decoded.uid;
+        const actorEmail = ((_a = decoded.email) !== null && _a !== void 0 ? _a : null);
+        const isRoot = Boolean((decoded === null || decoded === void 0 ? void 0 : decoded.root) === true || (decoded === null || decoded === void 0 ? void 0 : decoded.role) === 'root');
+        const orgId = sanitizeOrganizationId(String((_c = (_b = req.body) === null || _b === void 0 ? void 0 : _b.organizationId) !== null && _c !== void 0 ? _c : ''));
+        const targetUid = String((_e = (_d = req.body) === null || _d === void 0 ? void 0 : _d.uid) !== null && _e !== void 0 ? _e : '').trim();
+        const displayName = String((_g = (_f = req.body) === null || _f === void 0 ? void 0 : _f.displayName) !== null && _g !== void 0 ? _g : '').trim();
+        const email = String((_j = (_h = req.body) === null || _h === void 0 ? void 0 : _h.email) !== null && _j !== void 0 ? _j : '').trim().toLowerCase();
+        const departmentId = String((_l = (_k = req.body) === null || _k === void 0 ? void 0 : _k.departmentId) !== null && _l !== void 0 ? _l : '').trim();
+        await updateOrganizationUserProfile({
+            actorUid,
+            actorEmail,
+            isRoot,
+            orgId,
+            targetUid,
+            displayName,
+            email,
+            departmentId,
+        });
+        res.status(200).json({ ok: true, organizationId: orgId, uid: targetUid });
+    }
+    catch (err) {
+        sendHttpError(res, err);
+    }
+});
+exports.orgUpdateUserProfileCallable = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const isRoot = isRootClaim(context);
+    const orgId = sanitizeOrganizationId(String((_d = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _d !== void 0 ? _d : ''));
+    const targetUid = String((_e = data === null || data === void 0 ? void 0 : data.uid) !== null && _e !== void 0 ? _e : '').trim();
+    const displayName = String((_f = data === null || data === void 0 ? void 0 : data.displayName) !== null && _f !== void 0 ? _f : '').trim();
+    const email = String((_g = data === null || data === void 0 ? void 0 : data.email) !== null && _g !== void 0 ? _g : '').trim().toLowerCase();
+    const departmentId = String((_h = data === null || data === void 0 ? void 0 : data.departmentId) !== null && _h !== void 0 ? _h : '').trim();
+    await updateOrganizationUserProfile({
+        actorUid,
+        actorEmail,
+        isRoot,
+        orgId,
+        targetUid,
+        displayName,
+        email,
+        departmentId,
+    });
+    return { ok: true, organizationId: orgId, uid: targetUid };
+});
+exports.orgApproveJoinRequest = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = sanitizeOrganizationId(String((_d = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _d !== void 0 ? _d : ''));
+    const requestId = String((_f = (_e = data === null || data === void 0 ? void 0 : data.uid) !== null && _e !== void 0 ? _e : data === null || data === void 0 ? void 0 : data.requestId) !== null && _f !== void 0 ? _f : '').trim();
+    const role = (_g = normalizeRole(data === null || data === void 0 ? void 0 : data.role)) !== null && _g !== void 0 ? _g : 'operator';
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    if (!requestId)
+        throw httpsError('invalid-argument', 'uid requerido.');
+    await requireCallerSuperAdminInOrg(actorUid, orgId);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const joinReqRef = orgRef.collection('joinRequests').doc(requestId);
+    const joinReqSnap = await joinReqRef.get();
+    if (!joinReqSnap.exists)
+        throw httpsError('not-found', 'No existe la solicitud.');
+    const jr = joinReqSnap.data();
+    if (String((_h = jr === null || jr === void 0 ? void 0 : jr.status) !== null && _h !== void 0 ? _h : '') !== 'pending') {
+        throw httpsError('failed-precondition', 'La solicitud no está pendiente.');
+    }
+    let targetUid = String((_j = jr === null || jr === void 0 ? void 0 : jr.userId) !== null && _j !== void 0 ? _j : '').trim();
+    if (!targetUid && (jr === null || jr === void 0 ? void 0 : jr.email)) {
+        try {
+            targetUid = await resolveTargetUidByEmailOrUid(jr.email);
+        }
+        catch (err) {
+            throw httpsError('failed-precondition', 'El usuario invitado aún no está registrado.');
+        }
+    }
+    if (!targetUid)
+        throw httpsError('failed-precondition', 'No se pudo resolver el usuario objetivo.');
+    const orgSnap = await orgRef.get();
+    const orgName = String((_l = (_k = orgSnap.data()) === null || _k === void 0 ? void 0 : _k.name) !== null && _l !== void 0 ? _l : orgId);
+    const userRef = db.collection('users').doc(targetUid);
+    const memberRef = orgRef.collection('members').doc(targetUid);
+    const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const batch = db.batch();
+    batch.set(joinReqRef, {
+        status: 'approved',
+        approvedAt: now,
+        approvedBy: actorUid,
+        updatedAt: now,
+        source: 'orgApproveJoinRequest_v1',
+    }, { merge: true });
+    batch.set(membershipRef, {
+        role,
+        status: 'active',
+        organizationName: orgName,
+        updatedAt: now,
+        source: 'orgApproveJoinRequest_v1',
+    }, { merge: true });
+    batch.set(memberRef, {
+        uid: targetUid,
+        orgId,
+        email: String((_m = jr === null || jr === void 0 ? void 0 : jr.email) !== null && _m !== void 0 ? _m : null),
+        displayName: String((_o = jr === null || jr === void 0 ? void 0 : jr.displayName) !== null && _o !== void 0 ? _o : null),
+        role,
+        active: true,
+        updatedAt: now,
+        createdAt: (_p = jr === null || jr === void 0 ? void 0 : jr.createdAt) !== null && _p !== void 0 ? _p : now,
+        source: 'orgApproveJoinRequest_v1',
+    }, { merge: true });
+    batch.set(userRef, Object.assign({ organizationId: orgId, role, updatedAt: now, source: 'orgApproveJoinRequest_v1' }, ((jr === null || jr === void 0 ? void 0 : jr.departmentId) !== undefined ? { departmentId: jr.departmentId || null } : {})), { merge: true });
+    await batch.commit();
+    await auditLog({
+        action: 'orgApproveJoinRequest',
+        actorUid,
+        actorEmail,
+        orgId,
+        targetUid,
+        targetEmail: String((_q = jr === null || jr === void 0 ? void 0 : jr.email) !== null && _q !== void 0 ? _q : null),
+        before: { status: 'pending', role: String((_r = jr === null || jr === void 0 ? void 0 : jr.requestedRole) !== null && _r !== void 0 ? _r : null) },
+        after: { status: 'active', role },
+    });
+    return { ok: true, organizationId: orgId, uid: targetUid, role };
+});
+exports.orgRejectJoinRequest = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = sanitizeOrganizationId(String((_d = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _d !== void 0 ? _d : ''));
+    const requestId = String((_f = (_e = data === null || data === void 0 ? void 0 : data.uid) !== null && _e !== void 0 ? _e : data === null || data === void 0 ? void 0 : data.requestId) !== null && _f !== void 0 ? _f : '').trim();
+    const reason = String((_g = data === null || data === void 0 ? void 0 : data.reason) !== null && _g !== void 0 ? _g : '').trim().slice(0, 2000);
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    if (!requestId)
+        throw httpsError('invalid-argument', 'uid requerido.');
+    await requireCallerSuperAdminInOrg(actorUid, orgId);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const joinReqRef = orgRef.collection('joinRequests').doc(requestId);
+    const joinReqSnap = await joinReqRef.get();
+    if (!joinReqSnap.exists)
+        throw httpsError('not-found', 'No existe la solicitud.');
+    const jr = joinReqSnap.data();
+    let targetUid = String((_h = jr === null || jr === void 0 ? void 0 : jr.userId) !== null && _h !== void 0 ? _h : '').trim();
+    if (!targetUid && (jr === null || jr === void 0 ? void 0 : jr.email)) {
+        try {
+            targetUid = await resolveTargetUidByEmailOrUid(jr.email);
+        }
+        catch (_l) {
+            targetUid = '';
+        }
+    }
+    const membershipRef = targetUid ? db.collection('memberships').doc(`${targetUid}_${orgId}`) : null;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const batch = db.batch();
+    batch.set(joinReqRef, {
+        status: 'rejected',
+        rejectedAt: now,
+        rejectedBy: actorUid,
+        rejectReason: reason || null,
+        updatedAt: now,
+        source: 'orgRejectJoinRequest_v1',
+    }, { merge: true });
+    if (membershipRef) {
+        batch.set(membershipRef, {
+            status: 'revoked',
+            updatedAt: now,
+            source: 'orgRejectJoinRequest_v1',
+        }, { merge: true });
+    }
+    await batch.commit();
+    await auditLog({
+        action: 'orgRejectJoinRequest',
+        actorUid,
+        actorEmail,
+        orgId,
+        targetUid: targetUid || null,
+        targetEmail: String((_j = jr === null || jr === void 0 ? void 0 : jr.email) !== null && _j !== void 0 ? _j : null),
+        before: { status: String((_k = jr === null || jr === void 0 ? void 0 : jr.status) !== null && _k !== void 0 ? _k : 'pending') },
+        after: { status: 'rejected', reason: reason || null },
+    });
+    return { ok: true, organizationId: orgId, uid: targetUid || null };
+});
 exports.setRoleWithinOrg = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d;
     const actorUid = requireAuth(context);

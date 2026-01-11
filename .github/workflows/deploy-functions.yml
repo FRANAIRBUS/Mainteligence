@@ -29,6 +29,11 @@ jobs:
           cd functions
           npm ci
 
+      - name: Build Functions
+        run: |
+          cd functions
+          npm run build
+
       - name: Deploy and Config
         uses: w9jds/firebase-action@master
         with:
