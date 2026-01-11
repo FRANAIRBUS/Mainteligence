@@ -383,6 +383,8 @@ export default function ReportsPage() {
               </Badge>
             )}
           </CardHeader>
+
+          {/* ✅ overflow-hidden ya aplicado aquí */}
           <CardContent className="grid min-w-0 grid-cols-1 gap-4 overflow-hidden md:grid-cols-[repeat(3,minmax(0,1fr))]">
             <div className="space-y-2">
               <span className="text-xs font-medium text-muted-foreground sm:text-sm">
@@ -400,7 +402,7 @@ export default function ReportsPage() {
                     type="date"
                     value={startDate}
                     onChange={(event) => setStartDate(event.target.value)}
-                    className="h-9 w-full max-w-full min-w-0 text-xs sm:w-[140px] sm:text-sm"
+                    className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] sm:h-9 sm:w-[140px] sm:px-3 sm:text-sm"
                     aria-label="Fecha de inicio"
                   />
                 </div>
@@ -414,19 +416,20 @@ export default function ReportsPage() {
                     type="date"
                     value={endDate}
                     onChange={(event) => setEndDate(event.target.value)}
-                    className="h-9 w-full max-w-full min-w-0 text-xs sm:w-[140px] sm:text-sm"
+                    className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] sm:h-9 sm:w-[140px] sm:px-3 sm:text-sm"
                     aria-label="Fecha de fin"
                   />
                 </div>
               </div>
             </div>
+
             <div className="space-y-1">
               <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <MapPin className="h-4 w-4" />
                 Ubicación
               </span>
               <Select value={locationFilter} onValueChange={setLocationFilter}>
-                <SelectTrigger className="min-w-0 w-full max-w-full sm:w-[220px]">
+                <SelectTrigger className="min-w-0 w-full max-w-full h-8 px-2 text-[11px] sm:h-9 sm:w-[220px] sm:px-3 sm:text-sm">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -439,6 +442,7 @@ export default function ReportsPage() {
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-1">
               <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <Workflow className="h-4 w-4" />
@@ -448,7 +452,7 @@ export default function ReportsPage() {
                 value={departmentFilter}
                 onValueChange={setDepartmentFilter}
               >
-                <SelectTrigger className="min-w-0 w-full max-w-full sm:w-[220px]">
+                <SelectTrigger className="min-w-0 w-full max-w-full h-8 px-2 text-[11px] sm:h-9 sm:w-[220px] sm:px-3 sm:text-sm">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -491,6 +495,7 @@ export default function ReportsPage() {
               )}
             </Button>
           </CardHeader>
+
           <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
             <div className="space-y-1">
               <span className="text-sm font-medium text-muted-foreground">
@@ -505,12 +510,13 @@ export default function ReportsPage() {
                 Usa el rango global de fechas para limitar la exportación.
               </p>
             </div>
+
             <div className="space-y-1">
               <span className="text-sm font-medium text-muted-foreground">
                 Orden por creación
               </span>
               <Select value={exportSortOrder} onValueChange={setExportSortOrder}>
-                <SelectTrigger className="min-w-0">
+                <SelectTrigger className="min-w-0 w-full max-w-full h-8 px-2 text-[11px] sm:h-9 sm:w-[220px] sm:px-3 sm:text-sm">
                   <SelectValue placeholder="Selecciona orden" />
                 </SelectTrigger>
                 <SelectContent>
@@ -519,6 +525,7 @@ export default function ReportsPage() {
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-1">
               <span className="text-sm font-medium text-muted-foreground">
                 Registros incluidos
@@ -550,6 +557,7 @@ export default function ReportsPage() {
               </p>
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -566,6 +574,7 @@ export default function ReportsPage() {
               </p>
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -582,6 +591,7 @@ export default function ReportsPage() {
               </p>
             </CardContent>
           </Card>
+
           <Card>
             <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -611,6 +621,7 @@ export default function ReportsPage() {
                 Evolución diaria de incidencias cerradas y tareas completadas.
               </CardDescription>
             </CardHeader>
+
             <CardContent>
               <ChartContainer
                 className="h-[260px] sm:h-[320px]"
@@ -680,6 +691,7 @@ export default function ReportsPage() {
               Comparativa de preventivos completados en plazo y fuera de plazo.
             </CardDescription>
           </CardHeader>
+
           <CardContent className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -688,6 +700,7 @@ export default function ReportsPage() {
                   {preventiveSummaryLabel}
                 </span>
               </div>
+
               <ChartContainer
                 className="h-[200px] sm:h-[220px]"
                 config={{
