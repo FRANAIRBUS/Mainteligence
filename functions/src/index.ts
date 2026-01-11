@@ -144,6 +144,7 @@ async function updateOrganizationUserProfile({
   const memberPayload = {
     displayName: displayName || null,
     email: normalizedEmail || null,
+    departmentId: departmentId || null,
     updatedAt: now,
     source: 'orgUpdateUserProfile_v1',
   };

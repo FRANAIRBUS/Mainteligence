@@ -110,6 +110,7 @@ async function updateOrganizationUserProfile({ actorUid, actorEmail, isRoot, org
     const memberPayload = {
         displayName: displayName || null,
         email: normalizedEmail || null,
+        departmentId: departmentId || null,
         updatedAt: now,
         source: 'orgUpdateUserProfile_v1',
     };
