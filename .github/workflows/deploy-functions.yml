@@ -16,6 +16,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: studio-4350140400-a3f8f
+
     steps:
       - uses: actions/checkout@v4
 
@@ -34,10 +37,15 @@ jobs:
           cd functions
           npm run build
 
+      - name: Write Functions params env file
+        run: |
+          echo "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}" > "functions/.env.${PROJECT_ID}"
+          echo "RESEND_FROM=${{ secrets.RESEND_FROM }}" >> "functions/.env.${PROJECT_ID}"
+
       - name: Deploy and Config
         uses: w9jds/firebase-action@master
         with:
-          args: firebase deploy --only functions,firestore:rules,firestore:indexes,storage:rules
+          args: firebase deploy --project $PROJECT_ID --only functions,firestore:rules,firestore:indexes,storage:rules --non-interactive
         env:
           GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-          PROJECT_ID: studio-4350140400-a3f8f
+          PROJECT_ID: ${{ env.PROJECT_ID }}
