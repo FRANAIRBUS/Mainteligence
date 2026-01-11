@@ -23,9 +23,7 @@ export function MobileBottomNav() {
     (item): item is (typeof allItems)[number] => Boolean(item)
   );
   const displayPrimary = primaryCandidates.slice(0, 3);
-  const selected = new Set<string>();
-
-  displayPrimary.forEach((item) => selected.add(item.href));
+  const selected = new Set(displayPrimary.map((item) => item.href));
 
   for (const item of allItems) {
     if (displayPrimary.length >= 3) break;
@@ -41,7 +39,7 @@ export function MobileBottomNav() {
     <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
       <nav className="md:hidden fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="grid grid-cols-4 divide-x divide-border text-xs font-semibold text-muted-foreground">
-          {displayPrimary.slice(0, 3).map((item) => (
+          {displayPrimary.map((item) => (
             <MobileNavButton key={item.href} href={item.href} label={item.label} icon={item.icon} active={item.active} />
           ))}
           {showMore ? (
