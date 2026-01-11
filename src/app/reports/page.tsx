@@ -355,7 +355,7 @@ export default function ReportsPage() {
       title="Informes"
       description="Genera y visualiza informes detallados del mantenimiento."
     >
-      <div className="w-full max-w-full space-y-6 overflow-hidden">
+      <div className="w-full max-w-full space-y-6">
         <Card>
           <CardHeader className="gap-2 md:flex-row md:items-center md:justify-between">
             <div>
@@ -719,7 +719,7 @@ export default function ReportsPage() {
                 Cumplimiento por plantilla
               </h3>
               <div className="w-full max-w-full overflow-x-auto rounded-lg border md:overflow-visible">
-                <Table className="w-full min-w-0">
+                <Table className="w-full min-w-[640px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Plantilla</TableHead>
@@ -770,7 +770,7 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="w-full max-w-full overflow-x-auto md:overflow-visible">
-            <Table className="w-full min-w-0">
+            <Table className="w-full min-w-[560px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Operario</TableHead>
@@ -812,7 +812,7 @@ export default function ReportsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="w-full max-w-full overflow-x-auto md:overflow-visible">
-              <Table className="w-full min-w-0">
+              <Table className="w-full min-w-[720px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Ticket</TableHead>
