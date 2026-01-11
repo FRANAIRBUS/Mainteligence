@@ -61,6 +61,8 @@ const formSchema = z.object({
     .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
   email: z.string().email({ message: 'Por favor, ingrese un correo electrónico válido.' }),
   role: z.enum(roleValues),
+  // Radix Select treats empty string as "no selection" and it can be problematic
+  // to round-trip. We use a sentinel value "__none__" in the UI.
   departmentId: z.string().optional(),
 });
 
@@ -84,7 +86,7 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
       displayName: user.displayName || '',
       email: user.email || '',
       role: normalizeRole(user.role) ?? user.role ?? 'operator',
-      departmentId: user.departmentId || '',
+      departmentId: user.departmentId || '__none__',
     },
   });
 
@@ -93,7 +95,7 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
       displayName: user.displayName || '',
       email: user.email || '',
       role: normalizeRole(user.role) ?? user.role ?? 'operator',
-      departmentId: user.departmentId || '',
+      departmentId: user.departmentId || '__none__',
     });
   }, [form, user]);
 
@@ -130,12 +132,16 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
     const normalizedRole = normalizeRole(data.role) ?? data.role;
     const currentRole = normalizeRole(user.role) ?? user.role ?? 'operator';
     const roleChanged = normalizedRole !== currentRole;
+
+    const normalizedDepartmentId =
+      data.departmentId && data.departmentId !== '__none__' ? data.departmentId : null;
+
     const updateData: Record<string, unknown> = {
       organizationId,
       uid: user.id,
       displayName: data.displayName,
       email: data.email,
-      departmentId: data.departmentId || null,
+      departmentId: normalizedDepartmentId,
     };
 
     try {
@@ -255,13 +261,18 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Departamento</FormLabel>
-                <Select name={field.name} onValueChange={field.onChange} defaultValue={field.value}>
+                <Select
+                  name={field.name}
+                  onValueChange={(v) => field.onChange(v === '__none__' ? '' : v)}
+                  defaultValue={field.value || '__none__'}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Selecciona un departamento" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
+                    <SelectItem value="__none__">Sin departamento</SelectItem>
                     {departments.map((dept) => (
                       <SelectItem key={dept.id} value={dept.id}>
                         {dept.name}
