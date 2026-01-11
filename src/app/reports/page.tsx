@@ -17,6 +17,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -43,6 +44,8 @@ import {
   CheckCircle2,
   Clock,
   ClipboardList,
+  Coins,
+  Download,
   LineChart as LineChartIcon,
   MapPin,
   Workflow,
@@ -58,6 +61,12 @@ import {
   filterTickets,
   type MetricsFilters,
 } from '@/lib/reports/metrics';
+import {
+  buildReportCsv,
+  buildReportExportRows,
+  type ExportSortOrder,
+} from '@/lib/reports/export';
+import { useToast } from '@/hooks/use-toast';
 
 export default function ReportsPage() {
   const { user, loading } = useUser();
@@ -66,6 +75,9 @@ export default function ReportsPage() {
   const [endDate, setEndDate] = useState('');
   const [locationFilter, setLocationFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [exportSortOrder, setExportSortOrder] = useState<ExportSortOrder>('desc');
+  const [isExporting, setIsExporting] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -86,7 +98,7 @@ export default function ReportsPage() {
 
   if (loading || !user) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center">
+      <div className="flex h-screen w-full max-w-full items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
       </div>
     );
@@ -104,6 +116,20 @@ export default function ReportsPage() {
       (acc, department) => ({ ...acc, [department.id]: department.name }),
       {} as Record<string, string>
     );
+  }, [departments]);
+
+  const sitesById = useMemo(() => {
+    return sites.reduce((acc, site) => {
+      acc.set(site.id, site);
+      return acc;
+    }, new Map<string, Site>());
+  }, [sites]);
+
+  const departmentsById = useMemo(() => {
+    return departments.reduce((acc, department) => {
+      acc.set(department.id, department);
+      return acc;
+    }, new Map<string, Department>());
   }, [departments]);
 
   const locationOptions = useMemo(() => {
@@ -250,16 +276,88 @@ export default function ReportsPage() {
       ? `${preventiveCompliance.summary.complianceRate.toFixed(1)}%`
       : 'Sin datos';
 
+  const exportRows = useMemo(
+    () =>
+      buildReportExportRows({
+        tickets,
+        tasks,
+        usersById,
+        departmentsById,
+        sitesById,
+        filters: {
+          startDate: startDate ? new Date(`${startDate}T00:00:00`) : null,
+          endDate: endDate ? new Date(`${endDate}T23:59:59`) : null,
+          location: locationFilter === 'all' ? undefined : locationFilter,
+          departmentId: departmentFilter === 'all' ? undefined : departmentFilter,
+        },
+        sortOrder: exportSortOrder,
+      }),
+    [
+      tickets,
+      tasks,
+      usersById,
+      departmentsById,
+      sitesById,
+      startDate,
+      endDate,
+      locationFilter,
+      departmentFilter,
+      exportSortOrder,
+    ]
+  );
+
+  const handleExport = () => {
+    if (isExporting) return;
+
+    if (!exportRows.length) {
+      toast({
+        title: 'Sin registros para exportar',
+        description: 'Ajusta los filtros para obtener resultados.',
+      });
+      return;
+    }
+
+    const needsFeedback = exportRows.length >= 500;
+    const exportToast = needsFeedback
+      ? toast({
+          title: 'Generando exportación',
+          description: 'Preparando el archivo para descarga.',
+        })
+      : null;
+
+    setIsExporting(true);
+
+    const csvContent = buildReportCsv(exportRows);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `reporte-mantenimiento-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    if (exportToast) {
+      exportToast.update({
+        title: 'Exportación lista',
+        description: 'El archivo se ha descargado correctamente.',
+      });
+    }
+
+    setIsExporting(false);
+  };
+
   return (
     <AppShell
       title="Informes"
       description="Genera y visualiza informes detallados del mantenimiento."
     >
-      <div className="space-y-6">
+      <div className="w-full max-w-full space-y-6 overflow-hidden">
         <Card>
           <CardHeader className="gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <CardTitle>Panel de métricas</CardTitle>
+              <CardTitle className="text-lg sm:text-xl">Panel de métricas</CardTitle>
               <CardDescription className="mt-2">
                 Ajusta los filtros globales para analizar el desempeño.
               </CardDescription>
@@ -275,12 +373,12 @@ export default function ReportsPage() {
               </Badge>
             )}
           </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
             <div className="space-y-1">
               <span className="text-sm font-medium text-muted-foreground">
                 Rango de fechas
               </span>
-              <div className="flex flex-col gap-2 md:flex-row">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   type="date"
                   value={startDate}
@@ -337,58 +435,131 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Card>
+          <CardHeader className="gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="text-lg sm:text-xl">Exportación</CardTitle>
+              <CardDescription className="mt-2">
+                Descarga un CSV con incidencias, tareas y preventivos según los filtros
+                actuales.
+              </CardDescription>
+            </div>
+            <Button onClick={handleExport} disabled={isExporting || dataLoading}>
+              {isExporting ? (
+                <>
+                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                  Generando
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-4 w-4" />
+                  Descargar
+                </>
+              )}
+            </Button>
+          </CardHeader>
+          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+            <div className="space-y-1">
+              <span className="text-sm font-medium text-muted-foreground">
+                Rango aplicado
+              </span>
+              <p className="text-sm text-foreground">
+                {startDate || endDate
+                  ? `${startDate || 'Inicio'} → ${endDate || 'Hoy'}`
+                  : 'Sin filtro de fechas'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Usa el rango global de fechas para limitar la exportación.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <span className="text-sm font-medium text-muted-foreground">
+                Orden por creación
+              </span>
+              <Select value={exportSortOrder} onValueChange={setExportSortOrder}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona orden" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desc">Más recientes primero</SelectItem>
+                  <SelectItem value="asc">Más antiguos primero</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <span className="text-sm font-medium text-muted-foreground">
+                Registros incluidos
+              </span>
+              <p className="text-sm text-foreground">
+                {exportRows.length} elementos
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Incidencias, tareas y preventivos del rango seleccionado.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Incidencias abiertas
               </CardTitle>
               <Activity className="h-5 w-5 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{metrics.openIncidents}</div>
+              <div className="text-2xl font-semibold sm:text-3xl">
+                {metrics.openIncidents}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Incidencias en curso según filtros.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Incidencias cerradas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-emerald-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{metrics.closedIncidents}</div>
+              <div className="text-2xl font-semibold sm:text-3xl">
+                {metrics.closedIncidents}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Cierres completados en el rango.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Tareas pendientes
               </CardTitle>
               <ClipboardList className="h-5 w-5 text-amber-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{metrics.pendingTasks}</div>
+              <div className="text-2xl font-semibold sm:text-3xl">
+                {metrics.pendingTasks}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Actividades aún sin completar.
               </p>
             </CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Tareas completadas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-sky-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-semibold">{metrics.completedTasks}</div>
+              <div className="text-2xl font-semibold sm:text-3xl">
+                {metrics.completedTasks}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Tareas resueltas en el rango.
               </p>
@@ -396,7 +567,7 @@ export default function ReportsPage() {
           </Card>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -409,7 +580,7 @@ export default function ReportsPage() {
             </CardHeader>
             <CardContent>
               <ChartContainer
-                className="h-[320px]"
+                className="h-[260px] sm:h-[320px]"
                 config={{
                   closedIncidents: { label: "Incidencias", color: "hsl(var(--chart-1))" },
                   completedTasks: { label: "Tareas", color: "hsl(var(--chart-2))" },
@@ -458,7 +629,7 @@ export default function ReportsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div className="text-4xl font-semibold">{averageMttrLabel}</div>
+              <div className="text-3xl font-semibold sm:text-4xl">{averageMttrLabel}</div>
               <p className="text-sm text-muted-foreground">
                 Calculado con las fechas de creación y cierre disponibles.
               </p>
@@ -476,7 +647,7 @@ export default function ReportsPage() {
               Comparativa de preventivos completados en plazo y fuera de plazo.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>Cumplimiento global</span>
@@ -485,7 +656,7 @@ export default function ReportsPage() {
                 </span>
               </div>
               <ChartContainer
-                className="h-[220px]"
+                className="h-[200px] sm:h-[220px]"
                 config={{
                   onTime: { label: 'En plazo', color: 'hsl(var(--chart-2))' },
                   late: { label: 'Fuera de plazo', color: 'hsl(var(--chart-5))' },
@@ -525,8 +696,8 @@ export default function ReportsPage() {
               <h3 className="text-sm font-semibold text-muted-foreground">
                 Cumplimiento por plantilla
               </h3>
-              <div className="rounded-lg border">
-                <Table>
+              <div className="w-full max-w-full overflow-x-auto rounded-lg border md:overflow-visible">
+                <Table className="w-full min-w-0">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Plantilla</TableHead>
@@ -576,8 +747,8 @@ export default function ReportsPage() {
               Ranking de cierres por usuario según incidencias y tareas.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <Table>
+          <CardContent className="w-full max-w-full overflow-x-auto md:overflow-visible">
+            <Table className="w-full min-w-0">
               <TableHeader>
                 <TableRow>
                   <TableHead>Operario</TableHead>
@@ -618,7 +789,8 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Table>
+            <div className="w-full max-w-full overflow-x-auto md:overflow-visible">
+              <Table className="w-full min-w-0">
               <TableHeader>
                 <TableRow>
                   <TableHead>Ticket</TableHead>
@@ -690,7 +862,8 @@ export default function ReportsPage() {
                   </TableRow>
                 )}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
             <p className="text-xs text-muted-foreground">
               El listado prioriza los últimos cierres registrados y muestra eventos clave
               disponibles en el historial.
@@ -705,7 +878,7 @@ export default function ReportsPage() {
               Distribución de incidencias abiertas y cerradas según los filtros globales.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-6 lg:grid-cols-2">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="space-y-3">
               <div>
                 <h3 className="text-sm font-semibold text-muted-foreground">
@@ -714,7 +887,7 @@ export default function ReportsPage() {
               </div>
               {departmentIncidents.length ? (
                 <ChartContainer
-                  className="h-[280px]"
+                  className="h-[240px] sm:h-[280px]"
                   config={{
                     openIncidents: {
                       label: "Abiertas",
@@ -769,7 +942,7 @@ export default function ReportsPage() {
               </div>
               {siteIncidents.length ? (
                 <ChartContainer
-                  className="h-[280px]"
+                  className="h-[240px] sm:h-[280px]"
                   config={{
                     openIncidents: {
                       label: "Abiertas",
@@ -814,6 +987,64 @@ export default function ReportsPage() {
                   No hay incidencias para el rango seleccionado.
                 </div>
               )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Partes de trabajo (próximamente)</CardTitle>
+            <CardDescription>
+              Consolidaremos los partes de trabajo para visualizar horas y costes
+              imputados por activo y departamento.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Clock className="h-4 w-4 text-primary" />
+                    Horas imputadas
+                  </CardTitle>
+                  <CardDescription>
+                    Totales y desglose por operario, activo y periodo.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                    En desarrollo
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Coins className="h-4 w-4 text-primary" />
+                    Coste por activo/departamento
+                  </CardTitle>
+                  <CardDescription>
+                    Comparativa de costes directos e indirectos imputados.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                    En desarrollo
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="rounded-lg border border-dashed bg-muted/40 p-4">
+              <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                <Badge variant="secondary">En desarrollo</Badge>
+                Roadmap corto
+              </div>
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                <li>Integración de partes de trabajo con activos y centros de coste.</li>
+                <li>Cálculo de horas imputadas y costes por departamento.</li>
+                <li>Visualizaciones comparativas por periodos y filtros globales.</li>
+              </ul>
             </div>
           </CardContent>
         </Card>
