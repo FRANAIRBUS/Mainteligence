@@ -21,21 +21,21 @@ export function MobileBottomNav({
     return pathname.startsWith(href);
   };
 
+  // ✅ Inactivos en blanco para más contraste, activos como ahora (text-primary)
   const itemClass = (active: boolean) =>
     cn(
       "flex flex-col items-center justify-center gap-1 px-2 py-1 text-[11px] leading-none",
-      active ? "text-primary" : "text-muted-foreground"
+      active ? "text-primary" : "text-white/80"
     );
 
-  // ✅ Iconos normales: h-7
+  // ✅ Iconos normales: h-7 (inactivos blanco, activos primary)
   const iconClass = (active: boolean) =>
-    cn("h-7 w-7", active ? "text-primary" : "text-muted-foreground");
+    cn("h-7 w-7", active ? "text-primary" : "text-white/80");
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-      {/* ✅ Altura segura (Tailwind default): h-20 */}
       <div className="mx-auto flex h-20 max-w-5xl items-center justify-around px-2">
-        {/* Menú */}
+        {/* Menú (inactivo siempre, blanco) */}
         <button
           type="button"
           onClick={onOpenMenu}
@@ -52,7 +52,7 @@ export function MobileBottomNav({
           <span>Panel</span>
         </Link>
 
-        {/* ✅ Crear centrado: botón grande + icono h-8 */}
+        {/* Crear centrado */}
         <button
           type="button"
           onClick={onOpenCreate}
