@@ -78,8 +78,8 @@ export default function UserProfilePage() {
 
     setIsDeleting(true);
     try {
-      const fn = httpsCallable(getFunctions(app), 'orgRemoveUserFromOrg');
-      await fn({ organizationId, uid: userProfile.id });
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'orgRemoveUserFromOrg');
+      await fn({ organizationId, uid: userId });
       toast({
         title: 'Usuario eliminado',
         description: 'El usuario fue removido de la organización.',

@@ -864,8 +864,40 @@ export const rootPurgeOrganizationCollection = functions.https.onCall(async (dat
 
 async function requireCallerSuperAdminInOrg(actorUid: string, orgId: string) {
   const mRef = db.collection('memberships').doc(`${actorUid}_${orgId}`);
-  const mSnap = await mRef.get();
-  if (!mSnap.exists) throw httpsError('permission-denied', 'No perteneces a esa organización.');
+  let mSnap = await mRef.get();
+
+  // Backward-compat:
+  // Some historical datasets only have organizations/{orgId}/members/{uid} and NOT memberships/{uid}_{orgId}.
+  // The admin UI must still work. If the membership doc is missing, we fall back to member doc and backfill.
+  if (!mSnap.exists) {
+    const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(actorUid);
+    const memberSnap = await memberRef.get();
+    if (!memberSnap.exists) throw httpsError('permission-denied', 'No perteneces a esa organización.');
+
+    const roleFromMember = normalizeRole(memberSnap.get('role'));
+    const statusFromMember =
+      String(memberSnap.get('status') ?? '') ||
+      (memberSnap.get('active') === true ? 'active' : 'pending');
+
+    if (statusFromMember !== 'active') throw httpsError('permission-denied', 'Tu membresía no está activa.');
+
+    // Backfill minimal membership doc so future checks are consistent.
+    await mRef.set(
+      {
+        userId: actorUid,
+        organizationId: orgId,
+        role: roleFromMember ?? 'operator',
+        status: 'active',
+        primary: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'backfill_membership_from_member_v1',
+      },
+      { merge: true },
+    );
+
+    mSnap = await mRef.get();
+  }
 
   // Backward-compat: some older docs used `active: true` instead of `status: 'active'`.
   const status =
@@ -873,9 +905,10 @@ async function requireCallerSuperAdminInOrg(actorUid: string, orgId: string) {
     (mSnap.get('active') === true ? 'active' : 'pending');
 
   const role = normalizeRole(mSnap.get('role'));
-  if (status !== 'active') throw httpsError('permission-denied', 'Tu membresía no está activa.');
-  if (role !== 'super_admin') throw httpsError('permission-denied', 'Solo super_admin puede gestionar usuarios.');
+  if (status != 'active') throw httpsError('permission-denied', 'Tu membresía no está activa.');
+  if (role != 'super_admin') throw httpsError('permission-denied', 'Solo super_admin puede gestionar usuarios.');
 }
+
 
 async function resolveTargetUidByEmailOrUid(email?: string, uid?: string) {
   const u = String(uid ?? '').trim();

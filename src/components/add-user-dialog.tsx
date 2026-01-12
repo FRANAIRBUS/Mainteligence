@@ -113,9 +113,13 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       });
       return;
     }
-
     if (!organizationId) {
-      throw new Error('Critical: Missing organizationId in transaction');
+      toast({
+        variant: 'destructive',
+        title: 'Sin organización activa',
+        description: 'Selecciona una organización activa antes de invitar usuarios.',
+      });
+      return;
     }
     setIsPending(true);
 
