@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import type { Timestamp } from 'firebase/firestore';
 import Link from 'next/link';
+
 import {
   Card,
   CardContent,
@@ -39,6 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+
 import {
   Activity,
   CalendarCheck,
@@ -52,7 +54,17 @@ import {
   MapPin,
   Workflow,
 } from 'lucide-react';
-import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
+
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
 import {
   buildTrendData,
   buildOperatorPerformance,
@@ -63,30 +75,33 @@ import {
   filterTickets,
   type MetricsFilters,
 } from '@/lib/reports/metrics';
+
 import {
   buildReportCsv,
   buildReportExportRows,
   type ExportSortOrder,
 } from '@/lib/reports/export';
+
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 export default function ReportsPage() {
   const { user, loading } = useUser();
   const router = useRouter();
+
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [locationFilter, setLocationFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
-  const [exportSortOrder, setExportSortOrder] = useState<ExportSortOrder>('desc');
+  const [exportSortOrder, setExportSortOrder] =
+    useState<ExportSortOrder>('desc');
   const [isExporting, setIsExporting] = useState(false);
+
   const { toast } = useToast();
   const isMobile = useIsMobile();
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push('/login');
-    }
+    if (!loading && !user) router.push('/login');
   }, [user, loading, router]);
 
   const { data: tickets = [], loading: ticketsLoading } =
@@ -156,10 +171,8 @@ export default function ReportsPage() {
     () => filterTickets(tickets, filters, siteNameById),
     [tickets, filters, siteNameById]
   );
-  const filteredTasks = useMemo(
-    () => filterTasks(tasks, filters),
-    [tasks, filters]
-  );
+
+  const filteredTasks = useMemo(() => filterTasks(tasks, filters), [tasks, filters]);
 
   const metrics = useMemo(
     () => calculateReportMetrics(filteredTickets, filteredTasks),
@@ -172,8 +185,8 @@ export default function ReportsPage() {
   );
 
   const usersById = useMemo(() => {
-    return users.reduce((acc, user) => {
-      acc.set(user.id, user);
+    return users.reduce((acc, u) => {
+      acc.set(u.id, u);
       return acc;
     }, new Map<string, User>());
   }, [users]);
@@ -216,10 +229,7 @@ export default function ReportsPage() {
         ticket,
         closedAt: toDate(ticket.closedAt ?? ticket.updatedAt ?? ticket.createdAt),
       }))
-      .sort(
-        (a, b) =>
-          (b.closedAt?.getTime() ?? 0) - (a.closedAt?.getTime() ?? 0)
-      )
+      .sort((a, b) => (b.closedAt?.getTime() ?? 0) - (a.closedAt?.getTime() ?? 0))
       .slice(0, 8);
   }, [filteredTickets]);
 
@@ -256,10 +266,10 @@ export default function ReportsPage() {
     usersLoading;
 
   const operatorRows = operatorPerformance.map((entry) => {
-    const user = usersById.get(entry.userId);
+    const u = usersById.get(entry.userId);
     return {
       ...entry,
-      label: user?.displayName ?? user?.email ?? entry.userId,
+      label: u?.displayName ?? u?.email ?? entry.userId,
       mttrLabel:
         entry.averageMttrHours !== null
           ? `${entry.averageMttrHours.toFixed(1)} h`
@@ -363,15 +373,18 @@ export default function ReportsPage() {
       title="Informes"
       description="Genera y visualiza informes detallados del mantenimiento."
     >
-      <div className="w-full max-w-full space-y-6">
+      {/* ✅ clave: evita scroll horizontal (diferencias Safari/Chrome móvil) */}
+      <div className="w-full max-w-full overflow-x-hidden space-y-5 sm:space-y-6">
+        {/* Panel de métricas */}
         <Card>
-          <CardHeader className="gap-2 md:flex-row md:items-center md:justify-between">
+          <CardHeader className="gap-2 p-4 sm:p-6 md:flex-row md:items-center md:justify-between">
             <div>
-              <CardTitle className="text-lg sm:text-xl">Panel de métricas</CardTitle>
-              <CardDescription className="mt-2">
+              <CardTitle className="text-base sm:text-lg">Panel de métricas</CardTitle>
+              <CardDescription className="mt-1 sm:mt-2">
                 Ajusta los filtros globales para analizar el desempeño.
               </CardDescription>
             </div>
+
             {dataLoading ? (
               <Badge variant="secondary" className="w-fit">
                 <Icons.spinner className="mr-2 h-3 w-3 animate-spin" />
@@ -384,27 +397,24 @@ export default function ReportsPage() {
             )}
           </CardHeader>
 
-          {/* ✅ overflow-hidden ya aplicado aquí */}
-          <CardContent className="grid min-w-0 grid-cols-1 gap-4 overflow-hidden md:grid-cols-[repeat(3,minmax(0,1fr))]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-3 overflow-hidden p-4 pt-0 sm:gap-4 sm:p-6 sm:pt-0 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+            {/* Fechas (1 columna en móvil) */}
             <div className="space-y-2">
               <span className="text-xs font-medium text-muted-foreground sm:text-sm">
                 Fechas
               </span>
 
-              {/* Mobile-safe: always 1 column for iOS date inputs (Chrome/Safari). */}
               <div className="flex min-w-0 flex-col gap-2">
                 <div className="min-w-0 space-y-1">
                   <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:text-xs">
                     <CalendarDays className="h-3 w-3" />
                     Desde
                   </span>
-
-                  {/* Wrapper clips any weird iOS overflow */}
                   <div className="min-w-0 overflow-hidden">
                     <Input
                       type="date"
                       value={startDate}
-                      onChange={(event) => setStartDate(event.target.value)}
+                      onChange={(e) => setStartDate(e.target.value)}
                       className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] appearance-none sm:h-9 sm:w-[140px] sm:px-3 sm:text-sm"
                       aria-label="Fecha de inicio"
                     />
@@ -416,12 +426,11 @@ export default function ReportsPage() {
                     <CalendarCheck className="h-3 w-3" />
                     Hasta
                   </span>
-
                   <div className="min-w-0 overflow-hidden">
                     <Input
                       type="date"
                       value={endDate}
-                      onChange={(event) => setEndDate(event.target.value)}
+                      onChange={(e) => setEndDate(e.target.value)}
                       className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] appearance-none sm:h-9 sm:w-[140px] sm:px-3 sm:text-sm"
                       aria-label="Fecha de fin"
                     />
@@ -430,6 +439,7 @@ export default function ReportsPage() {
               </div>
             </div>
 
+            {/* Ubicación */}
             <div className="space-y-1">
               <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <MapPin className="h-4 w-4" />
@@ -450,15 +460,13 @@ export default function ReportsPage() {
               </Select>
             </div>
 
+            {/* Departamento */}
             <div className="space-y-1">
               <span className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <Workflow className="h-4 w-4" />
                 Departamento
               </span>
-              <Select
-                value={departmentFilter}
-                onValueChange={setDepartmentFilter}
-              >
+              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
                 <SelectTrigger className="min-w-0 w-full max-w-full h-8 px-2 text-[11px] sm:h-9 sm:w-[220px] sm:px-3 sm:text-sm">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
@@ -475,15 +483,16 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
+        {/* Exportación */}
         <Card>
-          <CardHeader className="gap-2 md:flex-row md:items-center md:justify-between">
+          <CardHeader className="gap-2 p-4 sm:p-6 md:flex-row md:items-center md:justify-between">
             <div>
-              <CardTitle className="text-lg sm:text-xl">Exportación</CardTitle>
-              <CardDescription className="mt-2">
-                Descarga un CSV con incidencias, tareas y preventivos según los filtros
-                actuales.
+              <CardTitle className="text-base sm:text-lg">Exportación</CardTitle>
+              <CardDescription className="mt-1 sm:mt-2">
+                Descarga un CSV con incidencias, tareas y preventivos según los filtros actuales.
               </CardDescription>
             </div>
+
             <Button
               onClick={handleExport}
               disabled={isExporting || dataLoading}
@@ -503,11 +512,9 @@ export default function ReportsPage() {
             </Button>
           </CardHeader>
 
-          <CardContent className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-3 p-4 pt-0 sm:gap-4 sm:p-6 sm:pt-0 md:grid-cols-[repeat(3,minmax(0,1fr))]">
             <div className="space-y-1">
-              <span className="text-sm font-medium text-muted-foreground">
-                Rango aplicado
-              </span>
+              <span className="text-sm font-medium text-muted-foreground">Rango aplicado</span>
               <p className="text-sm text-foreground">
                 {startDate || endDate
                   ? `${startDate || 'Inicio'} → ${endDate || 'Hoy'}`
@@ -519,9 +526,7 @@ export default function ReportsPage() {
             </div>
 
             <div className="space-y-1">
-              <span className="text-sm font-medium text-muted-foreground">
-                Orden por creación
-              </span>
+              <span className="text-sm font-medium text-muted-foreground">Orden por creación</span>
               <Select value={exportSortOrder} onValueChange={setExportSortOrder}>
                 <SelectTrigger className="min-w-0 w-full max-w-full h-8 px-2 text-[11px] sm:h-9 sm:w-[220px] sm:px-3 sm:text-sm">
                   <SelectValue placeholder="Selecciona orden" />
@@ -534,12 +539,8 @@ export default function ReportsPage() {
             </div>
 
             <div className="space-y-1">
-              <span className="text-sm font-medium text-muted-foreground">
-                Registros incluidos
-              </span>
-              <p className="text-sm text-foreground">
-                {exportRows.length} elementos
-              </p>
+              <span className="text-sm font-medium text-muted-foreground">Registros incluidos</span>
+              <p className="text-sm text-foreground">{exportRows.length} elementos</p>
               <p className="text-xs text-muted-foreground">
                 Incidencias, tareas y preventivos del rango seleccionado.
               </p>
@@ -547,80 +548,66 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {/* ✅ KPIs: en móvil SIEMPRE 1 columna; 2 columnas solo desde md */}
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+            <CardHeader className="flex flex-col gap-2 space-y-0 p-4 sm:p-6 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Incidencias abiertas
               </CardTitle>
               <Activity className="h-5 w-5 text-primary" />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold sm:text-3xl">
-                {metrics.openIncidents}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Incidencias en curso según filtros.
-              </p>
+            <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-2xl font-semibold sm:text-3xl">{metrics.openIncidents}</div>
+              <p className="text-xs text-muted-foreground">Incidencias en curso según filtros.</p>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+            <CardHeader className="flex flex-col gap-2 space-y-0 p-4 sm:p-6 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Incidencias cerradas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-emerald-500" />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold sm:text-3xl">
-                {metrics.closedIncidents}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Cierres completados en el rango.
-              </p>
+            <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-2xl font-semibold sm:text-3xl">{metrics.closedIncidents}</div>
+              <p className="text-xs text-muted-foreground">Cierres completados en el rango.</p>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+            <CardHeader className="flex flex-col gap-2 space-y-0 p-4 sm:p-6 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Tareas pendientes
               </CardTitle>
               <ClipboardList className="h-5 w-5 text-amber-500" />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold sm:text-3xl">
-                {metrics.pendingTasks}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Actividades aún sin completar.
-              </p>
+            <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-2xl font-semibold sm:text-3xl">{metrics.pendingTasks}</div>
+              <p className="text-xs text-muted-foreground">Actividades aún sin completar.</p>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader className="flex flex-col gap-2 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+            <CardHeader className="flex flex-col gap-2 space-y-0 p-4 sm:p-6 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Tareas completadas
               </CardTitle>
               <CheckCircle2 className="h-5 w-5 text-sky-500" />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold sm:text-3xl">
-                {metrics.completedTasks}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Tareas resueltas en el rango.
-              </p>
+            <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+              <div className="text-2xl font-semibold sm:text-3xl">{metrics.completedTasks}</div>
+              <p className="text-xs text-muted-foreground">Tareas resueltas en el rango.</p>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        {/* Tendencia + MTTR */}
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
                 <LineChartIcon className="h-5 w-5 text-primary" />
                 Tendencia de cierres
               </CardTitle>
@@ -628,10 +615,9 @@ export default function ReportsPage() {
                 Evolución diaria de incidencias cerradas y tareas completadas.
               </CardDescription>
             </CardHeader>
-
-            <CardContent>
+            <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
               <ChartContainer
-                className="h-[260px] sm:h-[320px]"
+                className="h-[240px] sm:h-[320px]"
                 config={{
                   closedIncidents: { label: 'Incidencias', color: 'hsl(var(--chart-1))' },
                   completedTasks: { label: 'Tareas', color: 'hsl(var(--chart-2))' },
@@ -639,47 +625,25 @@ export default function ReportsPage() {
               >
                 <LineChart data={trendData} margin={{ left: 12, right: 12 }}>
                   <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                  />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
                   <YAxis tickLine={false} axisLine={false} tickMargin={8} />
-                  <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent indicator="line" />}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="closedIncidents"
-                    stroke="var(--color-closedIncidents)"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="completedTasks"
-                    stroke="var(--color-completedTasks)"
-                    strokeWidth={2}
-                    dot={false}
-                  />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
+                  <Line type="monotone" dataKey="closedIncidents" stroke="var(--color-closedIncidents)" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="completedTasks" stroke="var(--color-completedTasks)" strokeWidth={2} dot={false} />
                 </LineChart>
               </ChartContainer>
             </CardContent>
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+            <CardHeader className="p-4 sm:p-6">
+              <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
                 <Clock className="h-5 w-5 text-primary" />
                 MTTR promedio
               </CardTitle>
-              <CardDescription>
-                Tiempo medio de resolución basado en cierres.
-              </CardDescription>
+              <CardDescription>Tiempo medio de resolución basado en cierres.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-2 p-4 pt-0 sm:p-6 sm:pt-0">
               <div className="text-3xl font-semibold sm:text-4xl">{averageMttrLabel}</div>
               <p className="text-sm text-muted-foreground">
                 Calculado con las fechas de creación y cierre disponibles.
@@ -688,9 +652,10 @@ export default function ReportsPage() {
           </Card>
         </div>
 
+        {/* Preventivos */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
               <CheckCircle2 className="h-5 w-5 text-primary" />
               Preventivos y cumplimiento
             </CardTitle>
@@ -699,56 +664,33 @@ export default function ReportsPage() {
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+          <CardContent className="grid min-w-0 grid-cols-1 gap-4 p-4 pt-0 sm:p-6 sm:pt-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <span>Cumplimiento global</span>
-                <span className="font-medium text-foreground">
-                  {preventiveSummaryLabel}
-                </span>
+                <span className="font-medium text-foreground">{preventiveSummaryLabel}</span>
               </div>
 
               <ChartContainer
-                className="h-[200px] sm:h-[220px]"
+                className="h-[190px] sm:h-[220px]"
                 config={{
                   onTime: { label: 'En plazo', color: 'hsl(var(--chart-2))' },
                   late: { label: 'Fuera de plazo', color: 'hsl(var(--chart-5))' },
                 }}
               >
-                <BarChart
-                  data={preventiveSummaryData}
-                  margin={{ left: 12, right: 12 }}
-                >
+                <BarChart data={preventiveSummaryData} margin={{ left: 12, right: 12 }}>
                   <CartesianGrid vertical={false} />
-                  <XAxis
-                    dataKey="label"
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                  />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
                   <YAxis tickLine={false} axisLine={false} tickMargin={8} />
-                  <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent indicator="dot" />}
-                  />
-                  <Bar
-                    dataKey="onTime"
-                    fill="var(--color-onTime)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="late"
-                    fill="var(--color-late)"
-                    radius={[4, 4, 0, 0]}
-                  />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
+                  <Bar dataKey="onTime" fill="var(--color-onTime)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="late" fill="var(--color-late)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ChartContainer>
             </div>
 
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-muted-foreground">
-                Cumplimiento por plantilla
-              </h3>
+              <h3 className="text-sm font-semibold text-muted-foreground">Cumplimiento por plantilla</h3>
 
               {/* Mobile cards */}
               <div className="space-y-3 md:hidden">
@@ -757,18 +699,12 @@ export default function ReportsPage() {
                     <div key={template.templateId} className="rounded-lg border p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-medium leading-tight">
-                            {template.templateName}
-                          </p>
+                          <p className="font-medium leading-tight">{template.templateName}</p>
                           <p className="mt-1 text-xs text-muted-foreground">
                             En plazo:{' '}
-                            <span className="font-medium text-foreground">
-                              {template.onTime}
-                            </span>{' '}
+                            <span className="font-medium text-foreground">{template.onTime}</span>{' '}
                             · Fuera:{' '}
-                            <span className="font-medium text-foreground">
-                              {template.late}
-                            </span>
+                            <span className="font-medium text-foreground">{template.late}</span>
                           </p>
                         </div>
                         <Badge variant="secondary" className="shrink-0">
@@ -801,15 +737,9 @@ export default function ReportsPage() {
                     {preventiveCompliance.templates.length ? (
                       preventiveCompliance.templates.map((template) => (
                         <TableRow key={template.templateId}>
-                          <TableCell className="font-medium">
-                            {template.templateName}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {template.onTime}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {template.late}
-                          </TableCell>
+                          <TableCell className="font-medium">{template.templateName}</TableCell>
+                          <TableCell className="text-right">{template.onTime}</TableCell>
+                          <TableCell className="text-right">{template.late}</TableCell>
                           <TableCell className="text-right">
                             {template.complianceRate !== null
                               ? `${template.complianceRate.toFixed(1)}%`
@@ -831,27 +761,23 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
+        {/* Operarios */}
         <Card>
-          <CardHeader>
-            <CardTitle>Rendimiento por operario</CardTitle>
-            <CardDescription>
-              Ranking de cierres por usuario según incidencias y tareas.
-            </CardDescription>
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">Rendimiento por operario</CardTitle>
+            <CardDescription>Ranking de cierres por usuario según incidencias y tareas.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 p-4 pt-0 sm:p-6 sm:pt-0">
             {/* Mobile cards */}
             <div className="space-y-3 md:hidden">
-              {operatorRows.length > 0 ? (
+              {operatorRows.length ? (
                 operatorRows.map((row) => (
                   <div key={row.userId} className="rounded-lg border p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-medium truncate">{row.label}</p>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          MTTR:{' '}
-                          <span className="font-medium text-foreground">
-                            {row.mttrLabel}
-                          </span>
+                          MTTR: <span className="font-medium text-foreground">{row.mttrLabel}</span>
                         </p>
                       </div>
                       <Badge variant="secondary" className="shrink-0">
@@ -878,16 +804,12 @@ export default function ReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {operatorRows.length > 0 ? (
+                  {operatorRows.length ? (
                     operatorRows.map((row) => (
                       <TableRow key={row.userId}>
                         <TableCell className="font-medium">{row.label}</TableCell>
-                        <TableCell className="text-right">
-                          {row.closedCount}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {row.mttrLabel}
-                        </TableCell>
+                        <TableCell className="text-right">{row.closedCount}</TableCell>
+                        <TableCell className="text-right">{row.mttrLabel}</TableCell>
                       </TableRow>
                     ))
                   ) : (
@@ -903,18 +825,17 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
+        {/* Auditoría */}
         <Card>
-          <CardHeader>
-            <CardTitle>Auditoría</CardTitle>
-            <CardDescription>
-              Últimos cierres con acceso directo al informe generado.
-            </CardDescription>
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">Auditoría</CardTitle>
+            <CardDescription>Últimos cierres con acceso directo al informe generado.</CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
             {/* Mobile cards */}
             <div className="space-y-3 md:hidden">
-              {recentClosures.length > 0 ? (
+              {recentClosures.length ? (
                 recentClosures.map(({ ticket }) => {
                   const ticketEvents =
                     (ticket as Ticket & { events?: { type?: string }[] | null }).events ?? [];
@@ -929,20 +850,14 @@ export default function ReportsPage() {
                     <div key={ticket.id} className="rounded-lg border p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 space-y-1">
-                          <Link
-                            href={`/incidents/${ticket.id}`}
-                            className="font-medium text-primary hover:underline"
-                          >
+                          <Link href={`/incidents/${ticket.id}`} className="font-medium text-primary hover:underline">
                             {ticket.displayId ?? ticket.title}
                           </Link>
 
                           {keyEvents.length > 0 && (
                             <div className="flex flex-wrap gap-2">
                               {keyEvents.map((event, index) => (
-                                <Badge
-                                  key={`${ticket.id}-${index}`}
-                                  variant="secondary"
-                                >
+                                <Badge key={`${ticket.id}-${index}`} variant="secondary">
                                   {keyEventLabels[event.type ?? ''] ?? event.type}
                                 </Badge>
                               ))}
@@ -974,9 +889,7 @@ export default function ReportsPage() {
                               Ver PDF
                             </a>
                           ) : (
-                            <span className="text-xs text-muted-foreground">
-                              Sin PDF
-                            </span>
+                            <span className="text-xs text-muted-foreground">Sin PDF</span>
                           )}
                         </div>
                       </div>
@@ -1002,35 +915,28 @@ export default function ReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {recentClosures.length > 0 ? (
+                  {recentClosures.length ? (
                     recentClosures.map(({ ticket }) => {
                       const ticketEvents =
-                        (ticket as Ticket & {
-                          events?: { type?: string }[] | null;
-                        }).events ?? [];
+                        (ticket as Ticket & { events?: { type?: string }[] | null }).events ?? [];
                       const keyEvents = ticketEvents.filter((event) => {
                         const type = event?.type;
                         return type
                           ? Object.prototype.hasOwnProperty.call(keyEventLabels, type)
                           : false;
                       });
+
                       return (
                         <TableRow key={ticket.id}>
                           <TableCell className="font-medium">
                             <div className="space-y-1">
-                              <Link
-                                href={`/incidents/${ticket.id}`}
-                                className="text-primary hover:underline"
-                              >
+                              <Link href={`/incidents/${ticket.id}`} className="text-primary hover:underline">
                                 {ticket.displayId ?? ticket.title}
                               </Link>
                               {keyEvents.length > 0 && (
                                 <div className="flex flex-wrap gap-2">
                                   {keyEvents.map((event, index) => (
-                                    <Badge
-                                      key={`${ticket.id}-${index}`}
-                                      variant="secondary"
-                                    >
+                                    <Badge key={`${ticket.id}-${index}`} variant="secondary">
                                       {keyEventLabels[event.type ?? ''] ?? event.type}
                                     </Badge>
                                   ))}
@@ -1051,9 +957,7 @@ export default function ReportsPage() {
                                 Ver PDF
                               </a>
                             ) : (
-                              <span className="text-muted-foreground">
-                                No disponible
-                              </span>
+                              <span className="text-muted-foreground">No disponible</span>
                             )}
                           </TableCell>
                         </TableRow>
@@ -1071,38 +975,32 @@ export default function ReportsPage() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              El listado prioriza los últimos cierres registrados y muestra eventos clave
-              disponibles en el historial.
+              El listado prioriza los últimos cierres registrados y muestra eventos clave disponibles en el historial.
             </p>
           </CardContent>
         </Card>
 
+        {/* Incidencias por dept/ubicación */}
         <Card>
-          <CardHeader>
-            <CardTitle>Incidencias por departamento/ubicación</CardTitle>
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">Incidencias por departamento/ubicación</CardTitle>
             <CardDescription>
               Distribución de incidencias abiertas y cerradas según los filtros globales.
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
+
+          <CardContent className="grid min-w-0 grid-cols-1 gap-4 p-4 pt-0 sm:p-6 sm:pt-0 lg:grid-cols-2">
             <div className="space-y-3">
-              <div>
-                <h3 className="text-sm font-semibold text-muted-foreground">
-                  Departamentos con más incidencias
-                </h3>
-              </div>
+              <h3 className="text-sm font-semibold text-muted-foreground">
+                Departamentos con más incidencias
+              </h3>
+
               {departmentIncidents.length ? (
                 <ChartContainer
-                  className="h-[240px] justify-start sm:h-[280px]"
+                  className="h-[230px] justify-start sm:h-[280px]"
                   config={{
-                    openIncidents: {
-                      label: 'Abiertas',
-                      color: 'hsl(var(--chart-3))',
-                    },
-                    closedIncidents: {
-                      label: 'Cerradas',
-                      color: 'hsl(var(--chart-1))',
-                    },
+                    openIncidents: { label: 'Abiertas', color: 'hsl(var(--chart-3))' },
+                    closedIncidents: { label: 'Cerradas', color: 'hsl(var(--chart-1))' },
                   }}
                 >
                   <BarChart data={departmentIncidents} margin={{ left: 0, right: 12 }}>
@@ -1120,49 +1018,29 @@ export default function ReportsPage() {
                       tickFormatter={xTickFormatterMobile}
                     />
                     <YAxis tickLine={false} axisLine={false} tickMargin={2} />
-                    <ChartTooltip
-                      cursor={false}
-                      content={<ChartTooltipContent indicator="dot" />}
-                    />
-                    <Bar
-                      dataKey="openIncidents"
-                      stackId="incidents"
-                      fill="var(--color-openIncidents)"
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Bar
-                      dataKey="closedIncidents"
-                      stackId="incidents"
-                      fill="var(--color-closedIncidents)"
-                      radius={[4, 4, 0, 0]}
-                    />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
+                    <Bar dataKey="openIncidents" stackId="incidents" fill="var(--color-openIncidents)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="closedIncidents" stackId="incidents" fill="var(--color-closedIncidents)" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ChartContainer>
               ) : (
-                <div className="flex h-[280px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                <div className="flex h-[260px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
                   No hay incidencias para el rango seleccionado.
                 </div>
               )}
             </div>
 
             <div className="space-y-3">
-              <div>
-                <h3 className="text-sm font-semibold text-muted-foreground">
-                  Ubicaciones con más incidencias
-                </h3>
-              </div>
+              <h3 className="text-sm font-semibold text-muted-foreground">
+                Ubicaciones con más incidencias
+              </h3>
+
               {siteIncidents.length ? (
                 <ChartContainer
-                  className="h-[240px] justify-start sm:h-[280px]"
+                  className="h-[230px] justify-start sm:h-[280px]"
                   config={{
-                    openIncidents: {
-                      label: 'Abiertas',
-                      color: 'hsl(var(--chart-3))',
-                    },
-                    closedIncidents: {
-                      label: 'Cerradas',
-                      color: 'hsl(var(--chart-1))',
-                    },
+                    openIncidents: { label: 'Abiertas', color: 'hsl(var(--chart-3))' },
+                    closedIncidents: { label: 'Cerradas', color: 'hsl(var(--chart-1))' },
                   }}
                 >
                   <BarChart data={siteIncidents} margin={{ left: 0, right: 12 }}>
@@ -1180,26 +1058,13 @@ export default function ReportsPage() {
                       tickFormatter={xTickFormatterMobile}
                     />
                     <YAxis tickLine={false} axisLine={false} tickMargin={2} />
-                    <ChartTooltip
-                      cursor={false}
-                      content={<ChartTooltipContent indicator="dot" />}
-                    />
-                    <Bar
-                      dataKey="openIncidents"
-                      stackId="incidents"
-                      fill="var(--color-openIncidents)"
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Bar
-                      dataKey="closedIncidents"
-                      stackId="incidents"
-                      fill="var(--color-closedIncidents)"
-                      radius={[4, 4, 0, 0]}
-                    />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="dot" />} />
+                    <Bar dataKey="openIncidents" stackId="incidents" fill="var(--color-openIncidents)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="closedIncidents" stackId="incidents" fill="var(--color-closedIncidents)" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ChartContainer>
               ) : (
-                <div className="flex h-[280px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                <div className="flex h-[260px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
                   No hay incidencias para el rango seleccionado.
                 </div>
               )}
@@ -1207,44 +1072,42 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
 
+        {/* Partes de trabajo */}
         <Card>
-          <CardHeader>
-            <CardTitle>Partes de trabajo (próximamente)</CardTitle>
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">Partes de trabajo (próximamente)</CardTitle>
             <CardDescription>
-              Consolidaremos los partes de trabajo para visualizar horas y costes
-              imputados por activo y departamento.
+              Consolidaremos los partes de trabajo para visualizar horas y costes imputados por activo y departamento.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+
+          <CardContent className="space-y-6 p-4 pt-0 sm:p-6 sm:pt-0">
             <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
               <Card>
-                <CardHeader>
+                <CardHeader className="p-4 sm:p-6">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Clock className="h-4 w-4 text-primary" />
                     Horas imputadas
                   </CardTitle>
-                  <CardDescription>
-                    Totales y desglose por operario, activo y periodo.
-                  </CardDescription>
+                  <CardDescription>Totales y desglose por operario, activo y periodo.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+                  <div className="flex h-28 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
                     En desarrollo
                   </div>
                 </CardContent>
               </Card>
+
               <Card>
-                <CardHeader>
+                <CardHeader className="p-4 sm:p-6">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Coins className="h-4 w-4 text-primary" />
                     Coste por activo/departamento
                   </CardTitle>
-                  <CardDescription>
-                    Comparativa de costes directos e indirectos imputados.
-                  </CardDescription>
+                  <CardDescription>Comparativa de costes directos e indirectos imputados.</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+                <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+                  <div className="flex h-28 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
                     En desarrollo
                   </div>
                 </CardContent>
