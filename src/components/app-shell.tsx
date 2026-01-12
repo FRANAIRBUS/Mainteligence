@@ -137,7 +137,7 @@ export function AppShell({ title, description, children, className }: AppShellPr
 
             <div className="grid gap-3 p-4 pb-6">
               <ActionLink href="/tasks/new" title="Nueva tarea" subtitle="Crea una tarea de mantenimiento." />
-              <ActionLink href="/incidents?new=true" title="Nueva incidencia" subtitle="Abre una incidencia y asígnala." />
+              <ActionLink href="/incidents" title="Nueva incidencia" subtitle="Abre una incidencia y asígnala." />
               <ActionLink href="/reports" title="Ver informes" subtitle="Accede a métricas y exportación." />
             </div>
           </div>

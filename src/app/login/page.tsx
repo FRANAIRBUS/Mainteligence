@@ -137,8 +137,25 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      router.replace('/');
+await signInWithEmailAndPassword(auth, email.trim(), password);
+
+// If this user was invited before registering, attach pending invites/memberships.
+try {
+  if (app) {
+    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'bootstrapFromInvites');
+    const res = await fn({});
+    const data = res?.data as any;
+    if (Number(data?.claimed ?? 0) > 0) {
+      router.replace('/onboarding');
+      return;
+    }
+  }
+} catch {
+  // non-blocking
+}
+
+router.replace('/');
+
     } catch (err: any) {
       setError(err?.message || 'Error al iniciar sesión');
     } finally {
@@ -151,9 +168,26 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      router.replace('/');
+const provider = new GoogleAuthProvider();
+await signInWithPopup(auth, provider);
+
+// If this Google account was invited before, claim pending invites and route accordingly.
+try {
+  if (app) {
+    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'bootstrapFromInvites');
+    const res = await fn({});
+    const data = res?.data as any;
+    if (Number(data?.claimed ?? 0) > 0) {
+      router.replace('/onboarding');
+      return;
+    }
+  }
+} catch {
+  // non-blocking
+}
+
+router.replace('/');
+
     } catch (err: any) {
       setError(err?.message || 'Error al iniciar sesión con Google');
     } finally {

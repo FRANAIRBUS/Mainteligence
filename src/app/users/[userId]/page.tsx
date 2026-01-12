@@ -87,10 +87,19 @@ export default function UserProfilePage() {
       setIsDeleteDialogOpen(false);
       router.push('/users');
     } catch (error: any) {
+      const code = (error?.code ?? error?.name ?? 'error') as string;
+      const details =
+        typeof error?.details === 'string'
+          ? error.details
+          : (error?.details?.message ?? (error?.details ? JSON.stringify(error.details) : null));
+
+      const message = String(error?.message ?? 'No se pudo eliminar el usuario.');
+      const description = details ? `[${code}] ${message} · ${details}` : `[${code}] ${message}`;
+
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error?.message || 'No se pudo eliminar el usuario.',
+        description,
       });
     } finally {
       setIsDeleting(false);

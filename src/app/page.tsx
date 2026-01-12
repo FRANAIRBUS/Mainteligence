@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import { format, isBefore, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { AlertTriangle, CalendarDays, CheckCircle2, Inbox, ListChecks } from "lucide-react";
@@ -34,7 +36,14 @@ const incidentPriorityOrder: Record<Ticket["priority"], number> = {
 };
 
 export default function Home() {
-  const { activeMembership, organizationId } = useUser();
+  const { user, activeMembership, organizationId, isRoot, loading: userLoading } = useUser();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!userLoading && user && !organizationId && !isRoot) {
+      router.replace("/onboarding");
+    }
+  }, [userLoading, user, organizationId, isRoot, router]);
   const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
   const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
     organizationId ? "tickets" : null
