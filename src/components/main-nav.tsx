@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 
 import {
   LayoutGrid,
@@ -83,18 +83,8 @@ export function useAppNavigation() {
       {
         label: "Completadas",
         items: [
-          {
-            href: "/tasks/closed",
-            label: "Tareas cerradas",
-            icon: CheckSquare,
-            active: pathname.startsWith("/tasks/closed"),
-          },
-          {
-            href: "/incidents/closed",
-            label: "Incidencias cerradas",
-            icon: Archive,
-            active: pathname.startsWith("/incidents/closed"),
-          },
+          { href: "/tasks/closed", label: "Tareas cerradas", icon: CheckSquare, active: pathname.startsWith("/tasks/closed") },
+          { href: "/incidents/closed", label: "Incidencias cerradas", icon: Archive, active: pathname.startsWith("/incidents/closed") },
         ],
       },
       {
@@ -110,27 +100,9 @@ export function useAppNavigation() {
         label: "Configuración",
         roles: ["super_admin"],
         items: [
-          {
-            href: "/settings",
-            label: "Ajustes de la Empresa",
-            icon: Settings,
-            active: pathname.startsWith("/settings"),
-            roles: ["super_admin"],
-          },
-          {
-            href: "/users",
-            label: "Usuarios y Roles",
-            icon: UserCog,
-            active: pathname.startsWith("/users"),
-            roles: ["super_admin"],
-          },
-          {
-            href: "/smart-tagging",
-            label: "Asistente IA",
-            icon: Tags,
-            active: pathname.startsWith("/smart-tagging"),
-            roles: ["super_admin"],
-          },
+          { href: "/settings", label: "Ajustes de la Empresa", icon: Settings, active: pathname.startsWith("/settings"), roles: ["super_admin"] },
+          { href: "/users", label: "Usuarios y Roles", icon: UserCog, active: pathname.startsWith("/users"), roles: ["super_admin"] },
+          { href: "/smart-tagging", label: "Asistente IA", icon: Tags, active: pathname.startsWith("/smart-tagging"), roles: ["super_admin"] },
         ],
       },
     ],
@@ -152,25 +124,15 @@ export function useAppNavigation() {
       .filter((group) => !group.roles || group.roles.includes(normalizedRole));
   }, [role, allMenuItems]);
 
-  return { menuItems, userLoading, pathname };
+  return { menuItems, userLoading };
 }
 
 type MainNavProps = {
-  /** Llamado al navegar (ideal para cerrar el drawer) */
   onNavigate?: () => void;
-  /** “drawer” recomendado para Opción A */
-  variant?: "drawer" | "inline";
 };
 
-export function MainNav({ onNavigate, variant = "drawer" }: MainNavProps) {
-  const { menuItems, userLoading, pathname } = useAppNavigation();
-
-  // Si el usuario navega (por cualquier vía) y estamos en drawer, cerramos.
-  useEffect(() => {
-    if (!onNavigate) return;
-    onNavigate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
+export function MainNav({ onNavigate }: MainNavProps) {
+  const { menuItems, userLoading } = useAppNavigation();
 
   if (userLoading) {
     return (
@@ -190,15 +152,10 @@ export function MainNav({ onNavigate, variant = "drawer" }: MainNavProps) {
     );
   }
 
-  const groupWrapperClass =
-    variant === "drawer"
-      ? "rounded-2xl border border-white/70 bg-card shadow-sm"
-      : "rounded-2xl border bg-card";
-
   return (
     <div className="flex w-full flex-col gap-4">
       {menuItems.map((group) => (
-        <div key={group.label} className={groupWrapperClass}>
+        <div key={group.label} className="rounded-2xl border border-white/70 bg-card shadow-sm">
           <div className="flex items-center justify-between px-4 py-3">
             <p className="text-sm font-semibold text-foreground">{group.label}</p>
             <span className="text-xs font-medium text-muted-foreground">
@@ -222,13 +179,9 @@ export function MainNav({ onNavigate, variant = "drawer" }: MainNavProps) {
                 <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/70 text-foreground">
                   <item.icon className="h-4 w-4" />
                 </span>
-
                 <span className="flex-1 text-left">{item.label}</span>
-
                 {item.active && (
-                  <span className="text-[10px] font-semibold uppercase text-primary">
-                    activo
-                  </span>
+                  <span className="text-[10px] font-semibold uppercase text-primary">activo</span>
                 )}
               </Link>
             ))}
