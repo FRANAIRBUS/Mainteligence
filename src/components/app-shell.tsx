@@ -26,12 +26,7 @@ export type AppShellProps = {
 };
 
 // Export named + default (por compatibilidad con tu repo)
-export function AppShell({
-  title,
-  description,
-  children,
-  className,
-}: AppShellProps) {
+export function AppShell({ title, description, children, className }: AppShellProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -43,14 +38,12 @@ export function AppShell({
 
   return (
     <div className="min-h-screen w-full">
-      {/* Header (sin cambiar la app completa, solo micro-toque violeta) */}
-      <header className="sticky top-0 z-40 w-full border-b border-violet-500/10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+      {/* Header */}
+      <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0">
             {title ? (
-              <h1 className="truncate text-base font-semibold sm:text-lg">
-                {title}
-              </h1>
+              <h1 className="truncate text-base font-semibold sm:text-lg">{title}</h1>
             ) : null}
             {description ? (
               <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
@@ -66,12 +59,7 @@ export function AppShell({
       </header>
 
       {/* Content */}
-      <main
-        className={cn(
-          "mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:pt-6",
-          className
-        )}
-      >
+      <main className={cn("mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:pt-6", className)}>
         {children}
       </main>
 
@@ -84,36 +72,30 @@ export function AppShell({
       {/* Drawer overlay: Menú */}
       {menuOpen ? (
         <div className="fixed inset-0 z-50">
-          {/* Overlay violeta industrial */}
           <div
-            className="absolute inset-0 bg-[#120818]/60 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-black/40"
             onClick={() => setMenuOpen(false)}
             aria-hidden="true"
           />
-
-          {/* Drawer lateral con borde violeta sutil */}
-          <aside className="absolute left-0 top-0 h-full w-[320px] max-w-[88vw] bg-background/95 shadow-2xl border-r border-violet-500/20">
-            <div className="flex items-center justify-between border-b border-violet-500/20 px-4 py-3">
-              <div className="text-sm font-semibold text-foreground">Menú</div>
+          <aside className="absolute left-0 top-0 h-full w-[320px] max-w-[85vw] bg-background shadow-xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="text-sm font-semibold">Menú</div>
               <button
                 type="button"
                 onClick={() => setMenuOpen(false)}
-                className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-xs text-violet-200 hover:bg-violet-500/15"
+                className="rounded-md border px-2 py-1 text-xs"
               >
                 Cerrar
               </button>
             </div>
 
-            {/* Fondo degradado violeta muy sutil */}
-            <div className="h-full overflow-y-auto p-3 pb-24 bg-gradient-to-b from-violet-500/10 via-transparent to-transparent">
+            <div className="h-full overflow-y-auto p-3 pb-24">
               <MainNav onNavigate={() => setMenuOpen(false)} />
 
-              <div className="mt-4 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3">
+              <div className="mt-4 rounded-xl border p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-foreground">
-                    Accesos rápidos
-                  </p>
-                  <span className="rounded-md bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-200 border border-violet-500/20">
+                  <p className="text-sm font-semibold">Accesos rápidos</p>
+                  <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
                     App
                   </span>
                 </div>
@@ -136,42 +118,27 @@ export function AppShell({
       {/* Drawer overlay: Crear */}
       {createOpen ? (
         <div className="fixed inset-0 z-50">
-          {/* Overlay violeta industrial */}
           <div
-            className="absolute inset-0 bg-[#120818]/60 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-black/40"
             onClick={() => setCreateOpen(false)}
             aria-hidden="true"
           />
-
-          {/* Drawer inferior con borde violeta */}
-          <div className="absolute bottom-0 left-0 right-0 bg-background/95 shadow-2xl border-t border-violet-500/20">
-            <div className="flex items-center justify-between border-b border-violet-500/20 px-4 py-3">
-              <div className="text-sm font-semibold text-foreground">Crear</div>
+          <div className="absolute bottom-0 left-0 right-0 bg-background shadow-2xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="text-sm font-semibold">Crear</div>
               <button
                 type="button"
                 onClick={() => setCreateOpen(false)}
-                className="rounded-md border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-xs text-violet-200 hover:bg-violet-500/15"
+                className="rounded-md border px-2 py-1 text-xs"
               >
                 Cerrar
               </button>
             </div>
 
-            <div className="grid gap-3 p-4 pb-6 bg-gradient-to-b from-violet-500/10 via-transparent to-transparent">
-              <ActionLink
-                href="/tasks/new"
-                title="Nueva tarea"
-                subtitle="Crea una tarea de mantenimiento."
-              />
-              <ActionLink
-                href="/incidents"
-                title="Nueva incidencia"
-                subtitle="Abre una incidencia y asígnala."
-              />
-              <ActionLink
-                href="/reports"
-                title="Ver informes"
-                subtitle="Accede a métricas y exportación."
-              />
+            <div className="grid gap-3 p-4 pb-6">
+              <ActionLink href="/tasks/new" title="Nueva tarea" subtitle="Crea una tarea de mantenimiento." />
+              <ActionLink href="/incidents" title="Nueva incidencia" subtitle="Abre una incidencia y asígnala." />
+              <ActionLink href="/reports" title="Ver informes" subtitle="Accede a métricas y exportación." />
             </div>
           </div>
         </div>
@@ -184,7 +151,7 @@ function QuickLink({ href, label }: { href: string; label: string }) {
   return (
     <Link
       href={href}
-      className="flex items-center justify-center rounded-lg border border-violet-500/20 bg-background/70 px-2 py-2 text-xs hover:bg-violet-500/10"
+      className="flex items-center justify-center rounded-lg border bg-background px-2 py-2 text-xs hover:bg-muted"
     >
       <span className="truncate">{label}</span>
     </Link>
@@ -201,11 +168,8 @@ function ActionLink({
   subtitle: string;
 }) {
   return (
-    <Link
-      href={href}
-      className="rounded-xl border border-violet-500/20 bg-background/80 p-3 hover:bg-violet-500/10"
-    >
-      <p className="text-sm font-semibold text-foreground">{title}</p>
+    <Link href={href} className="rounded-xl border bg-background p-3 hover:bg-muted">
+      <p className="text-sm font-semibold">{title}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
     </Link>
   );
