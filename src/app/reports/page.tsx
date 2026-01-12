@@ -391,7 +391,7 @@ export default function ReportsPage() {
                 Fechas
               </span>
 
-              {/* Mobile-safe: always 1 column (iOS date inputs are finicky) */}
+              {/* Mobile-safe: always 1 column for iOS date inputs (Chrome/Safari). */}
               <div className="flex min-w-0 flex-col gap-2">
                 <div className="min-w-0 space-y-1">
                   <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:text-xs">
@@ -399,12 +399,13 @@ export default function ReportsPage() {
                     Desde
                   </span>
 
+                  {/* Wrapper clips any weird iOS overflow */}
                   <div className="min-w-0 overflow-hidden">
                     <Input
                       type="date"
                       value={startDate}
                       onChange={(event) => setStartDate(event.target.value)}
-                      className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] appearance-none sm:h-9 sm:px-3 sm:text-sm"
+                      className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] appearance-none sm:h-9 sm:w-[140px] sm:px-3 sm:text-sm"
                       aria-label="Fecha de inicio"
                     />
                   </div>
@@ -421,7 +422,7 @@ export default function ReportsPage() {
                       type="date"
                       value={endDate}
                       onChange={(event) => setEndDate(event.target.value)}
-                      className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] appearance-none sm:h-9 sm:px-3 sm:text-sm"
+                      className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] appearance-none sm:h-9 sm:w-[140px] sm:px-3 sm:text-sm"
                       aria-label="Fecha de fin"
                     />
                   </div>
