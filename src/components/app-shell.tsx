@@ -1,54 +1,33 @@
 "use client";
 
 import * as React from "react";
-import dynamic from "next/dynamic";
-import { usePathname } from "next/navigation";
 import Link from "next/link";
-
+import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
+// Import robusto: admite default o named export, y si falla no rompe
+import MainNavDefault, { MainNav as MainNavNamed } from "@/components/main-nav";
+import UserNavDefault, { UserNav as UserNavNamed } from "@/components/user-nav";
+import MobileBottomNavDefault, {
+  MobileBottomNav as MobileBottomNavNamed,
+} from "@/components/mobile-bottom-nav";
 
-import {
-  ClipboardList,
-  AlertTriangle,
-  BarChart3,
-  MapPin,
-  Workflow,
-  Users,
-  Settings,
-  Plus,
-} from "lucide-react";
+const MainNav: any = (MainNavDefault ?? MainNavNamed ?? (() => null)) as any;
+const UserNav: any = (UserNavDefault ?? UserNavNamed ?? (() => null)) as any;
+const MobileBottomNav: any = (MobileBottomNavDefault ??
+  MobileBottomNavNamed ??
+  (() => null)) as any;
 
-// ✅ Robust dynamic imports: accept default OR named export
-const MainNav = dynamic(async () => {
-  const m: any = await import("@/components/main-nav");
-  return (m.default ?? m.MainNav ?? (() => null)) as any;
-}, { ssr: false });
-
-const UserNav = dynamic(async () => {
-  const m: any = await import("@/components/user-nav");
-  return (m.default ?? m.UserNav ?? (() => null)) as any;
-}, { ssr: false });
-
-const MobileBottomNav = dynamic(async () => {
-  const m: any = await import("@/components/mobile-bottom-nav");
-  return (m.default ?? m.MobileBottomNav ?? (() => null)) as any;
-}, { ssr: false });
-
-type AppShellProps = {
+export type AppShellProps = {
   title?: string;
   description?: string;
   children: React.ReactNode;
   className?: string;
 };
 
-export default function AppShell({ title, description, children, className }: AppShellProps) {
+// Export named + default (por compatibilidad con tu repo)
+export function AppShell({ title, description, children, className }: AppShellProps) {
   const pathname = usePathname();
-
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
 
@@ -59,6 +38,7 @@ export default function AppShell({ title, description, children, className }: Ap
 
   return (
     <div className="min-h-screen w-full">
+      {/* Header */}
       <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0">
@@ -78,96 +58,121 @@ export default function AppShell({ title, description, children, className }: Ap
         </div>
       </header>
 
+      {/* Content */}
       <main className={cn("mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:pt-6", className)}>
         {children}
       </main>
 
+      {/* Bottom nav */}
       <MobileBottomNav
         onOpenMenu={() => setMenuOpen(true)}
         onOpenCreate={() => setCreateOpen(true)}
       />
 
-      {/* Drawer: Menú */}
-      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-        <SheetContent side="left" className="w-[320px] p-0">
-          <SheetHeader className="p-4">
-            <SheetTitle>Menú</SheetTitle>
-          </SheetHeader>
-
-          <Separator />
-
-          <div className="p-2">
-            <MainNav onNavigate={() => setMenuOpen(false)} />
-          </div>
-
-          <Separator />
-
-          <div className="p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-semibold">Accesos rápidos</p>
-              <Badge variant="secondary">App</Badge>
+      {/* Drawer overlay: Menú */}
+      {menuOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setMenuOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="absolute left-0 top-0 h-full w-[320px] max-w-[85vw] bg-background shadow-xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="text-sm font-semibold">Menú</div>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                className="rounded-md border px-2 py-1 text-xs"
+              >
+                Cerrar
+              </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <QuickLink href="/tasks" label="Tareas" icon={<ClipboardList className="h-4 w-4" />} />
-              <QuickLink href="/incidents" label="Incidencias" icon={<AlertTriangle className="h-4 w-4" />} />
-              <QuickLink href="/reports" label="Informes" icon={<BarChart3 className="h-4 w-4" />} />
-              <QuickLink href="/settings" label="Ajustes" icon={<Settings className="h-4 w-4" />} />
-              <QuickLink href="/locations" label="Ubicaciones" icon={<MapPin className="h-4 w-4" />} />
-              <QuickLink href="/departments" label="Departamentos" icon={<Workflow className="h-4 w-4" />} />
-              <QuickLink href="/users" label="Usuarios" icon={<Users className="h-4 w-4" />} />
+            <div className="h-full overflow-y-auto p-3 pb-24">
+              <MainNav onNavigate={() => setMenuOpen(false)} />
+
+              <div className="mt-4 rounded-xl border p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-semibold">Accesos rápidos</p>
+                  <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                    App
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <QuickLink href="/tasks" label="Tareas" />
+                  <QuickLink href="/incidents" label="Incidencias" />
+                  <QuickLink href="/reports" label="Informes" />
+                  <QuickLink href="/settings" label="Ajustes" />
+                  <QuickLink href="/locations" label="Ubicaciones" />
+                  <QuickLink href="/departments" label="Departamentos" />
+                  <QuickLink href="/users" label="Usuarios" />
+                </div>
+              </div>
             </div>
-          </div>
-        </SheetContent>
-      </Sheet>
+          </aside>
+        </div>
+      ) : null}
 
-      {/* Drawer: Crear */}
-      <Sheet open={createOpen} onOpenChange={setCreateOpen}>
-        <SheetContent side="bottom" className="p-0">
-          <SheetHeader className="p-4">
-            <SheetTitle>Crear</SheetTitle>
-          </SheetHeader>
+      {/* Drawer overlay: Crear */}
+      {createOpen ? (
+        <div className="fixed inset-0 z-50">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setCreateOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="absolute bottom-0 left-0 right-0 bg-background shadow-2xl">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="text-sm font-semibold">Crear</div>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(false)}
+                className="rounded-md border px-2 py-1 text-xs"
+              >
+                Cerrar
+              </button>
+            </div>
 
-          <Separator />
-
-          <div className="p-4">
-            <div className="grid gap-3">
+            <div className="grid gap-3 p-4 pb-6">
               <ActionLink href="/tasks/new" title="Nueva tarea" subtitle="Crea una tarea de mantenimiento." />
               <ActionLink href="/incidents" title="Nueva incidencia" subtitle="Abre una incidencia y asígnala." />
               <ActionLink href="/reports" title="Ver informes" subtitle="Accede a métricas y exportación." />
             </div>
-
-            <div className="mt-4 flex justify-end">
-              <Button variant="secondary" onClick={() => setCreateOpen(false)}>
-                Cerrar
-              </Button>
-            </div>
           </div>
-        </SheetContent>
-      </Sheet>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function QuickLink({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) {
+function QuickLink({ href, label }: { href: string; label: string }) {
   return (
-    <Link href={href} className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm hover:bg-muted">
-      {icon}
+    <Link
+      href={href}
+      className="flex items-center justify-center rounded-lg border bg-background px-2 py-2 text-xs hover:bg-muted"
+    >
       <span className="truncate">{label}</span>
     </Link>
   );
 }
 
-function ActionLink({ href, title, subtitle }: { href: string; title: string; subtitle: string }) {
+function ActionLink({
+  href,
+  title,
+  subtitle,
+}: {
+  href: string;
+  title: string;
+  subtitle: string;
+}) {
   return (
-    <Link href={href} className="flex items-start gap-3 rounded-xl border bg-background p-3 hover:bg-muted">
-      <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        <Plus className="h-4 w-4" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-semibold">{title}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
-      </div>
+    <Link href={href} className="rounded-xl border bg-background p-3 hover:bg-muted">
+      <p className="text-sm font-semibold">{title}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
     </Link>
   );
 }
+
+export default AppShell;
