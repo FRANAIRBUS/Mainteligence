@@ -391,20 +391,23 @@ export default function ReportsPage() {
                 Fechas
               </span>
 
-              {/* Mobile: 2 columns to avoid iOS date input overflow */}
-              <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:w-fit sm:flex-row sm:items-end">
+              {/* Mobile-safe: always 1 column (iOS date inputs are finicky) */}
+              <div className="flex min-w-0 flex-col gap-2">
                 <div className="min-w-0 space-y-1">
                   <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:text-xs">
                     <CalendarDays className="h-3 w-3" />
                     Desde
                   </span>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(event) => setStartDate(event.target.value)}
-                    className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] sm:h-9 sm:w-[140px] sm:px-3 sm:text-sm"
-                    aria-label="Fecha de inicio"
-                  />
+
+                  <div className="min-w-0 overflow-hidden">
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(event) => setStartDate(event.target.value)}
+                      className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] appearance-none sm:h-9 sm:px-3 sm:text-sm"
+                      aria-label="Fecha de inicio"
+                    />
+                  </div>
                 </div>
 
                 <div className="min-w-0 space-y-1">
@@ -412,13 +415,16 @@ export default function ReportsPage() {
                     <CalendarCheck className="h-3 w-3" />
                     Hasta
                   </span>
-                  <Input
-                    type="date"
-                    value={endDate}
-                    onChange={(event) => setEndDate(event.target.value)}
-                    className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] sm:h-9 sm:w-[140px] sm:px-3 sm:text-sm"
-                    aria-label="Fecha de fin"
-                  />
+
+                  <div className="min-w-0 overflow-hidden">
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(event) => setEndDate(event.target.value)}
+                      className="h-8 w-full max-w-full min-w-0 px-2 text-[11px] appearance-none sm:h-9 sm:px-3 sm:text-sm"
+                      aria-label="Fecha de fin"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
