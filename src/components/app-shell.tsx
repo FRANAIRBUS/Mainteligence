@@ -1,130 +1,198 @@
 'use client';
 
-import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { Sidebar, SidebarContent, SidebarHeader, SidebarInset } from '@/components/ui/sidebar';
-import { ClientLogo } from '@/components/client-logo';
-import { MainNav } from '@/components/main-nav';
-import { MobileBottomNav } from '@/components/mobile-bottom-nav';
-import { OrgSwitcher } from '@/components/org-switcher';
-import { UserNav } from '@/components/user-nav';
-import { useUser } from '@/lib/firebase/auth/use-user';
+import * as React from 'react';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
+
+import MainNav from '@/components/main-nav';
+import UserNav from '@/components/user-nav';
+import MobileBottomNav from '@/components/mobile-bottom-nav';
+
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
+import Link from 'next/link';
+import { ClipboardList, AlertTriangle, BarChart3, MapPin, Workflow, Users, Settings, Plus } from 'lucide-react';
 
 type AppShellProps = {
-  children: React.ReactNode;
   title?: string;
   description?: string;
-  action?: React.ReactNode;
-  headerContent?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
 };
 
-export function AppShell({ children, title, description, action, headerContent }: AppShellProps) {
-  const router = useRouter();
+export function AppShell({ title, description, children, className }: AppShellProps) {
   const pathname = usePathname();
-  const { user, profile, organizationId, activeMembership, loading, isRoot } = useUser();
 
-  const isOnboarding = pathname === '/onboarding';
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [createOpen, setCreateOpen] = React.useState(false);
 
-  useEffect(() => {
-    if (loading) return;
-
-    if (!user) {
-      router.push('/login');
-      return;
-    }
-
-    if (isRoot) {
-      router.push('/root');
-      return;
-    }
-
-    // No profile yet: user hasn't completed bootstrap signup / onboarding.
-    if (!profile) {
-      if (!isOnboarding) router.push('/onboarding');
-      return;
-    }
-
-    if (profile.active === false) {
-      if (!isOnboarding) router.push('/onboarding');
-      return;
-    }
-
-    if (!organizationId) {
-      if (!isOnboarding) router.push('/onboarding');
-      return;
-    }
-
-    // Membership gate: only active members can enter the app.
-    if (!activeMembership || activeMembership.status !== 'active') {
-      if (!isOnboarding) router.push('/onboarding');
-      return;
-    }
-
-    if (isOnboarding) {
-      router.push('/');
-    }
-  }, [user, profile, organizationId, activeMembership, loading, isRoot, router, pathname, isOnboarding]);
-
-  // Full-page loading (avoid blocking onboarding flow)
-  if (loading || (!isOnboarding && user && !isRoot && !profile)) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
-          <p className="text-muted-foreground">Cargando...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Root has its own console
-  if (isRoot) return null;
+  // Cierra drawers al navegar
+  React.useEffect(() => {
+    setMenuOpen(false);
+    setCreateOpen(false);
+  }, [pathname]);
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar>
-        <SidebarHeader className="border-b p-4">
-          <div className="flex items-center justify-between gap-2">
-            <ClientLogo />
-            <div className="hidden md:block">
-              <UserNav />
+    <div className="min-h-screen w-full">
+      {/* Top header (compacto, estilo “moderno”) */}
+      <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0">
+            {title ? (
+              <h1 className="truncate text-base font-semibold sm:text-lg">{title}</h1>
+            ) : null}
+            {description ? (
+              <p className="mt-0.5 truncate text-xs text-muted-foreground sm:text-sm">
+                {description}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <UserNav />
+          </div>
+        </div>
+      </header>
+
+      {/* Content */}
+      <main
+        className={cn(
+          'mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:pt-6',
+          className
+        )}
+      >
+        {children}
+      </main>
+
+      {/* Bottom nav (siempre) */}
+      <MobileBottomNav
+        onOpenMenu={() => setMenuOpen(true)}
+        onOpenCreate={() => setCreateOpen(true)}
+      />
+
+      {/* Drawer: Menú completo */}
+      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetContent side="left" className="w-[320px] p-0">
+          <SheetHeader className="p-4">
+            <SheetTitle>Menú</SheetTitle>
+          </SheetHeader>
+
+          <Separator />
+
+          {/* Puedes mantener tu MainNav existente */}
+          <div className="p-2">
+            <MainNav />
+          </div>
+
+          <Separator />
+
+          {/* Accesos rápidos (opcional, moderno) */}
+          <div className="p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-semibold">Accesos rápidos</p>
+              <Badge variant="secondary">App</Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <QuickLink href="/tasks" label="Tareas" icon={<ClipboardList className="h-4 w-4" />} />
+              <QuickLink href="/incidents" label="Incidencias" icon={<AlertTriangle className="h-4 w-4" />} />
+              <QuickLink href="/reports" label="Informes" icon={<BarChart3 className="h-4 w-4" />} />
+              <QuickLink href="/settings" label="Ajustes" icon={<Settings className="h-4 w-4" />} />
+              <QuickLink href="/locations" label="Ubicaciones" icon={<MapPin className="h-4 w-4" />} />
+              <QuickLink href="/departments" label="Departamentos" icon={<Workflow className="h-4 w-4" />} />
+              <QuickLink href="/users" label="Usuarios" icon={<Users className="h-4 w-4" />} />
             </div>
           </div>
-          <div className="mt-4">
-            <OrgSwitcher />
+        </SheetContent>
+      </Sheet>
+
+      {/* Drawer: Crear (acciones rápidas) */}
+      <Sheet open={createOpen} onOpenChange={setCreateOpen}>
+        <SheetContent side="bottom" className="p-0">
+          <SheetHeader className="p-4">
+            <SheetTitle>Crear</SheetTitle>
+          </SheetHeader>
+          <Separator />
+
+          <div className="p-4">
+            <div className="grid gap-3">
+              {/* Tareas: existe /tasks/new en tu repo */}
+              <ActionLink
+                href="/tasks/new"
+                title="Nueva tarea"
+                subtitle="Crea una tarea de mantenimiento."
+              />
+
+              {/* Incidencias: si no tienes /incidents/new, lo enviamos a /incidents */}
+              <ActionLink
+                href="/incidents"
+                title="Nueva incidencia"
+                subtitle="Abre una incidencia y asígnala."
+              />
+
+              {/* Informes */}
+              <ActionLink
+                href="/reports"
+                title="Ver informes"
+                subtitle="Accede a métricas y exportación."
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <Button variant="secondary" onClick={() => setCreateOpen(false)}>
+                Cerrar
+              </Button>
+            </div>
           </div>
-        </SidebarHeader>
-        <SidebarContent className="px-2 pb-4">
-          <MainNav />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur-sm lg:px-6">
-          {headerContent ? (
-            <>
-              <div className="flex flex-1">{headerContent}</div>
-              <div className="ml-auto flex items-center gap-2">
-                <UserNav />
-              </div>
-            </>
-          ) : (
-            <>
-              {(title || description) && (
-                <div className="flex flex-1 flex-col gap-1">
-                  {title && <h1 className="text-lg font-semibold leading-tight md:text-xl">{title}</h1>}
-                  {description && <p className="text-sm text-muted-foreground">{description}</p>}
-                </div>
-              )}
-              <div className="ml-auto flex items-center gap-2">
-                {action}
-                <UserNav />
-              </div>
-            </>
-          )}
-        </header>
-        <main className="flex-1 p-4 pb-24 sm:p-6 sm:pb-28 md:p-8 md:pb-10">{children}</main>
-        <MobileBottomNav />
-      </SidebarInset>
+        </SheetContent>
+      </Sheet>
     </div>
+  );
+}
+
+function QuickLink({
+  href,
+  label,
+  icon,
+}: {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-sm hover:bg-muted"
+    >
+      {icon}
+      <span className="truncate">{label}</span>
+    </Link>
+  );
+}
+
+function ActionLink({
+  href,
+  title,
+  subtitle,
+}: {
+  href: string;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-start gap-3 rounded-xl border bg-background p-3 hover:bg-muted"
+    >
+      <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Plus className="h-4 w-4" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
+      </div>
+    </Link>
   );
 }
