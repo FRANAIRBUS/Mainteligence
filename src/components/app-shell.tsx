@@ -83,7 +83,7 @@ export function AppShell({ title, description, children, className }: AppShellPr
 
           {/* Puedes mantener tu MainNav existente */}
           <div className="p-2">
-            <MainNav />
+            <MainNav onNavigate={() => setMenuOpen(false)} />
           </div>
 
           <Separator />
