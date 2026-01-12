@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.setActiveOrganization = exports.bootstrapSignup = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
+exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgRemoveUserFromOrg = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.setActiveOrganization = exports.bootstrapSignup = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const assignment_email_1 = require("./assignment-email");
@@ -1104,6 +1104,53 @@ exports.orgUpdateUserProfileCallable = functions.https.onCall(async (data, conte
         displayName,
         email,
         departmentId,
+    });
+    return { ok: true, organizationId: orgId, uid: targetUid };
+});
+exports.orgRemoveUserFromOrg = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = sanitizeOrganizationId(String((_d = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _d !== void 0 ? _d : ''));
+    const targetUid = String((_e = data === null || data === void 0 ? void 0 : data.uid) !== null && _e !== void 0 ? _e : '').trim();
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    if (!targetUid)
+        throw httpsError('invalid-argument', 'uid requerido.');
+    await requireCallerSuperAdminInOrg(actorUid, orgId);
+    const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+    const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+    const userRef = db.collection('users').doc(targetUid);
+    const [memberSnap, membershipSnap, userSnap] = await Promise.all([
+        memberRef.get(),
+        membershipRef.get(),
+        userRef.get(),
+    ]);
+    if (!memberSnap.exists && !membershipSnap.exists) {
+        throw httpsError('not-found', 'El usuario objetivo no pertenece a esa organización.');
+    }
+    const batch = db.batch();
+    if (memberSnap.exists)
+        batch.delete(memberRef);
+    if (membershipSnap.exists)
+        batch.delete(membershipRef);
+    const userOrgId = String(((_f = userSnap.data()) === null || _f === void 0 ? void 0 : _f.organizationId) ?? '');
+    if (userSnap.exists && userOrgId === orgId) {
+        batch.set(userRef, {
+            organizationId: null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            source: 'orgRemoveUserFromOrg_v1',
+        }, { merge: true });
+    }
+    await batch.commit();
+    await auditLog({
+        action: 'orgRemoveUserFromOrg',
+        actorUid,
+        actorEmail,
+        orgId,
+        targetUid,
+        targetEmail: String(((_a = userSnap.data()) === null || _a === void 0 ? void 0 : _a.email) ?? null),
+        after: { removed: true },
     });
     return { ok: true, organizationId: orgId, uid: targetUid };
 });

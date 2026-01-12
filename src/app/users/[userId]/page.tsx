@@ -1,13 +1,25 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 import { AppShell } from '@/components/app-shell';
 import { EditUserForm } from '@/components/edit-user-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useCollection, useDoc, useUser } from '@/lib/firebase';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
+import { useCollection, useDoc, useFirebaseApp, useUser } from '@/lib/firebase';
 import type { Department, User } from '@/lib/firebase/models';
 
 function normalizeParam(input: string | string[] | undefined): string {
@@ -20,13 +32,18 @@ export default function UserProfilePage() {
   const params = useParams();
   const userId = normalizeParam(params?.userId);
 
+  const app = useFirebaseApp();
+  const { toast } = useToast();
   const { user, organizationId, isRoot, isSuperAdmin, loading: userLoading } = useUser();
   const canManage = Boolean(isRoot || isSuperAdmin);
+  const canRemoveUser = Boolean(isSuperAdmin);
 
   const { data: userProfile, loading: profileLoading } = useDoc<User>(userId ? `users/${userId}` : null);
   const { data: departments = [], loading: departmentsLoading } = useCollection<Department>(
     canManage ? 'departments' : null
   );
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const departmentName = useMemo(() => {
     if (!userProfile?.departmentId) return null;
@@ -39,6 +56,46 @@ export default function UserProfilePage() {
       router.replace('/onboarding');
     }
   }, [userLoading, user, organizationId, isRoot, router]);
+
+  const handleDeleteUser = async () => {
+    if (!app) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Firebase no está inicializado correctamente.',
+      });
+      return;
+    }
+
+    if (!organizationId || !userProfile) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'No se encontró la organización o el usuario.',
+      });
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const fn = httpsCallable(getFunctions(app), 'orgRemoveUserFromOrg');
+      await fn({ organizationId, uid: userProfile.id });
+      toast({
+        title: 'Usuario eliminado',
+        description: 'El usuario fue removido de la organización.',
+      });
+      setIsDeleteDialogOpen(false);
+      router.push('/users');
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error?.message || 'No se pudo eliminar el usuario.',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   if (userLoading || profileLoading || departmentsLoading) {
     return (
@@ -98,7 +155,20 @@ export default function UserProfilePage() {
             </CardHeader>
             <CardContent>
               {userProfile ? (
-                <EditUserForm user={userProfile} departments={departments} />
+                <div className="space-y-6">
+                  <EditUserForm user={userProfile} departments={departments} />
+                  {canRemoveUser && (
+                    <div className="flex justify-end">
+                      <Button
+                        variant="destructive"
+                        onClick={() => setIsDeleteDialogOpen(true)}
+                        disabled={isDeleting}
+                      >
+                        Eliminar usuario
+                      </Button>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="text-sm text-muted-foreground">
                   No se encontró la ficha del usuario seleccionado.
@@ -108,6 +178,22 @@ export default function UserProfilePage() {
           </Card>
         )}
       </div>
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Realmente quiere eliminar este usuario dentro la organización?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteUser} disabled={isDeleting}>
+              {isDeleting ? 'Eliminando...' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppShell>
   );
 }

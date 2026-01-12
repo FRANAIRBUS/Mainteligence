@@ -1376,6 +1376,64 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
   return { ok: true, organizationId: orgId, uid: targetUid };
 });
 
+export const orgRemoveUserFromOrg = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
+  const targetUid = String(data?.uid ?? '').trim();
+
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+  const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+  const userRef = db.collection('users').doc(targetUid);
+
+  const [memberSnap, membershipSnap, userSnap] = await Promise.all([
+    memberRef.get(),
+    membershipRef.get(),
+    userRef.get(),
+  ]);
+
+  if (!memberSnap.exists && !membershipSnap.exists) {
+    throw httpsError('not-found', 'El usuario objetivo no pertenece a esa organización.');
+  }
+
+  const batch = db.batch();
+  if (memberSnap.exists) batch.delete(memberRef);
+  if (membershipSnap.exists) batch.delete(membershipRef);
+
+  const userOrgId = String(userSnap.data()?.organizationId ?? '');
+  if (userSnap.exists && userOrgId === orgId) {
+    batch.set(
+      userRef,
+      {
+        organizationId: null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'orgRemoveUserFromOrg_v1',
+      },
+      { merge: true },
+    );
+  }
+
+  await batch.commit();
+
+  await auditLog({
+    action: 'orgRemoveUserFromOrg',
+    actorUid,
+    actorEmail,
+    orgId,
+    targetUid,
+    targetEmail: String(userSnap.data()?.email ?? null),
+    after: { removed: true },
+  });
+
+  return { ok: true, organizationId: orgId, uid: targetUid };
+});
+
 export const orgApproveJoinRequest = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
