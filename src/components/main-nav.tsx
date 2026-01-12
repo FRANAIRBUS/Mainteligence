@@ -76,33 +76,83 @@ export function useAppNavigation() {
             label: "Informes",
             icon: LineChart,
             active: pathname.startsWith("/reports"),
-            roles: ["super_admin", "admin", "maintenance", "dept_head_multi", "dept_head_single", "operator"],
+            roles: [
+              "super_admin",
+              "admin",
+              "maintenance",
+              "dept_head_multi",
+              "dept_head_single",
+              "operator",
+            ],
           },
         ],
       },
       {
         label: "Completadas",
         items: [
-          { href: "/tasks/closed", label: "Tareas cerradas", icon: CheckSquare, active: pathname.startsWith("/tasks/closed") },
-          { href: "/incidents/closed", label: "Incidencias cerradas", icon: Archive, active: pathname.startsWith("/incidents/closed") },
+          {
+            href: "/tasks/closed",
+            label: "Tareas cerradas",
+            icon: CheckSquare,
+            active: pathname.startsWith("/tasks/closed"),
+          },
+          {
+            href: "/incidents/closed",
+            label: "Incidencias cerradas",
+            icon: Archive,
+            active: pathname.startsWith("/incidents/closed"),
+          },
         ],
       },
       {
         label: "Gestión",
         roles: ["super_admin", "admin", "maintenance"],
         items: [
-          { href: "/locations", label: "Ubicaciones", icon: Building, active: pathname.startsWith("/locations") },
-          { href: "/departments", label: "Departamentos", icon: Archive, active: pathname.startsWith("/departments") },
-          { href: "/assets", label: "Activos", icon: HardHat, active: pathname.startsWith("/assets") },
+          {
+            href: "/locations",
+            label: "Ubicaciones",
+            icon: Building,
+            active: pathname.startsWith("/locations"),
+          },
+          {
+            href: "/departments",
+            label: "Departamentos",
+            icon: Archive,
+            active: pathname.startsWith("/departments"),
+          },
+          {
+            href: "/assets",
+            label: "Activos",
+            icon: HardHat,
+            active: pathname.startsWith("/assets"),
+          },
         ],
       },
       {
         label: "Configuración",
         roles: ["super_admin"],
         items: [
-          { href: "/settings", label: "Ajustes de la Empresa", icon: Settings, active: pathname.startsWith("/settings"), roles: ["super_admin"] },
-          { href: "/users", label: "Usuarios y Roles", icon: UserCog, active: pathname.startsWith("/users"), roles: ["super_admin"] },
-          { href: "/smart-tagging", label: "Asistente IA", icon: Tags, active: pathname.startsWith("/smart-tagging"), roles: ["super_admin"] },
+          {
+            href: "/settings",
+            label: "Ajustes de la Empresa",
+            icon: Settings,
+            active: pathname.startsWith("/settings"),
+            roles: ["super_admin"],
+          },
+          {
+            href: "/users",
+            label: "Usuarios y Roles",
+            icon: UserCog,
+            active: pathname.startsWith("/users"),
+            roles: ["super_admin"],
+          },
+          {
+            href: "/smart-tagging",
+            label: "Asistente IA",
+            icon: Tags,
+            active: pathname.startsWith("/smart-tagging"),
+            roles: ["super_admin"],
+          },
         ],
       },
     ],
@@ -118,7 +168,9 @@ export function useAppNavigation() {
     return allMenuItems
       .map((group) => ({
         ...group,
-        items: group.items.filter((item) => !item.roles || item.roles.includes(normalizedRole)),
+        items: group.items.filter(
+          (item) => !item.roles || item.roles.includes(normalizedRole)
+        ),
       }))
       .filter((group) => group.items.length > 0)
       .filter((group) => !group.roles || group.roles.includes(normalizedRole));
@@ -155,7 +207,10 @@ export function MainNav({ onNavigate }: MainNavProps) {
   return (
     <div className="flex w-full flex-col gap-4">
       {menuItems.map((group) => (
-        <div key={group.label} className="rounded-2xl border border-white/70 bg-card shadow-sm">
+        <div
+          key={group.label}
+          className="rounded-2xl border border-white/70 bg-card shadow-sm"
+        >
           <div className="flex items-center justify-between px-4 py-3">
             <p className="text-sm font-semibold text-foreground">{group.label}</p>
             <span className="text-xs font-medium text-muted-foreground">
@@ -181,7 +236,9 @@ export function MainNav({ onNavigate }: MainNavProps) {
                 </span>
                 <span className="flex-1 text-left">{item.label}</span>
                 {item.active && (
-                  <span className="text-[10px] font-semibold uppercase text-primary">activo</span>
+                  <span className="text-[10px] font-semibold uppercase text-primary">
+                    activo
+                  </span>
                 )}
               </Link>
             ))}
