@@ -3,13 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  Home,
-  ClipboardList,
-  Wrench,
-  Plus,
-  Menu,
-} from "lucide-react";
+import { Home, ClipboardList, Wrench, Plus, Menu } from "lucide-react";
 
 export type MobileBottomNavProps = {
   onOpenMenu: () => void;
@@ -30,41 +24,39 @@ export function MobileBottomNav({ onOpenMenu, onOpenCreate }: MobileBottomNavPro
       active ? "text-primary" : "text-muted-foreground"
     );
 
+  // h7 para iconos normales
   const iconClass = (active: boolean) =>
-    cn("h-6 w-6", active ? "text-primary" : "text-muted-foreground");
+    cn("h-7 w-7", active ? "text-primary" : "text-muted-foreground");
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-around px-2">
-        {/* Menú */}
+      {/* ✅ más alta para que no aplaste el contenido */}
+      <div className="mx-auto flex h-18 max-w-5xl items-center justify-around px-2">
         <button type="button" onClick={onOpenMenu} className={itemClass(false)} aria-label="Menú">
           <Menu className={iconClass(false)} />
           <span>Menú</span>
         </button>
 
-        {/* Panel */}
         <Link href="/" className={itemClass(isActive("/"))} aria-label="Panel">
           <Home className={iconClass(isActive("/"))} />
           <span>Panel</span>
         </Link>
 
-        {/* Crear (centrado entre Panel y Tareas) */}
+        {/* Crear: botón grande + icono h8 */}
         <button
           type="button"
           onClick={onOpenCreate}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md active:scale-95"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md active:scale-95"
           aria-label="Crear"
         >
-          <Plus className="h-7 w-7" />
+          <Plus className="h-8 w-8" />
         </button>
 
-        {/* Tareas */}
         <Link href="/tasks" className={itemClass(isActive("/tasks"))} aria-label="Tareas">
           <ClipboardList className={iconClass(isActive("/tasks"))} />
           <span>Tareas</span>
         </Link>
 
-        {/* Incidencias */}
         <Link href="/incidents" className={itemClass(isActive("/incidents"))} aria-label="Incidencias">
           <Wrench className={iconClass(isActive("/incidents"))} />
           <span>Incid.</span>
