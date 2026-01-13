@@ -85,7 +85,12 @@ export default function LoginPage() {
 
   // Check org existence (organizationsPublic) for UX only
   useEffect(() => {
-    if (isLoginView || !firestore) return;
+    if (isLoginView || !firestore || signupMode !== 'join') {
+      setOrgCheckStatus('idle');
+      setOrgLookupName(null);
+      setOrgLookupError(null);
+      return;
+    }
 
     if (!sanitizedOrgId) {
       setOrgCheckStatus('idle');
@@ -109,15 +114,9 @@ export default function LoginPage() {
           const data = snapshot.data() as { name?: string };
           setOrgCheckStatus('exists');
           setOrgLookupName(data?.name ?? sanitizedOrgId);
-
-          // Default to join when it exists
-          setSignupMode((m) => (m === 'create' ? m : 'join'));
         } else {
           setOrgCheckStatus('not-found');
           setOrgLookupName(null);
-
-          // Default to create when it doesn't exist
-          setSignupMode((m) => (m === 'join' ? m : 'create'));
         }
       } catch (err: any) {
         if (cancelled) return;
@@ -129,7 +128,7 @@ export default function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [firestore, isLoginView, sanitizedOrgId]);
+  }, [firestore, isLoginView, sanitizedOrgId, signupMode]);
 
   const onLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -204,7 +203,6 @@ router.replace('/');
 
     try {
       const orgId = sanitizedOrgId;
-      if (!orgId) throw new Error('Indica el ID de la organización.');
 
       if (signupMode === 'create') {
         if (orgCheckStatus === 'exists') {
@@ -214,6 +212,7 @@ router.replace('/');
           throw new Error('Para crear una nueva organización debes indicar nombre fiscal y país.');
         }
       } else {
+        if (!orgId) throw new Error('Indica el ID de la organización.');
         if (orgCheckStatus === 'not-found') {
           throw new Error('La organización no existe. Cambia a "Crear una nueva organización" o revisa el ID.');
         }
@@ -306,23 +305,6 @@ router.replace('/');
               {!isLoginView && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="organizationId">ID de organización</Label>
-                    <Input
-                      id="organizationId"
-                      placeholder="ej: mi-empresa"
-                      value={organizationId}
-                      onChange={(e) => setOrganizationId(e.target.value)}
-                      required
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      {orgCheckStatus === 'checking' && 'Comprobando organización…'}
-                      {orgCheckStatus === 'exists' && <>Organización encontrada: <b>{orgLookupName}</b></>}
-                      {orgCheckStatus === 'not-found' && 'No existe una organización con ese ID.'}
-                      {orgCheckStatus === 'error' && (orgLookupError || 'No se pudo comprobar la organización.')}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
                     <Label>¿Ya dispones de una organización o deseas crear una nueva?</Label>
                     <RadioGroup value={signupMode} onValueChange={(v) => setSignupMode(v as any)} className="gap-2">
                       <div className="flex items-center space-x-2">
@@ -335,6 +317,25 @@ router.replace('/');
                       </div>
                     </RadioGroup>
                   </div>
+
+                  {signupMode === 'join' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="organizationId">ID de organización</Label>
+                      <Input
+                        id="organizationId"
+                        placeholder="ej: mi-empresa"
+                        value={organizationId}
+                        onChange={(e) => setOrganizationId(e.target.value)}
+                        required
+                      />
+                      <div className="text-xs text-muted-foreground">
+                        {orgCheckStatus === 'checking' && 'Comprobando organización…'}
+                        {orgCheckStatus === 'exists' && <>Organización encontrada: <b>{orgLookupName}</b></>}
+                        {orgCheckStatus === 'not-found' && 'No existe una organización con ese ID.'}
+                        {orgCheckStatus === 'error' && (orgLookupError || 'No se pudo comprobar la organización.')}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-start space-x-2">
                     <Checkbox
