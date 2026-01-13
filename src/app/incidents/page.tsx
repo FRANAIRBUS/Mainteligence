@@ -314,7 +314,6 @@ export default function IncidentsPage() {
                     : 'N/A';
                   const siteLabel = sitesMap[ticket.siteId] || 'N/A';
                   const departmentLabel = departmentsMap[ticket.departmentId] || 'N/A';
-                  const ticketIdLabel = ticket.displayId || ticket.id.substring(0, 6);
                   return (
                     <div
                       key={ticket.id}
@@ -339,7 +338,6 @@ export default function IncidentsPage() {
                             {ticket.description || 'Sin descripción'}
                           </p>
                           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                            <span>ID: {ticketIdLabel}</span>
                             <span>Ubicación: {siteLabel}</span>
                             <span>Departamento: {departmentLabel}</span>
                             <span>Creado: {createdAtLabel}</span>
