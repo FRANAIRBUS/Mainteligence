@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
 import {
   collection,
@@ -111,6 +111,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [profileReady, setProfileReady] = useState(false);
+  const [membershipsReady, setMembershipsReady] = useState(false);
+  const bootstrapAttemptedRef = useRef(false);
+
   const refreshProfile = async () => {
     if (!user || !firestore) return;
     const profileRef = doc(firestore, 'users', user.uid);
@@ -126,6 +130,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setUser(u);
       setLoading(true);
       setError(null);
+      setProfileReady(false);
+      setMembershipsReady(false);
+      bootstrapAttemptedRef.current = false;
       if (u) {
         u.getIdTokenResult()
           .then((r) => setIsRoot(Boolean((r?.claims as any)?.root) || (r?.claims as any)?.role === 'root'))
@@ -154,6 +161,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const unsub = onSnapshot(
       profileRef,
       (snap) => {
+        setProfileReady(true);
         if (!snap.exists()) {
           // IMPORTANT: do not auto-create org/profile client-side.
           setProfile(null);
@@ -162,7 +170,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         }
         setProfile(snap.data() as UserProfile);
       },
-      (err) => setError(err?.message ?? 'Error leyendo perfil')
+      (err) => {
+        setProfileReady(true);
+        setError(err?.message ?? 'Error leyendo perfil');
+      }
     );
 
     return () => unsub();
@@ -178,18 +189,46 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const unsub = onSnapshot(
       q,
       (snap) => {
+        setMembershipsReady(true);
         const items = snap.docs.map(mapMembership);
         setMemberships(items);
       },
-      (err) => setError(err?.message ?? 'Error leyendo membresías')
+      (err) => {
+        setMembershipsReady(true);
+        setError(err?.message ?? 'Error leyendo membresías');
+      }
     );
 
     return () => unsub();
   }, [user, firestore]);
 
+
+// Auto-claim pending invitations when the user logs in but has no profile/memberships yet.
+useEffect(() => {
+  if (!app || !user) return;
+  if (bootstrapAttemptedRef.current) return;
+  if (!profileReady || !membershipsReady) return;
+
+  // Only attempt if the user is "orphan" (no profile doc and no memberships)
+  if (profile || memberships.length > 0) return;
+
+  bootstrapAttemptedRef.current = true;
+
+  (async () => {
+    try {
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'bootstrapFromInvites');
+      await fn({});
+    } catch (err) {
+      // Non-blocking: onboarding can still guide the user.
+      console.warn('[bootstrapFromInvites] failed', err);
+    }
+  })();
+}, [app, user, profile, memberships, profileReady, membershipsReady]);
+
   // Derive active org / active membership / role
   useEffect(() => {
     if (!user) return;
+    if (!profileReady || !membershipsReady) return;
 
     const preferredOrgId =
       typeof window !== 'undefined' ? window.localStorage.getItem('preferredOrganizationId') : null;

@@ -4,7 +4,7 @@ import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
 import type { Ticket, Site, Department, User } from '@/lib/firebase/models';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +31,6 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AddIncidentDialog } from '@/app/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
@@ -47,9 +46,6 @@ const incidentPriorityOrder: Record<Ticket['priority'], number> = {
 export default function IncidentsPage() {
   const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const router = useRouter();
-  const searchParams = useSearchParams();
-
-  const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -65,12 +61,6 @@ export default function IncidentsPage() {
     }
   }, [userLoading, user, router]);
 
-  useEffect(() => {
-    if (searchParams?.get('new') === 'true') {
-      setIsAddIncidentOpen(true);
-    }
-  }, [searchParams]);
-  
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
   const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
@@ -203,8 +193,8 @@ export default function IncidentsPage() {
         title="Incidencias"
         description="Visualiza y gestiona todas las incidencias correctivas."
         action={
-          <Button className="w-full sm:w-auto" onClick={() => setIsAddIncidentOpen(true)}>
-            Crear Incidencia
+          <Button className="w-full sm:w-auto" asChild>
+            <Link href="/incidents/new">Crear Incidencia</Link>
           </Button>
         }
       >
@@ -304,15 +294,15 @@ export default function IncidentsPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3">
               {tableDataIsLoading && (
-                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground">
                   <Icons.spinner className="h-4 w-4 animate-spin" />
                   Cargando incidencias...
                 </div>
               )}
               {!tableDataIsLoading && filteredTickets.length === 0 && (
-                <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+                <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground">
                   No se encontraron incidencias con esos filtros.
                 </div>
               )}
@@ -324,7 +314,6 @@ export default function IncidentsPage() {
                     : 'N/A';
                   const siteLabel = sitesMap[ticket.siteId] || 'N/A';
                   const departmentLabel = departmentsMap[ticket.departmentId] || 'N/A';
-                  const ticketIdLabel = ticket.displayId || ticket.id.substring(0, 6);
                   return (
                     <div
                       key={ticket.id}
@@ -349,7 +338,6 @@ export default function IncidentsPage() {
                             {ticket.description || 'Sin descripción'}
                           </p>
                           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                            <span>ID: {ticketIdLabel}</span>
                             <span>Ubicación: {siteLabel}</span>
                             <span>Departamento: {departmentLabel}</span>
                             <span>Creado: {createdAtLabel}</span>
@@ -408,7 +396,6 @@ export default function IncidentsPage() {
         </Card>
       </AppShell>
 
-      <AddIncidentDialog open={isAddIncidentOpen} onOpenChange={setIsAddIncidentOpen} />
       {editingTicket && (
         <EditIncidentDialog
           open={isEditIncidentOpen}

@@ -325,6 +325,35 @@ async function countQuery(q: FirebaseFirestore.Query) {
   }
 }
 
+function isPlainObject(value: any): value is Record<string, any> {
+  if (!value || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    // Firestore rejects undefined inside arrays; remove undefined elements.
+    return value
+      .map((v) => stripUndefinedDeep(v))
+      .filter((v) => v !== undefined) as any;
+  }
+
+  if (isPlainObject(value)) {
+    const out: any = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (v === undefined) continue;
+      const vv = stripUndefinedDeep(v as any);
+      if (vv === undefined) continue;
+      out[k] = vv;
+    }
+    return out;
+  }
+
+  // Preserve Firestore sentinel objects (Timestamp, FieldValue, GeoPoint, etc.)
+  return value;
+}
+
 async function auditLog(params: {
   action: string;
   actorUid: string;
@@ -336,11 +365,14 @@ async function auditLog(params: {
   after?: any;
   meta?: any;
 }) {
-  await db.collection('auditLogs').add({
+  const payload = stripUndefinedDeep({
     ...params,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+
+  await db.collection('auditLogs').add(payload);
 }
+
 
 /* ------------------------------
    FIRESTORE TRIGGERS (GEN1)
@@ -864,8 +896,40 @@ export const rootPurgeOrganizationCollection = functions.https.onCall(async (dat
 
 async function requireCallerSuperAdminInOrg(actorUid: string, orgId: string) {
   const mRef = db.collection('memberships').doc(`${actorUid}_${orgId}`);
-  const mSnap = await mRef.get();
-  if (!mSnap.exists) throw httpsError('permission-denied', 'No perteneces a esa organización.');
+  let mSnap = await mRef.get();
+
+  // Backward-compat:
+  // Some historical datasets only have organizations/{orgId}/members/{uid} and NOT memberships/{uid}_{orgId}.
+  // The admin UI must still work. If the membership doc is missing, we fall back to member doc and backfill.
+  if (!mSnap.exists) {
+    const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(actorUid);
+    const memberSnap = await memberRef.get();
+    if (!memberSnap.exists) throw httpsError('permission-denied', 'No perteneces a esa organización.');
+
+    const roleFromMember = normalizeRole(memberSnap.get('role'));
+    const statusFromMember =
+      String(memberSnap.get('status') ?? '') ||
+      (memberSnap.get('active') === true ? 'active' : 'pending');
+
+    if (statusFromMember !== 'active') throw httpsError('permission-denied', 'Tu membresía no está activa.');
+
+    // Backfill minimal membership doc so future checks are consistent.
+    await mRef.set(
+      {
+        userId: actorUid,
+        organizationId: orgId,
+        role: roleFromMember ?? 'operator',
+        status: 'active',
+        primary: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'backfill_membership_from_member_v1',
+      },
+      { merge: true },
+    );
+
+    mSnap = await mRef.get();
+  }
 
   // Backward-compat: some older docs used `active: true` instead of `status: 'active'`.
   const status =
@@ -873,9 +937,10 @@ async function requireCallerSuperAdminInOrg(actorUid: string, orgId: string) {
     (mSnap.get('active') === true ? 'active' : 'pending');
 
   const role = normalizeRole(mSnap.get('role'));
-  if (status !== 'active') throw httpsError('permission-denied', 'Tu membresía no está activa.');
-  if (role !== 'super_admin') throw httpsError('permission-denied', 'Solo super_admin puede gestionar usuarios.');
+  if (status != 'active') throw httpsError('permission-denied', 'Tu membresía no está activa.');
+  if (role != 'super_admin') throw httpsError('permission-denied', 'Solo super_admin puede gestionar usuarios.');
 }
+
 
 async function resolveTargetUidByEmailOrUid(email?: string, uid?: string) {
   const u = String(uid ?? '').trim();
@@ -1190,6 +1255,143 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   return { ok: true, mode: 'pending', organizationId };
 });
 
+
+
+export const bootstrapFromInvites = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+
+  const authUser = await admin.auth().getUser(uid).catch(() => null);
+  const email = (authUser?.email ?? String(data?.email ?? '')).trim().toLowerCase();
+  const displayName = (authUser?.displayName ?? String(data?.displayName ?? '').trim()) || null;
+
+  // Always ensure at least a minimal user profile exists.
+  const userRef = db.collection('users').doc(uid);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  if (!email) {
+    await userRef.set(
+      {
+        displayName,
+        updatedAt: now,
+        source: 'bootstrapFromInvites_v1',
+      },
+      { merge: true }
+    );
+    return { ok: true, claimed: 0, organizations: [] };
+  }
+
+  // Look for pending joinRequests created by orgInviteUser (docId: invite_<email>) across all orgs.
+  // We only filter by email in Firestore to avoid requiring composite indexes; status is filtered in-memory.
+  const cg = db.collectionGroup('joinRequests').where('email', '==', email).limit(20);
+  const snap = await cg.get();
+
+  const pending = snap.docs.filter((d) => String(d.get('status') ?? 'pending') === 'pending');
+
+  if (pending.length === 0) {
+    await userRef.set(
+      {
+        email,
+        displayName,
+        updatedAt: now,
+        source: 'bootstrapFromInvites_v1',
+      },
+      { merge: true }
+    );
+    return { ok: true, claimed: 0, organizations: [] };
+  }
+
+  const batch = db.batch();
+  const orgIds: string[] = [];
+
+  for (const jrSnap of pending) {
+    // jrSnap.ref is organizations/{orgId}/joinRequests/{requestId}
+    const orgRef = jrSnap.ref.parent.parent;
+    const orgId = sanitizeOrganizationId(String(jrSnap.get('organizationId') ?? orgRef?.id ?? ''));
+
+    if (!orgId) continue;
+    orgIds.push(orgId);
+
+    const orgName = String(jrSnap.get('organizationName') ?? orgId);
+    const requestedRole: Role = normalizeRole(jrSnap.get('requestedRole')) ?? normalizeRole(jrSnap.get('role')) ?? 'operator';
+    const departmentId = String(jrSnap.get('departmentId') ?? '').trim() || null;
+    const inviteId = jrSnap.id;
+
+    const joinReqRef = db.collection('organizations').doc(orgId).collection('joinRequests').doc(uid);
+    batch.set(
+      joinReqRef,
+      stripUndefinedDeep({
+        userId: uid,
+        organizationId: orgId,
+        organizationName: orgName,
+        email,
+        displayName: String(jrSnap.get('displayName') ?? displayName ?? email),
+        requestedRole,
+        status: 'pending',
+        departmentId,
+        invitedBy: jrSnap.get('invitedBy') ?? null,
+        invitedByEmail: jrSnap.get('invitedByEmail') ?? null,
+        invitedAt: jrSnap.get('invitedAt') ?? null,
+        createdAt: jrSnap.get('createdAt') ?? now,
+        updatedAt: now,
+        source: 'bootstrapFromInvites_v1',
+      }),
+      { merge: true }
+    );
+
+    // Migrate legacy invite doc (invite_<email>) to docId == uid for consistent approval flows.
+    if (inviteId !== uid) {
+      batch.delete(jrSnap.ref);
+    }
+
+    // Create/merge a pending membership so the user sees the organization in the UI immediately.
+    const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+    batch.set(
+      membershipRef,
+      stripUndefinedDeep({
+        userId: uid,
+        organizationId: orgId,
+        organizationName: orgName,
+        role: requestedRole,
+        status: 'pending',
+        departmentId,
+        primary: false,
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapFromInvites_v1',
+      }),
+      { merge: true }
+    );
+  }
+
+  const uniqueOrgIds = Array.from(new Set(orgIds)).filter(Boolean);
+
+  // If there is exactly one pending org, set it as the default active org in the user profile.
+  const userPatch: any = {
+    email,
+    displayName,
+    updatedAt: now,
+    source: 'bootstrapFromInvites_v1',
+  };
+  if (uniqueOrgIds.length === 1) {
+    userPatch.organizationId = uniqueOrgIds[0];
+  }
+
+  batch.set(userRef, stripUndefinedDeep(userPatch), { merge: true });
+
+  await batch.commit();
+
+  await auditLog({
+    action: 'bootstrapFromInvites',
+    actorUid: uid,
+    actorEmail: email,
+    orgId: uniqueOrgIds.length === 1 ? uniqueOrgIds[0] : null,
+    meta: { claimed: uniqueOrgIds.length, organizations: uniqueOrgIds },
+  });
+
+  return { ok: true, claimed: uniqueOrgIds.length, organizations: uniqueOrgIds };
+});
+
+
 export const setActiveOrganization = functions.https.onCall(async (data, context) => {
   const uid = requireAuth(context);
   const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
@@ -1377,6 +1579,71 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
   });
 
   return { ok: true, organizationId: orgId, uid: targetUid };
+});
+
+export const orgRemoveUserFromOrg = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const isRoot = isRootClaim(context);
+
+  const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
+  const targetUid = String(data?.uid ?? '').trim();
+
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
+
+  if (!isRoot) {
+    await requireCallerSuperAdminInOrg(actorUid, orgId);
+  }
+
+  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+  const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+  const userRef = db.collection('users').doc(targetUid);
+
+  const [memberSnap, membershipSnap, userSnap] = await Promise.all([
+    memberRef.get(),
+    membershipRef.get(),
+    userRef.get(),
+  ]);
+
+  if (!memberSnap.exists && !membershipSnap.exists) {
+    throw httpsError('not-found', 'El usuario objetivo no pertenece a esa organización.');
+  }
+
+  const batch = db.batch();
+  if (memberSnap.exists) batch.delete(memberRef);
+  if (membershipSnap.exists) batch.delete(membershipRef);
+
+  const userOrgId = String(userSnap.data()?.organizationId ?? '');
+  if (userSnap.exists && userOrgId === orgId) {
+    batch.set(
+      userRef,
+      {
+        organizationId: null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        source: 'orgRemoveUserFromOrg_v1',
+      },
+      { merge: true },
+    );
+  }
+
+  await batch.commit();
+
+  try {
+  await auditLog({
+    action: 'orgRemoveUserFromOrg',
+    actorUid,
+    actorEmail,
+    orgId,
+    targetUid,
+    targetEmail: String(userSnap.data()?.email ?? null),
+    after: { removed: true },
+  });
+} catch (err) {
+  console.error('[orgRemoveUserFromOrg] auditLog failed', err);
+}
+
+return { ok: true, organizationId: orgId, uid: targetUid };
 });
 
 export const orgApproveJoinRequest = functions.https.onCall(async (data, context) => {
