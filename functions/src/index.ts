@@ -4,6 +4,7 @@ import type { Request, Response } from 'express';
 import { sendAssignmentEmail } from './assignment-email';
 import { sendInviteEmail } from './invite-email';
 
+
 admin.initializeApp();
 const db = admin.firestore();
 
