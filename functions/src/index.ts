@@ -1138,6 +1138,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         settings: {
           allowGuestAccess: false,
           maxUsers: 50,
+          inviteOnly: false,
         },
         createdAt: now,
         updatedAt: now,
@@ -1222,8 +1223,22 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
 
   const orgData = orgSnap.data() as any;
   const orgName = String(orgData?.name ?? organizationId);
+  const inviteOnly = Boolean(orgData?.settings?.inviteOnly === true);
 
-  const joinReqRef = orgRef.collection('joinRequests').doc(uid);
+  const inviteByUidRef = orgRef.collection('joinRequests').doc(uid);
+  const inviteByEmailRef = email ? orgRef.collection('joinRequests').doc(`invite_${email}`) : null;
+  const [inviteByUidSnap, inviteByEmailSnap] = await Promise.all([
+    inviteByUidRef.get(),
+    inviteByEmailRef ? inviteByEmailRef.get() : Promise.resolve(null),
+  ]);
+  const existingInviteSnap =
+    inviteByUidSnap.exists ? inviteByUidSnap : inviteByEmailSnap?.exists ? inviteByEmailSnap : null;
+
+  if (inviteOnly && !existingInviteSnap) {
+    throw httpsError('failed-precondition', 'Esta organización solo admite altas por invitación.');
+  }
+
+  const joinReqRef = existingInviteSnap?.ref ?? inviteByUidRef;
 
   const batch = db.batch();
 
@@ -1259,22 +1274,23 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
     { merge: true },
   );
 
-  batch.set(
-    joinReqRef,
-    {
-      userId: uid,
-      organizationId,
-      organizationName: orgName,
-      email: email || null,
-      displayName: displayName || email || 'Usuario',
-      requestedRole,
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-      source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+  const joinReqPayload: Record<string, unknown> = {
+    userId: uid,
+    organizationId,
+    organizationName: orgName,
+    email: email || null,
+    displayName: displayName || email || 'Usuario',
+    requestedRole,
+    status: 'pending',
+    updatedAt: now,
+  };
+
+  if (!existingInviteSnap) {
+    joinReqPayload.createdAt = now;
+    joinReqPayload.source = 'bootstrapSignup_v1';
+  }
+
+  batch.set(joinReqRef, joinReqPayload, { merge: true });
 
   await batch.commit();
 
@@ -1343,6 +1359,7 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       settings: {
         allowGuestAccess: false,
         maxUsers: 50,
+        inviteOnly: false,
       },
       createdAt: now,
       updatedAt: now,
