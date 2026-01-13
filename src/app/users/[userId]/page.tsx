@@ -36,7 +36,7 @@ export default function UserProfilePage() {
   const { toast } = useToast();
   const { user, organizationId, isRoot, isSuperAdmin, loading: userLoading } = useUser();
   const canManage = Boolean(isRoot || isSuperAdmin);
-  const canRemoveUser = Boolean(isSuperAdmin);
+  const canRemoveUser = Boolean(isSuperAdmin || isRoot);
 
   const { data: userProfile, loading: profileLoading } = useDoc<User>(userId ? `users/${userId}` : null);
   const { data: departments = [], loading: departmentsLoading } = useCollection<Department>(

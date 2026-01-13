@@ -1581,6 +1581,7 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
 export const orgRemoveUserFromOrg = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const isRoot = isRootClaim(context);
 
   const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
   const targetUid = String(data?.uid ?? '').trim();
@@ -1588,7 +1589,9 @@ export const orgRemoveUserFromOrg = functions.https.onCall(async (data, context)
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
   if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
 
-  await requireCallerSuperAdminInOrg(actorUid, orgId);
+  if (!isRoot) {
+    await requireCallerSuperAdminInOrg(actorUid, orgId);
+  }
 
   const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
   const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
