@@ -244,7 +244,7 @@ useEffect(() => {
     const am = nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
     setActiveMembership(am);
 
-    const derivedRole = am?.status === 'active' ? (am.role ?? 'operator') : ((profile as any)?.role ?? 'operator');
+    const derivedRole = am?.status === 'active' ? (am.role ?? 'operator') : null;
     setRole(derivedRole);
 
     setLoading(false);

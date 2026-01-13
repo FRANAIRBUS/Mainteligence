@@ -1233,8 +1233,8 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       organizationId,
       email: email || null,
       displayName: displayName || email || 'Usuario',
-      role: requestedRole,
-      active: true,
+      role: 'pending',
+      active: false,
       updatedAt: now,
       createdAt: now,
       source: 'bootstrapSignup_v1',
@@ -1704,6 +1704,7 @@ export const orgApproveJoinRequest = functions.https.onCall(async (data, context
     {
       organizationId: orgId,
       role,
+      active: true,
       updatedAt: now,
       source: 'orgApproveJoinRequest_v1',
       ...(jr?.departmentId !== undefined ? { departmentId: jr.departmentId || null } : {}),
@@ -1757,6 +1758,8 @@ export const orgRejectJoinRequest = functions.https.onCall(async (data, context)
   }
 
   const membershipRef = targetUid ? db.collection('memberships').doc(`${targetUid}_${orgId}`) : null;
+  const userRef = targetUid ? db.collection('users').doc(targetUid) : null;
+  const userSnap = userRef ? await userRef.get() : null;
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   const batch = db.batch();
@@ -1784,6 +1787,23 @@ export const orgRejectJoinRequest = functions.https.onCall(async (data, context)
       },
       { merge: true },
     );
+  }
+
+  if (userRef && userSnap?.exists) {
+    const userOrgId = String((userSnap.data() as any)?.organizationId ?? '');
+    if (userOrgId === orgId) {
+      batch.set(
+        userRef,
+        {
+          organizationId: null,
+          role: 'pending',
+          active: false,
+          updatedAt: now,
+          source: 'orgRejectJoinRequest_v1',
+        },
+        { merge: true },
+      );
+    }
   }
 
   await batch.commit();
