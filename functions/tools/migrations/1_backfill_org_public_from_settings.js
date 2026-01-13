@@ -42,6 +42,7 @@ function parseArgs(argv) {
     logoUrl: s.logoUrl || null,
     // Si tienes name en algún sitio, añádelo aquí
     name: s.name || orgId,
+    nameLower: String(s.name || orgId).trim().toLowerCase(),
     updatedAt: FieldValue.serverTimestamp(),
     createdAt: FieldValue.serverTimestamp(),
     source: "migration_backfill_from_settings_v1",

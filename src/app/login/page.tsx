@@ -8,23 +8,21 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ClientLogo } from '@/components/client-logo';
 
-import { useAuth, useFirestore, useUser, useFirebaseApp } from '@/lib/firebase';
+import { useAuth, useUser, useFirebaseApp } from '@/lib/firebase';
 import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   signInWithPopup,
   createUserWithEmailAndPassword,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
-type OrgCheckStatus = 'idle' | 'checking' | 'exists' | 'not-found' | 'error';
+type OrgCheckStatus = 'idle' | 'checking' | 'exists' | 'available' | 'error';
 
 export default function LoginPage() {
   const auth = useAuth();
-  const firestore = useFirestore();
   const app = useFirebaseApp();
   const router = useRouter();
   const { user } = useUser();
@@ -43,6 +41,11 @@ export default function LoginPage() {
   const [orgCheckStatus, setOrgCheckStatus] = useState<OrgCheckStatus>('idle');
   const [orgLookupName, setOrgLookupName] = useState<string | null>(null);
   const [orgLookupError, setOrgLookupError] = useState<string | null>(null);
+  const [orgNormalizedId, setOrgNormalizedId] = useState<string | null>(null);
+  const [orgSuggestions, setOrgSuggestions] = useState<string[]>([]);
+  const [orgNameMatches, setOrgNameMatches] = useState<{ organizationId: string; name: string }[]>([]);
+  const [orgMatchedBy, setOrgMatchedBy] = useState<'id' | 'name' | null>(null);
+  const [signupNotice, setSignupNotice] = useState<string | null>(null);
 
   // New org details (only when create mode)
   const [orgName, setOrgName] = useState('');
@@ -65,6 +68,7 @@ export default function LoginPage() {
   // Reset when switching views
   useEffect(() => {
     setError(null);
+    setSignupNotice(null);
     setEmail('');
     setPassword('');
     setOrganizationId('');
@@ -73,6 +77,10 @@ export default function LoginPage() {
     setOrgCheckStatus('idle');
     setOrgLookupName(null);
     setOrgLookupError(null);
+    setOrgNormalizedId(null);
+    setOrgSuggestions([]);
+    setOrgNameMatches([]);
+    setOrgMatchedBy(null);
 
     setOrgName('');
     setOrgTaxId('');
@@ -85,12 +93,27 @@ export default function LoginPage() {
 
   // Check org existence (organizationsPublic) for UX only
   useEffect(() => {
-    if (isLoginView || !firestore) return;
-
-    if (!sanitizedOrgId) {
+    if (isLoginView || !app) {
       setOrgCheckStatus('idle');
       setOrgLookupName(null);
       setOrgLookupError(null);
+      setOrgNormalizedId(null);
+      setOrgSuggestions([]);
+      setOrgNameMatches([]);
+      setOrgMatchedBy(null);
+      return;
+    }
+
+    const lookupValue = signupMode === 'create' ? organizationId.trim() || orgName.trim() : organizationId.trim();
+
+    if (!lookupValue) {
+      setOrgCheckStatus('idle');
+      setOrgLookupName(null);
+      setOrgLookupError(null);
+      setOrgNormalizedId(null);
+      setOrgSuggestions([]);
+      setOrgNameMatches([]);
+      setOrgMatchedBy(null);
       return;
     }
 
@@ -100,25 +123,63 @@ export default function LoginPage() {
 
     (async () => {
       try {
-        const orgRef = doc(firestore, 'organizationsPublic', sanitizedOrgId);
-        const snapshot = await getDoc(orgRef);
+        if (signupMode === 'join') {
+          const fn = httpsCallable(getFunctions(app, 'us-central1'), 'resolveOrganizationId');
+          const res = await fn({ input: lookupValue });
+          const payload = res?.data as {
+            organizationId?: string | null;
+            name?: string | null;
+            matchedBy?: 'id' | 'name' | null;
+            matches?: { organizationId: string; name: string }[];
+          };
+
+          if (cancelled) return;
+
+          const resolvedId = payload?.organizationId ?? null;
+          const matches = Array.isArray(payload?.matches) ? payload.matches : [];
+
+          if (resolvedId) {
+            setOrgCheckStatus('exists');
+            setOrgLookupName(payload?.name ?? null);
+            setOrgNormalizedId(resolvedId);
+            setOrgMatchedBy(payload?.matchedBy ?? null);
+            setOrgNameMatches([]);
+          } else if (matches.length > 0) {
+            setOrgCheckStatus('exists');
+            setOrgLookupName(null);
+            setOrgNormalizedId(null);
+            setOrgMatchedBy(null);
+            setOrgNameMatches(matches);
+          } else {
+            setOrgCheckStatus('available');
+            setOrgLookupName(null);
+            setOrgNormalizedId(sanitizedOrgId || null);
+            setOrgMatchedBy(null);
+            setOrgNameMatches([]);
+          }
+
+          setOrgSuggestions([]);
+          return;
+        }
+
+        const fn = httpsCallable(getFunctions(app, 'us-central1'), 'checkOrganizationAvailability');
+        const res = await fn({ organizationId: lookupValue });
+        const payload = res?.data as {
+          normalizedId?: string;
+          available?: boolean;
+          suggestions?: string[];
+          existingName?: string | null;
+        };
 
         if (cancelled) return;
 
-        if (snapshot.exists()) {
-          const data = snapshot.data() as { name?: string };
-          setOrgCheckStatus('exists');
-          setOrgLookupName(data?.name ?? sanitizedOrgId);
-
-          // Default to join when it exists
-          setSignupMode((m) => (m === 'create' ? m : 'join'));
-        } else {
-          setOrgCheckStatus('not-found');
-          setOrgLookupName(null);
-
-          // Default to create when it doesn't exist
-          setSignupMode((m) => (m === 'join' ? m : 'create'));
-        }
+        const isAvailable = Boolean(payload?.available);
+        setOrgCheckStatus(isAvailable ? 'available' : 'exists');
+        setOrgLookupName(payload?.existingName ?? null);
+        setOrgNormalizedId(payload?.normalizedId ?? null);
+        setOrgSuggestions(Array.isArray(payload?.suggestions) ? payload.suggestions : []);
+        setOrgNameMatches([]);
+        setOrgMatchedBy(null);
       } catch (err: any) {
         if (cancelled) return;
         setOrgCheckStatus('error');
@@ -129,7 +190,7 @@ export default function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [firestore, isLoginView, sanitizedOrgId]);
+  }, [app, isLoginView, organizationId, orgName, sanitizedOrgId, signupMode]);
 
   const onLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -201,22 +262,43 @@ router.replace('/');
 
     setLoading(true);
     setError(null);
+    setSignupNotice(null);
 
     try {
-      const orgId = sanitizedOrgId;
-      if (!orgId) throw new Error('Indica el ID de la organización.');
+      let orgId = sanitizedOrgId;
 
       if (signupMode === 'create') {
-        if (orgCheckStatus === 'exists') {
-          throw new Error('Ese ID ya existe. Elige otro ID o cambia a "Unirme a una organización".');
-        }
         if (!orgName.trim() || !orgCountry.trim()) {
           throw new Error('Para crear una nueva organización debes indicar nombre fiscal y país.');
         }
-      } else {
-        if (orgCheckStatus === 'not-found') {
-          throw new Error('La organización no existe. Cambia a "Crear una nueva organización" o revisa el ID.');
+        const precheck = httpsCallable(getFunctions(app, 'us-central1'), 'checkOrganizationAvailability');
+        const res = await precheck({ organizationId: organizationId.trim() || orgName.trim() });
+        const payload = res?.data as { available?: boolean; normalizedId?: string; suggestions?: string[] };
+        if (!payload?.available) {
+          const suggestions = payload?.suggestions?.length ? ` Sugerencias: ${payload.suggestions.join(', ')}.` : '';
+          throw new Error(`Ese ID ya existe. Elige otro ID o cambia a "Unirme a una organización".${suggestions}`);
         }
+        orgId = String(payload?.normalizedId ?? orgId);
+      } else {
+        if (!organizationId.trim()) throw new Error('Indica el ID o nombre de la organización.');
+        const resolveOrg = httpsCallable(getFunctions(app, 'us-central1'), 'resolveOrganizationId');
+        const res = await resolveOrg({ input: organizationId.trim() });
+        const payload = res?.data as {
+          organizationId?: string | null;
+          matches?: { organizationId: string; name: string }[];
+        };
+
+        if (!payload?.organizationId) {
+          if (payload?.matches?.length) {
+            const options = payload.matches
+              .map((match) => `${match.name} (${match.organizationId})`)
+              .join(', ');
+            throw new Error(`Hay varias organizaciones con ese nombre. Usa el ID exacto: ${options}.`);
+          }
+          throw new Error('No encontramos una organización con ese ID o nombre.');
+        }
+
+        orgId = payload.organizationId;
       }
 
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
@@ -228,6 +310,7 @@ router.replace('/');
       const payload: any = {
         organizationId: orgId,
         requestedRole,
+        signupMode,
       };
 
       if (signupMode === 'create') {
@@ -245,6 +328,11 @@ router.replace('/');
       const res = await fn(payload);
       const data = res?.data as any;
 
+      if (data?.mode === 'verification_required') {
+        setSignupNotice('Revisa tu email para confirmar la creación de la organización y activar tu cuenta.');
+        return;
+      }
+
       if (data?.mode === 'pending') {
         router.replace('/onboarding');
       } else {
@@ -259,8 +347,7 @@ router.replace('/');
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-6">
-      <div className="w-full max-w-md space-y-6">
+    <div className="w-full max-w-md space-y-6">
         <div className="flex justify-center">
           <ClientLogo />
         </div>
@@ -277,6 +364,11 @@ router.replace('/');
 
           <CardContent>
             {error && <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">{error}</div>}
+            {signupNotice && (
+              <div className="mb-4 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-900">
+                {signupNotice}
+              </div>
+            )}
 
             <form onSubmit={isLoginView ? onLogin : onRegister} className="space-y-4">
               <div className="space-y-2">
@@ -306,23 +398,6 @@ router.replace('/');
               {!isLoginView && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="organizationId">ID de organización</Label>
-                    <Input
-                      id="organizationId"
-                      placeholder="ej: mi-empresa"
-                      value={organizationId}
-                      onChange={(e) => setOrganizationId(e.target.value)}
-                      required
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      {orgCheckStatus === 'checking' && 'Comprobando organización…'}
-                      {orgCheckStatus === 'exists' && <>Organización encontrada: <b>{orgLookupName}</b></>}
-                      {orgCheckStatus === 'not-found' && 'No existe una organización con ese ID.'}
-                      {orgCheckStatus === 'error' && (orgLookupError || 'No se pudo comprobar la organización.')}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
                     <Label>¿Ya dispones de una organización o deseas crear una nueva?</Label>
                     <RadioGroup value={signupMode} onValueChange={(v) => setSignupMode(v as any)} className="gap-2">
                       <div className="flex items-center space-x-2">
@@ -336,16 +411,73 @@ router.replace('/');
                     </RadioGroup>
                   </div>
 
-                  <div className="flex items-start space-x-2">
-                    <Checkbox
-                      id="requestAdminRole"
-                      checked={requestAdminRole}
-                      onCheckedChange={(v) => setRequestAdminRole(Boolean(v))}
-                    />
-                    <Label htmlFor="requestAdminRole" className="leading-5">
-                      Solicitar rol de admin (requiere aprobación)
+                  <div className="space-y-2">
+                    <Label htmlFor="organizationId">
+                      ID o nombre de organización {signupMode === 'join' ? '(obligatorio)' : '(opcional)'}
                     </Label>
+                    <Input
+                      id="organizationId"
+                      placeholder="ej: mi-empresa o Empresa S.A."
+                      value={organizationId}
+                      onChange={(e) => setOrganizationId(e.target.value)}
+                      required={signupMode === 'join'}
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      {orgCheckStatus === 'checking' && 'Comprobando disponibilidad…'}
+                      {signupMode === 'join' && orgCheckStatus === 'exists' && orgNameMatches.length === 0 && (
+                        <>
+                          Organización encontrada:{' '}
+                          <b>{orgLookupName ?? orgNormalizedId ?? sanitizedOrgId}</b>
+                          {orgMatchedBy === 'name' && orgNormalizedId && (
+                            <span> (ID: {orgNormalizedId})</span>
+                          )}
+                        </>
+                      )}
+                      {signupMode === 'join' && orgCheckStatus === 'exists' && orgNameMatches.length > 0 && (
+                        <>
+                          Se encontraron varias organizaciones:{' '}
+                          <b>{orgNameMatches.map((m) => `${m.name} (${m.organizationId})`).join(', ')}</b>. Usa el ID
+                          exacto.
+                        </>
+                      )}
+                      {signupMode === 'join' &&
+                        orgCheckStatus === 'available' &&
+                        'No existe una organización con ese ID o nombre.'}
+                      {signupMode === 'create' && orgCheckStatus === 'available' && orgNormalizedId && (
+                        <>ID disponible: <b>{orgNormalizedId}</b></>
+                      )}
+                      {signupMode === 'create' && orgCheckStatus === 'exists' && (
+                        <>
+                          Ese ID ya existe.
+                          {orgSuggestions.length > 0 && (
+                            <> Sugerencias: <b>{orgSuggestions.join(', ')}</b></>
+                          )}
+                        </>
+                      )}
+                      {orgCheckStatus === 'error' && (orgLookupError || 'No se pudo comprobar la organización.')}
+                    </div>
                   </div>
+
+                  {signupMode === 'join' && (
+                    <div className="space-y-2">
+                      <div className="text-xs text-muted-foreground">
+                        Puedes introducir el ID o el nombre para solicitar acceso.
+                      </div>
+                    </div>
+                  )}
+
+                  {signupMode === 'join' && (
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="requestAdminRole"
+                        checked={requestAdminRole}
+                        onCheckedChange={(v) => setRequestAdminRole(Boolean(v))}
+                      />
+                      <Label htmlFor="requestAdminRole" className="leading-5">
+                        Solicitar rol de admin (requiere aprobación)
+                      </Label>
+                    </div>
+                  )}
 
                   {signupMode === 'create' && (
                     <div className="rounded-md border p-4 space-y-3">
@@ -436,7 +568,6 @@ router.replace('/');
             </Button>
           </CardFooter>
         </Card>
-      </div>
     </div>
   );
 }

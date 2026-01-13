@@ -4,7 +4,7 @@ This is a NextJS starter in Firebase Studio.
 
 ## Configuración de Firebase
 
-1. Crea un proyecto en Firebase y registra una app Web para obtener las credenciales.
+1. Crea un proyecto  en Firebase y registra una app Web para obtener las credenciales.
 2. Copia `.env.example` a `.env.local` y pega allí los valores de Firebase:
 
 ```bash
