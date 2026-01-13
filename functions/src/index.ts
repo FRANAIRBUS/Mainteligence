@@ -1121,10 +1121,6 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const organizationId = sanitizeOrganizationId(orgIdIn);
   if (!organizationId) throw httpsError('invalid-argument', 'organizationId requerido.');
 
-  const requestedRoleRaw = data?.requestedRole;
-  const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operator';
-  if (!requestedRole) throw httpsError('invalid-argument', 'requestedRole inválido.');
-
   const authUser = await admin.auth().getUser(uid).catch(() => null);
   const email = (authUser?.email ?? String(data?.email ?? '')).trim().toLowerCase();
   const displayName = (authUser?.displayName ?? String(data?.displayName ?? '').trim()) || null;
@@ -1206,6 +1202,10 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   if (!orgSnap.exists) {
     throw httpsError('not-found', 'La organización no existe.');
   }
+
+  const requestedRoleRaw = data?.requestedRole;
+  const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operator';
+  if (!requestedRole) throw httpsError('invalid-argument', 'requestedRole inválido.');
 
   const orgData = orgSnap.data() as any;
   const orgName = String(orgData?.name ?? organizationId);
