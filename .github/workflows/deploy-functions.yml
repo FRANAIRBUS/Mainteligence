@@ -51,11 +51,6 @@ jobs:
           echo "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}" > "functions/.env.${{ env.PROJECT_ID }}"
           echo "RESEND_FROM=${{ secrets.RESEND_FROM }}" >> "functions/.env.${{ env.PROJECT_ID }}"
 
-      - name: Delete orphaned functions (one-time cleanup)
-        run: |
-          firebase functions:delete bootstrapFromInvites --region us-central1 --project "${{ env.PROJECT_ID }}" --force || true
-          firebase functions:delete orgRemoveUserFromOrg --region us-central1 --project "${{ env.PROJECT_ID }}" --force || true
-
       - name: Deploy (functions + rules + indexes + storage rules)
         run: |
           firebase deploy \
