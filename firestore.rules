@@ -140,7 +140,9 @@ service cloud.firestore {
         (resource.data.organizationId != null && isActiveMember(resource.data.organizationId))
       );
 
-      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.organizationId == null;
 
       allow update: if isSignedIn()
         && request.auth.uid == userId

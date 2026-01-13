@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgRemoveUserFromOrg = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.setActiveOrganization = exports.bootstrapSignup = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
+exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgRemoveUserFromOrg = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.setActiveOrganization = exports.finalizeOrganizationSignup = exports.bootstrapSignup = exports.checkOrganizationAvailability = exports.resolveOrganizationId = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const assignment_email_1 = require("./assignment-email");
@@ -799,8 +799,100 @@ function sanitizeOrganizationId(input) {
     const cleaned = spaced.replace(/[^a-z0-9_-]/g, '');
     return cleaned;
 }
+exports.resolveOrganizationId = functions.https.onCall(async (data) => {
+    var _a, _b, _c, _d;
+    const input = String((_a = data === null || data === void 0 ? void 0 : data.input) !== null && _a !== void 0 ? _a : '').trim();
+    if (!input)
+        throw httpsError('invalid-argument', 'input requerido.');
+    const normalizedId = sanitizeOrganizationId(input);
+    if (normalizedId) {
+        const orgPublicRef = db.collection('organizationsPublic').doc(normalizedId);
+        const orgSnap = await orgPublicRef.get();
+        if (orgSnap.exists) {
+            const orgData = orgSnap.data();
+            return {
+                organizationId: normalizedId,
+                name: (_b = orgData === null || orgData === void 0 ? void 0 : orgData.name) !== null && _b !== void 0 ? _b : normalizedId,
+                matchedBy: 'id',
+                matches: [],
+            };
+        }
+    }
+    const nameLower = input.toLowerCase();
+    const matches = [];
+    const byNameLower = await db
+        .collection('organizationsPublic')
+        .where('nameLower', '==', nameLower)
+        .limit(5)
+        .get();
+    byNameLower.forEach((docSnap) => {
+        var _a;
+        const data = docSnap.data();
+        matches.push({ organizationId: docSnap.id, name: (_a = data === null || data === void 0 ? void 0 : data.name) !== null && _a !== void 0 ? _a : docSnap.id });
+    });
+    if (matches.length === 0) {
+        const byNameExact = await db
+            .collection('organizationsPublic')
+            .where('name', '==', input)
+            .limit(5)
+            .get();
+        byNameExact.forEach((docSnap) => {
+            var _a;
+            const data = docSnap.data();
+            matches.push({ organizationId: docSnap.id, name: (_a = data === null || data === void 0 ? void 0 : data.name) !== null && _a !== void 0 ? _a : docSnap.id });
+        });
+    }
+    if (matches.length === 1) {
+        return {
+            organizationId: matches[0].organizationId,
+            name: matches[0].name,
+            matchedBy: 'name',
+            matches: [],
+        };
+    }
+    return {
+        organizationId: null,
+        name: null,
+        matchedBy: null,
+        matches,
+    };
+});
+exports.checkOrganizationAvailability = functions.https.onCall(async (data) => {
+    var _a, _b;
+    const input = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '').trim();
+    if (!input)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const normalizedId = sanitizeOrganizationId(input);
+    if (!normalizedId)
+        throw httpsError('invalid-argument', 'organizationId inválido.');
+    const orgPublicRef = db.collection('organizationsPublic').doc(normalizedId);
+    const orgSnap = await orgPublicRef.get();
+    if (!orgSnap.exists) {
+        return {
+            normalizedId,
+            available: true,
+            suggestions: [],
+            existingName: null,
+        };
+    }
+    const existingName = String((_b = orgSnap.data().name) !== null && _b !== void 0 ? _b : normalizedId);
+    const candidates = Array.from({ length: 5 }, (_, idx) => idx === 0 ? normalizedId : `${normalizedId}-${idx + 1}`);
+    const taken = new Set();
+    const snap = await db
+        .collection('organizationsPublic')
+        .where(admin.firestore.FieldPath.documentId(), 'in', candidates)
+        .get();
+    snap.forEach((docSnap) => taken.add(docSnap.id));
+    const suggestions = candidates.filter((candidate) => !taken.has(candidate));
+    return {
+        normalizedId,
+        available: false,
+        suggestions,
+        existingName,
+    };
+});
 exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
     const uid = requireAuth(context);
     const orgIdIn = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '');
     const organizationId = sanitizeOrganizationId(orgIdIn);
@@ -821,17 +913,43 @@ exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
     const membershipRef = db.collection('memberships').doc(`${uid}_${organizationId}`);
     const now = admin.firestore.FieldValue.serverTimestamp();
     if (!orgSnap.exists) {
-        const details = ((_f = data === null || data === void 0 ? void 0 : data.organizationDetails) !== null && _f !== void 0 ? _f : {});
-        const orgName = String((_g = details === null || details === void 0 ? void 0 : details.name) !== null && _g !== void 0 ? _g : '').trim() || organizationId;
+        const details = ((_g = data === null || data === void 0 ? void 0 : data.organizationDetails) !== null && _g !== void 0 ? _g : {});
+        const orgName = String((_h = details === null || details === void 0 ? void 0 : details.name) !== null && _h !== void 0 ? _h : '').trim() || organizationId;
+        const orgLegalName = String((_j = details === null || details === void 0 ? void 0 : details.legalName) !== null && _j !== void 0 ? _j : '').trim() || null;
+        if (!(authUser === null || authUser === void 0 ? void 0 : authUser.emailVerified)) {
+            await db.collection('organizationSignupRequests').doc(uid).set({
+                userId: uid,
+                email: email || null,
+                organizationId,
+                organizationName: orgName,
+                organizationLegalName: orgLegalName,
+                organizationDetails: {
+                    name: orgName,
+                    legalName: orgLegalName,
+                    taxId: String((_k = details === null || details === void 0 ? void 0 : details.taxId) !== null && _k !== void 0 ? _k : '').trim() || null,
+                    country: String((_l = details === null || details === void 0 ? void 0 : details.country) !== null && _l !== void 0 ? _l : '').trim() || null,
+                    address: String((_m = details === null || details === void 0 ? void 0 : details.address) !== null && _m !== void 0 ? _m : '').trim() || null,
+                    billingEmail: String((_o = details === null || details === void 0 ? void 0 : details.billingEmail) !== null && _o !== void 0 ? _o : '').trim() || email || null,
+                    phone: String((_p = details === null || details === void 0 ? void 0 : details.phone) !== null && _p !== void 0 ? _p : '').trim() || null,
+                    teamSize: Number.isFinite(Number(details === null || details === void 0 ? void 0 : details.teamSize)) ? Number(details === null || details === void 0 ? void 0 : details.teamSize) : null,
+                },
+                status: 'verification_pending',
+                createdAt: now,
+                updatedAt: now,
+                source: 'bootstrapSignup_v1',
+            }, { merge: true });
+            return { ok: true, mode: 'verification_required', organizationId };
+        }
         const batch = db.batch();
         batch.set(orgRef, {
             organizationId,
             name: orgName,
-            taxId: String((_h = details === null || details === void 0 ? void 0 : details.taxId) !== null && _h !== void 0 ? _h : '').trim() || null,
-            country: String((_j = details === null || details === void 0 ? void 0 : details.country) !== null && _j !== void 0 ? _j : '').trim() || null,
-            address: String((_k = details === null || details === void 0 ? void 0 : details.address) !== null && _k !== void 0 ? _k : '').trim() || null,
-            billingEmail: String((_l = details === null || details === void 0 ? void 0 : details.billingEmail) !== null && _l !== void 0 ? _l : '').trim() || email || null,
-            contactPhone: String((_m = details === null || details === void 0 ? void 0 : details.phone) !== null && _m !== void 0 ? _m : '').trim() || null,
+            legalName: orgLegalName,
+            taxId: String((_k = details === null || details === void 0 ? void 0 : details.taxId) !== null && _k !== void 0 ? _k : '').trim() || null,
+            country: String((_l = details === null || details === void 0 ? void 0 : details.country) !== null && _l !== void 0 ? _l : '').trim() || null,
+            address: String((_m = details === null || details === void 0 ? void 0 : details.address) !== null && _m !== void 0 ? _m : '').trim() || null,
+            billingEmail: String((_o = details === null || details === void 0 ? void 0 : details.billingEmail) !== null && _o !== void 0 ? _o : '').trim() || email || null,
+            contactPhone: String((_p = details === null || details === void 0 ? void 0 : details.phone) !== null && _p !== void 0 ? _p : '').trim() || null,
             teamSize: Number.isFinite(Number(details === null || details === void 0 ? void 0 : details.teamSize)) ? Number(details === null || details === void 0 ? void 0 : details.teamSize) : null,
             subscriptionPlan: 'trial',
             isActive: true,
@@ -846,6 +964,7 @@ exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
         batch.set(orgPublicRef, {
             organizationId,
             name: orgName,
+            nameLower: orgName.toLowerCase(),
             isActive: true,
             createdAt: now,
             updatedAt: now,
@@ -940,6 +1059,108 @@ exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
         after: { organizationId, requestedRole, status: 'pending' },
     });
     return { ok: true, mode: 'pending', organizationId };
+});
+exports.finalizeOrganizationSignup = functions.https.onCall(async (_data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g;
+    const uid = requireAuth(context);
+    const authUser = await admin.auth().getUser(uid).catch(() => null);
+    if (!(authUser === null || authUser === void 0 ? void 0 : authUser.emailVerified))
+        throw httpsError('failed-precondition', 'Email no verificado.');
+    const requestRef = db.collection('organizationSignupRequests').doc(uid);
+    const requestSnap = await requestRef.get();
+    if (!requestSnap.exists) {
+        return { ok: true, mode: 'noop' };
+    }
+    const requestData = requestSnap.data();
+    const organizationId = sanitizeOrganizationId(String((_a = requestData === null || requestData === void 0 ? void 0 : requestData.organizationId) !== null && _a !== void 0 ? _a : ''));
+    if (!organizationId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
+    const orgSnap = await orgRef.get();
+    if (orgSnap.exists) {
+        await requestRef.delete();
+        return { ok: true, mode: 'already_exists', organizationId };
+    }
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const orgDetails = (_b = requestData === null || requestData === void 0 ? void 0 : requestData.organizationDetails) !== null && _b !== void 0 ? _b : {};
+    const orgName = String((_d = (_c = orgDetails === null || orgDetails === void 0 ? void 0 : orgDetails.name) !== null && _c !== void 0 ? _c : requestData === null || requestData === void 0 ? void 0 : requestData.organizationName) !== null && _d !== void 0 ? _d : organizationId).trim() || organizationId;
+    const orgLegalName = String((_f = (_e = orgDetails === null || orgDetails === void 0 ? void 0 : orgDetails.legalName) !== null && _e !== void 0 ? _e : requestData === null || requestData === void 0 ? void 0 : requestData.organizationLegalName) !== null && _f !== void 0 ? _f : '').trim() || null;
+    const userRef = db.collection('users').doc(uid);
+    const memberRef = orgRef.collection('members').doc(uid);
+    const membershipRef = db.collection('memberships').doc(`${uid}_${organizationId}`);
+    const batch = db.batch();
+    batch.set(orgRef, {
+        organizationId,
+        name: orgName,
+        legalName: orgLegalName,
+        taxId: String((_g = orgDetails === null || orgDetails === void 0 ? void 0 : orgDetails.taxId) !== null && _g !== void 0 ? _g : '').trim() || null,
+        country: String((_a = orgDetails === null || orgDetails === void 0 ? void 0 : orgDetails.country) !== null && _a !== void 0 ? _a : '').trim() || null,
+        address: String((_b = orgDetails === null || orgDetails === void 0 ? void 0 : orgDetails.address) !== null && _b !== void 0 ? _b : '').trim() || null,
+        billingEmail: String((_c = orgDetails === null || orgDetails === void 0 ? void 0 : orgDetails.billingEmail) !== null && _c !== void 0 ? _c : '').trim() || (authUser === null || authUser === void 0 ? void 0 : authUser.email) || null,
+        contactPhone: String((_d = orgDetails === null || orgDetails === void 0 ? void 0 : orgDetails.phone) !== null && _d !== void 0 ? _d : '').trim() || null,
+        teamSize: Number.isFinite(Number(orgDetails === null || orgDetails === void 0 ? void 0 : orgDetails.teamSize)) ? Number(orgDetails === null || orgDetails === void 0 ? void 0 : orgDetails.teamSize) : null,
+        subscriptionPlan: 'trial',
+        isActive: true,
+        settings: {
+            allowGuestAccess: false,
+            maxUsers: 50,
+        },
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapSignup_v1',
+    }, { merge: true });
+    batch.set(orgPublicRef, {
+        organizationId,
+        name: orgName,
+        nameLower: orgName.toLowerCase(),
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapSignup_v1',
+    }, { merge: true });
+    batch.set(userRef, {
+        organizationId,
+        email: (authUser === null || authUser === void 0 ? void 0 : authUser.email) || null,
+        displayName: (authUser === null || authUser === void 0 ? void 0 : authUser.displayName) || (authUser === null || authUser === void 0 ? void 0 : authUser.email) || 'Usuario',
+        role: 'super_admin',
+        active: true,
+        updatedAt: now,
+        createdAt: now,
+        source: 'bootstrapSignup_v1',
+    }, { merge: true });
+    batch.set(membershipRef, {
+        userId: uid,
+        organizationId,
+        organizationName: orgName,
+        role: 'super_admin',
+        status: 'active',
+        primary: true,
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapSignup_v1',
+    }, { merge: true });
+    batch.set(memberRef, {
+        uid,
+        orgId: organizationId,
+        email: (authUser === null || authUser === void 0 ? void 0 : authUser.email) || null,
+        displayName: (authUser === null || authUser === void 0 ? void 0 : authUser.displayName) || (authUser === null || authUser === void 0 ? void 0 : authUser.email) || 'Usuario',
+        role: 'super_admin',
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapSignup_v1',
+    }, { merge: true });
+    batch.delete(requestRef);
+    await batch.commit();
+    await auditLog({
+        action: 'bootstrapSignup_create_org',
+        actorUid: uid,
+        actorEmail: (authUser === null || authUser === void 0 ? void 0 : authUser.email) || null,
+        orgId: organizationId,
+        after: { organizationId, role: 'super_admin', status: 'active' },
+    });
+    return { ok: true, mode: 'created', organizationId };
 });
 exports.setActiveOrganization = functions.https.onCall(async (data, context) => {
     var _a, _b;
