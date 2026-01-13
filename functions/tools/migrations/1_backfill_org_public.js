@@ -26,6 +26,7 @@ const { initAdmin, parseArgs, commitBatches } = require("./common");
     // Public MINIMAL: evita exponer emails internos, settings, billing, etc.
     const publicDoc = {
       name: data.name || data.displayName || orgId,
+      nameLower: String(data.name || data.displayName || orgId).trim().toLowerCase(),
       slug: data.slug || data.code || orgId,
       logoUrl: data.logoUrl || data.logo || null,
       isActive: data.isActive !== undefined ? !!data.isActive : true,
