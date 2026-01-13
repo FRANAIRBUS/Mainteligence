@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgRemoveUserFromOrg = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.setActiveOrganization = exports.bootstrapSignup = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
+exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgRemoveUserFromOrg = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.setActiveOrganization = exports.bootstrapSignup = exports.checkOrganizationAvailability = exports.resolveOrganizationId = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const assignment_email_1 = require("./assignment-email");
@@ -799,6 +799,98 @@ function sanitizeOrganizationId(input) {
     const cleaned = spaced.replace(/[^a-z0-9_-]/g, '');
     return cleaned;
 }
+exports.resolveOrganizationId = functions.https.onCall(async (data) => {
+    var _a, _b, _c, _d;
+    const input = String((_a = data === null || data === void 0 ? void 0 : data.input) !== null && _a !== void 0 ? _a : '').trim();
+    if (!input)
+        throw httpsError('invalid-argument', 'input requerido.');
+    const normalizedId = sanitizeOrganizationId(input);
+    if (normalizedId) {
+        const orgPublicRef = db.collection('organizationsPublic').doc(normalizedId);
+        const orgSnap = await orgPublicRef.get();
+        if (orgSnap.exists) {
+            const orgData = orgSnap.data();
+            return {
+                organizationId: normalizedId,
+                name: (_b = orgData === null || orgData === void 0 ? void 0 : orgData.name) !== null && _b !== void 0 ? _b : normalizedId,
+                matchedBy: 'id',
+                matches: [],
+            };
+        }
+    }
+    const nameLower = input.toLowerCase();
+    const matches = [];
+    const byNameLower = await db
+        .collection('organizationsPublic')
+        .where('nameLower', '==', nameLower)
+        .limit(5)
+        .get();
+    byNameLower.forEach((docSnap) => {
+        var _a;
+        const data = docSnap.data();
+        matches.push({ organizationId: docSnap.id, name: (_a = data === null || data === void 0 ? void 0 : data.name) !== null && _a !== void 0 ? _a : docSnap.id });
+    });
+    if (matches.length === 0) {
+        const byNameExact = await db
+            .collection('organizationsPublic')
+            .where('name', '==', input)
+            .limit(5)
+            .get();
+        byNameExact.forEach((docSnap) => {
+            var _a;
+            const data = docSnap.data();
+            matches.push({ organizationId: docSnap.id, name: (_a = data === null || data === void 0 ? void 0 : data.name) !== null && _a !== void 0 ? _a : docSnap.id });
+        });
+    }
+    if (matches.length === 1) {
+        return {
+            organizationId: matches[0].organizationId,
+            name: matches[0].name,
+            matchedBy: 'name',
+            matches: [],
+        };
+    }
+    return {
+        organizationId: null,
+        name: null,
+        matchedBy: null,
+        matches,
+    };
+});
+exports.checkOrganizationAvailability = functions.https.onCall(async (data) => {
+    var _a, _b;
+    const input = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '').trim();
+    if (!input)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const normalizedId = sanitizeOrganizationId(input);
+    if (!normalizedId)
+        throw httpsError('invalid-argument', 'organizationId inválido.');
+    const orgPublicRef = db.collection('organizationsPublic').doc(normalizedId);
+    const orgSnap = await orgPublicRef.get();
+    if (!orgSnap.exists) {
+        return {
+            normalizedId,
+            available: true,
+            suggestions: [],
+            existingName: null,
+        };
+    }
+    const existingName = String((_b = orgSnap.data().name) !== null && _b !== void 0 ? _b : normalizedId);
+    const candidates = Array.from({ length: 5 }, (_, idx) => idx === 0 ? normalizedId : `${normalizedId}-${idx + 1}`);
+    const taken = new Set();
+    const snap = await db
+        .collection('organizationsPublic')
+        .where(admin.firestore.FieldPath.documentId(), 'in', candidates)
+        .get();
+    snap.forEach((docSnap) => taken.add(docSnap.id));
+    const suggestions = candidates.filter((candidate) => !taken.has(candidate));
+    return {
+        normalizedId,
+        available: false,
+        suggestions,
+        existingName,
+    };
+});
 exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     const uid = requireAuth(context);
