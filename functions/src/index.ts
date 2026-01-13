@@ -1,15 +1,11 @@
 import * as functions from 'firebase-functions/v1';
 import * as admin from 'firebase-admin';
 import type { Request, Response } from 'express';
-import { defineString } from 'firebase-functions/params';
-import { randomBytes } from 'crypto';
 import { sendAssignmentEmail } from './assignment-email';
 import { sendInviteEmail } from './invite-email';
-import { sendSignupConfirmationEmail } from './signup-confirmation-email';
 
 admin.initializeApp();
 const db = admin.firestore();
-const SIGNUP_CONFIRMATION_BASE_URL = defineString('SIGNUP_CONFIRMATION_BASE_URL');
 
 type Role =
   | 'super_admin'
@@ -90,72 +86,31 @@ async function updateOrganizationUserProfile({
     await requireCallerSuperAdminInOrg(actorUid, orgId);
   }
 
-  const userRef = db.collection('users').doc(targetUid);
-  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  const normalizedEmail = String(email ?? '').trim();
-
-  // ---
-  // Backward-compat / safety:
-  // In some historical datasets there are member docs under organizations/{orgId}/members
-  // but the corresponding memberships/{uid}_{orgId} doc does not exist yet.
-  // The admin UI should still be able to edit a member profile, so we:
-  //   1) Validate the target is a member of the org (membership OR member doc exists)
-  //   2) Enforce "active" status
-  //   3) If membership doc is missing but the member doc exists, we create the membership
-  //      doc (backfill) and continue.
-  // ---
   const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
   const membershipSnap = await membershipRef.get();
-
   if (!membershipSnap.exists) {
-    const memberSnap = await memberRef.get();
-    if (!memberSnap.exists) {
-      throw httpsError(
-        'failed-precondition',
-        'El usuario objetivo no tiene membresía en esa organización (ni registro de miembro).'
-      );
-    }
-
-    const member = memberSnap.data() as any;
-    const rawStatus = String(member?.status ?? '').trim().toLowerCase();
-    const status = rawStatus || (typeof member?.active === 'boolean' ? (member.active ? 'active' : 'pending') : 'active');
-    if (status !== 'active') {
-      throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía activa en esa organización.');
-    }
-
-    // Backfill membership doc so future RBAC checks are consistent.
-    await membershipRef.set(
-      {
-        organizationId: orgId,
-        uid: targetUid,
-        role: normalizeRole(member?.role),
-        status: 'active',
-        email: member?.email ?? normalizedEmail ?? null,
-        displayName: member?.displayName ?? null,
-        departmentId: member?.departmentId ?? null,
-        createdAt: member?.createdAt ?? now,
-        updatedAt: now,
-        source: 'orgUpdateUserProfile_backfill_membership_v1',
-      },
-      { merge: true }
-    );
-  } else {
-    const membership = membershipSnap.data() as any;
-    const rawStatus = String(membership?.status ?? '').trim().toLowerCase();
-    const membershipStatus =
-      rawStatus || (typeof membership?.active === 'boolean' ? (membership.active ? 'active' : 'inactive') : '');
-    if (membershipStatus !== 'active') {
-      if (membershipStatus === 'pending' || membershipStatus === 'revoked') {
-        console.warn('updateOrganizationUserProfile blocked for inactive membership', {
-          orgId,
-          targetUid,
-          membershipStatus,
-        });
-      }
-      throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía activa en esa organización.');
-    }
+    throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización.');
   }
+  const membership = membershipSnap.data() as any;
+  const rawStatus = String(membership?.status ?? '').trim().toLowerCase();
+  const membershipStatus =
+    rawStatus || (typeof membership?.active === 'boolean' ? (membership.active ? 'active' : 'inactive') : '');
+  if (membershipStatus !== 'active') {
+    if (membershipStatus === 'pending' || membershipStatus === 'revoked') {
+      console.warn('updateOrganizationUserProfile blocked for inactive membership', {
+        orgId,
+        targetUid,
+        membershipStatus,
+      });
+    }
+    throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía activa en esa organización.');
+  }
+
+  const userRef = db.collection('users').doc(targetUid);
+  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+  void memberRef;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const normalizedEmail = String(email ?? '').trim();
 
   const userSnap = await userRef.get();
   const currentEmail = String(userSnap.data()?.email ?? '').trim();
@@ -329,35 +284,6 @@ async function countQuery(q: FirebaseFirestore.Query) {
   }
 }
 
-function isPlainObject(value: any): value is Record<string, any> {
-  if (!value || typeof value !== 'object') return false;
-  const proto = Object.getPrototypeOf(value);
-  return proto === Object.prototype || proto === null;
-}
-
-function stripUndefinedDeep<T>(value: T): T {
-  if (Array.isArray(value)) {
-    // Firestore rejects undefined inside arrays; remove undefined elements.
-    return value
-      .map((v) => stripUndefinedDeep(v))
-      .filter((v) => v !== undefined) as any;
-  }
-
-  if (isPlainObject(value)) {
-    const out: any = {};
-    for (const [k, v] of Object.entries(value)) {
-      if (v === undefined) continue;
-      const vv = stripUndefinedDeep(v as any);
-      if (vv === undefined) continue;
-      out[k] = vv;
-    }
-    return out;
-  }
-
-  // Preserve Firestore sentinel objects (Timestamp, FieldValue, GeoPoint, etc.)
-  return value;
-}
-
 async function auditLog(params: {
   action: string;
   actorUid: string | null;
@@ -369,14 +295,11 @@ async function auditLog(params: {
   after?: any;
   meta?: any;
 }) {
-  const payload = stripUndefinedDeep({
+  await db.collection('auditLogs').add({
     ...params,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
-
-  await db.collection('auditLogs').add(payload);
 }
-
 
 /* ------------------------------
    FIRESTORE TRIGGERS (GEN1)
@@ -736,6 +659,7 @@ export const rootUpsertUserToOrganization = functions.https.onCall(async (data, 
 
   const userRef = db.collection('users').doc(uid);
   const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(uid);
+  void memberRef;
   const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
 
   const beforeSnap = await userRef.get();
@@ -900,40 +824,8 @@ export const rootPurgeOrganizationCollection = functions.https.onCall(async (dat
 
 async function requireCallerSuperAdminInOrg(actorUid: string, orgId: string) {
   const mRef = db.collection('memberships').doc(`${actorUid}_${orgId}`);
-  let mSnap = await mRef.get();
-
-  // Backward-compat:
-  // Some historical datasets only have organizations/{orgId}/members/{uid} and NOT memberships/{uid}_{orgId}.
-  // The admin UI must still work. If the membership doc is missing, we fall back to member doc and backfill.
-  if (!mSnap.exists) {
-    const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(actorUid);
-    const memberSnap = await memberRef.get();
-    if (!memberSnap.exists) throw httpsError('permission-denied', 'No perteneces a esa organización.');
-
-    const roleFromMember = normalizeRole(memberSnap.get('role'));
-    const statusFromMember =
-      String(memberSnap.get('status') ?? '') ||
-      (memberSnap.get('active') === true ? 'active' : 'pending');
-
-    if (statusFromMember !== 'active') throw httpsError('permission-denied', 'Tu membresía no está activa.');
-
-    // Backfill minimal membership doc so future checks are consistent.
-    await mRef.set(
-      {
-        userId: actorUid,
-        organizationId: orgId,
-        role: roleFromMember ?? 'operator',
-        status: 'active',
-        primary: false,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        source: 'backfill_membership_from_member_v1',
-      },
-      { merge: true },
-    );
-
-    mSnap = await mRef.get();
-  }
+  const mSnap = await mRef.get();
+  if (!mSnap.exists) throw httpsError('permission-denied', 'No perteneces a esa organización.');
 
   // Backward-compat: some older docs used `active: true` instead of `status: 'active'`.
   const status =
@@ -941,10 +833,9 @@ async function requireCallerSuperAdminInOrg(actorUid: string, orgId: string) {
     (mSnap.get('active') === true ? 'active' : 'pending');
 
   const role = normalizeRole(mSnap.get('role'));
-  if (status != 'active') throw httpsError('permission-denied', 'Tu membresía no está activa.');
-  if (role != 'super_admin') throw httpsError('permission-denied', 'Solo super_admin puede gestionar usuarios.');
+  if (status !== 'active') throw httpsError('permission-denied', 'Tu membresía no está activa.');
+  if (role !== 'super_admin') throw httpsError('permission-denied', 'Solo super_admin puede gestionar usuarios.');
 }
-
 
 async function resolveTargetUidByEmailOrUid(email?: string, uid?: string) {
   const u = String(uid ?? '').trim();
@@ -997,6 +888,7 @@ if (beforeRole === role) {
 }
 
 const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
+void memberRef;
 const userRef = db.collection('users').doc(targetUid);
 const userSnap = await userRef.get();
 const userBefore = userSnap.exists ? (userSnap.data() as any) : null;
@@ -1061,124 +953,16 @@ function sanitizeOrganizationId(input: string): string {
   return cleaned;
 }
 
-function normalizeOrganizationName(input: string): string {
-  return String(input ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function resolveSignupConfirmationLink(token: string) {
-  const configuredBase = SIGNUP_CONFIRMATION_BASE_URL.value();
-  if (configuredBase) {
-    const base = configuredBase.replace(/\/+$/, '');
-    return `${base}/confirm-organization?token=${token}`;
-  }
-
-  const projectId = process.env.GCLOUD_PROJECT ?? process.env.GCP_PROJECT;
-  if (projectId) {
-    return `https://us-central1-${projectId}.cloudfunctions.net/confirmOrganizationSignup?token=${token}`;
-  }
-
-  return `https://multi.maintelligence.app/login?signupToken=${token}`;
-}
-
-async function buildOrganizationSuggestions(rawInput: string, maxSuggestions = 5) {
-  const base = sanitizeOrganizationId(rawInput);
-  if (!base) {
-    throw httpsError('invalid-argument', 'organizationId o nombre requerido.');
-  }
-
-  const candidates = [base, ...Array.from({ length: maxSuggestions * 2 }, (_, i) => `${base}-${i + 2}`)];
-  const uniqueCandidates = Array.from(new Set(candidates)).slice(0, maxSuggestions * 2);
-  const snapshots = await Promise.all(
-    uniqueCandidates.map((candidate) => db.collection('organizationsPublic').doc(candidate).get())
-  );
-
-  const available = uniqueCandidates.filter((candidate, index) => !snapshots[index].exists);
-  const suggestions = available.slice(0, maxSuggestions);
-  const baseIndex = uniqueCandidates.indexOf(base);
-  const baseSnapshot = baseIndex >= 0 ? snapshots[baseIndex] : null;
-  const existingName = baseSnapshot?.exists ? String(baseSnapshot.data()?.name ?? '') || base : null;
-
-  return {
-    normalizedId: base,
-    available: suggestions.includes(base),
-    suggestions,
-    existingName,
-  };
-}
-
-export const checkOrganizationAvailability = functions.https.onCall(async (data) => {
-  const rawInput = String(data?.organizationId ?? data?.name ?? '').trim();
-  if (!rawInput) throw httpsError('invalid-argument', 'organizationId o nombre requerido.');
-
-  return buildOrganizationSuggestions(rawInput);
-});
-
-export const resolveOrganizationId = functions.https.onCall(async (data) => {
-  const rawInput = String(data?.input ?? data?.organizationId ?? data?.name ?? '').trim();
-  if (!rawInput) throw httpsError('invalid-argument', 'organizationId o nombre requerido.');
-
-  const normalizedId = sanitizeOrganizationId(rawInput);
-  if (normalizedId) {
-    const doc = await db.collection('organizationsPublic').doc(normalizedId).get();
-    if (doc.exists) {
-      const data = doc.data() as any;
-      return {
-        organizationId: normalizedId,
-        name: String(data?.name ?? normalizedId),
-        matchedBy: 'id',
-        matches: [],
-      };
-    }
-  }
-
-  const nameLower = normalizeOrganizationName(rawInput);
-  const matchesSnap = await db
-    .collection('organizationsPublic')
-    .where('nameLower', '==', nameLower)
-    .limit(5)
-    .get();
-
-  if (matchesSnap.empty) {
-    return { organizationId: null, name: null, matchedBy: null, matches: [] };
-  }
-
-  const matches = matchesSnap.docs.map((doc) => {
-    const data = doc.data() as any;
-    return {
-      organizationId: doc.id,
-      name: String(data?.name ?? doc.id),
-    };
-  });
-
-  if (matches.length === 1) {
-    const match = matches[0];
-    return {
-      organizationId: match.organizationId,
-      name: match.name,
-      matchedBy: 'name',
-      matches: [],
-    };
-  }
-
-  return {
-    organizationId: null,
-    name: null,
-    matchedBy: null,
-    matches,
-  };
-});
-
 export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const uid = requireAuth(context);
 
-  const signupMode =
-    data?.signupMode === 'create' || data?.signupMode === 'join'
-      ? data.signupMode
-      : null;
-
-  const orgIdIn = String(data?.organizationId ?? data?.organizationDetails?.name ?? '');
+  const orgIdIn = String(data?.organizationId ?? '');
   const organizationId = sanitizeOrganizationId(orgIdIn);
   if (!organizationId) throw httpsError('invalid-argument', 'organizationId requerido.');
+
+  const requestedRoleRaw = data?.requestedRole;
+  const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operator';
+  if (!requestedRole) throw httpsError('invalid-argument', 'requestedRole inválido.');
 
   const authUser = await admin.auth().getUser(uid).catch(() => null);
   const email = (authUser?.email ?? String(data?.email ?? '')).trim().toLowerCase();
@@ -1186,85 +970,118 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
 
   const orgRef = db.collection('organizations').doc(organizationId);
   const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
-  const [orgSnap, orgPublicSnap] = await Promise.all([orgRef.get(), orgPublicRef.get()]);
+  const orgSnap = await orgRef.get();
 
   const userRef = db.collection('users').doc(uid);
   const memberRef = orgRef.collection('members').doc(uid);
+  void memberRef;
   const membershipRef = db.collection('memberships').doc(`${uid}_${organizationId}`);
 
   const now = admin.firestore.FieldValue.serverTimestamp();
 
-  if (signupMode === 'create' && (orgSnap.exists || orgPublicSnap.exists)) {
-    throw httpsError('failed-precondition', 'Ese ID ya existe.');
-  }
-
-  if (!orgSnap.exists && !orgPublicSnap.exists && signupMode !== 'join') {
+  if (!orgSnap.exists) {
     const details = (data?.organizationDetails ?? {}) as any;
 
     const orgName = String(details?.name ?? '').trim() || organizationId;
-    const confirmationToken = randomBytes(32).toString('hex');
-    const requestRef = db.collection('organizationSignupRequests').doc(confirmationToken);
-    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 1000 * 60 * 60 * 24 * 3));
 
-    await requestRef.set(
+    const batch = db.batch();
+
+    batch.set(
+      orgRef,
       {
         organizationId,
-        organizationName: orgName,
-        organizationDetails: {
-          name: orgName,
-          taxId: String(details?.taxId ?? '').trim() || null,
-          country: String(details?.country ?? '').trim() || null,
-          address: String(details?.address ?? '').trim() || null,
-          billingEmail: String(details?.billingEmail ?? '').trim() || email || null,
-          phone: String(details?.phone ?? '').trim() || null,
-          teamSize: Number.isFinite(Number(details?.teamSize)) ? Number(details?.teamSize) : null,
+        name: orgName,
+        taxId: String(details?.taxId ?? '').trim() || null,
+        country: String(details?.country ?? '').trim() || null,
+        address: String(details?.address ?? '').trim() || null,
+        billingEmail: String(details?.billingEmail ?? '').trim() || email || null,
+        contactPhone: String(details?.phone ?? '').trim() || null,
+        teamSize: Number.isFinite(Number(details?.teamSize)) ? Number(details?.teamSize) : null,
+        subscriptionPlan: 'trial',
+        isActive: true,
+        settings: {
+          allowGuestAccess: false,
+          maxUsers: 50,
         },
-        requestedRole: 'super_admin',
-        uid,
-        email: email || null,
-        displayName: displayName || email || 'Usuario',
-        status: 'pending',
-        confirmationToken,
-        expiresAt,
         createdAt: now,
         updatedAt: now,
-        source: 'bootstrapSignup_pre_registration_v1',
+        source: 'bootstrapSignup_v1',
       },
-      { merge: true }
+      { merge: true },
     );
 
-    const confirmationLink = resolveSignupConfirmationLink(confirmationToken);
+    batch.set(
+      orgPublicRef,
+      {
+        organizationId,
+        name: orgName,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapSignup_v1',
+      },
+      { merge: true },
+    );
 
-    try {
-      if (email) {
-        await sendSignupConfirmationEmail({
-          recipientEmail: email,
-          orgName,
-          confirmationLink,
-        });
-      }
-    } catch (error) {
-      console.warn('Error enviando email de confirmación de organización.', error);
-    }
+    batch.set(
+      userRef,
+      {
+        organizationId,
+        email: email || null,
+        displayName: displayName || email || 'Usuario',
+        role: 'super_admin',
+        active: true,
+        updatedAt: now,
+        createdAt: now,
+        source: 'bootstrapSignup_v1',
+      },
+      { merge: true },
+    );
+
+    batch.set(
+      membershipRef,
+      {
+        userId: uid,
+        organizationId,
+        organizationName: orgName,
+        role: 'super_admin',
+        status: 'active',
+        primary: true,
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapSignup_v1',
+      },
+      { merge: true },
+    );
+
+    batch.set(
+      memberRef,
+      {
+        uid,
+        orgId: organizationId,
+        email: email || null,
+        displayName: displayName || email || 'Usuario',
+        role: 'super_admin',
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapSignup_v1',
+      },
+      { merge: true },
+    );
+
+    await batch.commit();
 
     await auditLog({
-      action: 'bootstrapSignup_pre_registration',
+      action: 'bootstrapSignup_create_org',
       actorUid: uid,
       actorEmail: email || null,
       orgId: organizationId,
-      after: { organizationId, role: 'super_admin', status: 'pending' },
+      after: { organizationId, role: 'super_admin', status: 'active' },
     });
 
-    return { ok: true, mode: 'verification_required', organizationId };
+    return { ok: true, mode: 'created', organizationId };
   }
-
-  if (!orgSnap.exists) {
-    throw httpsError('not-found', 'La organización no existe.');
-  }
-
-  const requestedRoleRaw = data?.requestedRole;
-  const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operator';
-  if (!requestedRole) throw httpsError('invalid-argument', 'requestedRole inválido.');
 
   const orgData = orgSnap.data() as any;
   const orgName = String(orgData?.name ?? organizationId);
@@ -1334,321 +1151,6 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
 
   return { ok: true, mode: 'pending', organizationId };
 });
-
-export const confirmOrganizationSignup = functions.https.onRequest(async (req, res) => {
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    res.status(405).send('Method Not Allowed');
-    return;
-  }
-
-  const token = String(req.query?.token ?? req.body?.token ?? '').trim();
-  if (!token) {
-    res.status(400).send('Token de confirmación requerido.');
-    return;
-  }
-
-  try {
-    const requestRef = db.collection('organizationSignupRequests').doc(token);
-    const requestSnap = await requestRef.get();
-
-    if (!requestSnap.exists) {
-      res.status(404).send('Solicitud no encontrada.');
-      return;
-    }
-
-    const request = requestSnap.data() as any;
-    if (request.status === 'confirmed') {
-      res.status(200).send('La organización ya fue confirmada. Puedes iniciar sesión.');
-      return;
-    }
-
-    const expiresAt = request.expiresAt?.toDate?.();
-    if (expiresAt && expiresAt.getTime() < Date.now()) {
-      res.status(410).send('El enlace de confirmación ha expirado. Inicia un nuevo registro.');
-      return;
-    }
-
-    const organizationId = sanitizeOrganizationId(String(request.organizationId ?? ''));
-    if (!organizationId) {
-      res.status(400).send('Solicitud inválida.');
-      return;
-    }
-
-    const orgRef = db.collection('organizations').doc(organizationId);
-    const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
-    const [orgSnap, orgPublicSnap] = await Promise.all([orgRef.get(), orgPublicRef.get()]);
-
-    if (orgSnap.exists || orgPublicSnap.exists) {
-      res.status(409).send('Ese ID de organización ya está en uso.');
-      return;
-    }
-
-    const now = admin.firestore.FieldValue.serverTimestamp();
-    const orgName = String(request.organizationName ?? organizationId);
-    const details = (request.organizationDetails ?? {}) as any;
-    const uid = String(request.uid ?? '');
-    const email = String(request.email ?? '').trim().toLowerCase();
-    const displayName = String(request.displayName ?? '').trim() || email || 'Usuario';
-
-    const userRef = db.collection('users').doc(uid);
-    const memberRef = orgRef.collection('members').doc(uid);
-    const membershipRef = db.collection('memberships').doc(`${uid}_${organizationId}`);
-
-    const batch = db.batch();
-
-    batch.set(
-      orgRef,
-      {
-        organizationId,
-        name: orgName,
-        taxId: String(details?.taxId ?? '').trim() || null,
-        country: String(details?.country ?? '').trim() || null,
-        address: String(details?.address ?? '').trim() || null,
-        billingEmail: String(details?.billingEmail ?? '').trim() || email || null,
-        contactPhone: String(details?.phone ?? '').trim() || null,
-        teamSize: Number.isFinite(Number(details?.teamSize)) ? Number(details?.teamSize) : null,
-        subscriptionPlan: 'trial',
-        isActive: true,
-        settings: {
-          allowGuestAccess: false,
-          maxUsers: 50,
-        },
-        createdAt: now,
-        updatedAt: now,
-        source: 'confirmOrganizationSignup_v1',
-      },
-      { merge: true }
-    );
-
-    batch.set(
-      orgPublicRef,
-      {
-        organizationId,
-        name: orgName,
-        nameLower: normalizeOrganizationName(orgName),
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-        source: 'confirmOrganizationSignup_v1',
-      },
-      { merge: true }
-    );
-
-    batch.set(
-      userRef,
-      {
-        organizationId,
-        email: email || null,
-        displayName,
-        role: 'super_admin',
-        active: true,
-        updatedAt: now,
-        createdAt: now,
-        source: 'confirmOrganizationSignup_v1',
-      },
-      { merge: true }
-    );
-
-    batch.set(
-      membershipRef,
-      {
-        userId: uid,
-        organizationId,
-        organizationName: orgName,
-        role: 'super_admin',
-        status: 'active',
-        primary: true,
-        createdAt: now,
-        updatedAt: now,
-        source: 'confirmOrganizationSignup_v1',
-      },
-      { merge: true }
-    );
-
-    batch.set(
-      memberRef,
-      {
-        uid,
-        orgId: organizationId,
-        email: email || null,
-        displayName,
-        role: 'super_admin',
-        active: true,
-        createdAt: now,
-        updatedAt: now,
-        source: 'confirmOrganizationSignup_v1',
-      },
-      { merge: true }
-    );
-
-    batch.set(
-      requestRef,
-      {
-        status: 'confirmed',
-        confirmedAt: now,
-        updatedAt: now,
-        source: 'confirmOrganizationSignup_v1',
-      },
-      { merge: true }
-    );
-
-    await batch.commit();
-
-    await auditLog({
-      action: 'confirmOrganizationSignup_create_org',
-      actorUid: uid || null,
-      actorEmail: email || null,
-      orgId: organizationId,
-      after: { organizationId, role: 'super_admin', status: 'active' },
-    });
-
-    res
-      .status(200)
-      .send(
-        'Organización confirmada correctamente. Ya puedes iniciar sesión en Maintelligence.'
-      );
-  } catch (err: any) {
-    console.error('confirmOrganizationSignup failed', err);
-    res.status(500).send('No se pudo confirmar la organización.');
-  }
-});
-
-
-
-export const bootstrapFromInvites = functions.https.onCall(async (data, context) => {
-  const uid = requireAuth(context);
-
-  const authUser = await admin.auth().getUser(uid).catch(() => null);
-  const email = (authUser?.email ?? String(data?.email ?? '')).trim().toLowerCase();
-  const displayName = (authUser?.displayName ?? String(data?.displayName ?? '').trim()) || null;
-
-  // Always ensure at least a minimal user profile exists.
-  const userRef = db.collection('users').doc(uid);
-  const now = admin.firestore.FieldValue.serverTimestamp();
-
-  if (!email) {
-    await userRef.set(
-      {
-        displayName,
-        updatedAt: now,
-        source: 'bootstrapFromInvites_v1',
-      },
-      { merge: true }
-    );
-    return { ok: true, claimed: 0, organizations: [] };
-  }
-
-  // Look for pending joinRequests created by orgInviteUser (docId: invite_<email>) across all orgs.
-  // We only filter by email in Firestore to avoid requiring composite indexes; status is filtered in-memory.
-  const cg = db.collectionGroup('joinRequests').where('email', '==', email).limit(20);
-  const snap = await cg.get();
-
-  const pending = snap.docs.filter((d) => String(d.get('status') ?? 'pending') === 'pending');
-
-  if (pending.length === 0) {
-    await userRef.set(
-      {
-        email,
-        displayName,
-        updatedAt: now,
-        source: 'bootstrapFromInvites_v1',
-      },
-      { merge: true }
-    );
-    return { ok: true, claimed: 0, organizations: [] };
-  }
-
-  const batch = db.batch();
-  const orgIds: string[] = [];
-
-  for (const jrSnap of pending) {
-    // jrSnap.ref is organizations/{orgId}/joinRequests/{requestId}
-    const orgRef = jrSnap.ref.parent.parent;
-    const orgId = sanitizeOrganizationId(String(jrSnap.get('organizationId') ?? orgRef?.id ?? ''));
-
-    if (!orgId) continue;
-    orgIds.push(orgId);
-
-    const orgName = String(jrSnap.get('organizationName') ?? orgId);
-    const requestedRole: Role = normalizeRole(jrSnap.get('requestedRole')) ?? normalizeRole(jrSnap.get('role')) ?? 'operator';
-    const departmentId = String(jrSnap.get('departmentId') ?? '').trim() || null;
-    const inviteId = jrSnap.id;
-
-    const joinReqRef = db.collection('organizations').doc(orgId).collection('joinRequests').doc(uid);
-    batch.set(
-      joinReqRef,
-      stripUndefinedDeep({
-        userId: uid,
-        organizationId: orgId,
-        organizationName: orgName,
-        email,
-        displayName: String(jrSnap.get('displayName') ?? displayName ?? email),
-        requestedRole,
-        status: 'pending',
-        departmentId,
-        invitedBy: jrSnap.get('invitedBy') ?? null,
-        invitedByEmail: jrSnap.get('invitedByEmail') ?? null,
-        invitedAt: jrSnap.get('invitedAt') ?? null,
-        createdAt: jrSnap.get('createdAt') ?? now,
-        updatedAt: now,
-        source: 'bootstrapFromInvites_v1',
-      }),
-      { merge: true }
-    );
-
-    // Migrate legacy invite doc (invite_<email>) to docId == uid for consistent approval flows.
-    if (inviteId !== uid) {
-      batch.delete(jrSnap.ref);
-    }
-
-    // Create/merge a pending membership so the user sees the organization in the UI immediately.
-    const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
-    batch.set(
-      membershipRef,
-      stripUndefinedDeep({
-        userId: uid,
-        organizationId: orgId,
-        organizationName: orgName,
-        role: requestedRole,
-        status: 'pending',
-        departmentId,
-        primary: false,
-        createdAt: now,
-        updatedAt: now,
-        source: 'bootstrapFromInvites_v1',
-      }),
-      { merge: true }
-    );
-  }
-
-  const uniqueOrgIds = Array.from(new Set(orgIds)).filter(Boolean);
-
-  // If there is exactly one pending org, set it as the default active org in the user profile.
-  const userPatch: any = {
-    email,
-    displayName,
-    updatedAt: now,
-    source: 'bootstrapFromInvites_v1',
-  };
-  if (uniqueOrgIds.length === 1) {
-    userPatch.organizationId = uniqueOrgIds[0];
-  }
-
-  batch.set(userRef, stripUndefinedDeep(userPatch), { merge: true });
-
-  await batch.commit();
-
-  await auditLog({
-    action: 'bootstrapFromInvites',
-    actorUid: uid,
-    actorEmail: email,
-    orgId: uniqueOrgIds.length === 1 ? uniqueOrgIds[0] : null,
-    meta: { claimed: uniqueOrgIds.length, organizations: uniqueOrgIds },
-  });
-
-  return { ok: true, claimed: uniqueOrgIds.length, organizations: uniqueOrgIds };
-});
-
 
 export const setActiveOrganization = functions.https.onCall(async (data, context) => {
   const uid = requireAuth(context);
@@ -1836,71 +1338,6 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
   return { ok: true, organizationId: orgId, uid: targetUid };
 });
 
-export const orgRemoveUserFromOrg = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
-  const isRoot = isRootClaim(context);
-
-  const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
-  const targetUid = String(data?.uid ?? '').trim();
-
-  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
-  if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
-
-  if (!isRoot) {
-    await requireCallerSuperAdminInOrg(actorUid, orgId);
-  }
-
-  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(targetUid);
-  const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
-  const userRef = db.collection('users').doc(targetUid);
-
-  const [memberSnap, membershipSnap, userSnap] = await Promise.all([
-    memberRef.get(),
-    membershipRef.get(),
-    userRef.get(),
-  ]);
-
-  if (!memberSnap.exists && !membershipSnap.exists) {
-    throw httpsError('not-found', 'El usuario objetivo no pertenece a esa organización.');
-  }
-
-  const batch = db.batch();
-  if (memberSnap.exists) batch.delete(memberRef);
-  if (membershipSnap.exists) batch.delete(membershipRef);
-
-  const userOrgId = String(userSnap.data()?.organizationId ?? '');
-  if (userSnap.exists && userOrgId === orgId) {
-    batch.set(
-      userRef,
-      {
-        organizationId: null,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        source: 'orgRemoveUserFromOrg_v1',
-      },
-      { merge: true },
-    );
-  }
-
-  await batch.commit();
-
-  try {
-  await auditLog({
-    action: 'orgRemoveUserFromOrg',
-    actorUid,
-    actorEmail,
-    orgId,
-    targetUid,
-    targetEmail: String(userSnap.data()?.email ?? null),
-    after: { removed: true },
-  });
-} catch (err) {
-  console.error('[orgRemoveUserFromOrg] auditLog failed', err);
-}
-
-return { ok: true, organizationId: orgId, uid: targetUid };
-});
-
 export const orgApproveJoinRequest = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
@@ -1940,6 +1377,7 @@ export const orgApproveJoinRequest = functions.https.onCall(async (data, context
 
   const userRef = db.collection('users').doc(targetUid);
   const memberRef = orgRef.collection('members').doc(targetUid);
+  void memberRef;
   const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
 
   const now = admin.firestore.FieldValue.serverTimestamp();
