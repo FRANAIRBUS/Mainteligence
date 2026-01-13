@@ -905,6 +905,7 @@ exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
     const authUser = await admin.auth().getUser(uid).catch(() => null);
     const email = ((_b = authUser === null || authUser === void 0 ? void 0 : authUser.email) !== null && _b !== void 0 ? _b : String((_c = data === null || data === void 0 ? void 0 : data.email) !== null && _c !== void 0 ? _c : '')).trim().toLowerCase();
     const displayName = ((_d = authUser === null || authUser === void 0 ? void 0 : authUser.displayName) !== null && _d !== void 0 ? _d : String((_e = data === null || data === void 0 ? void 0 : data.displayName) !== null && _e !== void 0 ? _e : '').trim()) || null;
+    const signupMode = String((_f = data === null || data === void 0 ? void 0 : data.signupMode) !== null && _f !== void 0 ? _f : 'join');
     const orgRef = db.collection('organizations').doc(organizationId);
     const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
     const orgSnap = await orgRef.get();
