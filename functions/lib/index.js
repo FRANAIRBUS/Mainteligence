@@ -892,7 +892,7 @@ exports.checkOrganizationAvailability = functions.https.onCall(async (data) => {
     };
 });
 exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
     const uid = requireAuth(context);
     const orgIdIn = String((_a = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _a !== void 0 ? _a : '');
     const organizationId = sanitizeOrganizationId(orgIdIn);

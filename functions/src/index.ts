@@ -1073,8 +1073,6 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const authUser = await admin.auth().getUser(uid).catch(() => null);
   const email = (authUser?.email ?? String(data?.email ?? '')).trim().toLowerCase();
   const displayName = (authUser?.displayName ?? String(data?.displayName ?? '').trim()) || null;
-  const signupMode = String(data?.signupMode ?? 'join');
-
   const orgRef = db.collection('organizations').doc(organizationId);
   const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
   const orgSnap = await orgRef.get();
