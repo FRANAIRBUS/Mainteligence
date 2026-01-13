@@ -388,16 +388,18 @@ router.replace('/');
                     </div>
                   )}
 
-                  <div className="flex items-start space-x-2">
-                    <Checkbox
-                      id="requestAdminRole"
-                      checked={requestAdminRole}
-                      onCheckedChange={(v) => setRequestAdminRole(Boolean(v))}
-                    />
-                    <Label htmlFor="requestAdminRole" className="leading-5">
-                      Solicitar rol de admin (requiere aprobación)
-                    </Label>
-                  </div>
+                  {signupMode === 'join' && (
+                    <div className="flex items-start space-x-2">
+                      <Checkbox
+                        id="requestAdminRole"
+                        checked={requestAdminRole}
+                        onCheckedChange={(v) => setRequestAdminRole(Boolean(v))}
+                      />
+                      <Label htmlFor="requestAdminRole" className="leading-5">
+                        Solicitar rol de admin (requiere aprobación)
+                      </Label>
+                    </div>
+                  )}
 
                   {signupMode === 'create' && (
                     <div className="rounded-md border p-4 space-y-3">
