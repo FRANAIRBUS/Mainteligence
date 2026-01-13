@@ -46,8 +46,7 @@ const formSchema = z.object({
   assetId: z
     .string()
     .optional()
-    .or(z.literal(''))
-    .transform(value => value || undefined),
+    .transform((value) => (value && value !== '__none__' ? value : undefined)),
   priority: z.enum(['Baja', 'Media', 'Alta', 'Crítica'], {
     required_error: 'Debe seleccionar una prioridad.',
   }),
@@ -79,6 +78,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       title: '',
       description: '',
       priority: 'Media',
+      assetId: '__none__',
     },
   });
 
@@ -271,7 +271,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                 <Select
                   name={field.name}
                   onValueChange={field.onChange}
-                  value={field.value === undefined ? undefined : field.value}
+                  value={field.value ?? '__none__'}
                 >
                   <FormControl>
                     <SelectTrigger>
@@ -279,7 +279,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="">Sin activo</SelectItem>
+                    <SelectItem value="__none__">Sin activo</SelectItem>
                     {assets.map((asset) => (
                       <SelectItem key={asset.id} value={asset.id}>
                         {asset.name}
