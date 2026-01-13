@@ -953,6 +953,112 @@ function sanitizeOrganizationId(input: string): string {
   return cleaned;
 }
 
+export const resolveOrganizationId = functions.https.onCall(async (data) => {
+  const input = String(data?.input ?? '').trim();
+  if (!input) throw httpsError('invalid-argument', 'input requerido.');
+
+  const normalizedId = sanitizeOrganizationId(input);
+
+  if (normalizedId) {
+    const orgPublicRef = db.collection('organizationsPublic').doc(normalizedId);
+    const orgSnap = await orgPublicRef.get();
+    if (orgSnap.exists) {
+      const orgData = orgSnap.data() as { name?: string };
+      return {
+        organizationId: normalizedId,
+        name: orgData?.name ?? normalizedId,
+        matchedBy: 'id',
+        matches: [],
+      };
+    }
+  }
+
+  const nameLower = input.toLowerCase();
+  const matches: { organizationId: string; name: string }[] = [];
+
+  const byNameLower = await db
+    .collection('organizationsPublic')
+    .where('nameLower', '==', nameLower)
+    .limit(5)
+    .get();
+
+  byNameLower.forEach((docSnap) => {
+    const data = docSnap.data() as { name?: string };
+    matches.push({ organizationId: docSnap.id, name: data?.name ?? docSnap.id });
+  });
+
+  if (matches.length === 0) {
+    const byNameExact = await db
+      .collection('organizationsPublic')
+      .where('name', '==', input)
+      .limit(5)
+      .get();
+
+    byNameExact.forEach((docSnap) => {
+      const data = docSnap.data() as { name?: string };
+      matches.push({ organizationId: docSnap.id, name: data?.name ?? docSnap.id });
+    });
+  }
+
+  if (matches.length === 1) {
+    return {
+      organizationId: matches[0].organizationId,
+      name: matches[0].name,
+      matchedBy: 'name',
+      matches: [],
+    };
+  }
+
+  return {
+    organizationId: null,
+    name: null,
+    matchedBy: null,
+    matches,
+  };
+});
+
+export const checkOrganizationAvailability = functions.https.onCall(async (data) => {
+  const input = String(data?.organizationId ?? '').trim();
+  if (!input) throw httpsError('invalid-argument', 'organizationId requerido.');
+
+  const normalizedId = sanitizeOrganizationId(input);
+  if (!normalizedId) throw httpsError('invalid-argument', 'organizationId inválido.');
+
+  const orgPublicRef = db.collection('organizationsPublic').doc(normalizedId);
+  const orgSnap = await orgPublicRef.get();
+
+  if (!orgSnap.exists) {
+    return {
+      normalizedId,
+      available: true,
+      suggestions: [],
+      existingName: null,
+    };
+  }
+
+  const existingName = String((orgSnap.data() as { name?: string })?.name ?? normalizedId);
+  const candidates = Array.from({ length: 5 }, (_, idx) =>
+    idx === 0 ? normalizedId : `${normalizedId}-${idx + 1}`,
+  );
+
+  const taken = new Set<string>();
+  const snap = await db
+    .collection('organizationsPublic')
+    .where(admin.firestore.FieldPath.documentId(), 'in', candidates)
+    .get();
+
+  snap.forEach((docSnap) => taken.add(docSnap.id));
+
+  const suggestions = candidates.filter((candidate) => !taken.has(candidate));
+
+  return {
+    normalizedId,
+    available: false,
+    suggestions,
+    existingName,
+  };
+});
+
 export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const uid = requireAuth(context);
 
@@ -967,6 +1073,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const authUser = await admin.auth().getUser(uid).catch(() => null);
   const email = (authUser?.email ?? String(data?.email ?? '')).trim().toLowerCase();
   const displayName = (authUser?.displayName ?? String(data?.displayName ?? '').trim()) || null;
+  const signupMode = String(data?.signupMode ?? 'join');
 
   const orgRef = db.collection('organizations').doc(organizationId);
   const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
@@ -983,6 +1090,36 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
     const details = (data?.organizationDetails ?? {}) as any;
 
     const orgName = String(details?.name ?? '').trim() || organizationId;
+    const orgLegalName = String(details?.legalName ?? '').trim() || null;
+
+    if (!authUser?.emailVerified) {
+      await db.collection('organizationSignupRequests').doc(uid).set(
+        {
+          userId: uid,
+          email: email || null,
+          organizationId,
+          organizationName: orgName,
+          organizationLegalName: orgLegalName,
+          organizationDetails: {
+            name: orgName,
+            legalName: orgLegalName,
+            taxId: String(details?.taxId ?? '').trim() || null,
+            country: String(details?.country ?? '').trim() || null,
+            address: String(details?.address ?? '').trim() || null,
+            billingEmail: String(details?.billingEmail ?? '').trim() || email || null,
+            phone: String(details?.phone ?? '').trim() || null,
+            teamSize: Number.isFinite(Number(details?.teamSize)) ? Number(details?.teamSize) : null,
+          },
+          status: 'verification_pending',
+          createdAt: now,
+          updatedAt: now,
+          source: 'bootstrapSignup_v1',
+        },
+        { merge: true },
+      );
+
+      return { ok: true, mode: 'verification_required', organizationId };
+    }
 
     const batch = db.batch();
 
@@ -991,6 +1128,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       {
         organizationId,
         name: orgName,
+        legalName: orgLegalName,
         taxId: String(details?.taxId ?? '').trim() || null,
         country: String(details?.country ?? '').trim() || null,
         address: String(details?.address ?? '').trim() || null,
@@ -1015,6 +1153,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       {
         organizationId,
         name: orgName,
+        nameLower: orgName.toLowerCase(),
         isActive: true,
         createdAt: now,
         updatedAt: now,
@@ -1150,6 +1289,144 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   });
 
   return { ok: true, mode: 'pending', organizationId };
+});
+
+export const finalizeOrganizationSignup = functions.https.onCall(async (_data, context) => {
+  const uid = requireAuth(context);
+
+  const authUser = await admin.auth().getUser(uid).catch(() => null);
+  if (!authUser?.emailVerified) throw httpsError('failed-precondition', 'Email no verificado.');
+
+  const requestRef = db.collection('organizationSignupRequests').doc(uid);
+  const requestSnap = await requestRef.get();
+
+  if (!requestSnap.exists) {
+    return { ok: true, mode: 'noop' };
+  }
+
+  const requestData = requestSnap.data() as any;
+  const organizationId = sanitizeOrganizationId(String(requestData?.organizationId ?? ''));
+  if (!organizationId) throw httpsError('invalid-argument', 'organizationId requerido.');
+
+  const orgRef = db.collection('organizations').doc(organizationId);
+  const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
+  const orgSnap = await orgRef.get();
+
+  if (orgSnap.exists) {
+    await requestRef.delete();
+    return { ok: true, mode: 'already_exists', organizationId };
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const orgDetails = requestData?.organizationDetails ?? {};
+  const orgName = String(orgDetails?.name ?? requestData?.organizationName ?? organizationId).trim() || organizationId;
+  const orgLegalName = String(orgDetails?.legalName ?? requestData?.organizationLegalName ?? '').trim() || null;
+
+  const userRef = db.collection('users').doc(uid);
+  const memberRef = orgRef.collection('members').doc(uid);
+  const membershipRef = db.collection('memberships').doc(`${uid}_${organizationId}`);
+
+  const batch = db.batch();
+
+  batch.set(
+    orgRef,
+    {
+      organizationId,
+      name: orgName,
+      legalName: orgLegalName,
+      taxId: String(orgDetails?.taxId ?? '').trim() || null,
+      country: String(orgDetails?.country ?? '').trim() || null,
+      address: String(orgDetails?.address ?? '').trim() || null,
+      billingEmail: String(orgDetails?.billingEmail ?? '').trim() || authUser?.email || null,
+      contactPhone: String(orgDetails?.phone ?? '').trim() || null,
+      teamSize: Number.isFinite(Number(orgDetails?.teamSize)) ? Number(orgDetails?.teamSize) : null,
+      subscriptionPlan: 'trial',
+      isActive: true,
+      settings: {
+        allowGuestAccess: false,
+        maxUsers: 50,
+      },
+      createdAt: now,
+      updatedAt: now,
+      source: 'bootstrapSignup_v1',
+    },
+    { merge: true },
+  );
+
+  batch.set(
+    orgPublicRef,
+    {
+      organizationId,
+      name: orgName,
+      nameLower: orgName.toLowerCase(),
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+      source: 'bootstrapSignup_v1',
+    },
+    { merge: true },
+  );
+
+  batch.set(
+    userRef,
+    {
+      organizationId,
+      email: authUser?.email ?? null,
+      displayName: authUser?.displayName ?? authUser?.email ?? 'Usuario',
+      role: 'super_admin',
+      active: true,
+      updatedAt: now,
+      createdAt: now,
+      source: 'bootstrapSignup_v1',
+    },
+    { merge: true },
+  );
+
+  batch.set(
+    membershipRef,
+    {
+      userId: uid,
+      organizationId,
+      organizationName: orgName,
+      role: 'super_admin',
+      status: 'active',
+      primary: true,
+      createdAt: now,
+      updatedAt: now,
+      source: 'bootstrapSignup_v1',
+    },
+    { merge: true },
+  );
+
+  batch.set(
+    memberRef,
+    {
+      uid,
+      orgId: organizationId,
+      email: authUser?.email ?? null,
+      displayName: authUser?.displayName ?? authUser?.email ?? 'Usuario',
+      role: 'super_admin',
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+      source: 'bootstrapSignup_v1',
+    },
+    { merge: true },
+  );
+
+  batch.delete(requestRef);
+
+  await batch.commit();
+
+  await auditLog({
+    action: 'bootstrapSignup_create_org',
+    actorUid: uid,
+    actorEmail: authUser?.email ?? null,
+    orgId: organizationId,
+    after: { organizationId, role: 'super_admin', status: 'active' },
+  });
+
+  return { ok: true, mode: 'created', organizationId };
 });
 
 export const setActiveOrganization = functions.https.onCall(async (data, context) => {
