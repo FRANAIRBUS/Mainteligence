@@ -294,15 +294,15 @@ export default function IncidentsPage() {
                 </Select>
               </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3">
               {tableDataIsLoading && (
-                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+                <div className="flex h-24 items-center justify-center gap-2 rounded-lg border border-white/20 bg-background text-muted-foreground">
                   <Icons.spinner className="h-4 w-4 animate-spin" />
                   Cargando incidencias...
                 </div>
               )}
               {!tableDataIsLoading && filteredTickets.length === 0 && (
-                <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+                <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground">
                   No se encontraron incidencias con esos filtros.
                 </div>
               )}
