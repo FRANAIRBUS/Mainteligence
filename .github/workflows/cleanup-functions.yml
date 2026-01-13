@@ -1,0 +1,32 @@
+name: Cleanup Firebase Functions (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: studio-4350140400-a3f8f
+      REGION: us-central1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+
+      - name: Install Firebase CLI
+        run: npm i -g firebase-tools
+
+      - name: Delete orphaned functions (edit this list when needed)
+        run: |
+          firebase functions:delete bootstrapFromInvites --region "${REGION}" --project "${PROJECT_ID}" --force
+          firebase functions:delete orgRemoveUserFromOrg --region "${REGION}" --project "${PROJECT_ID}" --force
