@@ -100,7 +100,7 @@ export default function Home() {
               <Link href="/tasks/new">Crear tarea</Link>
             </Button>
             <Button asChild variant="outline">
-              <Link href="/incidents?new=true">Crear incidencia</Link>
+              <Link href="/incidents/new">Crear incidencia</Link>
             </Button>
           </div>
         </div>

@@ -4,7 +4,7 @@ import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
 import type { Ticket, Site, Department, User } from '@/lib/firebase/models';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +31,6 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AddIncidentDialog } from '@/app/add-incident-dialog';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
@@ -47,9 +46,6 @@ const incidentPriorityOrder: Record<Ticket['priority'], number> = {
 export default function IncidentsPage() {
   const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const router = useRouter();
-  const searchParams = useSearchParams();
-
-  const [isAddIncidentOpen, setIsAddIncidentOpen] = useState(false);
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -65,12 +61,6 @@ export default function IncidentsPage() {
     }
   }, [userLoading, user, router]);
 
-  useEffect(() => {
-    if (searchParams?.get('new') === 'true') {
-      setIsAddIncidentOpen(true);
-    }
-  }, [searchParams]);
-  
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
   const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
@@ -203,8 +193,8 @@ export default function IncidentsPage() {
         title="Incidencias"
         description="Visualiza y gestiona todas las incidencias correctivas."
         action={
-          <Button className="w-full sm:w-auto" onClick={() => setIsAddIncidentOpen(true)}>
-            Crear Incidencia
+          <Button className="w-full sm:w-auto" asChild>
+            <Link href="/incidents/new">Crear Incidencia</Link>
           </Button>
         }
       >
@@ -408,7 +398,6 @@ export default function IncidentsPage() {
         </Card>
       </AppShell>
 
-      <AddIncidentDialog open={isAddIncidentOpen} onOpenChange={setIsAddIncidentOpen} />
       {editingTicket && (
         <EditIncidentDialog
           open={isEditIncidentOpen}
