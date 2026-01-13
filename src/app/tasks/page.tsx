@@ -284,9 +284,9 @@ export default function TasksPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3">
           {!loading && paginated.length === 0 && (
-            <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground sm:col-span-2 xl:col-span-3">
+            <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground">
               No hay tareas que coincidan con los filtros.
             </div>
           )}
