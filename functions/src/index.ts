@@ -1061,6 +1061,10 @@ function sanitizeOrganizationId(input: string): string {
   return cleaned;
 }
 
+function normalizeOrganizationName(input: string): string {
+  return String(input ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 function resolveSignupConfirmationLink(token: string) {
   const configuredBase = SIGNUP_CONFIRMATION_BASE_URL.value();
   if (configuredBase) {
@@ -1107,6 +1111,61 @@ export const checkOrganizationAvailability = functions.https.onCall(async (data)
   if (!rawInput) throw httpsError('invalid-argument', 'organizationId o nombre requerido.');
 
   return buildOrganizationSuggestions(rawInput);
+});
+
+export const resolveOrganizationId = functions.https.onCall(async (data) => {
+  const rawInput = String(data?.input ?? data?.organizationId ?? data?.name ?? '').trim();
+  if (!rawInput) throw httpsError('invalid-argument', 'organizationId o nombre requerido.');
+
+  const normalizedId = sanitizeOrganizationId(rawInput);
+  if (normalizedId) {
+    const doc = await db.collection('organizationsPublic').doc(normalizedId).get();
+    if (doc.exists) {
+      const data = doc.data() as any;
+      return {
+        organizationId: normalizedId,
+        name: String(data?.name ?? normalizedId),
+        matchedBy: 'id',
+        matches: [],
+      };
+    }
+  }
+
+  const nameLower = normalizeOrganizationName(rawInput);
+  const matchesSnap = await db
+    .collection('organizationsPublic')
+    .where('nameLower', '==', nameLower)
+    .limit(5)
+    .get();
+
+  if (matchesSnap.empty) {
+    return { organizationId: null, name: null, matchedBy: null, matches: [] };
+  }
+
+  const matches = matchesSnap.docs.map((doc) => {
+    const data = doc.data() as any;
+    return {
+      organizationId: doc.id,
+      name: String(data?.name ?? doc.id),
+    };
+  });
+
+  if (matches.length === 1) {
+    const match = matches[0];
+    return {
+      organizationId: match.organizationId,
+      name: match.name,
+      matchedBy: 'name',
+      matches: [],
+    };
+  }
+
+  return {
+    organizationId: null,
+    name: null,
+    matchedBy: null,
+    matches,
+  };
 });
 
 export const bootstrapSignup = functions.https.onCall(async (data, context) => {
@@ -1366,6 +1425,7 @@ export const confirmOrganizationSignup = functions.https.onRequest(async (req, r
       {
         organizationId,
         name: orgName,
+        nameLower: normalizeOrganizationName(orgName),
         isActive: true,
         createdAt: now,
         updatedAt: now,

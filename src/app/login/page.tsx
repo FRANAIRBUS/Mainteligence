@@ -43,6 +43,8 @@ export default function LoginPage() {
   const [orgLookupError, setOrgLookupError] = useState<string | null>(null);
   const [orgNormalizedId, setOrgNormalizedId] = useState<string | null>(null);
   const [orgSuggestions, setOrgSuggestions] = useState<string[]>([]);
+  const [orgNameMatches, setOrgNameMatches] = useState<{ organizationId: string; name: string }[]>([]);
+  const [orgMatchedBy, setOrgMatchedBy] = useState<'id' | 'name' | null>(null);
   const [signupNotice, setSignupNotice] = useState<string | null>(null);
 
   // New org details (only when create mode)
@@ -77,6 +79,8 @@ export default function LoginPage() {
     setOrgLookupError(null);
     setOrgNormalizedId(null);
     setOrgSuggestions([]);
+    setOrgNameMatches([]);
+    setOrgMatchedBy(null);
 
     setOrgName('');
     setOrgTaxId('');
@@ -95,10 +99,12 @@ export default function LoginPage() {
       setOrgLookupError(null);
       setOrgNormalizedId(null);
       setOrgSuggestions([]);
+      setOrgNameMatches([]);
+      setOrgMatchedBy(null);
       return;
     }
 
-    const lookupValue = signupMode === 'create' ? organizationId.trim() || orgName.trim() : sanitizedOrgId;
+    const lookupValue = signupMode === 'create' ? organizationId.trim() || orgName.trim() : organizationId.trim();
 
     if (!lookupValue) {
       setOrgCheckStatus('idle');
@@ -106,6 +112,8 @@ export default function LoginPage() {
       setOrgLookupError(null);
       setOrgNormalizedId(null);
       setOrgSuggestions([]);
+      setOrgNameMatches([]);
+      setOrgMatchedBy(null);
       return;
     }
 
@@ -115,6 +123,45 @@ export default function LoginPage() {
 
     (async () => {
       try {
+        if (signupMode === 'join') {
+          const fn = httpsCallable(getFunctions(app, 'us-central1'), 'resolveOrganizationId');
+          const res = await fn({ input: lookupValue });
+          const payload = res?.data as {
+            organizationId?: string | null;
+            name?: string | null;
+            matchedBy?: 'id' | 'name' | null;
+            matches?: { organizationId: string; name: string }[];
+          };
+
+          if (cancelled) return;
+
+          const resolvedId = payload?.organizationId ?? null;
+          const matches = Array.isArray(payload?.matches) ? payload.matches : [];
+
+          if (resolvedId) {
+            setOrgCheckStatus('exists');
+            setOrgLookupName(payload?.name ?? null);
+            setOrgNormalizedId(resolvedId);
+            setOrgMatchedBy(payload?.matchedBy ?? null);
+            setOrgNameMatches([]);
+          } else if (matches.length > 0) {
+            setOrgCheckStatus('exists');
+            setOrgLookupName(null);
+            setOrgNormalizedId(null);
+            setOrgMatchedBy(null);
+            setOrgNameMatches(matches);
+          } else {
+            setOrgCheckStatus('available');
+            setOrgLookupName(null);
+            setOrgNormalizedId(sanitizedOrgId || null);
+            setOrgMatchedBy(null);
+            setOrgNameMatches([]);
+          }
+
+          setOrgSuggestions([]);
+          return;
+        }
+
         const fn = httpsCallable(getFunctions(app, 'us-central1'), 'checkOrganizationAvailability');
         const res = await fn({ organizationId: lookupValue });
         const payload = res?.data as {
@@ -131,6 +178,8 @@ export default function LoginPage() {
         setOrgLookupName(payload?.existingName ?? null);
         setOrgNormalizedId(payload?.normalizedId ?? null);
         setOrgSuggestions(Array.isArray(payload?.suggestions) ? payload.suggestions : []);
+        setOrgNameMatches([]);
+        setOrgMatchedBy(null);
       } catch (err: any) {
         if (cancelled) return;
         setOrgCheckStatus('error');
@@ -231,10 +280,25 @@ router.replace('/');
         }
         orgId = String(payload?.normalizedId ?? orgId);
       } else {
-        if (!orgId) throw new Error('Indica el ID de la organización.');
-        if (orgCheckStatus === 'available') {
-          throw new Error('La organización no existe. Cambia a "Crear una nueva organización" o revisa el ID.');
+        if (!organizationId.trim()) throw new Error('Indica el ID o nombre de la organización.');
+        const resolveOrg = httpsCallable(getFunctions(app, 'us-central1'), 'resolveOrganizationId');
+        const res = await resolveOrg({ input: organizationId.trim() });
+        const payload = res?.data as {
+          organizationId?: string | null;
+          matches?: { organizationId: string; name: string }[];
+        };
+
+        if (!payload?.organizationId) {
+          if (payload?.matches?.length) {
+            const options = payload.matches
+              .map((match) => `${match.name} (${match.organizationId})`)
+              .join(', ');
+            throw new Error(`Hay varias organizaciones con ese nombre. Usa el ID exacto: ${options}.`);
+          }
+          throw new Error('No encontramos una organización con ese ID o nombre.');
         }
+
+        orgId = payload.organizationId;
       }
 
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
@@ -350,21 +414,36 @@ router.replace('/');
 
                   <div className="space-y-2">
                     <Label htmlFor="organizationId">
-                      ID de organización {signupMode === 'join' ? '(obligatorio)' : '(opcional)'}
+                      ID o nombre de organización {signupMode === 'join' ? '(obligatorio)' : '(opcional)'}
                     </Label>
                     <Input
                       id="organizationId"
-                      placeholder="ej: mi-empresa"
+                      placeholder="ej: mi-empresa o Empresa S.A."
                       value={organizationId}
                       onChange={(e) => setOrganizationId(e.target.value)}
                       required={signupMode === 'join'}
                     />
                     <div className="text-xs text-muted-foreground">
                       {orgCheckStatus === 'checking' && 'Comprobando disponibilidad…'}
-                      {signupMode === 'join' && orgCheckStatus === 'exists' && (
-                        <>Organización encontrada: <b>{orgLookupName ?? orgNormalizedId ?? sanitizedOrgId}</b></>
+                      {signupMode === 'join' && orgCheckStatus === 'exists' && orgNameMatches.length === 0 && (
+                        <>
+                          Organización encontrada:{' '}
+                          <b>{orgLookupName ?? orgNormalizedId ?? sanitizedOrgId}</b>
+                          {orgMatchedBy === 'name' && orgNormalizedId && (
+                            <span> (ID: {orgNormalizedId})</span>
+                          )}
+                        </>
                       )}
-                      {signupMode === 'join' && orgCheckStatus === 'available' && 'No existe una organización con ese ID.'}
+                      {signupMode === 'join' && orgCheckStatus === 'exists' && orgNameMatches.length > 0 && (
+                        <>
+                          Se encontraron varias organizaciones:{' '}
+                          <b>{orgNameMatches.map((m) => `${m.name} (${m.organizationId})`).join(', ')}</b>. Usa el ID
+                          exacto.
+                        </>
+                      )}
+                      {signupMode === 'join' &&
+                        orgCheckStatus === 'available' &&
+                        'No existe una organización con ese ID o nombre.'}
                       {signupMode === 'create' && orgCheckStatus === 'available' && orgNormalizedId && (
                         <>ID disponible: <b>{orgNormalizedId}</b></>
                       )}
@@ -383,7 +462,7 @@ router.replace('/');
                   {signupMode === 'join' && (
                     <div className="space-y-2">
                       <div className="text-xs text-muted-foreground">
-                        Si ya tienes el ID de tu organización, úsalo para solicitar acceso.
+                        Puedes introducir el ID o el nombre para solicitar acceso.
                       </div>
                     </div>
                   )}
