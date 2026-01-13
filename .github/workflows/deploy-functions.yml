@@ -25,28 +25,36 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            functions/package-lock.json
+
+      - name: Auth to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+
+      - name: Install Firebase CLI
+        run: npm i -g firebase-tools
 
       - name: Install Dependencies
-        run: |
-          cd functions
-          npm ci
+        working-directory: functions
+        run: npm ci
 
       - name: Build Functions
-        run: |
-          cd functions
-          npm run build
+        working-directory: functions
+        run: npm run build
 
       - name: Write Functions params env file
         run: |
           echo "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}" > "functions/.env.${{ env.PROJECT_ID }}"
           echo "RESEND_FROM=${{ secrets.RESEND_FROM }}" >> "functions/.env.${{ env.PROJECT_ID }}"
 
-      - name: Deploy and Config
-        uses: w9jds/firebase-action@master
-        with:
-          # IMPORTANT: firebase-action already runs `firebase`, so args must NOT start with `firebase`
-          args: deploy --project ${{ env.PROJECT_ID }} --only functions,firestore:rules,firestore:indexes,storage:rules --non-interactive
-        env:
-          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
-          PROJECT_ID: ${{ env.PROJECT_ID }}
+      - name: Deploy (functions + rules + indexes + storage rules)
+        run: |
+          firebase deploy \
+            --project "${{ env.PROJECT_ID }}" \
+            --only functions,firestore:rules,firestore:indexes,storage:rules \
+            --non-interactive \
+            --force
