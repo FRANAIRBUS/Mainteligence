@@ -43,7 +43,11 @@ const formSchema = z.object({
     .min(10, { message: 'La descripción debe tener al menos 10 caracteres.' }),
   siteId: z.string({ required_error: 'Debe seleccionar una ubicación.' }),
   departmentId: z.string({ required_error: 'Debe seleccionar un departamento.' }),
-  assetId: z.string().optional(),
+  assetId: z
+    .string()
+    .optional()
+    .or(z.literal(''))
+    .transform(value => value || undefined),
   priority: z.enum(['Baja', 'Media', 'Alta', 'Crítica'], {
     required_error: 'Debe seleccionar una prioridad.',
   }),
@@ -113,6 +117,10 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         photoUrls,
         displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
       };
+
+      if (!docData.assetId) {
+        delete docData.assetId;
+      }
 
       for (const photo of photos) {
         const photoRef = ref(storage, `tickets/${ticketId}/${photo.name}`);
@@ -263,7 +271,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                 <Select
                   name={field.name}
                   onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  value={field.value === undefined ? undefined : field.value}
                 >
                   <FormControl>
                     <SelectTrigger>
@@ -271,6 +279,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
+                    <SelectItem value="">Sin activo</SelectItem>
                     {assets.map((asset) => (
                       <SelectItem key={asset.id} value={asset.id}>
                         {asset.name}
