@@ -360,7 +360,7 @@ function stripUndefinedDeep<T>(value: T): T {
 
 async function auditLog(params: {
   action: string;
-  actorUid: string;
+  actorUid: string | null;
   actorEmail?: string | null;
   orgId?: string | null;
   targetUid?: string | null;
