@@ -953,6 +953,112 @@ function sanitizeOrganizationId(input: string): string {
   return cleaned;
 }
 
+export const resolveOrganizationId = functions.https.onCall(async (data) => {
+  const input = String(data?.input ?? '').trim();
+  if (!input) throw httpsError('invalid-argument', 'input requerido.');
+
+  const normalizedId = sanitizeOrganizationId(input);
+
+  if (normalizedId) {
+    const orgPublicRef = db.collection('organizationsPublic').doc(normalizedId);
+    const orgSnap = await orgPublicRef.get();
+    if (orgSnap.exists) {
+      const orgData = orgSnap.data() as { name?: string };
+      return {
+        organizationId: normalizedId,
+        name: orgData?.name ?? normalizedId,
+        matchedBy: 'id',
+        matches: [],
+      };
+    }
+  }
+
+  const nameLower = input.toLowerCase();
+  const matches: { organizationId: string; name: string }[] = [];
+
+  const byNameLower = await db
+    .collection('organizationsPublic')
+    .where('nameLower', '==', nameLower)
+    .limit(5)
+    .get();
+
+  byNameLower.forEach((docSnap) => {
+    const data = docSnap.data() as { name?: string };
+    matches.push({ organizationId: docSnap.id, name: data?.name ?? docSnap.id });
+  });
+
+  if (matches.length === 0) {
+    const byNameExact = await db
+      .collection('organizationsPublic')
+      .where('name', '==', input)
+      .limit(5)
+      .get();
+
+    byNameExact.forEach((docSnap) => {
+      const data = docSnap.data() as { name?: string };
+      matches.push({ organizationId: docSnap.id, name: data?.name ?? docSnap.id });
+    });
+  }
+
+  if (matches.length === 1) {
+    return {
+      organizationId: matches[0].organizationId,
+      name: matches[0].name,
+      matchedBy: 'name',
+      matches: [],
+    };
+  }
+
+  return {
+    organizationId: null,
+    name: null,
+    matchedBy: null,
+    matches,
+  };
+});
+
+export const checkOrganizationAvailability = functions.https.onCall(async (data) => {
+  const input = String(data?.organizationId ?? '').trim();
+  if (!input) throw httpsError('invalid-argument', 'organizationId requerido.');
+
+  const normalizedId = sanitizeOrganizationId(input);
+  if (!normalizedId) throw httpsError('invalid-argument', 'organizationId inválido.');
+
+  const orgPublicRef = db.collection('organizationsPublic').doc(normalizedId);
+  const orgSnap = await orgPublicRef.get();
+
+  if (!orgSnap.exists) {
+    return {
+      normalizedId,
+      available: true,
+      suggestions: [],
+      existingName: null,
+    };
+  }
+
+  const existingName = String((orgSnap.data() as { name?: string })?.name ?? normalizedId);
+  const candidates = Array.from({ length: 5 }, (_, idx) =>
+    idx === 0 ? normalizedId : `${normalizedId}-${idx + 1}`,
+  );
+
+  const taken = new Set<string>();
+  const snap = await db
+    .collection('organizationsPublic')
+    .where(admin.firestore.FieldPath.documentId(), 'in', candidates)
+    .get();
+
+  snap.forEach((docSnap) => taken.add(docSnap.id));
+
+  const suggestions = candidates.filter((candidate) => !taken.has(candidate));
+
+  return {
+    normalizedId,
+    available: false,
+    suggestions,
+    existingName,
+  };
+});
+
 export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const uid = requireAuth(context);
 
