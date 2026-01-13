@@ -14,6 +14,8 @@ import {
   signInWithEmailAndPassword,
   signInWithPopup,
   createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signOut,
 } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useRouter } from 'next/navigation';
@@ -50,6 +52,7 @@ export default function LoginPage() {
 
   // New org details (only when create mode)
   const [orgName, setOrgName] = useState('');
+  const [orgLegalName, setOrgLegalName] = useState('');
   const [orgTaxId, setOrgTaxId] = useState('');
   const [orgCountry, setOrgCountry] = useState('');
   const [orgAddress, setOrgAddress] = useState('');
@@ -85,6 +88,7 @@ export default function LoginPage() {
     setOrgMatchedBy(null);
 
     setOrgName('');
+    setOrgLegalName('');
     setOrgTaxId('');
     setOrgCountry('');
     setOrgAddress('');
@@ -218,6 +222,20 @@ try {
   // non-blocking
 }
 
+try {
+  if (app && auth.currentUser?.emailVerified) {
+    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
+    const res = await fn({});
+    const data = res?.data as any;
+    if (data?.mode === 'created') {
+      router.replace('/');
+      return;
+    }
+  }
+} catch {
+  // non-blocking
+}
+
 router.replace('/');
 
     } catch (err: any) {
@@ -243,6 +261,20 @@ try {
     const data = res?.data as any;
     if (Number(data?.claimed ?? 0) > 0) {
       router.replace('/onboarding');
+      return;
+    }
+  }
+} catch {
+  // non-blocking
+}
+
+try {
+  if (app && auth.currentUser?.emailVerified) {
+    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
+    const res = await fn({});
+    const data = res?.data as any;
+    if (data?.mode === 'created') {
+      router.replace('/');
       return;
     }
   }
@@ -310,6 +342,10 @@ router.replace('/');
 
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
 
+      if (signupMode === 'create' && !cred.user.emailVerified) {
+        await sendEmailVerification(cred.user);
+      }
+
       const fn = httpsCallable(getFunctions(app), 'bootstrapSignup');
 
       const requestedRole = requestAdminRole ? 'admin' : 'operator';
@@ -323,6 +359,7 @@ router.replace('/');
       if (signupMode === 'create') {
         payload.organizationDetails = {
           name: orgName.trim(),
+          legalName: orgLegalName.trim() || null,
           taxId: orgTaxId.trim() || null,
           country: orgCountry.trim(),
           address: orgAddress.trim() || null,
@@ -337,6 +374,7 @@ router.replace('/');
 
       if (data?.mode === 'verification_required') {
         setSignupNotice('Revisa tu email para confirmar la creación de la organización y activar tu cuenta.');
+        await signOut(auth);
         return;
       }
 
@@ -478,7 +516,7 @@ router.replace('/');
                       <div className="text-sm font-medium">Datos de la nueva organización</div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="orgName">Nombre fiscal</Label>
+                        <Label htmlFor="orgName">Nombre de la organización</Label>
                         <Input id="orgName" value={orgName} onChange={(e) => setOrgName(e.target.value)} required />
                         <div className="text-xs text-muted-foreground">
                           {orgCheckStatus === 'checking' && 'Comprobando disponibilidad…'}
@@ -511,6 +549,11 @@ router.replace('/');
                             ))}
                           </RadioGroup>
                         )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="orgLegalName">Nombre fiscal (opcional)</Label>
+                        <Input id="orgLegalName" value={orgLegalName} onChange={(e) => setOrgLegalName(e.target.value)} />
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
