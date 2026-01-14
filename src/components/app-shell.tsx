@@ -21,12 +21,13 @@ const MobileBottomNav: any = (MobileBottomNavDefault ??
 export type AppShellProps = {
   title?: string;
   description?: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 };
 
 // Export named + default (por compatibilidad con tu repo)
-export function AppShell({ title, description, children, className }: AppShellProps) {
+export function AppShell({ title, description, action, children, className }: AppShellProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -53,6 +54,7 @@ export function AppShell({ title, description, children, className }: AppShellPr
           </div>
 
           <div className="flex items-center gap-2">
+            {action ? <div className="shrink-0">{action}</div> : null}
             <UserNav />
           </div>
         </div>
