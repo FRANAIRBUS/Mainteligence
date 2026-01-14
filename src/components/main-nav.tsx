@@ -160,6 +160,7 @@ export function useAppNavigation() {
   );
 
   const menuItems = useMemo(() => {
+    if (!role) return [];
     const normalizedRole = normalizeRole(role) || "operator";
     const isSuperAdmin = normalizedRole === "super_admin";
 
