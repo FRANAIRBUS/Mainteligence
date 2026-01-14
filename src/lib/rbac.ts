@@ -9,6 +9,7 @@ export const normalizeRole = (role?: UserRole) => {
 
 const ADMIN_LIKE_ROLES = ['super_admin', 'admin', 'maintenance'] as const;
 const SCOPED_HEAD_ROLES = ['dept_head_multi', 'dept_head_single'] as const;
+const MASTER_DATA_ROLES = [...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES] as const;
 
 export const isAdminLikeRole = (role?: UserRole | null) => {
   const normalized = normalizeRole(role ?? undefined);
@@ -18,6 +19,11 @@ export const isAdminLikeRole = (role?: UserRole | null) => {
 export const isScopedDepartmentHead = (role?: UserRole | null) => {
   const normalized = normalizeRole(role ?? undefined);
   return SCOPED_HEAD_ROLES.includes((normalized ?? '') as (typeof SCOPED_HEAD_ROLES)[number]);
+};
+
+export const canManageMasterData = (role?: UserRole | null) => {
+  const normalized = normalizeRole(role ?? undefined);
+  return MASTER_DATA_ROLES.includes((normalized ?? '') as (typeof MASTER_DATA_ROLES)[number]);
 };
 
 type DepartmentScope = { departmentId?: string; departmentIds?: string[] };

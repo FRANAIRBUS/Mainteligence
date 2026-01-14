@@ -6,7 +6,7 @@ import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
 import type { Department, User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
+import { canManageMasterData, normalizeRole } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -113,7 +113,7 @@ export default function DepartmentsPage() {
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   const normalizedRole = normalizeRole(userProfile?.role);
-  const canManage = isAdminLikeRole(normalizedRole);
+  const canManage = canManageMasterData(normalizedRole);
 
   const { data: departments, loading: departmentsLoading } = useCollection<Department>(canManage ? 'departments' : null);
 

@@ -36,7 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
+import { canManageMasterData, normalizeRole } from '@/lib/rbac';
 
 function AssetsTable({
   assets,
@@ -130,7 +130,7 @@ export default function AssetsPage() {
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   const normalizedRole = normalizeRole(userProfile?.role);
-  const canManage = isAdminLikeRole(normalizedRole);
+  const canManage = canManageMasterData(normalizedRole);
   
   const { data: assets, loading: assetsLoading } = useCollection<Asset>(canManage ? 'assets' : null);
   const { data: sites, loading: sitesLoading } = useCollection<Site>(canManage ? 'sites' : null);
