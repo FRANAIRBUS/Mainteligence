@@ -245,31 +245,27 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full bg-muted/30">
-      <div className="mx-auto grid min-h-screen max-w-6xl grid-cols-1 gap-10 px-6 py-10 md:grid-cols-2 md:items-center">
+      <div className="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center gap-8 px-6 py-10 text-center">
         <div className="space-y-6">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center gap-3">
             <ClientLogo />
             <span className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Inteligencia
+              MAINTELLIGENCE
             </span>
           </div>
           <div className="space-y-3">
-            <h1 className="text-3xl font-semibold tracking-tight">Gestión inteligente de mantenimiento</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">
+              Gestión inteligente de Tareas,
+              <br />
+              Incidencias y Mantenimientos.
+            </h1>
             <p className="text-muted-foreground">
               Centraliza la operación de tu organización, controla incidencias y acelera la toma de decisiones.
             </p>
           </div>
-          <div className="space-y-2 rounded-xl border bg-background p-4 text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">Lo nuevo en la plataforma</p>
-            <ul className="list-disc space-y-1 pl-4">
-              <li>Acceso seguro con correo o Google.</li>
-              <li>Registro guiado con captcha y verificación.</li>
-              <li>Elección de organización tras iniciar sesión.</li>
-            </ul>
-          </div>
         </div>
 
-        <div className="w-full max-w-md justify-self-center">
+        <div className="w-full max-w-md">
           <Card>
             <CardHeader>
               <CardTitle>{isLoginView ? 'Iniciar sesión' : 'Crear cuenta'}</CardTitle>
@@ -292,7 +288,7 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <form onSubmit={isLoginView ? onLogin : onRegister} className="space-y-4">
+              <form onSubmit={isLoginView ? onLogin : onRegister} className="space-y-4 text-left">
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -378,6 +374,15 @@ export default function LoginPage() {
               </Button>
             </CardFooter>
           </Card>
+        </div>
+
+        <div className="w-full max-w-xl space-y-2 rounded-xl border bg-background p-4 text-left text-sm text-muted-foreground">
+          <p className="font-medium text-foreground">Lo nuevo en la plataforma</p>
+          <ul className="list-disc space-y-1 pl-4">
+            <li>Acceso seguro con correo o Google.</li>
+            <li>Registro guiado con captcha y verificación.</li>
+            <li>Elección de organización tras iniciar sesión.</li>
+          </ul>
         </div>
       </div>
     </div>
