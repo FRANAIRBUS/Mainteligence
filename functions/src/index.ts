@@ -7,6 +7,7 @@ import { sendInviteEmail } from './invite-email';
 admin.initializeApp();
 const db = admin.firestore();
 
+
 type Role =
   | 'super_admin'
   | 'admin'
