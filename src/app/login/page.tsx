@@ -16,9 +16,10 @@ import {
   createUserWithEmailAndPassword,
   sendEmailVerification,
   signOut,
+  applyActionCode,
 } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 type OrgCheckStatus = 'idle' | 'checking' | 'exists' | 'available' | 'error';
@@ -27,6 +28,7 @@ export default function LoginPage() {
   const auth = useAuth();
   const app = useFirebaseApp();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useUser();
 
   const [isLoginView, setIsLoginView] = useState(true);
@@ -68,6 +70,29 @@ export default function LoginPage() {
   useEffect(() => {
     if (user) router.replace('/');
   }, [router, user]);
+
+  useEffect(() => {
+    if (!auth || !searchParams) return;
+    const mode = searchParams.get('mode');
+    const oobCode = searchParams.get('oobCode');
+    if (mode !== 'verifyEmail' || !oobCode) return;
+
+    setLoading(true);
+    setError(null);
+    setSignupNotice(null);
+    setIsLoginView(true);
+
+    (async () => {
+      try {
+        await applyActionCode(auth, oobCode);
+        setSignupNotice('Email verificado. Inicia sesión para completar el alta.');
+      } catch (err: any) {
+        setError(err?.message || 'No se pudo verificar el email. Solicita un nuevo enlace.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [auth, searchParams]);
 
   // Reset when switching views
   useEffect(() => {
@@ -223,13 +248,16 @@ try {
 }
 
 try {
-  if (app && auth.currentUser?.emailVerified) {
-    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
-    const res = await fn({});
-    const data = res?.data as any;
-    if (data?.mode === 'created') {
-      router.replace('/');
-      return;
+  if (app && auth.currentUser) {
+    await auth.currentUser.reload();
+    if (auth.currentUser.emailVerified) {
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
+      const res = await fn({});
+      const data = res?.data as any;
+      if (data?.mode === 'created') {
+        router.replace('/');
+        return;
+      }
     }
   }
 } catch {
@@ -269,13 +297,16 @@ try {
 }
 
 try {
-  if (app && auth.currentUser?.emailVerified) {
-    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
-    const res = await fn({});
-    const data = res?.data as any;
-    if (data?.mode === 'created') {
-      router.replace('/');
-      return;
+  if (app && auth.currentUser) {
+    await auth.currentUser.reload();
+    if (auth.currentUser.emailVerified) {
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
+      const res = await fn({});
+      const data = res?.data as any;
+      if (data?.mode === 'created') {
+        router.replace('/');
+        return;
+      }
     }
   }
 } catch {
