@@ -94,7 +94,7 @@ service cloud.firestore {
       return isSignedIn() && (
         (hasMember(orgId) && memberStatus(orgId) == "active")
         || (hasMembershipById(orgId) && membershipStatusById(orgId) == "active")
-        || legacyActiveInOrg(orgId)
+        || (!hasMember(orgId) && !hasMembershipById(orgId) && legacyActiveInOrg(orgId))
       );
     }
 

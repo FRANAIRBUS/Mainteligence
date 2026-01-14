@@ -1,24 +1,56 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUser } from '@/lib/firebase/auth/use-user';
 import { signOut } from 'firebase/auth';
-import { useAuth } from '@/lib/firebase/provider';
+import { useAuth, useFirebaseApp } from '@/lib/firebase/provider';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export default function OnboardingPage() {
   const router = useRouter();
   const auth = useAuth();
+  const app = useFirebaseApp();
   const { user, profile, memberships, organizationId, activeMembership, loading, isRoot } = useUser();
+  const [finalizeAttempted, setFinalizeAttempted] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const [finalizeLoading, setFinalizeLoading] = useState(false);
 
   useEffect(() => {
     if (loading) return;
     if (!user) router.push('/login');
     if (isRoot) router.push('/root');
   }, [user, loading, router, isRoot]);
+
+  const attemptFinalize = async () => {
+    if (!app || !auth?.currentUser) return;
+    setFinalizeError(null);
+    setFinalizeLoading(true);
+    try {
+      await auth.currentUser.reload();
+      if (!auth.currentUser.emailVerified) {
+        setFinalizeError('El correo todavía no está verificado.');
+        return;
+      }
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
+      await fn({});
+      router.refresh();
+    } catch (err: any) {
+      setFinalizeError(err?.message || 'No se pudo completar el alta. Intenta de nuevo.');
+    } finally {
+      setFinalizeLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!app || !auth || !user || profile || finalizeAttempted) return;
+
+    setFinalizeAttempted(true);
+    void attemptFinalize();
+  }, [app, auth, user, profile, finalizeAttempted]);
 
   const pending = activeMembership && activeMembership.status !== 'active';
 
@@ -43,8 +75,12 @@ export default function OnboardingPage() {
                 <p className="text-muted-foreground">
                   Tu cuenta está autenticada, pero todavía no has completado el alta de organización.
                 </p>
+                {finalizeError && <p className="text-sm text-destructive">{finalizeError}</p>}
                 <div className="flex gap-3">
                   <Button onClick={() => router.push('/login')}>Volver a registro</Button>
+                  <Button onClick={attemptFinalize} disabled={finalizeLoading}>
+                    {finalizeLoading ? 'Validando…' : 'Reintentar validación'}
+                  </Button>
                   <Button variant="outline" onClick={doLogout}>
                     Cerrar sesión
                   </Button>

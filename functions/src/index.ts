@@ -7,6 +7,8 @@ import { sendInviteEmail } from './invite-email';
 admin.initializeApp();
 const db = admin.firestore();
 
+
+
 type Role =
   | 'super_admin'
   | 'admin'
@@ -1138,6 +1140,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         settings: {
           allowGuestAccess: false,
           maxUsers: 50,
+          inviteOnly: false,
         },
         createdAt: now,
         updatedAt: now,
@@ -1222,8 +1225,22 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
 
   const orgData = orgSnap.data() as any;
   const orgName = String(orgData?.name ?? organizationId);
+  const inviteOnly = Boolean(orgData?.settings?.inviteOnly === true);
 
-  const joinReqRef = orgRef.collection('joinRequests').doc(uid);
+  const inviteByUidRef = orgRef.collection('joinRequests').doc(uid);
+  const inviteByEmailRef = email ? orgRef.collection('joinRequests').doc(`invite_${email}`) : null;
+  const [inviteByUidSnap, inviteByEmailSnap] = await Promise.all([
+    inviteByUidRef.get(),
+    inviteByEmailRef ? inviteByEmailRef.get() : Promise.resolve(null),
+  ]);
+  const existingInviteSnap =
+    inviteByUidSnap.exists ? inviteByUidSnap : inviteByEmailSnap?.exists ? inviteByEmailSnap : null;
+
+  if (inviteOnly && !existingInviteSnap) {
+    throw httpsError('failed-precondition', 'Esta organización solo admite altas por invitación.');
+  }
+
+  const joinReqRef = existingInviteSnap?.ref ?? inviteByUidRef;
 
   const batch = db.batch();
 
@@ -1233,8 +1250,8 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       organizationId,
       email: email || null,
       displayName: displayName || email || 'Usuario',
-      role: requestedRole,
-      active: true,
+      role: 'pending',
+      active: false,
       updatedAt: now,
       createdAt: now,
       source: 'bootstrapSignup_v1',
@@ -1259,22 +1276,23 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
     { merge: true },
   );
 
-  batch.set(
-    joinReqRef,
-    {
-      userId: uid,
-      organizationId,
-      organizationName: orgName,
-      email: email || null,
-      displayName: displayName || email || 'Usuario',
-      requestedRole,
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-      source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+  const joinReqPayload: Record<string, unknown> = {
+    userId: uid,
+    organizationId,
+    organizationName: orgName,
+    email: email || null,
+    displayName: displayName || email || 'Usuario',
+    requestedRole,
+    status: 'pending',
+    updatedAt: now,
+  };
+
+  if (!existingInviteSnap) {
+    joinReqPayload.createdAt = now;
+    joinReqPayload.source = 'bootstrapSignup_v1';
+  }
+
+  batch.set(joinReqRef, joinReqPayload, { merge: true });
 
   await batch.commit();
 
@@ -1343,6 +1361,7 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       settings: {
         allowGuestAccess: false,
         maxUsers: 50,
+        inviteOnly: false,
       },
       createdAt: now,
       updatedAt: now,
@@ -1707,6 +1726,7 @@ export const orgApproveJoinRequest = functions.https.onCall(async (data, context
     {
       organizationId: orgId,
       role,
+      active: true,
       updatedAt: now,
       source: 'orgApproveJoinRequest_v1',
       ...(jr?.departmentId !== undefined ? { departmentId: jr.departmentId || null } : {}),
@@ -1760,6 +1780,8 @@ export const orgRejectJoinRequest = functions.https.onCall(async (data, context)
   }
 
   const membershipRef = targetUid ? db.collection('memberships').doc(`${targetUid}_${orgId}`) : null;
+  const userRef = targetUid ? db.collection('users').doc(targetUid) : null;
+  const userSnap = userRef ? await userRef.get() : null;
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   const batch = db.batch();
@@ -1787,6 +1809,23 @@ export const orgRejectJoinRequest = functions.https.onCall(async (data, context)
       },
       { merge: true },
     );
+  }
+
+  if (userRef && userSnap?.exists) {
+    const userOrgId = String((userSnap.data() as any)?.organizationId ?? '');
+    if (userOrgId === orgId) {
+      batch.set(
+        userRef,
+        {
+          organizationId: null,
+          role: 'pending',
+          active: false,
+          updatedAt: now,
+          source: 'orgRejectJoinRequest_v1',
+        },
+        { merge: true },
+      );
+    }
   }
 
   await batch.commit();

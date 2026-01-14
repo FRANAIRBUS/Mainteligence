@@ -1,23 +1,30 @@
 import type { Ticket, User, UserRole } from '@/lib/firebase/models';
 
-export const normalizeRole = (role?: UserRole) => {
-  if (!role) return role;
-  if (role === 'operario') return 'operator';
-  if (role === 'mantenimiento') return 'maintenance';
-  return role;
+export const normalizeRole = (role?: UserRole | string | null) => {
+  if (!role) return undefined;
+  const normalized = role.toLowerCase();
+  if (normalized === 'operario') return 'operator';
+  if (normalized === 'mantenimiento' || normalized === 'manteniendo') return 'maintenance';
+  return normalized as UserRole;
 };
 
 const ADMIN_LIKE_ROLES = ['super_admin', 'admin', 'maintenance'] as const;
 const SCOPED_HEAD_ROLES = ['dept_head_multi', 'dept_head_single'] as const;
+const MASTER_DATA_ROLES = [...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES] as const;
 
-export const isAdminLikeRole = (role?: UserRole | null) => {
-  const normalized = normalizeRole(role ?? undefined);
+export const isAdminLikeRole = (role?: UserRole | string | null) => {
+  const normalized = normalizeRole(role);
   return ADMIN_LIKE_ROLES.includes((normalized ?? '') as (typeof ADMIN_LIKE_ROLES)[number]);
 };
 
-export const isScopedDepartmentHead = (role?: UserRole | null) => {
-  const normalized = normalizeRole(role ?? undefined);
+export const isScopedDepartmentHead = (role?: UserRole | string | null) => {
+  const normalized = normalizeRole(role);
   return SCOPED_HEAD_ROLES.includes((normalized ?? '') as (typeof SCOPED_HEAD_ROLES)[number]);
+};
+
+export const canManageMasterData = (role?: UserRole | string | null) => {
+  const normalized = normalizeRole(role);
+  return MASTER_DATA_ROLES.includes((normalized ?? '') as (typeof MASTER_DATA_ROLES)[number]);
 };
 
 type DepartmentScope = { departmentId?: string; departmentIds?: string[] };
