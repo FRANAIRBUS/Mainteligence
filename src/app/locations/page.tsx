@@ -36,7 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { isAdminLikeRole, normalizeRole } from '@/lib/rbac';
+import { canManageMasterData, normalizeRole } from '@/lib/rbac';
 
 function LocationsTable({
   sites,
@@ -116,7 +116,7 @@ export default function LocationsPage() {
   
   const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
   const normalizedRole = normalizeRole(userProfile?.role);
-  const canManage = isAdminLikeRole(normalizedRole);
+  const canManage = canManageMasterData(normalizedRole);
 
   const { data: sites, loading: sitesLoading } = useCollection<Site>(canManage ? 'sites' : null);
   
