@@ -52,7 +52,8 @@ export default function OnboardingPage() {
     void attemptFinalize();
   }, [app, auth, user, profile, finalizeAttempted]);
 
-  const pending = activeMembership && activeMembership.status !== 'active';
+  const pendingMembership = memberships.find((membership) => membership.status !== 'active') ?? null;
+  const pending = Boolean(pendingMembership);
 
   const doLogout = async () => {
     if (!auth) return;
@@ -91,8 +92,9 @@ export default function OnboardingPage() {
             {user && profile && pending && (
               <>
                 <p className="text-muted-foreground">
-                  Tu solicitud para unirte a la organización <b>{organizationId}</b> está pendiente de aprobación por un
-                  administrador.
+                  Tu solicitud para unirte a la organización{" "}
+                  <b>{pendingMembership?.organizationName || pendingMembership?.organizationId}</b> está pendiente de
+                  aprobación por un administrador.
                 </p>
                 <p className="text-sm text-muted-foreground">
                   En cuanto un super administrador apruebe la solicitud, podrás acceder al sistema automáticamente.

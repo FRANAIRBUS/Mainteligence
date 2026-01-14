@@ -92,25 +92,32 @@ export function UserNav() {
             <DropdownMenuLabel className="text-xs uppercase text-muted-foreground">
               Organizaciones
             </DropdownMenuLabel>
-            {memberships.map((membership) => (
-              <DropdownMenuItem
-                key={membership.id}
-                className="flex items-center justify-between"
-                onClick={() => setActiveOrganizationId(membership.organizationId)}
-              >
-                <span className="flex flex-col">
-                  <span className="text-sm font-medium">
-                    {membership.organizationName || membership.organizationId}
+            {memberships.map((membership) => {
+              const isActive = membership.status === 'active';
+
+              return (
+                <DropdownMenuItem
+                  key={membership.id}
+                  className={`flex items-center justify-between ${isActive ? '' : 'opacity-60'}`}
+                  onClick={() => {
+                    if (!isActive) return;
+                    void setActiveOrganizationId(membership.organizationId);
+                  }}
+                >
+                  <span className="flex flex-col">
+                    <span className="text-sm font-medium">
+                      {membership.organizationName || membership.organizationId}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Rol: {membership.role} {isActive ? '' : '(pendiente)'}
+                    </span>
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    Rol: {membership.role}
-                  </span>
-                </span>
-                {organizationId === membership.organizationId && (
-                  <span className="text-xs text-emerald-600">Activa</span>
-                )}
-              </DropdownMenuItem>
-            ))}
+                  {organizationId === membership.organizationId && (
+                    <span className="text-xs text-emerald-600">Activa</span>
+                  )}
+                </DropdownMenuItem>
+              );
+            })}
             <DropdownMenuSeparator />
           </DropdownMenuGroup>
         )}
