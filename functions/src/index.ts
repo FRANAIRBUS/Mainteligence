@@ -200,6 +200,195 @@ function requireAuth(context: functions.https.CallableContext) {
   return context.auth.uid;
 }
 
+async function seedDemoOrganizationData({
+  organizationId,
+  uid,
+}: {
+  organizationId: string;
+  uid: string;
+}) {
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const baseDate = new Date();
+  const makeTimestamp = (offsetDays: number) => {
+    const date = new Date(baseDate);
+    date.setDate(date.getDate() + offsetDays);
+    return admin.firestore.Timestamp.fromDate(date);
+  };
+
+  const sites = [
+    { id: `${organizationId}_site_1`, name: 'Planta principal', code: 'PL-01' },
+    { id: `${organizationId}_site_2`, name: 'Almacén central', code: 'ALM-01' },
+    { id: `${organizationId}_site_3`, name: 'Oficina técnica', code: 'OFI-01' },
+  ];
+
+  const departments = [
+    { id: `${organizationId}_dept_1`, name: 'Mantenimiento', code: 'MTTO' },
+    { id: `${organizationId}_dept_2`, name: 'Producción', code: 'PROD' },
+    { id: `${organizationId}_dept_3`, name: 'Calidad', code: 'CAL' },
+  ];
+
+  const tasks = [
+    {
+      id: `${organizationId}_task_1`,
+      title: 'Revisión mensual de calderas',
+      description: 'Verificar presión, válvulas de seguridad y registros de mantenimiento.',
+      status: 'pendiente',
+      priority: 'alta',
+      dueDate: makeTimestamp(3),
+      location: departments[0]?.id,
+    },
+    {
+      id: `${organizationId}_task_2`,
+      title: 'Inspección de línea de producción',
+      description: 'Comprobar sensores y lubricación en la línea 2.',
+      status: 'en_progreso',
+      priority: 'media',
+      dueDate: makeTimestamp(7),
+      location: departments[1]?.id,
+    },
+    {
+      id: `${organizationId}_task_3`,
+      title: 'Actualizar checklist de seguridad',
+      description: 'Revisar procedimientos y registrar cambios en el plan de seguridad.',
+      status: 'completada',
+      priority: 'baja',
+      dueDate: makeTimestamp(-2),
+      location: departments[2]?.id,
+      closedAt: makeTimestamp(-1),
+      closedBy: uid,
+      closedReason: 'Checklist actualizado y validado.',
+    },
+  ];
+
+  const year = new Date().getFullYear();
+  const tickets = [
+    {
+      id: `${organizationId}_ticket_1`,
+      displayId: `INC-${year}-1001`,
+      type: 'correctivo',
+      status: 'Abierta',
+      priority: 'Alta',
+      siteId: sites[0]?.id,
+      departmentId: departments[0]?.id,
+      title: 'Fuga de agua en sala de bombas',
+      description: 'Se detecta pérdida de agua en la bomba principal.',
+    },
+    {
+      id: `${organizationId}_ticket_2`,
+      displayId: `INC-${year}-1002`,
+      type: 'correctivo',
+      status: 'En curso',
+      priority: 'Media',
+      siteId: sites[1]?.id,
+      departmentId: departments[1]?.id,
+      title: 'Vibración en motor de cinta',
+      description: 'El motor presenta vibración excesiva durante el arranque.',
+    },
+    {
+      id: `${organizationId}_ticket_3`,
+      displayId: `INC-${year}-1003`,
+      type: 'correctivo',
+      status: 'Cerrada',
+      priority: 'Baja',
+      siteId: sites[2]?.id,
+      departmentId: departments[2]?.id,
+      title: 'Iluminación insuficiente en pasillo',
+      description: 'Se sustituyeron luminarias y se verificó el nivel de lux.',
+      closedAt: makeTimestamp(-1),
+      closedBy: uid,
+      closedReason: 'Luminarias reemplazadas.',
+    },
+  ];
+
+  const batch = db.batch();
+
+  sites.forEach((site) => {
+    const ref = db.collection('sites').doc(site.id);
+    batch.set(
+      ref,
+      {
+        organizationId,
+        name: site.name,
+        code: site.code,
+        createdAt: now,
+        updatedAt: now,
+        source: 'demo_seed_v1',
+      },
+      { merge: true },
+    );
+  });
+
+  departments.forEach((department) => {
+    const ref = db.collection('departments').doc(department.id);
+    batch.set(
+      ref,
+      {
+        organizationId,
+        name: department.name,
+        code: department.code,
+        createdAt: now,
+        updatedAt: now,
+        source: 'demo_seed_v1',
+      },
+      { merge: true },
+    );
+  });
+
+  tasks.forEach((task) => {
+    const ref = db.collection('tasks').doc(task.id);
+    batch.set(
+      ref,
+      {
+        organizationId,
+        title: task.title,
+        description: task.description,
+        status: task.status,
+        priority: task.priority,
+        dueDate: task.dueDate,
+        location: task.location,
+        createdBy: uid,
+        createdAt: now,
+        updatedAt: now,
+        closedAt: task.closedAt ?? null,
+        closedBy: task.closedBy ?? null,
+        closedReason: task.closedReason ?? null,
+        source: 'demo_seed_v1',
+      },
+      { merge: true },
+    );
+  });
+
+  tickets.forEach((ticket) => {
+    const ref = db.collection('tickets').doc(ticket.id);
+    batch.set(
+      ref,
+      {
+        organizationId,
+        displayId: ticket.displayId,
+        type: ticket.type,
+        status: ticket.status,
+        priority: ticket.priority,
+        siteId: ticket.siteId,
+        departmentId: ticket.departmentId,
+        title: ticket.title,
+        description: ticket.description,
+        createdBy: uid,
+        assignedRole: 'maintenance',
+        assignedTo: null,
+        createdAt: now,
+        updatedAt: now,
+        closedAt: ticket.closedAt ?? null,
+        closedBy: ticket.closedBy ?? null,
+        closedReason: ticket.closedReason ?? null,
+        source: 'demo_seed_v1',
+      },
+      { merge: true },
+    );
+  });
+
+  await batch.commit();
+}
+
 function isRootClaim(context: functions.https.CallableContext): boolean {
   return Boolean((context.auth?.token as any)?.root === true);
 }
@@ -1219,6 +1408,10 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       orgId: organizationId,
       after: { organizationId, role: 'super_admin', status: 'active' },
     });
+
+    if (organizationId.startsWith('demo-')) {
+      await seedDemoOrganizationData({ organizationId, uid });
+    }
 
     return { ok: true, mode: 'created', organizationId };
   }
