@@ -16,6 +16,8 @@ export default function OnboardingPage() {
   const app = useFirebaseApp();
   const { user, profile, memberships, organizationId, activeMembership, loading, isRoot } = useUser();
   const [finalizeAttempted, setFinalizeAttempted] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const [finalizeLoading, setFinalizeLoading] = useState(false);
 
   useEffect(() => {
     if (loading) return;
@@ -23,23 +25,32 @@ export default function OnboardingPage() {
     if (isRoot) router.push('/root');
   }, [user, loading, router, isRoot]);
 
+  const attemptFinalize = async () => {
+    if (!app || !auth?.currentUser) return;
+    setFinalizeError(null);
+    setFinalizeLoading(true);
+    try {
+      await auth.currentUser.reload();
+      if (!auth.currentUser.emailVerified) {
+        setFinalizeError('El correo todavía no está verificado.');
+        return;
+      }
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
+      await fn({});
+      router.refresh();
+    } catch (err: any) {
+      setFinalizeError(err?.message || 'No se pudo completar el alta. Intenta de nuevo.');
+    } finally {
+      setFinalizeLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!app || !auth || !user || profile || finalizeAttempted) return;
 
     setFinalizeAttempted(true);
-
-    (async () => {
-      try {
-        await auth.currentUser?.reload();
-        if (!auth.currentUser?.emailVerified) return;
-        const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
-        await fn({});
-        router.refresh();
-      } catch {
-        // Non-blocking; user can retry by refreshing.
-      }
-    })();
-  }, [app, auth, user, profile, finalizeAttempted, router]);
+    void attemptFinalize();
+  }, [app, auth, user, profile, finalizeAttempted]);
 
   const pending = activeMembership && activeMembership.status !== 'active';
 
@@ -64,8 +75,12 @@ export default function OnboardingPage() {
                 <p className="text-muted-foreground">
                   Tu cuenta está autenticada, pero todavía no has completado el alta de organización.
                 </p>
+                {finalizeError && <p className="text-sm text-destructive">{finalizeError}</p>}
                 <div className="flex gap-3">
                   <Button onClick={() => router.push('/login')}>Volver a registro</Button>
+                  <Button onClick={attemptFinalize} disabled={finalizeLoading}>
+                    {finalizeLoading ? 'Validando…' : 'Reintentar validación'}
+                  </Button>
                   <Button variant="outline" onClick={doLogout}>
                     Cerrar sesión
                   </Button>
