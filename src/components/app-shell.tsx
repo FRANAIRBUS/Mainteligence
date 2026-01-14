@@ -42,6 +42,8 @@ export function AppShell({ title, description, action, children, className }: Ap
 
   const hasActiveMembership = activeMembership?.status === "active";
   const hasPendingMembership = memberships.some((membership) => membership.status !== "active");
+  const needsOrganizationSelection =
+    !loading && Boolean(user) && !isRoot && !hasActiveMembership && !hasPendingMembership;
   const accessBlocked =
     !loading &&
     Boolean(user) &&
@@ -60,6 +62,16 @@ export function AppShell({ title, description, action, children, className }: Ap
       router.replace("/onboarding");
     }
   }, [hasActiveMembership, hasPendingMembership, isRoot, loading, pathname, router, user]);
+
+  React.useEffect(() => {
+    if (loading) return;
+    if (!user || isRoot) return;
+    if (pathname === "/onboarding" || pathname === "/login") return;
+
+    if (needsOrganizationSelection) {
+      router.replace("/onboarding");
+    }
+  }, [isRoot, loading, needsOrganizationSelection, pathname, router, user]);
 
   if (accessBlocked) {
     return (
