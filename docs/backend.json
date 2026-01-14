@@ -232,31 +232,31 @@
       },
       "description": "Stores user profile information."
     },
-    "/sites/{siteId}": {
+    "/organizations/{orgId}/sites/{siteId}": {
       "schema": {
         "$ref": "#/entities/Site"
       },
       "description": "Stores information about physical locations."
     },
-    "/departments/{departmentId}": {
+    "/organizations/{orgId}/departments/{departmentId}": {
       "schema": {
         "$ref": "#/entities/Department"
       },
       "description": "Stores information about departments."
     },
-    "/assets/{assetId}": {
+    "/organizations/{orgId}/assets/{assetId}": {
         "schema": {
             "$ref": "#/entities/Asset"
         },
         "description": "Stores information about equipment and assets."
     },
-    "/tickets/{ticketId}": {
+    "/organizations/{orgId}/tickets/{ticketId}": {
         "schema": {
             "$ref": "#/entities/Ticket"
         },
         "description": "Stores maintenance tickets."
     },
-    "/tickets/{ticketId}/comments/{commentId}": {
+    "/organizations/{orgId}/tickets/{ticketId}/comments/{commentId}": {
         "schema": {
             "$ref": "#/entities/Comment"
         },
