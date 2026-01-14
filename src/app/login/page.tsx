@@ -223,13 +223,16 @@ try {
 }
 
 try {
-  if (app && auth.currentUser?.emailVerified) {
-    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
-    const res = await fn({});
-    const data = res?.data as any;
-    if (data?.mode === 'created') {
-      router.replace('/');
-      return;
+  if (app && auth.currentUser) {
+    await auth.currentUser.reload();
+    if (auth.currentUser.emailVerified) {
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
+      const res = await fn({});
+      const data = res?.data as any;
+      if (data?.mode === 'created') {
+        router.replace('/');
+        return;
+      }
     }
   }
 } catch {
@@ -269,13 +272,16 @@ try {
 }
 
 try {
-  if (app && auth.currentUser?.emailVerified) {
-    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
-    const res = await fn({});
-    const data = res?.data as any;
-    if (data?.mode === 'created') {
-      router.replace('/');
-      return;
+  if (app && auth.currentUser) {
+    await auth.currentUser.reload();
+    if (auth.currentUser.emailVerified) {
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
+      const res = await fn({});
+      const data = res?.data as any;
+      if (data?.mode === 'created') {
+        router.replace('/');
+        return;
+      }
     }
   }
 } catch {
