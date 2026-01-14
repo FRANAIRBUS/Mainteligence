@@ -75,8 +75,6 @@ function pickDefaultOrgId(opts: {
   const { preferredOrgId, profileOrgId, memberships } = opts;
 
   const active = memberships.filter((m) => m.status === 'active' && m.organizationId);
-  const pending = memberships.filter((m) => m.status !== 'active' && m.organizationId);
-
   if (preferredOrgId) {
     const hit = active.find((m) => m.organizationId === preferredOrgId);
     if (hit) return hit.organizationId;
@@ -85,14 +83,9 @@ function pickDefaultOrgId(opts: {
   if (profileOrgId) {
     const hit = active.find((m) => m.organizationId === profileOrgId);
     if (hit) return hit.organizationId;
-
-    const pend = pending.find((m) => m.organizationId === profileOrgId);
-    if (pend) return pend.organizationId;
   }
 
   if (active.length > 0) return active[0].organizationId;
-  if (pending.length > 0) return pending[0].organizationId;
-
   return null;
 }
 
@@ -254,17 +247,20 @@ useEffect(() => {
     const next = String(orgId ?? '').trim();
     if (!next) return;
 
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('preferredOrganizationId', next);
-    }
-
-    setOrganizationId(next);
+    const targetMembership = memberships.find((membership) => membership.organizationId === next);
+    if (!targetMembership || targetMembership.status !== 'active') return;
 
     // Persist server-side (optional, but useful across devices)
     try {
       if (!app) return;
       const fn = httpsCallable(getFunctions(app), 'setActiveOrganization');
       await fn({ organizationId: next });
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('preferredOrganizationId', next);
+      }
+
+      setOrganizationId(next);
     } catch {
       // If membership is pending or function unavailable, we keep local selection only.
     }

@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useUser } from "@/lib/firebase";
 
 // Import robusto: admite default o named export, y si falla no rompe
 import MainNavDefault, { MainNav as MainNavNamed } from "@/components/main-nav";
@@ -21,13 +22,16 @@ const MobileBottomNav: any = (MobileBottomNavDefault ??
 export type AppShellProps = {
   title?: string;
   description?: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 };
 
 // Export named + default (por compatibilidad con tu repo)
-export function AppShell({ title, description, children, className }: AppShellProps) {
+export function AppShell({ title, description, action, children, className }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, memberships, activeMembership, loading, isRoot } = useUser();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
 
@@ -35,6 +39,35 @@ export function AppShell({ title, description, children, className }: AppShellPr
     setMenuOpen(false);
     setCreateOpen(false);
   }, [pathname]);
+
+  const hasActiveMembership = activeMembership?.status === "active";
+  const hasPendingMembership = memberships.some((membership) => membership.status !== "active");
+  const accessBlocked =
+    !loading &&
+    Boolean(user) &&
+    !isRoot &&
+    !hasActiveMembership &&
+    hasPendingMembership &&
+    pathname !== "/onboarding" &&
+    pathname !== "/login";
+
+  React.useEffect(() => {
+    if (loading) return;
+    if (!user || isRoot) return;
+    if (pathname === "/onboarding" || pathname === "/login") return;
+
+    if (!hasActiveMembership && hasPendingMembership) {
+      router.replace("/onboarding");
+    }
+  }, [hasActiveMembership, hasPendingMembership, isRoot, loading, pathname, router, user]);
+
+  if (accessBlocked) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center text-sm text-muted-foreground">
+        Redirigiendo a la validación de acceso…
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full">
@@ -53,6 +86,7 @@ export function AppShell({ title, description, children, className }: AppShellPr
           </div>
 
           <div className="flex items-center gap-2">
+            {action ? <div className="shrink-0">{action}</div> : null}
             <UserNav />
           </div>
         </div>
