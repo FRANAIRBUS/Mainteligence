@@ -1,24 +1,45 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useUser } from '@/lib/firebase/auth/use-user';
 import { signOut } from 'firebase/auth';
-import { useAuth } from '@/lib/firebase/provider';
+import { useAuth, useFirebaseApp } from '@/lib/firebase/provider';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export default function OnboardingPage() {
   const router = useRouter();
   const auth = useAuth();
+  const app = useFirebaseApp();
   const { user, profile, memberships, organizationId, activeMembership, loading, isRoot } = useUser();
+  const [finalizeAttempted, setFinalizeAttempted] = useState(false);
 
   useEffect(() => {
     if (loading) return;
     if (!user) router.push('/login');
     if (isRoot) router.push('/root');
   }, [user, loading, router, isRoot]);
+
+  useEffect(() => {
+    if (!app || !auth || !user || profile || finalizeAttempted) return;
+
+    setFinalizeAttempted(true);
+
+    (async () => {
+      try {
+        await auth.currentUser?.reload();
+        if (!auth.currentUser?.emailVerified) return;
+        const fn = httpsCallable(getFunctions(app, 'us-central1'), 'finalizeOrganizationSignup');
+        await fn({});
+        router.refresh();
+      } catch {
+        // Non-blocking; user can retry by refreshing.
+      }
+    })();
+  }, [app, auth, user, profile, finalizeAttempted, router]);
 
   const pending = activeMembership && activeMembership.status !== 'active';
 
