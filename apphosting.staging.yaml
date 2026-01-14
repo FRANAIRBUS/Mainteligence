@@ -28,6 +28,9 @@ env:
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: "1:975118694386:web:0cb5222ba248bf85a4dd6b"
     availability: [BUILD, RUNTIME]
+  - variable: NPM_CONFIG_CACHE
+    value: /tmp/.npm
+    availability: [BUILD]
   - variable: RESEND_API_KEY
     value: "re_ayevNEZP_AAErLT47BjxU5vTxnkTzDQhn"
     availability: [BUILD, RUNTIME]
