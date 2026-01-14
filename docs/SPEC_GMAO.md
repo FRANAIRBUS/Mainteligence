@@ -192,9 +192,9 @@ Secciones:
 
 ### 6.1 Colecciones base
 - `users/{uid}`
-- `sites/{siteId}`
-- `departments/{deptId}`
-- `assets/{assetId}`
+- `organizations/{orgId}/sites/{siteId}`
+- `organizations/{orgId}/departments/{deptId}`
+- `organizations/{orgId}/assets/{assetId}`
 - `tickets/{ticketId}`
   - `comments/{commentId}`
   - `events/{eventId}`
