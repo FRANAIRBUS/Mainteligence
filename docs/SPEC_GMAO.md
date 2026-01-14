@@ -195,11 +195,14 @@ Secciones:
 - `organizations/{orgId}/sites/{siteId}`
 - `organizations/{orgId}/departments/{deptId}`
 - `organizations/{orgId}/assets/{assetId}`
-- `tickets/{ticketId}`
+- `organizations/{orgId}/tickets/{ticketId}`
   - `comments/{commentId}`
   - `events/{eventId}`
   - `timeEntries/{entryId}`
   - `parts/{partId}`
+- `organizations/{orgId}/tasks/{taskId}`
+- `organizations/{orgId}/auditLogs/{logId}`
+- `organizations/{orgId}/settings/{settingId}`
 - `preventiveTemplates/{templateId}`
 - `counters/{orgId}/years/{YYYY}` (para `displayId`)
 
