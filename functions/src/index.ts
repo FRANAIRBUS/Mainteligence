@@ -1312,6 +1312,12 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
 
     const batch = db.batch();
 
+    const demoExpiresAt = organizationId.startsWith('demo-')
+      ? admin.firestore.Timestamp.fromDate(
+          new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+        )
+      : null;
+
     batch.set(
       orgRef,
       {
@@ -1331,6 +1337,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
           maxUsers: 50,
           inviteOnly: false,
         },
+        demoExpiresAt,
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',

@@ -12,6 +12,7 @@ export interface Organization extends BaseEntity {
   taxId?: string;
   subscriptionPlan: "trial" | "standard" | "enterprise";
   isActive: boolean;
+  demoExpiresAt?: Timestamp;
   settings: {
     allowGuestAccess: boolean;
     maxUsers: number;
