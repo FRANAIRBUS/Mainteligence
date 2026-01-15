@@ -928,24 +928,91 @@ export const rootDeactivateOrganization = functions.https.onCall(async (data, co
   const isActive = Boolean(data?.isActive ?? false);
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
 
-  await db.collection('organizations').doc(orgId).set(
+  const status = isActive ? 'active' : 'suspended';
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const batch = db.batch();
+  batch.set(
+    db.collection('organizations').doc(orgId),
     {
       isActive,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      status,
+      updatedAt: now,
       source: 'rootDeactivateOrganization_v1',
     },
     { merge: true }
   );
+  batch.set(
+    db.collection('organizationsPublic').doc(orgId),
+    {
+      isActive,
+      status,
+      updatedAt: now,
+      source: 'rootDeactivateOrganization_v1',
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
 
   await auditLog({
     action: 'rootDeactivateOrganization',
     actorUid,
     actorEmail: (context.auth?.token as any)?.email ?? null,
     orgId,
-    after: { isActive },
+    after: { isActive, status },
   });
 
-  return { ok: true, organizationId: orgId, isActive };
+  return { ok: true, organizationId: orgId, isActive, status };
+});
+
+export const orgSetOrganizationStatus = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+
+  const orgId = String(data?.organizationId ?? '').trim();
+  const status = String(data?.status ?? '').trim().toLowerCase();
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!status || !['active', 'suspended', 'deleted'].includes(status)) {
+    throw httpsError('invalid-argument', 'status inválido.');
+  }
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  const isActive = status === 'active';
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const batch = db.batch();
+  batch.set(
+    db.collection('organizations').doc(orgId),
+    {
+      isActive,
+      status,
+      updatedAt: now,
+      source: 'orgSetOrganizationStatus_v1',
+    },
+    { merge: true },
+  );
+  batch.set(
+    db.collection('organizationsPublic').doc(orgId),
+    {
+      isActive,
+      status,
+      updatedAt: now,
+      source: 'orgSetOrganizationStatus_v1',
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
+
+  await auditLog({
+    action: 'orgSetOrganizationStatus',
+    actorUid,
+    actorEmail: (context.auth?.token as any)?.email ?? null,
+    orgId,
+    after: { isActive, status },
+  });
+
+  return { ok: true, organizationId: orgId, isActive, status };
 });
 
 export const rootDeleteOrganizationScaffold = functions.https.onCall(async (data, context) => {
