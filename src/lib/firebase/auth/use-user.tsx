@@ -234,14 +234,15 @@ useEffect(() => {
 
     setOrganizationId((prev) => (prev === nextOrgId ? prev : nextOrgId));
 
-    const am = nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
-    setActiveMembership(am);
+    const nextMembership =
+      nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
+    setActiveMembership(nextMembership);
 
-    const derivedRole = am?.status === 'active' ? (am.role ?? 'operator') : null;
+    const derivedRole = nextMembership?.status === 'active' ? (nextMembership.role ?? 'operator') : null;
     setRole(derivedRole);
 
     setLoading(false);
-  }, [user, profile, memberships]);
+  }, [user, profile, memberships, profileReady, membershipsReady]);
 
   const setActiveOrganizationId = async (orgId: string) => {
     const next = String(orgId ?? '').trim();
@@ -250,19 +251,24 @@ useEffect(() => {
     const targetMembership = memberships.find((membership) => membership.organizationId === next);
     if (!targetMembership || targetMembership.status !== 'active') return;
 
+    const nextActive = memberships.find((membership) => membership.organizationId === next) ?? null;
+    const derivedRole = nextActive?.status === 'active' ? (nextActive.role ?? 'operator') : null;
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('preferredOrganizationId', next);
+    }
+
+    setOrganizationId(next);
+    setActiveMembership(nextActive);
+    setRole(derivedRole);
+
     // Persist server-side (optional, but useful across devices)
     try {
       if (!app) return;
       const fn = httpsCallable(getFunctions(app), 'setActiveOrganization');
       await fn({ organizationId: next });
-
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('preferredOrganizationId', next);
-      }
-
-      setOrganizationId(next);
     } catch {
-      // If membership is pending or function unavailable, we keep local selection only.
+      // Non-blocking: local selection already set.
     }
   };
 
