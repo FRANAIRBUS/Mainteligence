@@ -7,12 +7,22 @@ export interface BaseEntity {
   updatedAt: Timestamp;
 }
 
+export type OrganizationType = "demo" | "standard" | "enterprise" | "partner";
+export type OrganizationStatus = "active" | "suspended" | "deleted";
+export type SubscriptionPlan = "trial" | "standard" | "enterprise";
+export type MembershipStatus = "active" | "pending" | "revoked";
+export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
+
 export interface Organization extends BaseEntity {
   name: string;
   taxId?: string;
-  subscriptionPlan: "trial" | "standard" | "enterprise";
+  subscriptionPlan: SubscriptionPlan;
   isActive: boolean;
   demoExpiresAt?: Timestamp;
+  type?: OrganizationType;
+  status?: OrganizationStatus;
+  billingEmail?: string | null;
+  modulesEnabled?: string[];
   settings: {
     allowGuestAccess: boolean;
     maxUsers: number;
@@ -54,9 +64,21 @@ export interface User extends BaseEntity {
 export interface Membership extends BaseEntity {
   userId: string;
   role: User['role'];
-  status: 'active' | 'pending' | 'revoked';
+  status: MembershipStatus;
   organizationName?: string;
   primary?: boolean;
+  invitedBy?: string;
+  invitedAt?: Timestamp;
+  acceptedAt?: Timestamp;
+}
+
+export interface Invitation extends BaseEntity {
+  invitedEmail: string;
+  role: User['role'];
+  status: InvitationStatus;
+  invitedBy: string;
+  expiresAt?: Timestamp | null;
+  acceptedAt?: Timestamp | null;
 }
 
 export interface Site extends BaseEntity {
