@@ -40,6 +40,9 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
+    if (!userLoading && !user) {
+      router.replace("/login");
+    }
     if (!userLoading && user && !organizationId && !isRoot) {
       router.replace("/onboarding");
     }

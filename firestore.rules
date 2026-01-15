@@ -122,6 +122,14 @@ service cloud.firestore {
       return request.resource.data.organizationId == resource.data.organizationId;
     }
 
+    function organizationIdMatchesPath(orgId) {
+      return request.resource.data.organizationId == orgId;
+    }
+
+    function resourceOrganizationIdMatchesPath(orgId) {
+      return resource.data.organizationId == null || resource.data.organizationId == orgId;
+    }
+
     function roleUnchanged() {
       return request.resource.data.role == resource.data.role;
     }
@@ -173,6 +181,69 @@ service cloud.firestore {
       allow get: if isActiveMember(orgId);
       allow create, update, delete: if false;
 
+      // Organization-scoped settings
+      match /settings/{settingId} {
+        allow read: if isSignedIn() && isSuperAdminInOrg(orgId);
+        allow write: if false;
+      }
+
+      // Organization-scoped resources (v14+ data model)
+      match /sites/{siteId} {
+        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
+        allow create: if isSignedIn() && isAdminInOrg(orgId) && organizationIdMatchesPath(orgId);
+        allow update: if isSignedIn()
+          && isAdminInOrg(orgId)
+          && organizationIdUnchanged()
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+      }
+
+      match /assets/{assetId} {
+        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
+        allow create: if isSignedIn() && isAdminInOrg(orgId) && organizationIdMatchesPath(orgId);
+        allow update: if isSignedIn()
+          && isAdminInOrg(orgId)
+          && organizationIdUnchanged()
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+      }
+
+      match /departments/{departmentId} {
+        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
+        allow create: if isSignedIn() && isAdminInOrg(orgId) && organizationIdMatchesPath(orgId);
+        allow update: if isSignedIn()
+          && isAdminInOrg(orgId)
+          && organizationIdUnchanged()
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+      }
+
+      match /tickets/{ticketId} {
+        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
+        allow create: if isSignedIn() && isActiveMember(orgId) && organizationIdMatchesPath(orgId);
+        allow update: if isSignedIn()
+          && isActiveMember(orgId)
+          && organizationIdUnchanged()
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+      }
+
+      match /tasks/{taskId} {
+        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
+        allow create: if isSignedIn() && isActiveMember(orgId) && organizationIdMatchesPath(orgId);
+        allow update: if isSignedIn()
+          && isActiveMember(orgId)
+          && organizationIdUnchanged()
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+      }
+
+      match /auditLogs/{logId} {
+        allow read: if isSignedIn() && isAdminInOrg(orgId);
+        allow create: if isSignedIn() && isAdminInOrg(orgId) && organizationIdMatchesPath(orgId);
+        allow update, delete: if false;
+      }
+
       // Members snapshot (operational listing)
       match /members/{memberUid} {
         allow read: if isActiveMember(orgId) && (isAdminInOrg(orgId) || request.auth.uid == memberUid);
@@ -211,7 +282,7 @@ service cloud.firestore {
     }
 
     /* ------------------------------
-       TICKETS
+       TICKETS (legacy root collections)
     --------------------------------- */
     match /tickets/{ticketId} {
       allow read: if isSignedIn() && isActiveMember(resource.data.organizationId);
@@ -225,7 +296,7 @@ service cloud.firestore {
     }
 
     /* ------------------------------
-       TASKS
+       TASKS (legacy root collections)
     --------------------------------- */
     match /tasks/{taskId} {
       allow read: if isSignedIn() && isActiveMember(resource.data.organizationId);
@@ -239,7 +310,7 @@ service cloud.firestore {
     }
 
     /* ------------------------------
-       SITES / ASSETS / DEPARTMENTS
+       SITES / ASSETS / DEPARTMENTS (legacy root collections)
     --------------------------------- */
     match /sites/{siteId} {
       allow read: if isSignedIn() && isActiveMember(resource.data.organizationId);

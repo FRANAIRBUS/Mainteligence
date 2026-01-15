@@ -192,14 +192,17 @@ Secciones:
 
 ### 6.1 Colecciones base
 - `users/{uid}`
-- `sites/{siteId}`
-- `departments/{deptId}`
-- `assets/{assetId}`
-- `tickets/{ticketId}`
+- `organizations/{orgId}/sites/{siteId}`
+- `organizations/{orgId}/departments/{deptId}`
+- `organizations/{orgId}/assets/{assetId}`
+- `organizations/{orgId}/tickets/{ticketId}`
   - `comments/{commentId}`
   - `events/{eventId}`
   - `timeEntries/{entryId}`
   - `parts/{partId}`
+- `organizations/{orgId}/tasks/{taskId}`
+- `organizations/{orgId}/auditLogs/{logId}`
+- `organizations/{orgId}/settings/{settingId}`
 - `preventiveTemplates/{templateId}`
 - `counters/{orgId}/years/{YYYY}` (para `displayId`)
 
