@@ -51,6 +51,14 @@ service firebase.storage {
       return get(/databases/$(database)/documents/users/$(uid)).data.organizationId;
     }
 
+    function organizationIsActive(orgId) {
+      if (orgId == null) return false;
+      let path = /databases/$(database)/documents/organizations/$(orgId);
+      if (!exists(path)) return false;
+      let org = get(path).data;
+      return org.isActive == true && (org.status == null || (org.status != 'suspended' && org.status != 'deleted'));
+    }
+
     function ticketOriginDepartment(ticketData) {
       return ticketData.originDepartmentId != null ? ticketData.originDepartmentId : ticketData.departmentId;
     }
@@ -78,6 +86,7 @@ service firebase.storage {
 
       if (role == 'super_admin') return true;
       if (!isSignedIn() || ticketData.organizationId != getUserOrganizationId(request.auth.uid)) return false;
+      if (!organizationIsActive(ticketData.organizationId)) return false;
       if (role in ['admin', 'maintenance']) return true;
       if (role in ['dept_head_multi', 'dept_head_single']) {
         return ticketInScope(ticketData, request.auth.uid) || ticketData.createdBy == request.auth.uid || ticketData.assignedTo == request.auth.uid;
@@ -90,12 +99,25 @@ service firebase.storage {
       );
     }
 
+    function canAccessTask(taskId) {
+      if (!isSignedIn()) return false;
+      let path = /databases/$(database)/documents/tasks/$(taskId);
+      if (!exists(path)) return false;
+
+      let taskData = get(path).data;
+      let orgId = getUserOrganizationId(request.auth.uid);
+      if (taskData.organizationId != orgId) return false;
+      return organizationIsActive(taskData.organizationId);
+    }
+
     // --- REGLAS DE CARPETAS ---
 
     // 1. Logo de la empresa (Público para lectura)
     match /branding/logo.png {
       allow read: if true;
-      allow write: if isSignedIn() && userRole(request.auth.uid) in ['admin', 'super_admin'];
+      allow write: if isSignedIn()
+        && organizationIsActive(getUserOrganizationId(request.auth.uid))
+        && userRole(request.auth.uid) in ['admin', 'super_admin'];
     }
 
     // 2. Fotos de Incidencias (Tickets)
@@ -105,9 +127,7 @@ service firebase.storage {
 
     // 👇👇👇 NUEVO: Fotos de Tareas (Tasks) 👇👇👇
     match /tasks/{taskId}/{allPaths=**} {
-        // Por ahora permitimos a cualquier usuario logueado subir/ver fotos de tareas
-        // Puedes restringirlo más adelante si quieres que solo el asignado pueda subir fotos
-        allow read, write: if isSignedIn();
+        allow read, write: if canAccessTask(taskId);
     }
     // 👆👆👆 FIN DEL BLOQUE NUEVO 👆👆👆
 

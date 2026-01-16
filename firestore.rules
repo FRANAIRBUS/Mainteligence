@@ -39,6 +39,17 @@ service cloud.firestore {
         && (userProfile(request.auth.uid).data.active == true || userProfile(request.auth.uid).data.active == null);
     }
 
+    function organizationIsActive(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)).data.isActive == true
+        && (
+          get(/databases/$(database)/documents/organizations/$(orgId)).data.status == null
+          || (
+            get(/databases/$(database)/documents/organizations/$(orgId)).data.status != "suspended"
+            && get(/databases/$(database)/documents/organizations/$(orgId)).data.status != "deleted"
+          )
+        );
+    }
+
     // --- Org members (preferred, deterministic id = uid)
     function memberDoc(uid, orgId) {
       return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
@@ -91,7 +102,7 @@ service cloud.firestore {
 
     // --- Unified checks
     function isActiveMember(orgId) {
-      return isSignedIn() && (
+      return isSignedIn() && organizationIsActive(orgId) && (
         (hasMember(orgId) && memberStatus(orgId) == "active")
         || (hasMembershipById(orgId) && membershipStatusById(orgId) == "active")
         || (!hasMember(orgId) && !hasMembershipById(orgId) && legacyActiveInOrg(orgId))
