@@ -928,24 +928,91 @@ export const rootDeactivateOrganization = functions.https.onCall(async (data, co
   const isActive = Boolean(data?.isActive ?? false);
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
 
-  await db.collection('organizations').doc(orgId).set(
+  const status = isActive ? 'active' : 'suspended';
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const batch = db.batch();
+  batch.set(
+    db.collection('organizations').doc(orgId),
     {
       isActive,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      status,
+      updatedAt: now,
       source: 'rootDeactivateOrganization_v1',
     },
     { merge: true }
   );
+  batch.set(
+    db.collection('organizationsPublic').doc(orgId),
+    {
+      isActive,
+      status,
+      updatedAt: now,
+      source: 'rootDeactivateOrganization_v1',
+    },
+    { merge: true }
+  );
+
+  await batch.commit();
 
   await auditLog({
     action: 'rootDeactivateOrganization',
     actorUid,
     actorEmail: (context.auth?.token as any)?.email ?? null,
     orgId,
-    after: { isActive },
+    after: { isActive, status },
   });
 
-  return { ok: true, organizationId: orgId, isActive };
+  return { ok: true, organizationId: orgId, isActive, status };
+});
+
+export const orgSetOrganizationStatus = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+
+  const orgId = String(data?.organizationId ?? '').trim();
+  const status = String(data?.status ?? '').trim().toLowerCase();
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!status || !['active', 'suspended', 'deleted'].includes(status)) {
+    throw httpsError('invalid-argument', 'status inválido.');
+  }
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  const isActive = status === 'active';
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const batch = db.batch();
+  batch.set(
+    db.collection('organizations').doc(orgId),
+    {
+      isActive,
+      status,
+      updatedAt: now,
+      source: 'orgSetOrganizationStatus_v1',
+    },
+    { merge: true },
+  );
+  batch.set(
+    db.collection('organizationsPublic').doc(orgId),
+    {
+      isActive,
+      status,
+      updatedAt: now,
+      source: 'orgSetOrganizationStatus_v1',
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
+
+  await auditLog({
+    action: 'orgSetOrganizationStatus',
+    actorUid,
+    actorEmail: (context.auth?.token as any)?.email ?? null,
+    orgId,
+    after: { isActive, status },
+  });
+
+  return { ok: true, organizationId: orgId, isActive, status };
 });
 
 export const rootDeleteOrganizationScaffold = functions.https.onCall(async (data, context) => {
@@ -1250,6 +1317,81 @@ export const checkOrganizationAvailability = functions.https.onCall(async (data)
   };
 });
 
+export const bootstrapFromInvites = functions.https.onCall(async (_data, context) => {
+  const uid = requireAuth(context);
+
+  const authUser = await admin.auth().getUser(uid).catch(() => null);
+  const email = (authUser?.email ?? '').trim().toLowerCase();
+  if (!email) {
+    throw httpsError('failed-precondition', 'Email requerido.');
+  }
+
+  const joinReqByEmail = db
+    .collectionGroup('joinRequests')
+    .where('email', '==', email)
+    .where('status', '==', 'pending');
+  const joinReqByUid = db
+    .collectionGroup('joinRequests')
+    .where('userId', '==', uid)
+    .where('status', '==', 'pending');
+
+  const [emailSnap, uidSnap] = await Promise.all([joinReqByEmail.get(), joinReqByUid.get()]);
+  const joinReqDocs = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+  emailSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
+  uidSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
+
+  if (joinReqDocs.size === 0) {
+    return { ok: true, created: 0 };
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const batch = db.batch();
+  let created = 0;
+
+  for (const docSnap of joinReqDocs.values()) {
+    const data = docSnap.data() as any;
+    const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
+    if (!orgId) continue;
+
+    const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+    const membershipSnap = await membershipRef.get();
+    if (membershipSnap.exists) continue;
+
+    batch.set(
+      membershipRef,
+      {
+        userId: uid,
+        organizationId: orgId,
+        organizationName: String(data?.organizationName ?? orgId),
+        role: normalizeRole(data?.requestedRole) ?? 'operator',
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+        source: 'bootstrapFromInvites_v1',
+      },
+      { merge: true },
+    );
+
+    batch.set(
+      docSnap.ref,
+      {
+        userId: uid,
+        updatedAt: now,
+        source: 'bootstrapFromInvites_v1',
+      },
+      { merge: true },
+    );
+
+    created += 1;
+  }
+
+  if (created > 0) {
+    await batch.commit();
+  }
+
+  return { ok: true, created };
+});
+
 export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const uid = requireAuth(context);
 
@@ -1280,6 +1422,8 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
 
     const orgName = String(details?.name ?? '').trim() || organizationId;
     const orgLegalName = String(details?.legalName ?? '').trim() || null;
+    const isDemoOrg = organizationId.startsWith('demo-');
+    const organizationType = isDemoOrg ? 'demo' : 'standard';
 
     if (!authUser?.emailVerified) {
       await db.collection('organizationSignupRequests').doc(uid).set(
@@ -1312,7 +1456,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
 
     const batch = db.batch();
 
-    const demoExpiresAt = organizationId.startsWith('demo-')
+    const demoExpiresAt = isDemoOrg
       ? admin.firestore.Timestamp.fromDate(
           new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
         )
@@ -1332,6 +1476,8 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         teamSize: Number.isFinite(Number(details?.teamSize)) ? Number(details?.teamSize) : null,
         subscriptionPlan: 'trial',
         isActive: true,
+        type: organizationType,
+        status: 'active',
         settings: {
           allowGuestAccess: false,
           maxUsers: 50,
@@ -1352,6 +1498,8 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         name: orgName,
         nameLower: orgName.toLowerCase(),
         isActive: true,
+        type: organizationType,
+        status: 'active',
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',
@@ -1416,7 +1564,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       after: { organizationId, role: 'super_admin', status: 'active' },
     });
 
-    if (organizationId.startsWith('demo-')) {
+    if (isDemoOrg) {
       await seedDemoOrganizationData({ organizationId, uid });
     }
 
@@ -1537,6 +1685,8 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
   const orgDetails = requestData?.organizationDetails ?? {};
   const orgName = String(orgDetails?.name ?? requestData?.organizationName ?? organizationId).trim() || organizationId;
   const orgLegalName = String(orgDetails?.legalName ?? requestData?.organizationLegalName ?? '').trim() || null;
+  const isDemoOrg = organizationId.startsWith('demo-');
+  const organizationType = isDemoOrg ? 'demo' : 'standard';
 
   const userRef = db.collection('users').doc(uid);
   const memberRef = orgRef.collection('members').doc(uid);
@@ -1558,6 +1708,8 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       teamSize: Number.isFinite(Number(orgDetails?.teamSize)) ? Number(orgDetails?.teamSize) : null,
       subscriptionPlan: 'trial',
       isActive: true,
+      type: organizationType,
+      status: 'active',
       settings: {
         allowGuestAccess: false,
         maxUsers: 50,
@@ -1577,6 +1729,8 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       name: orgName,
       nameLower: orgName.toLowerCase(),
       isActive: true,
+      type: organizationType,
+      status: 'active',
       createdAt: now,
       updatedAt: now,
       source: 'bootstrapSignup_v1',

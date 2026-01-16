@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +20,7 @@ type SignupMode = 'demo' | 'join' | 'create';
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const auth = useAuth();
   const app = useFirebaseApp();
   const { user, profile, memberships, organizationId, activeMembership, loading, isRoot } = useUser();
@@ -63,6 +64,8 @@ export default function OnboardingPage() {
   const hasActiveMembership = memberships.some((membership) => membership.status === 'active');
   const hasPendingMembership = memberships.some((membership) => membership.status !== 'active');
 
+  const allowCreate = searchParams.get('mode') === 'create';
+
   useEffect(() => {
     if (loading) return;
     if (!user) {
@@ -73,10 +76,10 @@ export default function OnboardingPage() {
       router.replace('/root');
       return;
     }
-    if (hasActiveMembership || organizationId || activeMembership?.status === 'active') {
+    if (!allowCreate && (hasActiveMembership || organizationId || activeMembership?.status === 'active')) {
       router.replace('/');
     }
-  }, [activeMembership, hasActiveMembership, isRoot, loading, organizationId, router, user]);
+  }, [activeMembership, allowCreate, hasActiveMembership, isRoot, loading, organizationId, router, user]);
 
   const attemptFinalize = async () => {
     if (!app || !auth?.currentUser) return;
@@ -366,9 +369,17 @@ export default function OnboardingPage() {
     }
   };
 
+  useEffect(() => {
+    if (allowCreate) {
+      setSignupMode('create');
+    }
+  }, [allowCreate]);
+
   const pendingMembership = memberships.find((membership) => membership.status !== 'active') ?? null;
   const pending = Boolean(pendingMembership);
-  const showSelection = Boolean(user && !pending && !hasActiveMembership && !organizationId);
+  const showSelection = Boolean(
+    user && !pending && (allowCreate || (!hasActiveMembership && !organizationId))
+  );
 
   return (
     <AppShell>
@@ -431,22 +442,28 @@ export default function OnboardingPage() {
 
             {showSelection && (
               <div className="space-y-6">
-                <RadioGroup value={signupMode} onValueChange={(v) => setSignupMode(v as SignupMode)} className="gap-3">
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem id="demo" value="demo" />
-                    <Label htmlFor="demo">Probar versión demo</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem id="join" value="join" />
-                    <Label htmlFor="join">Solicitar acceso a una organización existente</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem id="create" value="create" />
-                    <Label htmlFor="create">Crear una organización nueva</Label>
-                  </div>
-                </RadioGroup>
+                {!allowCreate && (
+                  <RadioGroup
+                    value={signupMode}
+                    onValueChange={(v) => setSignupMode(v as SignupMode)}
+                    className="gap-3"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem id="demo" value="demo" />
+                      <Label htmlFor="demo">Probar versión demo</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem id="join" value="join" />
+                      <Label htmlFor="join">Solicitar acceso a una organización existente</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem id="create" value="create" />
+                      <Label htmlFor="create">Crear una organización nueva</Label>
+                    </div>
+                  </RadioGroup>
+                )}
 
-                {signupMode === 'demo' && (
+                {!allowCreate && signupMode === 'demo' && (
                   <div className="rounded-md border p-4 space-y-3">
                     <p className="text-sm text-muted-foreground">
                       Crea una demo rápida para explorar la plataforma con datos de ejemplo.
@@ -457,7 +474,7 @@ export default function OnboardingPage() {
                   </div>
                 )}
 
-                {signupMode === 'join' && (
+                {!allowCreate && signupMode === 'join' && (
                   <div className="rounded-md border p-4 space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="organizationId">ID o nombre de organización (obligatorio)</Label>
