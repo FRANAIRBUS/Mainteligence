@@ -6,18 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/firebase";
 
-// Import robusto: admite default o named export, y si falla no rompe
-import MainNavDefault, { MainNav as MainNavNamed } from "@/components/main-nav";
-import UserNavDefault, { UserNav as UserNavNamed } from "@/components/user-nav";
-import MobileBottomNavDefault, {
-  MobileBottomNav as MobileBottomNavNamed,
-} from "@/components/mobile-bottom-nav";
-
-const MainNav: any = (MainNavDefault ?? MainNavNamed ?? (() => null)) as any;
-const UserNav: any = (UserNavDefault ?? UserNavNamed ?? (() => null)) as any;
-const MobileBottomNav: any = (MobileBottomNavDefault ??
-  MobileBottomNavNamed ??
-  (() => null)) as any;
+import MainNav from "@/components/main-nav";
+import { UserNav } from "@/components/user-nav";
+import MobileBottomNav from "@/components/mobile-bottom-nav";
 
 export type AppShellProps = {
   title?: string;
