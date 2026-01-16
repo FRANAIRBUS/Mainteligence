@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ClientLogo } from '@/components/client-logo';
+import { AppShell } from '@/components/app-shell';
 
 import { useAuth, useUser, useFirebaseApp } from '@/lib/firebase';
 import {
@@ -244,8 +245,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-muted/30">
-      <div className="mx-auto flex min-h-screen max-w-3xl flex-col items-center justify-center gap-8 px-6 py-10 text-center">
+    <AppShell className="bg-muted/30">
+      <div className="mx-auto flex min-h-[calc(100vh-6rem)] max-w-3xl flex-col items-center justify-center gap-8 px-6 py-10 text-center">
         <div className="space-y-6">
           <div className="flex items-center justify-center gap-3">
             <ClientLogo />
@@ -385,6 +386,6 @@ export default function LoginPage() {
           </ul>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
