@@ -196,27 +196,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [user, firestore]);
 
 
-// Auto-claim pending invitations when the user logs in but has no profile/memberships yet.
-useEffect(() => {
-  if (!app || !user) return;
-  if (bootstrapAttemptedRef.current) return;
-  if (!profileReady || !membershipsReady) return;
+  // Auto-claim pending invitations when the user logs in.
+  useEffect(() => {
+    if (!app || !user) return;
+    if (bootstrapAttemptedRef.current) return;
+    if (!profileReady || !membershipsReady) return;
 
-  // Only attempt if the user is "orphan" (no profile doc and no memberships)
-  if (profile || memberships.length > 0) return;
+    bootstrapAttemptedRef.current = true;
 
-  bootstrapAttemptedRef.current = true;
-
-  (async () => {
-    try {
-      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'bootstrapFromInvites');
-      await fn({});
-    } catch (err) {
-      // Non-blocking: onboarding can still guide the user.
-      console.warn('[bootstrapFromInvites] failed', err);
-    }
-  })();
-}, [app, user, profile, memberships, profileReady, membershipsReady]);
+    (async () => {
+      try {
+        const fn = httpsCallable(getFunctions(app, 'us-central1'), 'bootstrapFromInvites');
+        await fn({});
+      } catch (err) {
+        // Non-blocking: onboarding can still guide the user.
+        console.warn('[bootstrapFromInvites] failed', err);
+      }
+    })();
+  }, [app, user, profile, memberships, profileReady, membershipsReady]);
 
   // Derive active org / active membership / role
   useEffect(() => {
