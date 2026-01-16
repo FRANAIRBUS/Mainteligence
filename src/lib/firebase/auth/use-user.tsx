@@ -196,27 +196,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, [user, firestore]);
 
 
-// Auto-claim pending invitations when the user logs in but has no profile/memberships yet.
-useEffect(() => {
-  if (!app || !user) return;
-  if (bootstrapAttemptedRef.current) return;
-  if (!profileReady || !membershipsReady) return;
+  // Auto-claim pending invitations when the user logs in.
+  useEffect(() => {
+    if (!app || !user) return;
+    if (bootstrapAttemptedRef.current) return;
+    if (!profileReady || !membershipsReady) return;
 
-  // Only attempt if the user is "orphan" (no profile doc and no memberships)
-  if (profile || memberships.length > 0) return;
+    bootstrapAttemptedRef.current = true;
 
-  bootstrapAttemptedRef.current = true;
-
-  (async () => {
-    try {
-      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'bootstrapFromInvites');
-      await fn({});
-    } catch (err) {
-      // Non-blocking: onboarding can still guide the user.
-      console.warn('[bootstrapFromInvites] failed', err);
-    }
-  })();
-}, [app, user, profile, memberships, profileReady, membershipsReady]);
+    (async () => {
+      try {
+        const fn = httpsCallable(getFunctions(app, 'us-central1'), 'bootstrapFromInvites');
+        await fn({});
+      } catch (err) {
+        // Non-blocking: onboarding can still guide the user.
+        console.warn('[bootstrapFromInvites] failed', err);
+      }
+    })();
+  }, [app, user, profile, memberships, profileReady, membershipsReady]);
 
   // Derive active org / active membership / role
   useEffect(() => {
@@ -234,14 +231,15 @@ useEffect(() => {
 
     setOrganizationId((prev) => (prev === nextOrgId ? prev : nextOrgId));
 
-    const am = nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
-    setActiveMembership(am);
+    const nextMembership =
+      nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
+    setActiveMembership(nextMembership);
 
-    const derivedRole = am?.status === 'active' ? (am.role ?? 'operator') : null;
+    const derivedRole = nextMembership?.status === 'active' ? (nextMembership.role ?? 'operator') : null;
     setRole(derivedRole);
 
     setLoading(false);
-  }, [user, profile, memberships]);
+  }, [user, profile, memberships, profileReady, membershipsReady]);
 
   const setActiveOrganizationId = async (orgId: string) => {
     const next = String(orgId ?? '').trim();
@@ -250,19 +248,24 @@ useEffect(() => {
     const targetMembership = memberships.find((membership) => membership.organizationId === next);
     if (!targetMembership || targetMembership.status !== 'active') return;
 
+    const nextActive = memberships.find((membership) => membership.organizationId === next) ?? null;
+    const derivedRole = nextActive?.status === 'active' ? (nextActive.role ?? 'operator') : null;
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('preferredOrganizationId', next);
+    }
+
+    setOrganizationId(next);
+    setActiveMembership(nextActive);
+    setRole(derivedRole);
+
     // Persist server-side (optional, but useful across devices)
     try {
       if (!app) return;
-      const fn = httpsCallable(getFunctions(app), 'setActiveOrganization');
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'setActiveOrganization');
       await fn({ organizationId: next });
-
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem('preferredOrganizationId', next);
-      }
-
-      setOrganizationId(next);
     } catch {
-      // If membership is pending or function unavailable, we keep local selection only.
+      // Non-blocking: local selection already set.
     }
   };
 

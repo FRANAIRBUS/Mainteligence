@@ -18,7 +18,7 @@ export function OrgSwitcher() {
   }, [memberships]);
 
   if (loading || isRoot) return null;
-  if (!options.length) return null;
+  if (options.length < 2) return null;
 
   return (
     <div className="w-full">

@@ -2,7 +2,7 @@
 
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
-import { useUser, useFirestore, useStorage, useDoc } from '@/lib/firebase';
+import { useUser, useFirestore, useStorage, useDoc, useFirebaseApp } from '@/lib/firebase';
 import type { User } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -26,7 +26,8 @@ import {
   type UploadTask,
   type UploadTaskSnapshot,
 } from 'firebase/storage';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
@@ -44,6 +45,7 @@ interface AppSettings {
 export default function SettingsPage() {
   const { user, loading: userLoading, organizationId, profile } = useUser();
   const router = useRouter();
+  const app = useFirebaseApp();
   const storage = useStorage();
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -58,6 +60,10 @@ export default function SettingsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [orgStatus, setOrgStatus] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState<string | null>(null);
+  const [orgStatusLoading, setOrgStatusLoading] = useState(false);
+  const [orgStatusActionLoading, setOrgStatusActionLoading] = useState(false);
   const uploadUnsubscribe = useRef<(() => void) | null>(null);
   const uploadTaskRef = useRef<UploadTask | null>(null);
   const uploadStallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -144,6 +150,32 @@ export default function SettingsPage() {
       resetUploadState();
     };
   }, []);
+
+  useEffect(() => {
+    if (!firestore || !resolvedOrganizationId) return;
+    let cancelled = false;
+
+    setOrgStatusLoading(true);
+    getDoc(doc(firestore, 'organizationsPublic', resolvedOrganizationId))
+      .then((snap) => {
+        if (cancelled) return;
+        const data = snap.data() as { status?: string; name?: string } | undefined;
+        setOrgStatus(data?.status ?? null);
+        setOrgName(data?.name ?? null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setOrgStatus(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setOrgStatusLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, resolvedOrganizationId]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -239,6 +271,34 @@ export default function SettingsPage() {
     }
   };
 
+  const handleOrgStatusChange = async (nextStatus: 'active' | 'suspended') => {
+    if (!app || !resolvedOrganizationId) return;
+
+    const actionLabel = nextStatus === 'active' ? 'reactivar' : 'suspender';
+    const confirm = window.confirm(`¿Seguro que quieres ${actionLabel} la organización?`);
+    if (!confirm) return;
+
+    setOrgStatusActionLoading(true);
+    try {
+      const fn = httpsCallable(getFunctions(app), 'orgSetOrganizationStatus');
+      const res = await fn({ organizationId: resolvedOrganizationId, status: nextStatus });
+      const payload = res?.data as { status?: string } | undefined;
+      setOrgStatus(payload?.status ?? nextStatus);
+      toast({
+        title: 'Estado actualizado',
+        description: `La organización está ${nextStatus === 'active' ? 'activa' : 'suspendida'}.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo actualizar el estado',
+        description: error?.message || 'Intenta de nuevo más tarde.',
+      });
+    } finally {
+      setOrgStatusActionLoading(false);
+    }
+  };
+
 
   const initialLoading = userLoading || profileLoading;
 
@@ -265,6 +325,36 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              <div className="rounded-md border border-muted-foreground/20 bg-muted/30 p-4">
+                <div className="space-y-2">
+                  <Label>Estado de la organización</Label>
+                  <div className="text-sm text-muted-foreground">
+                    {orgStatusLoading ? 'Cargando estado…' : orgStatus ?? 'Sin estado registrado'}
+                    {orgName ? ` · ${orgName}` : ''}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Suspender la organización bloquea el acceso de todos los miembros hasta reactivarla.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleOrgStatusChange('active')}
+                      disabled={orgStatusActionLoading || orgStatus === 'active'}
+                    >
+                      Reactivar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => handleOrgStatusChange('suspended')}
+                      disabled={orgStatusActionLoading || orgStatus === 'suspended'}
+                    >
+                      Suspender
+                    </Button>
+                  </div>
+                </div>
+              </div>
               <div className="space-y-2">
                 <Label>Logo Actual</Label>
                 <div className="flex items-center gap-4">
