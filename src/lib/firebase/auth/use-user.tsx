@@ -262,7 +262,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     // Persist server-side (optional, but useful across devices)
     try {
       if (!app) return;
-      const fn = httpsCallable(getFunctions(app), 'setActiveOrganization');
+      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'setActiveOrganization');
       await fn({ organizationId: next });
     } catch {
       // Non-blocking: local selection already set.

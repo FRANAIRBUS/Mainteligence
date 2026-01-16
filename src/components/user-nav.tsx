@@ -99,8 +99,11 @@ export function UserNav() {
                 <DropdownMenuItem
                   key={membership.id}
                   className={`flex items-center justify-between ${isActive ? '' : 'opacity-60'}`}
-                  onClick={() => {
-                    if (!isActive) return;
+                  onSelect={(event) => {
+                    if (!isActive) {
+                      event.preventDefault();
+                      return;
+                    }
                     void setActiveOrganizationId(membership.organizationId);
                   }}
                 >
