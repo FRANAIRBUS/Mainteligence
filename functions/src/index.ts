@@ -3337,6 +3337,8 @@ export const orgApproveJoinRequest = functions.https.onCall(async (data, context
   batch.set(
     membershipRef,
     {
+      userId: targetUid,
+      organizationId: orgId,
       role,
       status: 'active',
       organizationName: orgName,
