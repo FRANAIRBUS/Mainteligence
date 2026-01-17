@@ -180,6 +180,8 @@ const GOOGLE_PLAY_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
 const GOOGLE_TOKEN_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 const GOOGLE_JWT_ALG = 'RS256';
 const GOOGLE_JWT_TYP = 'JWT';
+const APPLE_UPDATES_ENABLED =
+  (functions.config().apple_app_store?.apply_updates ?? process.env.APPLE_APP_STORE_APPLY_UPDATES) === 'true';
 
 function resolveStripeConfig() {
   const secretKey = functions.config().stripe?.secret_key ?? process.env.STRIPE_SECRET_KEY;
@@ -207,6 +209,15 @@ function resolveGooglePlayConfig() {
     clientEmail,
     privateKey: privateKey.replace(/\\n/g, '\n'),
     packageName: packageName ?? '',
+  };
+}
+
+function resolveAppleAppStoreConfig() {
+  const bundleId =
+    functions.config().apple_app_store?.bundle_id ?? process.env.APPLE_APP_STORE_BUNDLE_ID ?? '';
+
+  return {
+    bundleId,
   };
 }
 
@@ -255,6 +266,28 @@ type GooglePlaySubscription = {
   cancelReason?: number;
   userCancellationTimeMillis?: string;
   autoRenewing?: boolean;
+};
+
+type AppleNotificationPayload = {
+  notificationType?: string;
+  subtype?: string | null;
+  data?: {
+    appAppleId?: number;
+    bundleId?: string;
+    appAccountToken?: string;
+    signedTransactionInfo?: string;
+    signedRenewalInfo?: string;
+  };
+};
+
+type AppleTransactionPayload = {
+  appAccountToken?: string;
+  expiresDate?: number;
+};
+
+type AppleRenewalPayload = {
+  appAccountToken?: string;
+  autoRenewStatus?: number;
 };
 
 function resolveEntitlementStatusFromStripe(status: string): EntitlementStatus {
@@ -315,11 +348,46 @@ function resolveEntitlementStatusFromGooglePlay(subscription: GooglePlaySubscrip
   return 'active';
 }
 
+function resolveEntitlementStatusFromApple(notificationType?: string, renewal?: AppleRenewalPayload | null): EntitlementStatus {
+  switch (String(notificationType ?? '').toUpperCase()) {
+    case 'DID_RENEW':
+    case 'DID_RECOVER':
+    case 'DID_CHANGE_RENEWAL_PREF':
+      return 'active';
+    case 'DID_FAIL_TO_RENEW':
+      return 'past_due';
+    case 'EXPIRED':
+    case 'REFUND':
+    case 'REVOKE':
+      return 'canceled';
+    case 'DID_CHANGE_RENEWAL_STATUS':
+      if (renewal && renewal.autoRenewStatus === 0) return 'past_due';
+      return 'active';
+    default:
+      return 'past_due';
+  }
+}
+
 function toTimestampFromMillis(value?: string | number | null): admin.firestore.Timestamp | null {
   if (value == null) return null;
   const millis = typeof value === 'string' ? Number(value) : value;
   if (!Number.isFinite(millis) || millis <= 0) return null;
   return admin.firestore.Timestamp.fromMillis(millis);
+}
+
+function decodeJwtPayload<T>(token?: string | null): T | null {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+  const payload = parts[1];
+  const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+  const buffer = Buffer.from(`${normalized}${padding}`, 'base64');
+  try {
+    return JSON.parse(buffer.toString('utf8')) as T;
+  } catch {
+    return null;
+  }
 }
 
 function verifyStripeSignature({
@@ -801,6 +869,69 @@ async function updateOrganizationUserProfile({
       email: normalizedEmail || null,
       departmentId: departmentId || null,
     },
+  });
+}
+
+async function updateOrganizationAppleEntitlement({
+  orgId,
+  planId,
+  status,
+  currentPeriodEnd,
+}: {
+  orgId: string;
+  planId?: EntitlementPlanId;
+  status: EntitlementStatus;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+}) {
+  const orgRef = db.collection('organizations').doc(orgId);
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new Error(`Organization ${orgId} not found.`);
+    }
+
+    const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+    const entitlement = orgData?.entitlement;
+    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const resolvedPlanId = resolveEntitlementPlanId({
+      metadataPlanId: planId ?? null,
+      fallbackPlanId: entitlement?.planId,
+    });
+
+    const entitlementPayload = buildEntitlementPayload({
+      planId: resolvedPlanId,
+      status,
+      currentPeriodEnd,
+      provider: 'apple_app_store',
+      now,
+      limits,
+      usage,
+    });
+
+    const billingProviderPayload: Record<string, unknown> = {
+      planId: resolvedPlanId,
+      status,
+      updatedAt: now,
+    };
+
+    if (currentPeriodEnd) {
+      billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
+    }
+
+    tx.set(
+      orgRef,
+      {
+        entitlement: entitlementPayload,
+        billingProviders: {
+          apple_app_store: billingProviderPayload,
+        },
+        updatedAt: now,
+      },
+      { merge: true }
+    );
   });
 }
 
@@ -3634,6 +3765,53 @@ export const registerGooglePlayPurchase = functions.https.onCall(async (data, co
   return { ok: true, organizationId: orgId, purchaseToken };
 });
 
+export const registerAppleAppAccountToken = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = String(data?.organizationId ?? '').trim();
+  const appAccountToken = String(data?.appAccountToken ?? '').trim();
+  const uid = String(data?.uid ?? actorUid).trim();
+  const planIdRaw = String(data?.planId ?? '').trim();
+
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!appAccountToken) throw httpsError('invalid-argument', 'appAccountToken requerido.');
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  const resolvedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: planIdRaw || null,
+  });
+
+  const tokenRef = db.collection('appleAppAccountTokens').doc(appAccountToken);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(tokenRef);
+    const payload: Record<string, unknown> = {
+      organizationId: orgId,
+      uid,
+      planId: resolvedPlanId,
+      updatedAt: now,
+      linkedBy: actorUid,
+      source: 'registerAppleAppAccountToken_v1',
+    };
+    if (!snap.exists) {
+      payload.createdAt = now;
+    }
+    tx.set(tokenRef, payload, { merge: true });
+  });
+
+  await auditLog({
+    action: 'registerAppleAppAccountToken',
+    actorUid,
+    actorEmail,
+    orgId,
+    meta: { appAccountToken, uid, planId: resolvedPlanId },
+  });
+
+  return { ok: true, organizationId: orgId, appAccountToken };
+});
+
 export const googlePlayRtdn = functions.pubsub.topic('google-play-rtdn').onPublish(async (message) => {
   const rawData = message.data ? Buffer.from(message.data, 'base64').toString('utf8') : '';
   if (!rawData) {
@@ -3715,6 +3893,85 @@ export const googlePlayRtdn = functions.pubsub.topic('google-play-rtdn').onPubli
       },
       { merge: true }
     );
+});
+
+export const appleAppStoreNotifications = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).send('Method not allowed');
+    return;
+  }
+
+  const rawBody = req.rawBody?.toString('utf8') ?? '';
+  if (!rawBody) {
+    res.status(400).send('Missing payload.');
+    return;
+  }
+
+  let signedPayload: string | null = null;
+  try {
+    const parsed = JSON.parse(rawBody) as { signedPayload?: string };
+    signedPayload = parsed.signedPayload ?? null;
+  } catch (error) {
+    console.error('appleAppStoreNotifications: invalid JSON', error);
+    res.status(400).send('Invalid JSON.');
+    return;
+  }
+
+  if (!signedPayload) {
+    res.status(400).send('Missing signedPayload.');
+    return;
+  }
+
+  const notificationPayload = decodeJwtPayload<AppleNotificationPayload>(signedPayload);
+  const transactionPayload = decodeJwtPayload<AppleTransactionPayload>(
+    notificationPayload?.data?.signedTransactionInfo ?? null
+  );
+  const renewalPayload = decodeJwtPayload<AppleRenewalPayload>(
+    notificationPayload?.data?.signedRenewalInfo ?? null
+  );
+
+  const appAccountToken =
+    transactionPayload?.appAccountToken ??
+    renewalPayload?.appAccountToken ??
+    notificationPayload?.data?.appAccountToken ??
+    '';
+
+  const { bundleId } = resolveAppleAppStoreConfig();
+  if (bundleId && notificationPayload?.data?.bundleId && notificationPayload.data.bundleId !== bundleId) {
+    res.status(400).send('Bundle mismatch.');
+    return;
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.collection('appleAppStoreNotifications').add({
+    signedPayload,
+    notificationType: notificationPayload?.notificationType ?? null,
+    subtype: notificationPayload?.subtype ?? null,
+    appAccountToken: appAccountToken || null,
+    bundleId: notificationPayload?.data?.bundleId ?? null,
+    receivedAt: now,
+    source: 'appleAppStoreNotifications_v1',
+  });
+
+  if (APPLE_UPDATES_ENABLED && appAccountToken) {
+    const tokenSnap = await db.collection('appleAppAccountTokens').doc(appAccountToken).get();
+    if (tokenSnap.exists) {
+      const tokenData = tokenSnap.data() as { organizationId?: string; planId?: EntitlementPlanId } | undefined;
+      const orgId = String(tokenData?.organizationId ?? '').trim();
+      if (orgId) {
+        const status = resolveEntitlementStatusFromApple(notificationPayload?.notificationType, renewalPayload);
+        const currentPeriodEnd = toTimestampFromMillis(transactionPayload?.expiresDate ?? null);
+        await updateOrganizationAppleEntitlement({
+          orgId,
+          planId: tokenData?.planId,
+          status,
+          currentPeriodEnd,
+        });
+      }
+    }
+  }
+
+  res.status(200).send({ received: true });
 });
 
 export const stripeWebhook = functions.https.onRequest(async (req, res) => {
