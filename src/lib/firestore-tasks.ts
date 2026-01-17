@@ -10,13 +10,16 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  startAfter,
   updateDoc,
   Timestamp,
   type DocumentData,
   type Firestore,
   type FirestoreDataConverter,
   type QueryConstraint,
+  type QueryDocumentSnapshot,
   type Unsubscribe,
+  limit,
 } from "firebase/firestore";
 import type { Auth } from "firebase/auth";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
@@ -68,9 +71,12 @@ export const subscribeToTasks = (
   db: Firestore,
   onData: (tasks: MaintenanceTask[]) => void,
   onError?: (error: Error) => void,
-  constraints: QueryConstraint[] = [orderBy("dueDate", "asc")]
+  constraints: QueryConstraint[] = [orderBy("dueDate", "asc")],
+  options?: { pageSize?: number; cursor?: QueryDocumentSnapshot<MaintenanceTask> }
 ): Unsubscribe => {
-  const q = query(tasksCollection(db), ...constraints);
+  const pageSize = options?.pageSize ?? 50;
+  const cursorConstraints = options?.cursor ? [startAfter(options.cursor)] : [];
+  const q = query(tasksCollection(db), ...constraints, ...cursorConstraints, limit(pageSize));
   return onSnapshot(
     q,
     (snapshot) => {
