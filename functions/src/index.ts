@@ -713,14 +713,27 @@ function ensureEntitlementAllowsCreate({
   kind: keyof typeof USAGE_FIELDS;
   entitlement: {
     status?: string;
+    planId?: EntitlementPlanId;
     limits?: EntitlementLimits;
     usage?: EntitlementUsage;
+    trialEndsAt?: admin.firestore.Timestamp;
   };
   features?: Record<string, boolean>;
 }) {
   const status = String(entitlement?.status ?? '');
   if (status !== 'active' && status !== 'trialing') {
     throw httpsError('failed-precondition', 'Tu plan no está activo para crear nuevos elementos.');
+  }
+
+  if (entitlement?.trialEndsAt instanceof admin.firestore.Timestamp) {
+    const now = admin.firestore.Timestamp.now();
+    if (entitlement.trialEndsAt.toMillis() <= now.toMillis()) {
+      throw httpsError('failed-precondition', 'Tu periodo de prueba expiró.');
+    }
+  }
+
+  if (kind === 'preventives' && String(entitlement?.planId ?? '') === 'free') {
+    throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
   }
 
   if (kind === 'preventives' && !isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) {
@@ -2589,6 +2602,76 @@ export const inviteUserToOrg = functions.https.onCall(async (data, context) => {
 
   return { ok: true, organizationId: orgId, uid: targetUid || null, requestId: inviteId, alreadyPending };
 });
+
+export const pauseExpiredDemoPreventives = functions.pubsub
+  .schedule('every 24 hours')
+  .timeZone('UTC')
+  .onRun(async () => {
+    const now = admin.firestore.Timestamp.now();
+    const orgsSnap = await db
+      .collection('organizations')
+      .where('demoExpiresAt', '<=', now)
+      .get();
+
+    if (orgsSnap.empty) return null;
+
+    for (const orgDoc of orgsSnap.docs) {
+      const orgId = orgDoc.id;
+      const ticketsRef = db.collection('tickets');
+      let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+
+      while (true) {
+        let query = ticketsRef
+          .where('organizationId', '==', orgId)
+          .where('type', '==', 'preventivo')
+          .orderBy(admin.firestore.FieldPath.documentId())
+          .limit(200);
+
+        if (lastDoc) {
+          query = query.startAfter(lastDoc);
+        }
+
+        const ticketsSnap = await query.get();
+        if (ticketsSnap.empty) break;
+
+        const batch = db.batch();
+        let updates = 0;
+
+        ticketsSnap.docs.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (data?.preventivePausedByEntitlement === true) return;
+          const status = String(data?.status ?? '');
+          if (status === 'Cerrada' || status === 'Resuelta') return;
+
+          batch.update(docSnap.ref, {
+            status: 'En espera',
+            preventivePausedByEntitlement: true,
+            preventivePausedAt: now,
+            updatedAt: now,
+          });
+          updates += 1;
+        });
+
+        if (updates > 0) {
+          await batch.commit();
+        }
+
+        lastDoc = ticketsSnap.docs[ticketsSnap.docs.length - 1] ?? null;
+        if (ticketsSnap.size < 200) break;
+      }
+
+      await db.collection('organizations').doc(orgId).set(
+        {
+          preventivesPausedAt: now,
+          preventivesPausedByEntitlement: true,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+    }
+
+    return null;
+  });
 
 export const orgInviteUser = functions.https.onRequest(async (req, res) => {
   if (applyCors(req, res)) return;
