@@ -35,7 +35,7 @@ type Entitlement = {
   usage: EntitlementUsage;
 };
 
-type BillingProviderEntitlement = {
+export type BillingProviderEntitlement = {
   planId: EntitlementPlanId;
   status: 'trialing' | 'active' | 'past_due' | 'canceled';
   trialEndsAt?: admin.firestore.Timestamp;
