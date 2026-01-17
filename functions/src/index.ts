@@ -3,6 +3,7 @@ import * as admin from 'firebase-admin';
 import type { Request, Response } from 'express';
 import { sendAssignmentEmail } from './assignment-email';
 import { sendInviteEmail } from './invite-email';
+import { canCreate, isFeatureEnabled } from './entitlements';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -40,6 +41,17 @@ type EntitlementUsage = {
   attachmentsThisMonthMB: number;
 };
 
+type Entitlement = {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  provider: EntitlementProvider;
+  trialEndsAt?: admin.firestore.Timestamp;
+  currentPeriodEnd?: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
+  limits: EntitlementLimits;
+  usage: EntitlementUsage;
+};
+
 const DEFAULT_ACCOUNT_PLAN: AccountPlan = 'free';
 const DEFAULT_ENTERPRISE_LIMIT = 10;
 const CREATED_ORG_LIMITS: Record<AccountPlan, number> = {
@@ -66,6 +78,41 @@ const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
   usersCount: 0,
   activePreventivesCount: 0,
   attachmentsThisMonthMB: 0,
+};
+
+type MembershipScope = {
+  departmentId?: string;
+  departmentIds: string[];
+  siteId?: string;
+  siteIds: string[];
+};
+
+type ResolvedMembership = {
+  role: Role;
+  status: string;
+  scope: MembershipScope;
+  membershipData: FirebaseFirestore.DocumentData | null;
+  userData: FirebaseFirestore.DocumentData | null;
+};
+
+const ADMIN_LIKE_ROLES = new Set<Role>(['super_admin', 'admin', 'maintenance']);
+const SCOPED_HEAD_ROLES = new Set<Role>(['dept_head_multi', 'dept_head_single']);
+const MASTER_DATA_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
+
+const USAGE_FIELDS: Record<'sites' | 'assets' | 'departments' | 'users' | 'preventives', keyof EntitlementUsage> = {
+  sites: 'sitesCount',
+  assets: 'assetsCount',
+  departments: 'departmentsCount',
+  users: 'usersCount',
+  preventives: 'activePreventivesCount',
+};
+
+const LIMIT_MESSAGES: Record<keyof typeof USAGE_FIELDS, string> = {
+  sites: 'Has alcanzado el límite de ubicaciones de tu plan. Contacta para ampliarlo.',
+  assets: 'Has alcanzado el límite de activos de tu plan. Contacta para ampliarlo.',
+  departments: 'Has alcanzado el límite de departamentos de tu plan. Contacta para ampliarlo.',
+  users: 'Has alcanzado el límite de usuarios de tu plan. Contacta para ampliarlo.',
+  preventives: 'Has alcanzado el límite de preventivos activos de tu plan. Contacta para ampliarlo.',
 };
 
 function buildEntitlementPayload({
@@ -563,6 +610,132 @@ function normalizeRoleOrNull(input: any): Role | null {
 
 function normalizeRole(input: any): Role {
   return normalizeRoleOrNull(input) ?? 'operator';
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item ?? '').trim())
+    .filter((item) => Boolean(item));
+}
+
+function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null): MembershipScope {
+  const departmentId = String(userData?.departmentId ?? '').trim();
+  const siteId = String(userData?.siteId ?? '').trim();
+  return {
+    departmentId: departmentId || undefined,
+    departmentIds: normalizeStringArray(userData?.departmentIds),
+    siteId: siteId || undefined,
+    siteIds: normalizeStringArray(userData?.siteIds),
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requireRoleAllowed(role: Role, allowed: Set<Role>, message: string) {
+  if (!allowed.has(role)) {
+    throw httpsError('permission-denied', message);
+  }
+}
+
+function requireScopedAccessToDepartment(role: Role, scope: MembershipScope, departmentId: string) {
+  if (!SCOPED_HEAD_ROLES.has(role)) return;
+  const allowedDepartmentIds = new Set([scope.departmentId, ...scope.departmentIds].filter(Boolean));
+  if (!departmentId) {
+    throw httpsError('invalid-argument', 'departmentId requerido para validar alcance.');
+  }
+  if (allowedDepartmentIds.size === 0 || !allowedDepartmentIds.has(departmentId)) {
+    throw httpsError('permission-denied', 'No tienes acceso a ese departamento.');
+  }
+}
+
+function requireScopedAccessToSite(role: Role, scope: MembershipScope, siteId: string) {
+  if (!SCOPED_HEAD_ROLES.has(role)) return;
+  const allowedSiteIds = new Set([scope.siteId, ...scope.siteIds].filter(Boolean));
+  if (!siteId) {
+    throw httpsError('invalid-argument', 'siteId requerido para validar alcance.');
+  }
+  if (allowedSiteIds.size === 0 || !allowedSiteIds.has(siteId)) {
+    throw httpsError('permission-denied', 'No tienes acceso a esa ubicación.');
+  }
+}
+
+function requireStringField(value: unknown, field: string): string {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) throw httpsError('invalid-argument', `${field} requerido.`);
+  return normalized;
+}
+
+async function requireActiveMembership(actorUid: string, orgId: string): Promise<ResolvedMembership> {
+  const membershipRef = db.collection('memberships').doc(`${actorUid}_${orgId}`);
+  const userRef = db.collection('users').doc(actorUid);
+
+  const [membershipSnap, userSnap] = await Promise.all([membershipRef.get(), userRef.get()]);
+  if (!membershipSnap.exists) {
+    throw httpsError('permission-denied', 'No perteneces a esa organización.');
+  }
+
+  const membershipData = membershipSnap.data() as FirebaseFirestore.DocumentData | null;
+  const status =
+    String(membershipData?.status ?? '') ||
+    (membershipData?.active === true ? 'active' : 'pending');
+
+  if (status !== 'active') {
+    throw httpsError('failed-precondition', 'Tu membresía no está activa.');
+  }
+
+  const role = normalizeRole(membershipData?.role);
+  const userData = userSnap.exists ? (userSnap.data() as FirebaseFirestore.DocumentData) : null;
+
+  return {
+    role,
+    status,
+    scope: resolveMembershipScope(userData),
+    membershipData,
+    userData,
+  };
+}
+
+async function resolvePlanFeaturesForTx(tx: FirebaseFirestore.Transaction, planId: string | undefined) {
+  if (!planId) return undefined;
+  const planSnap = await tx.get(db.collection('planCatalog').doc(planId));
+  if (!planSnap.exists) return undefined;
+  return planSnap.get('features') as Record<string, boolean> | undefined;
+}
+
+function ensureEntitlementAllowsCreate({
+  kind,
+  entitlement,
+  features,
+}: {
+  kind: keyof typeof USAGE_FIELDS;
+  entitlement: {
+    status?: string;
+    limits?: EntitlementLimits;
+    usage?: EntitlementUsage;
+  };
+  features?: Record<string, boolean>;
+}) {
+  const status = String(entitlement?.status ?? '');
+  if (status !== 'active' && status !== 'trialing') {
+    throw httpsError('failed-precondition', 'Tu plan no está activo para crear nuevos elementos.');
+  }
+
+  if (kind === 'preventives' && !isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) {
+    throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
+  }
+
+  if (!canCreate(kind, entitlement?.usage, entitlement?.limits)) {
+    throw httpsError('failed-precondition', LIMIT_MESSAGES[kind]);
+  }
+}
+
+function resolveOrgIdFromData(data: any): string {
+  const orgId = sanitizeOrganizationId(String(data?.orgId ?? data?.organizationId ?? ''));
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  return orgId;
 }
 
 async function ensureDefaultOrganizationExists() {
@@ -2051,6 +2224,370 @@ export const setActiveOrganization = functions.https.onCall(async (data, context
   );
 
   return { ok: true, organizationId: orgId };
+});
+
+/* ------------------------------
+   ENTITLEMENT-LIMITED CREATION
+--------------------------------- */
+
+export const createSite = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, ADMIN_LIKE_ROLES, 'No tienes permisos para crear ubicaciones.');
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+
+  const name = requireStringField(data.payload.name, 'name');
+  const code = requireStringField(data.payload.code, 'code');
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const siteRef = db.collection('sites').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'sites', entitlement, features });
+
+    tx.create(siteRef, {
+      name,
+      code,
+      organizationId: orgId,
+      createdAt: now,
+      updatedAt: now,
+      source: 'createSite_v1',
+    });
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.sites}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  await auditLog({
+    action: 'createSite',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { siteId: siteRef.id, name, code },
+  });
+
+  return { ok: true, organizationId: orgId, siteId: siteRef.id };
+});
+
+export const createDepartment = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, ADMIN_LIKE_ROLES, 'No tienes permisos para crear departamentos.');
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+
+  const name = requireStringField(data.payload.name, 'name');
+  const code = requireStringField(data.payload.code, 'code');
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const departmentRef = db.collection('departments').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'departments', entitlement, features });
+
+    tx.create(departmentRef, {
+      name,
+      code,
+      organizationId: orgId,
+      createdAt: now,
+      updatedAt: now,
+      source: 'createDepartment_v1',
+    });
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.departments}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  await auditLog({
+    action: 'createDepartment',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { departmentId: departmentRef.id, name, code },
+  });
+
+  return { ok: true, organizationId: orgId, departmentId: departmentRef.id };
+});
+
+export const createAsset = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para crear activos.');
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+
+  const name = requireStringField(data.payload.name, 'name');
+  const code = requireStringField(data.payload.code, 'code');
+  const siteId = requireStringField(data.payload.siteId, 'siteId');
+
+  requireScopedAccessToSite(role, scope, siteId);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const siteRef = db.collection('sites').doc(siteId);
+  const assetRef = db.collection('assets').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const siteSnap = await tx.get(siteRef);
+    if (!siteSnap.exists || String(siteSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('failed-precondition', 'La ubicación indicada no existe en esta organización.');
+    }
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'assets', entitlement, features });
+
+    tx.create(assetRef, {
+      name,
+      code,
+      siteId,
+      organizationId: orgId,
+      createdAt: now,
+      updatedAt: now,
+      source: 'createAsset_v1',
+    });
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.assets}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  await auditLog({
+    action: 'createAsset',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { assetId: assetRef.id, name, code, siteId },
+  });
+
+  return { ok: true, organizationId: orgId, assetId: assetRef.id };
+});
+
+export const createPreventive = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(
+    role,
+    new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]),
+    'No tienes permisos para crear preventivos.',
+  );
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+
+  const payload = data.payload;
+  const title = requireStringField(payload.title, 'title');
+  const siteId = requireStringField(payload.siteId, 'siteId');
+  const departmentId = requireStringField(payload.departmentId, 'departmentId');
+
+  requireScopedAccessToDepartment(role, scope, departmentId);
+  requireScopedAccessToSite(role, scope, siteId);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const siteRef = db.collection('sites').doc(siteId);
+  const departmentRef = db.collection('departments').doc(departmentId);
+  const assetId = String(payload.assetId ?? '').trim();
+  const assetRef = assetId ? db.collection('assets').doc(assetId) : null;
+  const ticketRef = db.collection('tickets').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const [siteSnap, departmentSnap] = await Promise.all([tx.get(siteRef), tx.get(departmentRef)]);
+    if (!siteSnap.exists || String(siteSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('failed-precondition', 'La ubicación indicada no existe en esta organización.');
+    }
+    if (!departmentSnap.exists || String(departmentSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('failed-precondition', 'El departamento indicado no existe en esta organización.');
+    }
+
+    if (assetRef) {
+      const assetSnap = await tx.get(assetRef);
+      if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+        throw httpsError('failed-precondition', 'El activo indicado no existe en esta organización.');
+      }
+    }
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+
+    const sanitizedPayload = {
+      ...payload,
+      title,
+      siteId,
+      departmentId,
+      assetId: assetId || null,
+      status: String(payload.status ?? 'Abierta'),
+      type: 'preventivo',
+      organizationId: orgId,
+      createdBy: actorUid,
+      createdAt: now,
+      updatedAt: now,
+      source: 'createPreventive_v1',
+    };
+
+    tx.create(ticketRef, sanitizedPayload);
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.preventives}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  await auditLog({
+    action: 'createPreventive',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { ticketId: ticketRef.id, title, siteId, departmentId },
+  });
+
+  return { ok: true, organizationId: orgId, ticketId: ticketRef.id };
+});
+
+export const inviteUserToOrg = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = resolveOrgIdFromData(data);
+  const email = requireStringField(data?.email, 'email').toLowerCase();
+  const displayName = String(data?.displayName ?? '').trim();
+  const requestedRole: Role = normalizeRole(data?.role) ?? 'operator';
+  const departmentId = String(data?.departmentId ?? '').trim();
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  let targetUid = '';
+  try {
+    const authUser = await admin.auth().getUserByEmail(email);
+    targetUid = authUser.uid;
+  } catch {
+    targetUid = '';
+  }
+
+  const inviteId = targetUid || `invite_${email}`;
+  const orgRef = db.collection('organizations').doc(orgId);
+  const joinReqRef = orgRef.collection('joinRequests').doc(inviteId);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  let alreadyPending = false;
+  let orgName = orgId;
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    orgName = String((orgSnap.data() as any)?.name ?? orgId);
+
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'users', entitlement, features });
+
+    if (targetUid) {
+      const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+      const membershipSnap = await tx.get(membershipRef);
+      if (membershipSnap.exists) {
+        const status =
+          String(membershipSnap.get('status') ?? '') ||
+          (membershipSnap.get('active') === true ? 'active' : 'pending');
+        if (status === 'active') {
+          throw httpsError('failed-precondition', 'El usuario ya pertenece a la organización.');
+        }
+      }
+    }
+
+    const existingJoinReq = await tx.get(joinReqRef);
+    if (existingJoinReq.exists && String(existingJoinReq.get('status') ?? '') === 'pending') {
+      alreadyPending = true;
+      return;
+    }
+
+    tx.set(
+      joinReqRef,
+      {
+        userId: targetUid || null,
+        organizationId: orgId,
+        organizationName: orgName,
+        email,
+        displayName: displayName || email,
+        requestedRole,
+        status: 'pending',
+        departmentId: departmentId || null,
+        invitedBy: actorUid,
+        invitedByEmail: actorEmail,
+        invitedAt: now,
+        createdAt: now,
+        updatedAt: now,
+        source: 'inviteUserToOrg_v1',
+      },
+      { merge: true },
+    );
+
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.users}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  if (!alreadyPending) {
+    try {
+      await sendInviteEmail({
+        recipientEmail: email,
+        orgName,
+        role: requestedRole,
+        inviteLink: 'https://multi.maintelligence.app/login',
+      });
+    } catch (error) {
+      console.warn('Error enviando email de invitación.', error);
+    }
+  }
+
+  await auditLog({
+    action: 'inviteUserToOrg',
+    actorUid,
+    actorEmail,
+    orgId,
+    targetUid: targetUid || null,
+    targetEmail: email,
+    after: { status: 'pending', role: requestedRole, requestId: inviteId },
+  });
+
+  return { ok: true, organizationId: orgId, uid: targetUid || null, requestId: inviteId, alreadyPending };
 });
 
 export const orgInviteUser = functions.https.onRequest(async (req, res) => {
