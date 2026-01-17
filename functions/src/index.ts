@@ -4,6 +4,9 @@ import type { Request, Response } from 'express';
 import { sendAssignmentEmail } from './assignment-email';
 import { sendInviteEmail } from './invite-email';
 import { canCreate, isFeatureEnabled } from './entitlements';
+import * as crypto from 'crypto';
+import * as https from 'https';
+import type { IncomingMessage } from 'http';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -120,6 +123,7 @@ function buildEntitlementPayload({
   status,
   trialEndsAt,
   currentPeriodEnd,
+  provider = DEFAULT_ENTITLEMENT_PROVIDER,
   now,
   limits = DEFAULT_ENTITLEMENT_LIMITS,
   usage = DEFAULT_ENTITLEMENT_USAGE,
@@ -128,6 +132,7 @@ function buildEntitlementPayload({
   status: EntitlementStatus;
   trialEndsAt?: admin.firestore.Timestamp | null;
   currentPeriodEnd?: admin.firestore.Timestamp | null;
+  provider?: EntitlementProvider;
   now: admin.firestore.FieldValue;
   limits?: EntitlementLimits;
   usage?: EntitlementUsage;
@@ -135,7 +140,7 @@ function buildEntitlementPayload({
   const payload: Record<string, unknown> = {
     planId,
     status,
-    provider: DEFAULT_ENTITLEMENT_PROVIDER,
+    provider,
     updatedAt: now,
     limits,
     usage,
@@ -162,6 +167,605 @@ const ALLOWED_CORS_ORIGINS = new Set([
   'http://127.0.0.1:3000',
 ]);
 
+const STRIPE_API_VERSION = '2023-10-16';
+const GOOGLE_TOKEN_AUDIENCE = 'https://oauth2.googleapis.com/token';
+const GOOGLE_PLAY_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
+const GOOGLE_TOKEN_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
+const GOOGLE_JWT_ALG = 'RS256';
+const GOOGLE_JWT_TYP = 'JWT';
+const APPLE_UPDATES_ENABLED =
+  (getRuntimeConfig().apple_app_store?.apply_updates ?? process.env.APPLE_APP_STORE_APPLY_UPDATES) === 'true';
+
+function getRuntimeConfig(): Record<string, any> {
+  return (functions as unknown as { config: () => Record<string, any> }).config();
+}
+
+function resolveStripeConfig() {
+  const config = getRuntimeConfig();
+  const secretKey = config.stripe?.secret_key ?? process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = config.stripe?.webhook_secret ?? process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!secretKey || !webhookSecret) {
+    throw new Error('Stripe config missing: set stripe.secret_key and stripe.webhook_secret.');
+  }
+
+  return { secretKey, webhookSecret };
+}
+
+function resolveGooglePlayConfig() {
+  const config = getRuntimeConfig();
+  const clientEmail = config.google_play?.client_email ?? process.env.GOOGLE_PLAY_CLIENT_EMAIL;
+  const privateKey =
+    config.google_play?.private_key ?? process.env.GOOGLE_PLAY_PRIVATE_KEY;
+  const packageName =
+    config.google_play?.package_name ?? process.env.GOOGLE_PLAY_PACKAGE_NAME;
+
+  if (!clientEmail || !privateKey) {
+    throw new Error('Google Play config missing: set google_play.client_email and google_play.private_key.');
+  }
+
+  return {
+    clientEmail,
+    privateKey: privateKey.replace(/\\n/g, '\n'),
+    packageName: packageName ?? '',
+  };
+}
+
+function resolveAppleAppStoreConfig() {
+  const config = getRuntimeConfig();
+  const bundleId = config.apple_app_store?.bundle_id ?? process.env.APPLE_APP_STORE_BUNDLE_ID ?? '';
+
+  return {
+    bundleId,
+  };
+}
+
+type StripeEvent = {
+  type: string;
+  data: {
+    object: Record<string, unknown>;
+  };
+};
+
+type StripeSubscription = {
+  id: string;
+  status: string;
+  current_period_end?: number | null;
+  trial_end?: number | null;
+  metadata?: Record<string, string | null | undefined>;
+};
+
+type StripeCheckoutSession = {
+  metadata?: Record<string, string | null | undefined>;
+  subscription?: string | { id: string };
+};
+
+type GooglePlayPurchaseRecord = {
+  organizationId?: string;
+  subscriptionId?: string;
+  packageName?: string;
+  planId?: EntitlementPlanId;
+};
+
+type GooglePlayRtdnMessage = {
+  version?: string;
+  packageName?: string;
+  eventTimeMillis?: string;
+  subscriptionNotification?: {
+    version?: string;
+    notificationType?: number;
+    purchaseToken?: string;
+    subscriptionId?: string;
+  };
+};
+
+type GooglePlaySubscription = {
+  expiryTimeMillis?: string;
+  paymentState?: number;
+  cancelReason?: number;
+  userCancellationTimeMillis?: string;
+  autoRenewing?: boolean;
+};
+
+type AppleNotificationPayload = {
+  notificationType?: string;
+  subtype?: string | null;
+  data?: {
+    appAppleId?: number;
+    bundleId?: string;
+    appAccountToken?: string;
+    signedTransactionInfo?: string;
+    signedRenewalInfo?: string;
+  };
+};
+
+type AppleTransactionPayload = {
+  appAccountToken?: string;
+  expiresDate?: number;
+};
+
+type AppleRenewalPayload = {
+  appAccountToken?: string;
+  autoRenewStatus?: number;
+};
+
+function resolveEntitlementStatusFromStripe(status: string): EntitlementStatus {
+  switch (status) {
+    case 'trialing':
+      return 'trialing';
+    case 'active':
+      return 'active';
+    case 'past_due':
+    case 'unpaid':
+    case 'incomplete':
+    case 'incomplete_expired':
+    case 'paused':
+      return 'past_due';
+    case 'canceled':
+      return 'canceled';
+    default:
+      return 'past_due';
+  }
+}
+
+function resolveEntitlementPlanId({
+  metadataPlanId,
+  fallbackPlanId,
+}: {
+  metadataPlanId?: string | null;
+  fallbackPlanId?: string;
+}): EntitlementPlanId {
+  const normalized = String(metadataPlanId ?? '').trim();
+  if (normalized === 'free' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
+    return normalized;
+  }
+  if (fallbackPlanId === 'free' || fallbackPlanId === 'starter' || fallbackPlanId === 'pro' || fallbackPlanId === 'enterprise') {
+    return fallbackPlanId;
+  }
+  return 'free';
+}
+
+function resolveEntitlementStatusFromGooglePlay(subscription: GooglePlaySubscription): EntitlementStatus {
+  const now = Date.now();
+  const expiryMs = subscription.expiryTimeMillis ? Number(subscription.expiryTimeMillis) : 0;
+  if (Number.isFinite(expiryMs) && expiryMs > 0 && expiryMs <= now) {
+    return 'canceled';
+  }
+
+  if (subscription.paymentState === 2) {
+    return 'trialing';
+  }
+
+  if (subscription.paymentState === 0) {
+    return 'past_due';
+  }
+
+  if (subscription.cancelReason != null && subscription.autoRenewing === false) {
+    return 'past_due';
+  }
+
+  return 'active';
+}
+
+function resolveEntitlementStatusFromApple(notificationType?: string, renewal?: AppleRenewalPayload | null): EntitlementStatus {
+  switch (String(notificationType ?? '').toUpperCase()) {
+    case 'DID_RENEW':
+    case 'DID_RECOVER':
+    case 'DID_CHANGE_RENEWAL_PREF':
+      return 'active';
+    case 'DID_FAIL_TO_RENEW':
+      return 'past_due';
+    case 'EXPIRED':
+    case 'REFUND':
+    case 'REVOKE':
+      return 'canceled';
+    case 'DID_CHANGE_RENEWAL_STATUS':
+      if (renewal && renewal.autoRenewStatus === 0) return 'past_due';
+      return 'active';
+    default:
+      return 'past_due';
+  }
+}
+
+function shouldBlockProviderUpdate(entitlement: Entitlement | undefined, incomingProvider: EntitlementProvider): boolean {
+  if (!entitlement?.provider) return false;
+  if (entitlement.provider === incomingProvider) return false;
+  return entitlement.status === 'active' || entitlement.status === 'trialing';
+}
+
+function buildConflictPayload({
+  planId,
+  status,
+  now,
+  reason,
+}: {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  now: admin.firestore.FieldValue;
+  reason: string;
+}): Record<string, unknown> {
+  return {
+    planId,
+    status,
+    updatedAt: now,
+    conflict: true,
+    conflictReason: reason,
+  };
+}
+
+function toTimestampFromMillis(value?: string | number | null): admin.firestore.Timestamp | null {
+  if (value == null) return null;
+  const millis = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(millis) || millis <= 0) return null;
+  return admin.firestore.Timestamp.fromMillis(millis);
+}
+
+function decodeJwtPayload<T>(token?: string | null): T | null {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+  const payload = parts[1];
+  const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+  const buffer = Buffer.from(`${normalized}${padding}`, 'base64');
+  try {
+    return JSON.parse(buffer.toString('utf8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+function verifyStripeSignature({
+  payload,
+  signatureHeader,
+  webhookSecret,
+}: {
+  payload: string;
+  signatureHeader: string;
+  webhookSecret: string;
+}): boolean {
+  const elements = signatureHeader.split(',');
+  const timestampElement = elements.find((entry) => entry.startsWith('t='));
+  const signatureElements = elements.filter((entry) => entry.startsWith('v1='));
+  if (!timestampElement || signatureElements.length === 0) return false;
+
+  const timestamp = timestampElement.replace('t=', '');
+  const signedPayload = `${timestamp}.${payload}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(signedPayload, 'utf8')
+    .digest('hex');
+
+  const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+  return signatureElements.some((entry) => {
+    const signature = entry.replace('v1=', '');
+    const signatureBuffer = Buffer.from(signature, 'utf8');
+    if (signatureBuffer.length !== expectedBuffer.length) return false;
+    return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+  });
+}
+
+function base64UrlEncode(input: string | Buffer) {
+  const buffer = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
+  return buffer
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+let googlePlayTokenCache: { accessToken: string; expiresAt: number } | null = null;
+
+async function fetchGooglePlayAccessToken(): Promise<string> {
+  if (googlePlayTokenCache && googlePlayTokenCache.expiresAt > Date.now() + 60_000) {
+    return googlePlayTokenCache.accessToken;
+  }
+
+  const { clientEmail, privateKey } = resolveGooglePlayConfig();
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const header = base64UrlEncode(JSON.stringify({ alg: GOOGLE_JWT_ALG, typ: GOOGLE_JWT_TYP }));
+  const payload = base64UrlEncode(
+    JSON.stringify({
+      iss: clientEmail,
+      scope: GOOGLE_PLAY_SCOPE,
+      aud: GOOGLE_TOKEN_AUDIENCE,
+      iat: nowSeconds,
+      exp: nowSeconds + 3600,
+    })
+  );
+  const unsignedJwt = `${header}.${payload}`;
+  const signature = crypto.createSign('RSA-SHA256').update(unsignedJwt).sign(privateKey);
+  const assertion = `${unsignedJwt}.${base64UrlEncode(signature)}`;
+
+  return new Promise((resolve, reject) => {
+    const body = `grant_type=${encodeURIComponent(GOOGLE_TOKEN_GRANT_TYPE)}&assertion=${encodeURIComponent(
+      assertion
+    )}`;
+    const req = https.request(
+      {
+        hostname: 'oauth2.googleapis.com',
+        path: '/token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res: IncomingMessage) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          const responseBody = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const parsed = JSON.parse(responseBody) as { access_token?: string; expires_in?: number };
+              if (!parsed.access_token) {
+                reject(new Error('Google Play access token missing.'));
+                return;
+              }
+              googlePlayTokenCache = {
+                accessToken: parsed.access_token,
+                expiresAt: Date.now() + (Number(parsed.expires_in ?? 3600) - 30) * 1000,
+              };
+              resolve(parsed.access_token);
+            } catch (error) {
+              reject(error);
+            }
+            return;
+          }
+          reject(new Error(`Google Play token fetch failed: ${res.statusCode ?? 'unknown'} ${responseBody}`));
+        });
+      }
+    );
+
+    req.on('error', (error: Error) => {
+      reject(error);
+    });
+    req.write(body);
+    req.end();
+  });
+}
+
+async function fetchStripeSubscription(subscriptionId: string, secretKey: string): Promise<StripeSubscription> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'api.stripe.com',
+        path: `/v1/subscriptions/${subscriptionId}`,
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          'Stripe-Version': STRIPE_API_VERSION,
+        },
+      },
+      (res: IncomingMessage) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(body) as StripeSubscription);
+            } catch (error) {
+              reject(error);
+            }
+            return;
+          }
+          reject(new Error(`Stripe subscription fetch failed: ${res.statusCode ?? 'unknown'} ${body}`));
+        });
+      }
+    );
+
+    req.on('error', (error: Error) => {
+      reject(error);
+    });
+    req.end();
+  });
+}
+
+async function fetchGooglePlaySubscription(params: {
+  packageName: string;
+  subscriptionId: string;
+  purchaseToken: string;
+}): Promise<GooglePlaySubscription> {
+  const accessToken = await fetchGooglePlayAccessToken();
+  const { packageName, subscriptionId, purchaseToken } = params;
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'androidpublisher.googleapis.com',
+        path: `/androidpublisher/v3/applications/${encodeURIComponent(
+          packageName
+        )}/purchases/subscriptions/${encodeURIComponent(subscriptionId)}/tokens/${encodeURIComponent(purchaseToken)}`,
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+      (res: IncomingMessage) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(body) as GooglePlaySubscription);
+            } catch (error) {
+              reject(error);
+            }
+            return;
+          }
+          reject(new Error(`Google Play subscription fetch failed: ${res.statusCode ?? 'unknown'} ${body}`));
+        });
+      }
+    );
+
+    req.on('error', (error: Error) => {
+      reject(error);
+    });
+    req.end();
+  });
+}
+
+async function updateOrganizationStripeEntitlement({
+  orgId,
+  planId,
+  status,
+  trialEndsAt,
+  currentPeriodEnd,
+}: {
+  orgId: string;
+  planId?: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp | null;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+}) {
+  const orgRef = db.collection('organizations').doc(orgId);
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new Error(`Organization ${orgId} not found.`);
+    }
+
+    const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+    const entitlement = orgData?.entitlement;
+    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const resolvedPlanId = resolveEntitlementPlanId({
+      metadataPlanId: planId ?? null,
+      fallbackPlanId: entitlement?.planId,
+    });
+
+    const shouldBlock = shouldBlockProviderUpdate(entitlement, 'stripe');
+    const billingProviderPayload: Record<string, unknown> = shouldBlock
+      ? buildConflictPayload({
+          planId: resolvedPlanId,
+          status,
+          now,
+          reason: `active_provider_${entitlement?.provider ?? 'unknown'}`,
+        })
+      : {
+          planId: resolvedPlanId,
+          status,
+          updatedAt: now,
+        };
+
+    if (trialEndsAt) {
+      billingProviderPayload.trialEndsAt = trialEndsAt;
+    }
+
+    if (currentPeriodEnd) {
+      billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      billingProviders: {
+        stripe: billingProviderPayload,
+      },
+      updatedAt: now,
+    };
+
+    if (!shouldBlock) {
+      updatePayload.entitlement = buildEntitlementPayload({
+        planId: resolvedPlanId,
+        status,
+        trialEndsAt,
+        currentPeriodEnd,
+        provider: 'stripe',
+        now,
+        limits,
+        usage,
+      });
+    }
+
+    tx.set(orgRef, updatePayload, { merge: true });
+  });
+}
+
+async function updateOrganizationGooglePlayEntitlement({
+  orgId,
+  planId,
+  status,
+  trialEndsAt,
+  currentPeriodEnd,
+}: {
+  orgId: string;
+  planId?: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp | null;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+}) {
+  const orgRef = db.collection('organizations').doc(orgId);
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new Error(`Organization ${orgId} not found.`);
+    }
+
+    const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+    const entitlement = orgData?.entitlement;
+    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const resolvedPlanId = resolveEntitlementPlanId({
+      metadataPlanId: planId ?? null,
+      fallbackPlanId: entitlement?.planId,
+    });
+
+    const shouldBlock = shouldBlockProviderUpdate(entitlement, 'google_play');
+    const billingProviderPayload: Record<string, unknown> = shouldBlock
+      ? buildConflictPayload({
+          planId: resolvedPlanId,
+          status,
+          now,
+          reason: `active_provider_${entitlement?.provider ?? 'unknown'}`,
+        })
+      : {
+          planId: resolvedPlanId,
+          status,
+          updatedAt: now,
+        };
+
+    if (trialEndsAt) {
+      billingProviderPayload.trialEndsAt = trialEndsAt;
+    }
+
+    if (currentPeriodEnd) {
+      billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      billingProviders: {
+        google_play: billingProviderPayload,
+      },
+      updatedAt: now,
+    };
+
+    if (!shouldBlock) {
+      updatePayload.entitlement = buildEntitlementPayload({
+        planId: resolvedPlanId,
+        status,
+        trialEndsAt,
+        currentPeriodEnd,
+        provider: 'google_play',
+        now,
+        limits,
+        usage,
+      });
+    }
+
+    tx.set(orgRef, updatePayload, { merge: true });
+  });
+}
 function applyCors(req: Request, res: Response): boolean {
   const origin = String(req.headers.origin ?? '');
   if (origin && ALLOWED_CORS_ORIGINS.has(origin)) {
@@ -304,6 +908,76 @@ async function updateOrganizationUserProfile({
       email: normalizedEmail || null,
       departmentId: departmentId || null,
     },
+  });
+}
+
+async function updateOrganizationAppleEntitlement({
+  orgId,
+  planId,
+  status,
+  currentPeriodEnd,
+}: {
+  orgId: string;
+  planId?: EntitlementPlanId;
+  status: EntitlementStatus;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+}) {
+  const orgRef = db.collection('organizations').doc(orgId);
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new Error(`Organization ${orgId} not found.`);
+    }
+
+    const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+    const entitlement = orgData?.entitlement;
+    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const resolvedPlanId = resolveEntitlementPlanId({
+      metadataPlanId: planId ?? null,
+      fallbackPlanId: entitlement?.planId,
+    });
+
+    const shouldBlock = shouldBlockProviderUpdate(entitlement, 'apple_app_store');
+    const billingProviderPayload: Record<string, unknown> = shouldBlock
+      ? buildConflictPayload({
+          planId: resolvedPlanId,
+          status,
+          now,
+          reason: `active_provider_${entitlement?.provider ?? 'unknown'}`,
+        })
+      : {
+          planId: resolvedPlanId,
+          status,
+          updatedAt: now,
+        };
+
+    if (currentPeriodEnd) {
+      billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      billingProviders: {
+        apple_app_store: billingProviderPayload,
+      },
+      updatedAt: now,
+    };
+
+    if (!shouldBlock) {
+      updatePayload.entitlement = buildEntitlementPayload({
+        planId: resolvedPlanId,
+        status,
+        currentPeriodEnd,
+        provider: 'apple_app_store',
+        now,
+        limits,
+        usage,
+      });
+    }
+
+    tx.set(orgRef, updatePayload, { merge: true });
   });
 }
 
@@ -3081,4 +3755,386 @@ export const demoteToAdminWithinOrg = functions.https.onCall(async (data, contex
   const targetUid = await resolveTargetUidByEmailOrUid(data?.email, data?.uid);
 
   return setRoleWithinOrgImpl({ actorUid, actorEmail, isRoot, orgId, targetUid, role: 'admin' });
+});
+
+export const registerGooglePlayPurchase = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = String(data?.organizationId ?? '').trim();
+  const purchaseToken = String(data?.purchaseToken ?? '').trim();
+  const subscriptionId = String(data?.subscriptionId ?? '').trim();
+  const planIdRaw = String(data?.planId ?? '').trim();
+  const packageNameRaw = String(data?.packageName ?? '').trim();
+
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!purchaseToken) throw httpsError('invalid-argument', 'purchaseToken requerido.');
+  if (!subscriptionId) throw httpsError('invalid-argument', 'subscriptionId requerido.');
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  const { packageName: configPackageName } = resolveGooglePlayConfig();
+  const packageName = packageNameRaw || configPackageName;
+  if (!packageName) throw httpsError('invalid-argument', 'packageName requerido.');
+
+  const resolvedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: planIdRaw || null,
+  });
+
+  const purchaseRef = db.collection('googlePlayPurchases').doc(purchaseToken);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(purchaseRef);
+    const payload: Record<string, unknown> = {
+      organizationId: orgId,
+      subscriptionId,
+      packageName,
+      planId: resolvedPlanId,
+      updatedAt: now,
+      linkedBy: actorUid,
+      source: 'registerGooglePlayPurchase_v1',
+    };
+    if (!snap.exists) {
+      payload.createdAt = now;
+    }
+    tx.set(purchaseRef, payload, { merge: true });
+  });
+
+  await auditLog({
+    action: 'registerGooglePlayPurchase',
+    actorUid,
+    actorEmail,
+    orgId,
+    meta: { purchaseToken, subscriptionId, packageName, planId: resolvedPlanId },
+  });
+
+  return { ok: true, organizationId: orgId, purchaseToken };
+});
+
+export const registerAppleAppAccountToken = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = String(data?.organizationId ?? '').trim();
+  const appAccountToken = String(data?.appAccountToken ?? '').trim();
+  const uid = String(data?.uid ?? actorUid).trim();
+  const planIdRaw = String(data?.planId ?? '').trim();
+
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!appAccountToken) throw httpsError('invalid-argument', 'appAccountToken requerido.');
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  const resolvedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: planIdRaw || null,
+  });
+
+  const tokenRef = db.collection('appleAppAccountTokens').doc(appAccountToken);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(tokenRef);
+    const payload: Record<string, unknown> = {
+      organizationId: orgId,
+      uid,
+      planId: resolvedPlanId,
+      updatedAt: now,
+      linkedBy: actorUid,
+      source: 'registerAppleAppAccountToken_v1',
+    };
+    if (!snap.exists) {
+      payload.createdAt = now;
+    }
+    tx.set(tokenRef, payload, { merge: true });
+  });
+
+  await auditLog({
+    action: 'registerAppleAppAccountToken',
+    actorUid,
+    actorEmail,
+    orgId,
+    meta: { appAccountToken, uid, planId: resolvedPlanId },
+  });
+
+  return { ok: true, organizationId: orgId, appAccountToken };
+});
+
+export const googlePlayRtdn = functions.pubsub.topic('google-play-rtdn').onPublish(async (message) => {
+  const rawData = message.data ? Buffer.from(message.data, 'base64').toString('utf8') : '';
+  if (!rawData) {
+    console.warn('googlePlayRtdn: empty payload');
+    return;
+  }
+
+  let payload: GooglePlayRtdnMessage;
+  try {
+    payload = JSON.parse(rawData) as GooglePlayRtdnMessage;
+  } catch (error) {
+    console.error('googlePlayRtdn: invalid JSON', error);
+    return;
+  }
+
+  const notification = payload.subscriptionNotification;
+  if (!notification) {
+    console.warn('googlePlayRtdn: missing subscriptionNotification');
+    return;
+  }
+
+  const purchaseToken = String(notification.purchaseToken ?? '').trim();
+  const subscriptionId = String(notification.subscriptionId ?? '').trim();
+  if (!purchaseToken || !subscriptionId) {
+    console.warn('googlePlayRtdn: missing purchaseToken or subscriptionId');
+    return;
+  }
+
+  const purchaseSnap = await db.collection('googlePlayPurchases').doc(purchaseToken).get();
+  if (!purchaseSnap.exists) {
+    console.warn('googlePlayRtdn: purchase token not registered', { purchaseToken });
+    return;
+  }
+
+  const purchaseData = purchaseSnap.data() as GooglePlayPurchaseRecord | undefined;
+  const orgId = String(purchaseData?.organizationId ?? '').trim();
+  if (!orgId) {
+    console.warn('googlePlayRtdn: purchase token without org', { purchaseToken });
+    return;
+  }
+
+  const { packageName: configPackageName } = resolveGooglePlayConfig();
+  const packageName = String(
+    purchaseData?.packageName ?? payload.packageName ?? configPackageName ?? ''
+  ).trim();
+  if (!packageName) {
+    console.warn('googlePlayRtdn: missing packageName', { purchaseToken });
+    return;
+  }
+
+  const subscription = await fetchGooglePlaySubscription({
+    packageName,
+    subscriptionId,
+    purchaseToken,
+  });
+
+  const status = resolveEntitlementStatusFromGooglePlay(subscription);
+  const currentPeriodEnd = toTimestampFromMillis(subscription.expiryTimeMillis);
+  const trialEndsAt = status === 'trialing' ? currentPeriodEnd : null;
+
+  await updateOrganizationGooglePlayEntitlement({
+    orgId,
+    planId: purchaseData?.planId,
+    status,
+    trialEndsAt,
+    currentPeriodEnd,
+  });
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db
+    .collection('googlePlayPurchases')
+    .doc(purchaseToken)
+    .set(
+      {
+        lastNotificationType: notification.notificationType ?? null,
+        lastEventTime: toTimestampFromMillis(payload.eventTimeMillis),
+        updatedAt: now,
+        source: 'googlePlayRtdn_v1',
+      },
+      { merge: true }
+    );
+});
+
+export const appleAppStoreNotifications = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).send('Method not allowed');
+    return;
+  }
+
+  const rawBody = req.rawBody?.toString('utf8') ?? '';
+  if (!rawBody) {
+    res.status(400).send('Missing payload.');
+    return;
+  }
+
+  let signedPayload: string | null = null;
+  try {
+    const parsed = JSON.parse(rawBody) as { signedPayload?: string };
+    signedPayload = parsed.signedPayload ?? null;
+  } catch (error) {
+    console.error('appleAppStoreNotifications: invalid JSON', error);
+    res.status(400).send('Invalid JSON.');
+    return;
+  }
+
+  if (!signedPayload) {
+    res.status(400).send('Missing signedPayload.');
+    return;
+  }
+
+  const notificationPayload = decodeJwtPayload<AppleNotificationPayload>(signedPayload);
+  const transactionPayload = decodeJwtPayload<AppleTransactionPayload>(
+    notificationPayload?.data?.signedTransactionInfo ?? null
+  );
+  const renewalPayload = decodeJwtPayload<AppleRenewalPayload>(
+    notificationPayload?.data?.signedRenewalInfo ?? null
+  );
+
+  const appAccountToken =
+    transactionPayload?.appAccountToken ??
+    renewalPayload?.appAccountToken ??
+    notificationPayload?.data?.appAccountToken ??
+    '';
+
+  const { bundleId } = resolveAppleAppStoreConfig();
+  if (bundleId && notificationPayload?.data?.bundleId && notificationPayload.data.bundleId !== bundleId) {
+    res.status(400).send('Bundle mismatch.');
+    return;
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.collection('appleAppStoreNotifications').add({
+    signedPayload,
+    notificationType: notificationPayload?.notificationType ?? null,
+    subtype: notificationPayload?.subtype ?? null,
+    appAccountToken: appAccountToken || null,
+    bundleId: notificationPayload?.data?.bundleId ?? null,
+    receivedAt: now,
+    source: 'appleAppStoreNotifications_v1',
+  });
+
+  if (APPLE_UPDATES_ENABLED && appAccountToken) {
+    const tokenSnap = await db.collection('appleAppAccountTokens').doc(appAccountToken).get();
+    if (tokenSnap.exists) {
+      const tokenData = tokenSnap.data() as { organizationId?: string; planId?: EntitlementPlanId } | undefined;
+      const orgId = String(tokenData?.organizationId ?? '').trim();
+      if (orgId) {
+        const status = resolveEntitlementStatusFromApple(notificationPayload?.notificationType, renewalPayload);
+        const currentPeriodEnd = toTimestampFromMillis(transactionPayload?.expiresDate ?? null);
+        await updateOrganizationAppleEntitlement({
+          orgId,
+          planId: tokenData?.planId,
+          status,
+          currentPeriodEnd,
+        });
+      }
+    }
+  }
+
+  res.status(200).send({ received: true });
+});
+
+export const stripeWebhook = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).send('Method not allowed');
+    return;
+  }
+
+  let event: StripeEvent;
+  let webhookSecret: string;
+  let secretKey: string;
+  try {
+    const config = resolveStripeConfig();
+    webhookSecret = config.webhookSecret;
+    secretKey = config.secretKey;
+    const signature = req.headers['stripe-signature'];
+    if (!signature || typeof signature !== 'string') {
+      res.status(400).send('Missing Stripe signature.');
+      return;
+    }
+    const payload = req.rawBody?.toString('utf8') ?? '';
+    const valid = verifyStripeSignature({
+      payload,
+      signatureHeader: signature,
+      webhookSecret,
+    });
+    if (!valid) {
+      res.status(400).send('Invalid signature.');
+      return;
+    }
+    event = JSON.parse(payload) as StripeEvent;
+  } catch (error) {
+    console.error('stripeWebhook: signature verification failed', error);
+    res.status(400).send('Invalid signature.');
+    return;
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as StripeCheckoutSession;
+        const orgId = String(session.metadata?.orgId ?? '').trim();
+        if (!orgId) {
+          res.status(400).send('orgId missing in checkout session metadata.');
+          return;
+        }
+
+        const subscriptionId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
+        if (!subscriptionId) {
+          res.status(400).send('Subscription missing in checkout session.');
+          return;
+        }
+
+        const subscription = await fetchStripeSubscription(subscriptionId, secretKey);
+        const status = resolveEntitlementStatusFromStripe(subscription.status ?? '');
+        const planId = resolveEntitlementPlanId({
+          metadataPlanId: session.metadata?.planId ?? subscription.metadata?.planId ?? null,
+        });
+        const trialEndsAt =
+          subscription.trial_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.trial_end * 1000)
+            : null;
+        const currentPeriodEnd =
+          subscription.current_period_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000)
+            : null;
+
+        await updateOrganizationStripeEntitlement({
+          orgId,
+          planId,
+          status,
+          trialEndsAt,
+          currentPeriodEnd,
+        });
+        break;
+      }
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as StripeSubscription;
+        const orgId = String(subscription.metadata?.orgId ?? '').trim();
+        if (!orgId) {
+          res.status(400).send('orgId missing in subscription metadata.');
+          return;
+        }
+
+        const status =
+          event.type === 'customer.subscription.deleted'
+            ? 'canceled'
+            : resolveEntitlementStatusFromStripe(subscription.status);
+        const planId = resolveEntitlementPlanId({
+          metadataPlanId: subscription.metadata?.planId ?? null,
+        });
+        const trialEndsAt =
+          subscription.trial_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.trial_end * 1000)
+            : null;
+        const currentPeriodEnd =
+          subscription.current_period_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000)
+            : null;
+
+        await updateOrganizationStripeEntitlement({
+          orgId,
+          planId,
+          status,
+          trialEndsAt,
+          currentPeriodEnd,
+        });
+        break;
+      }
+      default:
+        break;
+    }
+
+    res.status(200).send({ received: true });
+  } catch (error) {
+    console.error('stripeWebhook: handler error', error);
+    res.status(500).send('Webhook handler error.');
+  }
 });
