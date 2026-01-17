@@ -3,135 +3,115 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // --- FUNCIONES DE AYUDA (Mantenemos las tuyas) ---
+    // --- FUNCIONES DE AYUDA ---
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function getUser(uid) {
-      return get(/databases/$(database)/documents/users/$(uid));
+    function memberDoc(orgId, uid) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
     }
 
-    function getUserRole(uid) {
-      if (!exists(/databases/$(database)/documents/users/$(uid))) {
-        return 'none';
+    function memberExists(orgId, uid) {
+      return exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
+    }
+
+    function isActiveMember(orgId, uid) {
+      return isSignedIn()
+        && memberExists(orgId, uid)
+        && (
+          memberDoc(orgId, uid).data.status == "active"
+          || memberDoc(orgId, uid).data.active == true
+        );
+    }
+
+    function ticketBelongsToOrg(orgId, ticketId) {
+      let orgPath = /databases/$(database)/documents/organizations/$(orgId)/tickets/$(ticketId);
+      if (exists(orgPath)) {
+        let data = get(orgPath).data;
+        return data.organizationId == null || data.organizationId == orgId;
       }
-      return get(/databases/$(database)/documents/users/$(uid)).data.role;
+      let legacyPath = /databases/$(database)/documents/tickets/$(ticketId);
+      return exists(legacyPath) && get(legacyPath).data.organizationId == orgId;
     }
 
-    function normalizeRole(role) {
-      if (role == 'operario') return 'operator';
-      if (role == 'mantenimiento') return 'maintenance';
-      return role;
-    }
-
-    function userRole(uid) {
-      return normalizeRole(getUserRole(uid));
-    }
-
-    function getUserDepartmentId(uid) {
-      if (!exists(/databases/$(database)/documents/users/$(uid))) {
-        return null;
+    function taskBelongsToOrg(orgId, taskId) {
+      let orgPath = /databases/$(database)/documents/organizations/$(orgId)/tasks/$(taskId);
+      if (exists(orgPath)) {
+        let data = get(orgPath).data;
+        return data.organizationId == null || data.organizationId == orgId;
       }
-      return get(/databases/$(database)/documents/users/$(uid)).data.departmentId;
+      let legacyPath = /databases/$(database)/documents/tasks/$(taskId);
+      return exists(legacyPath) && get(legacyPath).data.organizationId == orgId;
     }
 
-    function getUserDepartmentIds(uid) {
-      if (!exists(/databases/$(database)/documents/users/$(uid))) {
-        return [];
+    function assetBelongsToOrg(orgId, assetId) {
+      let orgPath = /databases/$(database)/documents/organizations/$(orgId)/assets/$(assetId);
+      if (exists(orgPath)) {
+        let data = get(orgPath).data;
+        return data.organizationId == null || data.organizationId == orgId;
       }
-      let deptIds = get(/databases/$(database)/documents/users/$(uid)).data.departmentIds;
-      return deptIds == null ? [] : deptIds;
-    }
-
-    function getUserOrganizationId(uid) {
-      if (!exists(/databases/$(database)/documents/users/$(uid))) {
-        return null;
-      }
-      return get(/databases/$(database)/documents/users/$(uid)).data.organizationId;
-    }
-
-    function organizationIsActive(orgId) {
-      if (orgId == null) return false;
-      let path = /databases/$(database)/documents/organizations/$(orgId);
-      if (!exists(path)) return false;
-      let org = get(path).data;
-      return org.isActive == true && (org.status == null || (org.status != 'suspended' && org.status != 'deleted'));
-    }
-
-    function ticketOriginDepartment(ticketData) {
-      return ticketData.originDepartmentId != null ? ticketData.originDepartmentId : ticketData.departmentId;
-    }
-
-    function ticketTargetDepartment(ticketData) {
-      return ticketData.targetDepartmentId != null ? ticketData.targetDepartmentId : ticketData.departmentId;
-    }
-
-    function ticketInScope(ticketData, uid) {
-      let primaryDept = getUserDepartmentId(uid);
-      let extraDepts = getUserDepartmentIds(uid);
-      let originDept = ticketOriginDepartment(ticketData);
-      let targetDept = ticketTargetDepartment(ticketData);
-      return (primaryDept != null && (originDept == primaryDept || targetDept == primaryDept)) ||
-             (extraDepts.size() > 0 && (extraDepts.hasAny([originDept]) || extraDepts.hasAny([targetDept])));
-    }
-
-    function canAccessTicket(ticketId) {
-      if (!isSignedIn()) return false;
-      let path = /databases/$(database)/documents/tickets/$(ticketId);
-      if (!exists(path)) return false;
-
-      let ticketData = get(path).data;
-      let role = userRole(request.auth.uid);
-
-      if (role == 'super_admin') return true;
-      if (!isSignedIn() || ticketData.organizationId != getUserOrganizationId(request.auth.uid)) return false;
-      if (!organizationIsActive(ticketData.organizationId)) return false;
-      if (role in ['admin', 'maintenance']) return true;
-      if (role in ['dept_head_multi', 'dept_head_single']) {
-        return ticketInScope(ticketData, request.auth.uid) || ticketData.createdBy == request.auth.uid || ticketData.assignedTo == request.auth.uid;
-      }
-
-      return (
-        ticketInScope(ticketData, request.auth.uid) ||
-        ticketData.createdBy == request.auth.uid ||
-        ticketData.assignedTo == request.auth.uid
-      );
-    }
-
-    function canAccessTask(taskId) {
-      if (!isSignedIn()) return false;
-      let path = /databases/$(database)/documents/tasks/$(taskId);
-      if (!exists(path)) return false;
-
-      let taskData = get(path).data;
-      let orgId = getUserOrganizationId(request.auth.uid);
-      if (taskData.organizationId != orgId) return false;
-      return organizationIsActive(taskData.organizationId);
+      let legacyPath = /databases/$(database)/documents/assets/$(assetId);
+      return exists(legacyPath) && get(legacyPath).data.organizationId == orgId;
     }
 
     // --- REGLAS DE CARPETAS ---
 
-    // 1. Logo de la empresa (Público para lectura)
+    // 1. Logo de la empresa (legacy public read)
     match /branding/logo.png {
       allow read: if true;
-      allow write: if isSignedIn()
-        && organizationIsActive(getUserOrganizationId(request.auth.uid))
-        && userRole(request.auth.uid) in ['admin', 'super_admin'];
+      allow write: if false;
+    }
+
+    match /orgs/{orgId}/branding/logo.png {
+      allow read: if true;
+      allow write: if isSignedIn() && isActiveMember(orgId, request.auth.uid);
     }
 
     // 2. Fotos de Incidencias (Tickets)
+    match /orgs/{orgId}/tickets/{ticketId}/{allPaths=**} {
+      allow read, write: if isSignedIn()
+        && isActiveMember(orgId, request.auth.uid)
+        && ticketBelongsToOrg(orgId, ticketId);
+    }
+
+    // 3. Fotos de Tareas (Tasks)
+    match /orgs/{orgId}/tasks/{taskId}/{allPaths=**} {
+      allow read, write: if isSignedIn()
+        && isActiveMember(orgId, request.auth.uid)
+        && taskBelongsToOrg(orgId, taskId);
+    }
+
+    // 4. Activos (Assets)
+    match /orgs/{orgId}/assets/{assetId}/{allPaths=**} {
+      allow read, write: if isSignedIn()
+        && isActiveMember(orgId, request.auth.uid)
+        && assetBelongsToOrg(orgId, assetId);
+    }
+
+    // Legacy paths (read-only during migration)
     match /tickets/{ticketId}/{allPaths=**} {
-        allow read, write: if canAccessTicket(ticketId);
+      allow read: if isSignedIn()
+        && exists(/databases/$(database)/documents/tickets/$(ticketId))
+        && isActiveMember(get(/databases/$(database)/documents/tickets/$(ticketId)).data.organizationId, request.auth.uid);
+      allow write: if false;
     }
 
-    // 👇👇👇 NUEVO: Fotos de Tareas (Tasks) 👇👇👇
     match /tasks/{taskId}/{allPaths=**} {
-        allow read, write: if canAccessTask(taskId);
+      allow read: if isSignedIn()
+        && exists(/databases/$(database)/documents/tasks/$(taskId))
+        && isActiveMember(get(/databases/$(database)/documents/tasks/$(taskId)).data.organizationId, request.auth.uid);
+      allow write: if false;
     }
-    // 👆👆👆 FIN DEL BLOQUE NUEVO 👆👆👆
 
-    // 3. Avatares de usuario
+    match /assets/{assetId}/{allPaths=**} {
+      allow read: if isSignedIn()
+        && exists(/databases/$(database)/documents/assets/$(assetId))
+        && isActiveMember(get(/databases/$(database)/documents/assets/$(assetId)).data.organizationId, request.auth.uid);
+      allow write: if false;
+    }
+
+    // 5. Avatares de usuario
     match /users/{userId}/{fileName} {
       allow read: if isSignedIn() && fileName.matches('avatar\\..+');
       allow write: if isSignedIn() && request.auth.uid == userId && fileName.matches('avatar\\..+');
