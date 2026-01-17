@@ -6,9 +6,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useFirebaseApp, useUser } from '@/lib/firebase';
+import { useDoc, useFirebaseApp, useUser } from '@/lib/firebase';
+import type { Organization } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
+import { canCreate } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -51,6 +53,20 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
   const app = useFirebaseApp();
   const { organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
+  const { data: organization } = useDoc<Organization>(
+    organizationId ? `organizations/${organizationId}` : null
+  );
+  const hasEntitlementLimits = Boolean(
+    organization?.entitlement?.usage && organization?.entitlement?.limits
+  );
+  const canCreateLocation = hasEntitlementLimits
+    ? canCreate(
+        'sites',
+        organization?.entitlement?.usage,
+        organization?.entitlement?.limits
+      )
+    : true;
+  const isLimitBlocked = hasEntitlementLimits && !canCreateLocation;
 
   const form = useForm<AddLocationFormValues>({
     resolver: zodResolver(formSchema),
@@ -157,12 +173,17 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
               )}
             />
             <DialogFooter>
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending || isLimitBlocked}>
                 {isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
                 Crear Ubicación
               </Button>
+              {isLimitBlocked ? (
+                <p className="text-xs text-destructive">
+                  Has alcanzado el límite de ubicaciones de tu plan actual.
+                </p>
+              ) : null}
             </DialogFooter>
           </form>
         </Form>

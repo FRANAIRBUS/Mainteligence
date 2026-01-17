@@ -6,10 +6,11 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useFirebaseApp, useUser } from '@/lib/firebase';
-import type { Site } from '@/lib/firebase/models';
+import { useDoc, useFirebaseApp, useUser } from '@/lib/firebase';
+import type { Organization, Site } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
+import { canCreate } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -61,6 +62,20 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
   const app = useFirebaseApp();
   const { organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
+  const { data: organization } = useDoc<Organization>(
+    organizationId ? `organizations/${organizationId}` : null
+  );
+  const hasEntitlementLimits = Boolean(
+    organization?.entitlement?.usage && organization?.entitlement?.limits
+  );
+  const canCreateAsset = hasEntitlementLimits
+    ? canCreate(
+        'assets',
+        organization?.entitlement?.usage,
+        organization?.entitlement?.limits
+      )
+    : true;
+  const isLimitBlocked = hasEntitlementLimits && !canCreateAsset;
 
   const form = useForm<AddAssetFormValues>({
     resolver: zodResolver(formSchema),
@@ -194,12 +209,17 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
               )}
             />
             <DialogFooter>
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending || isLimitBlocked}>
                 {isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
                 Crear Activo
               </Button>
+              {isLimitBlocked ? (
+                <p className="text-xs text-destructive">
+                  Has alcanzado el límite de activos de tu plan actual.
+                </p>
+              ) : null}
             </DialogFooter>
           </form>
         </Form>

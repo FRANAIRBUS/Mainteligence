@@ -17,6 +17,7 @@ import {
   Settings,
   Tags,
   HardHat,
+  CreditCard,
   type LucideIcon,
 } from "lucide-react";
 
@@ -132,6 +133,13 @@ export function useAppNavigation() {
         label: "Configuración",
         roles: ["super_admin"],
         items: [
+          {
+            href: "/plans",
+            label: "Planes",
+            icon: CreditCard,
+            active: pathname.startsWith("/plans"),
+            roles: ["super_admin"],
+          },
           {
             href: "/settings",
             label: "Ajustes de la Empresa",
