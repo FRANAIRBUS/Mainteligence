@@ -2,12 +2,12 @@
 
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
-import { useCollection, useUser } from '@/lib/firebase';
-import type { Ticket, Department, Site, User } from '@/lib/firebase/models';
+import { useCollection, useDoc, useFirestore, useUser } from '@/lib/firebase';
+import type { Ticket, Department, Site, User, Organization } from '@/lib/firebase/models';
 import type { MaintenanceTask } from '@/types/maintenance-task';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import type { Timestamp } from 'firebase/firestore';
+import { doc, getDoc, type Timestamp } from 'firebase/firestore';
 import Link from 'next/link';
 
 import {
@@ -84,10 +84,12 @@ import {
 
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { isFeatureEnabled } from '@/lib/entitlements';
 
 export default function ReportsPage() {
-  const { user, loading } = useUser();
+  const { user, loading, organizationId } = useUser();
   const router = useRouter();
+  const firestore = useFirestore();
 
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -96,6 +98,7 @@ export default function ReportsPage() {
   const [exportSortOrder, setExportSortOrder] =
     useState<ExportSortOrder>('desc');
   const [isExporting, setIsExporting] = useState(false);
+  const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
 
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -103,6 +106,39 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!loading && !user) router.push('/login');
   }, [user, loading, router]);
+
+  const { data: organization } = useDoc<Organization>(
+    organizationId ? `organizations/${organizationId}` : null
+  );
+
+  useEffect(() => {
+    if (!firestore || !organization?.entitlement?.planId) {
+      setPlanFeatures(null);
+      return;
+    }
+    let cancelled = false;
+    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+      .then((snap) => {
+        if (cancelled) return;
+        const features = (snap.exists() ? (snap.data()?.features as Record<string, boolean>) : null) ?? null;
+        setPlanFeatures(features);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPlanFeatures(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, organization?.entitlement?.planId]);
+
+  const entitlement = organization?.entitlement ?? null;
+  const exportAllowed =
+    planFeatures && entitlement
+      ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'EXPORT_PDF')
+      : true;
+  const exportBlocked = Boolean(entitlement) && planFeatures !== null && !exportAllowed;
 
   const { data: tickets = [], loading: ticketsLoading } =
     useCollection<Ticket>('tickets');
@@ -322,6 +358,13 @@ export default function ReportsPage() {
 
   const handleExport = () => {
     if (isExporting) return;
+    if (exportBlocked) {
+      toast({
+        title: 'Exportación no disponible',
+        description: 'Tu plan actual no incluye exportaciones. Actualiza el plan para habilitar esta función.',
+      });
+      return;
+    }
 
     if (!exportRows.length) {
       toast({
@@ -495,7 +538,7 @@ export default function ReportsPage() {
 
             <Button
               onClick={handleExport}
-              disabled={isExporting || dataLoading}
+              disabled={isExporting || dataLoading || exportBlocked}
               className="w-fit px-4"
             >
               {isExporting ? (
@@ -513,6 +556,21 @@ export default function ReportsPage() {
           </CardHeader>
 
           <CardContent className="grid min-w-0 grid-cols-1 gap-3 p-4 pt-0 sm:gap-4 sm:p-6 sm:pt-0 md:grid-cols-[repeat(3,minmax(0,1fr))]">
+            {exportBlocked ? (
+              <div className="md:col-span-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold">Exportación bloqueada</p>
+                    <p className="text-xs text-amber-100/90">
+                      Tu plan actual no incluye exportaciones. Actualiza tu plan para habilitar esta función.
+                    </p>
+                  </div>
+                  <Button variant="outline" onClick={() => router.push('/plans')}>
+                    Ver planes
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-1">
               <span className="text-sm font-medium text-muted-foreground">Rango aplicado</span>
               <p className="text-sm text-foreground">

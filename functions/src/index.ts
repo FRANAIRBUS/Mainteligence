@@ -1435,6 +1435,60 @@ function resolveOrgIdFromData(data: any): string {
   return orgId;
 }
 
+async function pausePreventiveTicketsForOrg(orgId: string, now: admin.firestore.Timestamp) {
+  const ticketsRef = db.collection('tickets');
+  let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+
+  while (true) {
+    let query = ticketsRef
+      .where('organizationId', '==', orgId)
+      .where('type', '==', 'preventivo')
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(200);
+
+    if (lastDoc) {
+      query = query.startAfter(lastDoc);
+    }
+
+    const ticketsSnap = await query.get();
+    if (ticketsSnap.empty) break;
+
+    const batch = db.batch();
+    let updates = 0;
+
+    ticketsSnap.docs.forEach((docSnap) => {
+      const data = docSnap.data() as any;
+      if (data?.preventivePausedByEntitlement === true) return;
+      const status = String(data?.status ?? '');
+      if (status === 'Cerrada' || status === 'Resuelta') return;
+
+      batch.update(docSnap.ref, {
+        status: 'En espera',
+        preventivePausedByEntitlement: true,
+        preventivePausedAt: now,
+        updatedAt: now,
+      });
+      updates += 1;
+    });
+
+    if (updates > 0) {
+      await batch.commit();
+    }
+
+    lastDoc = ticketsSnap.docs[ticketsSnap.docs.length - 1] ?? null;
+    if (ticketsSnap.size < 200) break;
+  }
+
+  await db.collection('organizations').doc(orgId).set(
+    {
+      preventivesPausedAt: now,
+      preventivesPausedByEntitlement: true,
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+}
+
 async function ensureDefaultOrganizationExists() {
   const ref = db.collection('organizations').doc('default');
   const snap = await ref.get();
@@ -3300,58 +3354,42 @@ export const pauseExpiredDemoPreventives = functions.pubsub
     if (orgsSnap.empty) return null;
 
     for (const orgDoc of orgsSnap.docs) {
-      const orgId = orgDoc.id;
-      const ticketsRef = db.collection('tickets');
-      let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      await pausePreventiveTicketsForOrg(orgDoc.id, now);
+    }
 
-      while (true) {
-        let query = ticketsRef
-          .where('organizationId', '==', orgId)
-          .where('type', '==', 'preventivo')
-          .orderBy(admin.firestore.FieldPath.documentId())
-          .limit(200);
+    return null;
+  });
 
-        if (lastDoc) {
-          query = query.startAfter(lastDoc);
-        }
+export const pausePreventivesWithoutEntitlement = functions.pubsub
+  .schedule('every 24 hours')
+  .timeZone('UTC')
+  .onRun(async () => {
+    const planCatalogSnap = await db.collection('planCatalog').get();
+    if (planCatalogSnap.empty) return null;
 
-        const ticketsSnap = await query.get();
-        if (ticketsSnap.empty) break;
+    const blockedPlanIds = planCatalogSnap.docs
+      .filter((planDoc) => {
+        const features = planDoc.get('features') as Record<string, boolean> | undefined;
+        return features?.PREVENTIVES !== true;
+      })
+      .map((planDoc) => planDoc.id);
 
-        const batch = db.batch();
-        let updates = 0;
+    if (blockedPlanIds.length === 0) return null;
 
-        ticketsSnap.docs.forEach((docSnap) => {
-          const data = docSnap.data() as any;
-          if (data?.preventivePausedByEntitlement === true) return;
-          const status = String(data?.status ?? '');
-          if (status === 'Cerrada' || status === 'Resuelta') return;
+    const now = admin.firestore.Timestamp.now();
 
-          batch.update(docSnap.ref, {
-            status: 'En espera',
-            preventivePausedByEntitlement: true,
-            preventivePausedAt: now,
-            updatedAt: now,
-          });
-          updates += 1;
-        });
+    for (let i = 0; i < blockedPlanIds.length; i += 10) {
+      const chunk = blockedPlanIds.slice(i, i + 10);
+      const orgsSnap = await db
+        .collection('organizations')
+        .where('entitlement.planId', 'in', chunk)
+        .get();
 
-        if (updates > 0) {
-          await batch.commit();
-        }
+      if (orgsSnap.empty) continue;
 
-        lastDoc = ticketsSnap.docs[ticketsSnap.docs.length - 1] ?? null;
-        if (ticketsSnap.size < 200) break;
+      for (const orgDoc of orgsSnap.docs) {
+        await pausePreventiveTicketsForOrg(orgDoc.id, now);
       }
-
-      await db.collection('organizations').doc(orgId).set(
-        {
-          preventivesPausedAt: now,
-          preventivesPausedByEntitlement: true,
-          updatedAt: now,
-        },
-        { merge: true },
-      );
     }
 
     return null;

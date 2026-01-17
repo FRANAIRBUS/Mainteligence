@@ -75,6 +75,8 @@ export interface Organization extends BaseEntity {
   modulesEnabled?: string[];
   entitlement?: Entitlement;
   billingProviders?: Partial<Record<EntitlementProvider, BillingProviderEntitlement>>;
+  preventivesPausedByEntitlement?: boolean;
+  preventivesPausedAt?: Timestamp;
   settings: {
     allowGuestAccess: boolean;
     maxUsers: number;
