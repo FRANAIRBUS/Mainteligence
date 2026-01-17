@@ -755,7 +755,7 @@ function resolveCreatedOrganizationsLimit(plan: AccountPlan, storedLimit: unknow
 function getUserOrgQuota(userData?: FirebaseFirestore.DocumentData | null) {
   const accountPlan = normalizeAccountPlan(userData?.accountPlan);
   const createdOrganizationsCountRaw = Number(userData?.createdOrganizationsCount ?? 0);
-  const createdOrganizationsCount =
+  let createdOrganizationsCount =
     Number.isFinite(createdOrganizationsCountRaw) && createdOrganizationsCountRaw >= 0
       ? Math.floor(createdOrganizationsCountRaw)
       : 0;
@@ -764,6 +764,12 @@ function getUserOrgQuota(userData?: FirebaseFirestore.DocumentData | null) {
     userData?.createdOrganizationsLimit,
   );
   const demoUsedAt = userData?.demoUsedAt ?? null;
+  const primaryOrgId = String(userData?.organizationId ?? '');
+
+  if (demoUsedAt && primaryOrgId.startsWith('demo-') && createdOrganizationsCount > 0) {
+    createdOrganizationsCount -= 1;
+  }
+
   return {
     accountPlan,
     createdOrganizationsCount,
@@ -2266,7 +2272,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       const { accountPlan, createdOrganizationsCount, createdOrganizationsLimit, demoUsedAt } =
         getUserOrgQuota(userData);
 
-      if (createdOrganizationsCount >= createdOrganizationsLimit) {
+      if (!isDemoOrg && createdOrganizationsCount >= createdOrganizationsLimit) {
         throw httpsError(
           'failed-precondition',
           'Has alcanzado el límite de organizaciones permitidas.',
@@ -2337,7 +2343,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
           role: 'super_admin',
           active: true,
           accountPlan,
-          createdOrganizationsCount: createdOrganizationsCount + 1,
+          createdOrganizationsCount: createdOrganizationsCount + (isDemoOrg ? 0 : 1),
           createdOrganizationsLimit,
           demoUsedAt: isDemoOrg ? now : demoUsedAt ?? null,
           updatedAt: now,
@@ -2545,7 +2551,7 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
     const { accountPlan, createdOrganizationsCount, createdOrganizationsLimit, demoUsedAt } =
       getUserOrgQuota(userData);
 
-    if (createdOrganizationsCount >= createdOrganizationsLimit) {
+    if (!isDemoOrg && createdOrganizationsCount >= createdOrganizationsLimit) {
       throw httpsError(
         'failed-precondition',
         'Has alcanzado el límite de organizaciones permitidas.',
@@ -2616,7 +2622,7 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
         role: 'super_admin',
         active: true,
         accountPlan,
-        createdOrganizationsCount: createdOrganizationsCount + 1,
+        createdOrganizationsCount: createdOrganizationsCount + (isDemoOrg ? 0 : 1),
         createdOrganizationsLimit,
         demoUsedAt: isDemoOrg ? now : demoUsedAt ?? null,
         updatedAt: now,
