@@ -46,6 +46,14 @@ export interface Entitlement {
   usage: EntitlementUsage;
 }
 
+export interface BillingProviderEntitlement {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: Timestamp;
+  currentPeriodEnd?: Timestamp;
+  updatedAt: Timestamp;
+}
+
 export interface PlanCatalogEntry {
   planId: EntitlementPlanId;
   limits: EntitlementLimits;
@@ -64,6 +72,7 @@ export interface Organization extends BaseEntity {
   billingEmail?: string | null;
   modulesEnabled?: string[];
   entitlement?: Entitlement;
+  billingProviders?: Partial<Record<EntitlementProvider, BillingProviderEntitlement>>;
   settings: {
     allowGuestAccess: boolean;
     maxUsers: number;
