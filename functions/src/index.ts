@@ -4,6 +4,8 @@ import type { Request, Response } from 'express';
 import { sendAssignmentEmail } from './assignment-email';
 import { sendInviteEmail } from './invite-email';
 import { canCreate, isFeatureEnabled } from './entitlements';
+import crypto from 'crypto';
+import https from 'https';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -50,6 +52,14 @@ type Entitlement = {
   updatedAt: admin.firestore.Timestamp;
   limits: EntitlementLimits;
   usage: EntitlementUsage;
+};
+
+type BillingProviderEntitlement = {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp;
+  currentPeriodEnd?: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
 };
 
 const DEFAULT_ACCOUNT_PLAN: AccountPlan = 'free';
@@ -120,6 +130,7 @@ function buildEntitlementPayload({
   status,
   trialEndsAt,
   currentPeriodEnd,
+  provider = DEFAULT_ENTITLEMENT_PROVIDER,
   now,
   limits = DEFAULT_ENTITLEMENT_LIMITS,
   usage = DEFAULT_ENTITLEMENT_USAGE,
@@ -128,6 +139,7 @@ function buildEntitlementPayload({
   status: EntitlementStatus;
   trialEndsAt?: admin.firestore.Timestamp | null;
   currentPeriodEnd?: admin.firestore.Timestamp | null;
+  provider?: EntitlementProvider;
   now: admin.firestore.FieldValue;
   limits?: EntitlementLimits;
   usage?: EntitlementUsage;
@@ -135,7 +147,7 @@ function buildEntitlementPayload({
   const payload: Record<string, unknown> = {
     planId,
     status,
-    provider: DEFAULT_ENTITLEMENT_PROVIDER,
+    provider,
     updatedAt: now,
     limits,
     usage,
@@ -161,6 +173,214 @@ const ALLOWED_CORS_ORIGINS = new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ]);
+
+const STRIPE_API_VERSION = '2023-10-16';
+
+function resolveStripeConfig() {
+  const secretKey = functions.config().stripe?.secret_key ?? process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = functions.config().stripe?.webhook_secret ?? process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!secretKey || !webhookSecret) {
+    throw new Error('Stripe config missing: set stripe.secret_key and stripe.webhook_secret.');
+  }
+
+  return { secretKey, webhookSecret };
+}
+
+type StripeEvent = {
+  type: string;
+  data: {
+    object: Record<string, unknown>;
+  };
+};
+
+type StripeSubscription = {
+  id: string;
+  status: string;
+  current_period_end?: number | null;
+  trial_end?: number | null;
+  metadata?: Record<string, string | null | undefined>;
+};
+
+type StripeCheckoutSession = {
+  metadata?: Record<string, string | null | undefined>;
+  subscription?: string | { id: string };
+};
+
+function resolveEntitlementStatusFromStripe(status: string): EntitlementStatus {
+  switch (status) {
+    case 'trialing':
+      return 'trialing';
+    case 'active':
+      return 'active';
+    case 'past_due':
+    case 'unpaid':
+    case 'incomplete':
+    case 'incomplete_expired':
+    case 'paused':
+      return 'past_due';
+    case 'canceled':
+      return 'canceled';
+    default:
+      return 'past_due';
+  }
+}
+
+function resolveEntitlementPlanId({
+  metadataPlanId,
+  fallbackPlanId,
+}: {
+  metadataPlanId?: string | null;
+  fallbackPlanId?: string;
+}): EntitlementPlanId {
+  const normalized = String(metadataPlanId ?? '').trim();
+  if (normalized === 'free' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
+    return normalized;
+  }
+  if (fallbackPlanId === 'free' || fallbackPlanId === 'starter' || fallbackPlanId === 'pro' || fallbackPlanId === 'enterprise') {
+    return fallbackPlanId;
+  }
+  return 'free';
+}
+
+function verifyStripeSignature({
+  payload,
+  signatureHeader,
+  webhookSecret,
+}: {
+  payload: string;
+  signatureHeader: string;
+  webhookSecret: string;
+}): boolean {
+  const elements = signatureHeader.split(',');
+  const timestampElement = elements.find((entry) => entry.startsWith('t='));
+  const signatureElements = elements.filter((entry) => entry.startsWith('v1='));
+  if (!timestampElement || signatureElements.length === 0) return false;
+
+  const timestamp = timestampElement.replace('t=', '');
+  const signedPayload = `${timestamp}.${payload}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(signedPayload, 'utf8')
+    .digest('hex');
+
+  const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+  return signatureElements.some((entry) => {
+    const signature = entry.replace('v1=', '');
+    const signatureBuffer = Buffer.from(signature, 'utf8');
+    if (signatureBuffer.length !== expectedBuffer.length) return false;
+    return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+  });
+}
+
+async function fetchStripeSubscription(subscriptionId: string, secretKey: string): Promise<StripeSubscription> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'api.stripe.com',
+        path: `/v1/subscriptions/${subscriptionId}`,
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          'Stripe-Version': STRIPE_API_VERSION,
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(body) as StripeSubscription);
+            } catch (error) {
+              reject(error);
+            }
+            return;
+          }
+          reject(new Error(`Stripe subscription fetch failed: ${res.statusCode ?? 'unknown'} ${body}`));
+        });
+      }
+    );
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+    req.end();
+  });
+}
+
+async function updateOrganizationStripeEntitlement({
+  orgId,
+  planId,
+  status,
+  trialEndsAt,
+  currentPeriodEnd,
+}: {
+  orgId: string;
+  planId?: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp | null;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+}) {
+  const orgRef = db.collection('organizations').doc(orgId);
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new Error(`Organization ${orgId} not found.`);
+    }
+
+    const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+    const entitlement = orgData?.entitlement;
+    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const resolvedPlanId = resolveEntitlementPlanId({
+      metadataPlanId: planId ?? null,
+      fallbackPlanId: entitlement?.planId,
+    });
+
+    const entitlementPayload = buildEntitlementPayload({
+      planId: resolvedPlanId,
+      status,
+      trialEndsAt,
+      currentPeriodEnd,
+      provider: 'stripe',
+      now,
+      limits,
+      usage,
+    });
+
+    const billingProviderPayload: Record<string, unknown> = {
+      planId: resolvedPlanId,
+      status,
+      updatedAt: now,
+    };
+
+    if (trialEndsAt) {
+      billingProviderPayload.trialEndsAt = trialEndsAt;
+    }
+
+    if (currentPeriodEnd) {
+      billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
+    }
+
+    tx.set(
+      orgRef,
+      {
+        entitlement: entitlementPayload,
+        billingProviders: {
+          stripe: billingProviderPayload,
+        },
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  });
+}
 
 function applyCors(req: Request, res: Response): boolean {
   const origin = String(req.headers.origin ?? '');
@@ -3081,4 +3301,123 @@ export const demoteToAdminWithinOrg = functions.https.onCall(async (data, contex
   const targetUid = await resolveTargetUidByEmailOrUid(data?.email, data?.uid);
 
   return setRoleWithinOrgImpl({ actorUid, actorEmail, isRoot, orgId, targetUid, role: 'admin' });
+});
+
+export const stripeWebhook = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).send('Method not allowed');
+    return;
+  }
+
+  let event: StripeEvent;
+  let webhookSecret: string;
+  let secretKey: string;
+  try {
+    const config = resolveStripeConfig();
+    webhookSecret = config.webhookSecret;
+    secretKey = config.secretKey;
+    const signature = req.headers['stripe-signature'];
+    if (!signature || typeof signature !== 'string') {
+      res.status(400).send('Missing Stripe signature.');
+      return;
+    }
+    const payload = req.rawBody?.toString('utf8') ?? '';
+    const valid = verifyStripeSignature({
+      payload,
+      signatureHeader: signature,
+      webhookSecret,
+    });
+    if (!valid) {
+      res.status(400).send('Invalid signature.');
+      return;
+    }
+    event = JSON.parse(payload) as StripeEvent;
+  } catch (error) {
+    console.error('stripeWebhook: signature verification failed', error);
+    res.status(400).send('Invalid signature.');
+    return;
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as StripeCheckoutSession;
+        const orgId = String(session.metadata?.orgId ?? '').trim();
+        if (!orgId) {
+          res.status(400).send('orgId missing in checkout session metadata.');
+          return;
+        }
+
+        const subscriptionId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
+        if (!subscriptionId) {
+          res.status(400).send('Subscription missing in checkout session.');
+          return;
+        }
+
+        const subscription = await fetchStripeSubscription(subscriptionId, secretKey);
+        const status = resolveEntitlementStatusFromStripe(subscription.status ?? '');
+        const planId = resolveEntitlementPlanId({
+          metadataPlanId: session.metadata?.planId ?? subscription.metadata?.planId ?? null,
+        });
+        const trialEndsAt =
+          subscription.trial_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.trial_end * 1000)
+            : null;
+        const currentPeriodEnd =
+          subscription.current_period_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000)
+            : null;
+
+        await updateOrganizationStripeEntitlement({
+          orgId,
+          planId,
+          status,
+          trialEndsAt,
+          currentPeriodEnd,
+        });
+        break;
+      }
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as StripeSubscription;
+        const orgId = String(subscription.metadata?.orgId ?? '').trim();
+        if (!orgId) {
+          res.status(400).send('orgId missing in subscription metadata.');
+          return;
+        }
+
+        const status =
+          event.type === 'customer.subscription.deleted'
+            ? 'canceled'
+            : resolveEntitlementStatusFromStripe(subscription.status);
+        const planId = resolveEntitlementPlanId({
+          metadataPlanId: subscription.metadata?.planId ?? null,
+        });
+        const trialEndsAt =
+          subscription.trial_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.trial_end * 1000)
+            : null;
+        const currentPeriodEnd =
+          subscription.current_period_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000)
+            : null;
+
+        await updateOrganizationStripeEntitlement({
+          orgId,
+          planId,
+          status,
+          trialEndsAt,
+          currentPeriodEnd,
+        });
+        break;
+      }
+      default:
+        break;
+    }
+
+    res.status(200).send({ received: true });
+  } catch (error) {
+    console.error('stripeWebhook: handler error', error);
+    res.status(500).send('Webhook handler error.');
+  }
 });
