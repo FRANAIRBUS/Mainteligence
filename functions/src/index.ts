@@ -18,6 +18,27 @@ type Role =
   | 'operator';
 
 type AccountPlan = 'free' | 'personal_plus' | 'business_creator' | 'enterprise';
+type EntitlementPlanId = 'free' | 'starter' | 'pro' | 'enterprise';
+type EntitlementStatus = 'trialing' | 'active' | 'past_due' | 'canceled';
+type EntitlementProvider = 'stripe' | 'google_play' | 'apple_app_store' | 'manual';
+
+type EntitlementLimits = {
+  maxSites: number;
+  maxAssets: number;
+  maxDepartments: number;
+  maxUsers: number;
+  maxActivePreventives: number;
+  attachmentsMonthlyMB: number;
+};
+
+type EntitlementUsage = {
+  sitesCount: number;
+  assetsCount: number;
+  departmentsCount: number;
+  usersCount: number;
+  activePreventivesCount: number;
+  attachmentsThisMonthMB: number;
+};
 
 const DEFAULT_ACCOUNT_PLAN: AccountPlan = 'free';
 const DEFAULT_ENTERPRISE_LIMIT = 10;
@@ -27,6 +48,62 @@ const CREATED_ORG_LIMITS: Record<AccountPlan, number> = {
   business_creator: 3,
   enterprise: DEFAULT_ENTERPRISE_LIMIT,
 };
+
+const DEFAULT_ENTITLEMENT_PROVIDER: EntitlementProvider = 'manual';
+const DEFAULT_ENTITLEMENT_LIMITS: EntitlementLimits = {
+  maxSites: 100,
+  maxAssets: 5000,
+  maxDepartments: 100,
+  maxUsers: 50,
+  maxActivePreventives: 1000,
+  attachmentsMonthlyMB: 1024,
+};
+
+const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
+  sitesCount: 0,
+  assetsCount: 0,
+  departmentsCount: 0,
+  usersCount: 0,
+  activePreventivesCount: 0,
+  attachmentsThisMonthMB: 0,
+};
+
+function buildEntitlementPayload({
+  planId,
+  status,
+  trialEndsAt,
+  currentPeriodEnd,
+  now,
+  limits = DEFAULT_ENTITLEMENT_LIMITS,
+  usage = DEFAULT_ENTITLEMENT_USAGE,
+}: {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp | null;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+  now: admin.firestore.FieldValue;
+  limits?: EntitlementLimits;
+  usage?: EntitlementUsage;
+}) {
+  const payload: Record<string, unknown> = {
+    planId,
+    status,
+    provider: DEFAULT_ENTITLEMENT_PROVIDER,
+    updatedAt: now,
+    limits,
+    usage,
+  };
+
+  if (trialEndsAt) {
+    payload.trialEndsAt = trialEndsAt;
+  }
+
+  if (currentPeriodEnd) {
+    payload.currentPeriodEnd = currentPeriodEnd;
+  }
+
+  return payload;
+}
 
 function httpsError(code: functions.https.FunctionsErrorCode, message: string) {
   return new functions.https.HttpsError(code, message);
@@ -492,13 +569,19 @@ async function ensureDefaultOrganizationExists() {
   const ref = db.collection('organizations').doc('default');
   const snap = await ref.get();
   if (!snap.exists) {
+    const now = admin.firestore.FieldValue.serverTimestamp();
     await ref.set(
       {
         organizationId: 'default',
         name: 'default',
         isActive: true,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        entitlement: buildEntitlementPayload({
+          planId: 'free',
+          status: 'active',
+          now,
+        }),
+        createdAt: now,
+        updatedAt: now,
         source: 'ensure_default_org_v1',
       },
       { merge: true }
@@ -506,8 +589,24 @@ async function ensureDefaultOrganizationExists() {
   } else {
     const d = snap.data() as any;
     // si no existe el campo, lo normalizamos para que nunca se "pierda" en queries futuras
-    if (d?.isActive === undefined) {
-      await ref.set({ isActive: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    if (d?.isActive === undefined || !d?.entitlement) {
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      await ref.set(
+        {
+          ...(d?.isActive === undefined ? { isActive: true } : {}),
+          ...(!d?.entitlement
+            ? {
+                entitlement: buildEntitlementPayload({
+                  planId: 'free',
+                  status: 'active',
+                  now,
+                }),
+              }
+            : {}),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
     }
   }
 }
@@ -885,13 +984,25 @@ export const rootUpsertUserToOrganization = functions.https.onCall(async (data, 
   if (!authUser?.uid) throw httpsError('not-found', 'No existe ese usuario en Auth.');
 
   const uid = authUser.uid;
+  const orgRef = db.collection('organizations').doc(orgId);
+  const orgSnap = await orgRef.get();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const entitlementPayload =
+    !orgSnap.exists || !orgSnap.get('entitlement')
+      ? buildEntitlementPayload({
+          planId: 'free',
+          status: 'active',
+          now,
+        })
+      : null;
 
-  await db.collection('organizations').doc(orgId).set(
+  await orgRef.set(
     {
       organizationId: orgId,
       name: orgId,
       isActive: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: now,
+      ...(entitlementPayload ? { entitlement: entitlementPayload } : {}),
       source: 'root_upsert_user_v1',
     },
     { merge: true }
@@ -915,10 +1026,8 @@ export const rootUpsertUserToOrganization = functions.https.onCall(async (data, 
       organizationId: orgId,
       role,
       active: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: beforeSnap.exists
-        ? beforeSnap.get('createdAt') ?? admin.firestore.FieldValue.serverTimestamp()
-        : admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: now,
+      createdAt: beforeSnap.exists ? beforeSnap.get('createdAt') ?? now : now,
       source: 'root_upsert_user_v1',
     },
     { merge: true }
@@ -933,8 +1042,8 @@ export const rootUpsertUserToOrganization = functions.https.onCall(async (data, 
       displayName: authUser.displayName ?? null,
       active: true,
       role,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: now,
+      createdAt: now,
       source: 'root_upsert_user_v1',
     },
     { merge: true }
@@ -947,8 +1056,8 @@ export const rootUpsertUserToOrganization = functions.https.onCall(async (data, 
       organizationId: orgId,
       role,
       active: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: now,
+      createdAt: now,
       source: 'root_upsert_user_v1',
     },
     { merge: true }
@@ -1550,6 +1659,12 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         isActive: true,
         type: organizationType,
         status: 'active',
+        entitlement: buildEntitlementPayload({
+          planId: 'free',
+          status: 'trialing',
+          trialEndsAt: demoExpiresAt ?? undefined,
+          now,
+        }),
         settings: {
           allowGuestAccess: false,
           maxUsers: 50,
@@ -1823,6 +1938,12 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       isActive: true,
       type: organizationType,
       status: 'active',
+      entitlement: buildEntitlementPayload({
+        planId: 'free',
+        status: 'trialing',
+        trialEndsAt: demoExpiresAt ?? undefined,
+        now,
+      }),
       settings: {
         allowGuestAccess: false,
         maxUsers: 50,
