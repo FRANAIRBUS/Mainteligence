@@ -17,6 +17,17 @@ type Role =
   | 'dept_head_single'
   | 'operator';
 
+type AccountPlan = 'free' | 'personal_plus' | 'business_creator' | 'enterprise';
+
+const DEFAULT_ACCOUNT_PLAN: AccountPlan = 'free';
+const DEFAULT_ENTERPRISE_LIMIT = 10;
+const CREATED_ORG_LIMITS: Record<AccountPlan, number> = {
+  free: 1,
+  personal_plus: 2,
+  business_creator: 3,
+  enterprise: DEFAULT_ENTERPRISE_LIMIT,
+};
+
 function httpsError(code: functions.https.FunctionsErrorCode, message: string) {
   return new functions.https.HttpsError(code, message);
 }
@@ -198,6 +209,44 @@ function sendHttpError(res: Response, err: any) {
 function requireAuth(context: functions.https.CallableContext) {
   if (!context.auth?.uid) throw httpsError('unauthenticated', 'Debes iniciar sesión.');
   return context.auth.uid;
+}
+
+function normalizeAccountPlan(value: unknown): AccountPlan {
+  const plan = String(value ?? '').trim().toLowerCase();
+  if (plan === 'personal_plus' || plan === 'business_creator' || plan === 'enterprise') {
+    return plan as AccountPlan;
+  }
+  return DEFAULT_ACCOUNT_PLAN;
+}
+
+function resolveCreatedOrganizationsLimit(plan: AccountPlan, storedLimit: unknown): number {
+  if (plan === 'enterprise') {
+    const limit = Number(storedLimit);
+    if (Number.isFinite(limit) && limit > 0) {
+      return Math.floor(limit);
+    }
+  }
+  return CREATED_ORG_LIMITS[plan] ?? CREATED_ORG_LIMITS[DEFAULT_ACCOUNT_PLAN];
+}
+
+function getUserOrgQuota(userData?: FirebaseFirestore.DocumentData | null) {
+  const accountPlan = normalizeAccountPlan(userData?.accountPlan);
+  const createdOrganizationsCountRaw = Number(userData?.createdOrganizationsCount ?? 0);
+  const createdOrganizationsCount =
+    Number.isFinite(createdOrganizationsCountRaw) && createdOrganizationsCountRaw >= 0
+      ? Math.floor(createdOrganizationsCountRaw)
+      : 0;
+  const createdOrganizationsLimit = resolveCreatedOrganizationsLimit(
+    accountPlan,
+    userData?.createdOrganizationsLimit,
+  );
+  const demoUsedAt = userData?.demoUsedAt ?? null;
+  return {
+    accountPlan,
+    createdOrganizationsCount,
+    createdOrganizationsLimit,
+    demoUsedAt,
+  };
 }
 
 async function seedDemoOrganizationData({
@@ -1408,8 +1457,6 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const displayName = (authUser?.displayName ?? String(data?.displayName ?? '').trim()) || null;
   const orgRef = db.collection('organizations').doc(organizationId);
   const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
-  const orgSnap = await orgRef.get();
-
   const userRef = db.collection('users').doc(uid);
   const memberRef = orgRef.collection('members').doc(uid);
   void memberRef;
@@ -1417,6 +1464,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
 
   const now = admin.firestore.FieldValue.serverTimestamp();
 
+  let orgSnap = await orgRef.get();
   if (!orgSnap.exists) {
     const details = (data?.organizationDetails ?? {}) as any;
 
@@ -1454,17 +1502,41 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       return { ok: true, mode: 'verification_required', organizationId };
     }
 
-    const batch = db.batch();
-
     const demoExpiresAt = isDemoOrg
       ? admin.firestore.Timestamp.fromDate(
           new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
         )
       : null;
 
-    batch.set(
-      orgRef,
-      {
+    const creationResult = await db.runTransaction(async (tx) => {
+      const [userSnapTx, orgSnapTx] = await tx.getAll(userRef, orgRef);
+      if (orgSnapTx.exists) {
+        return { created: false };
+      }
+
+      const userData = userSnapTx.exists ? (userSnapTx.data() as any) : null;
+      const { accountPlan, createdOrganizationsCount, createdOrganizationsLimit, demoUsedAt } =
+        getUserOrgQuota(userData);
+
+      if (createdOrganizationsCount >= createdOrganizationsLimit) {
+        throw httpsError(
+          'failed-precondition',
+          'Has alcanzado el límite de organizaciones permitidas.',
+        );
+      }
+
+      if (isDemoOrg && demoUsedAt) {
+        throw httpsError(
+          'failed-precondition',
+          'Ya utilizaste tu organización demo. No es posible crear otra.',
+        );
+      }
+
+      const userCreatedAt = userSnapTx.exists
+        ? userSnapTx.get('createdAt') ?? now
+        : now;
+
+      tx.create(orgRef, {
         organizationId,
         name: orgName,
         legalName: orgLegalName,
@@ -1484,16 +1556,13 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
           inviteOnly: false,
         },
         demoExpiresAt,
+        createdByUserId: uid,
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      });
 
-    batch.set(
-      orgPublicRef,
-      {
+      tx.create(orgPublicRef, {
         organizationId,
         name: orgName,
         nameLower: orgName.toLowerCase(),
@@ -1503,28 +1572,28 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      });
 
-    batch.set(
-      userRef,
-      {
-        organizationId,
-        email: email || null,
-        displayName: displayName || email || 'Usuario',
-        role: 'super_admin',
-        active: true,
-        updatedAt: now,
-        createdAt: now,
-        source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      tx.set(
+        userRef,
+        {
+          organizationId,
+          email: email || null,
+          displayName: displayName || email || 'Usuario',
+          role: 'super_admin',
+          active: true,
+          accountPlan,
+          createdOrganizationsCount: createdOrganizationsCount + 1,
+          createdOrganizationsLimit,
+          demoUsedAt: isDemoOrg ? now : demoUsedAt ?? null,
+          updatedAt: now,
+          createdAt: userCreatedAt,
+          source: 'bootstrapSignup_v1',
+        },
+        { merge: true },
+      );
 
-    batch.set(
-      membershipRef,
-      {
+      tx.create(membershipRef, {
         userId: uid,
         organizationId,
         organizationName: orgName,
@@ -1534,13 +1603,9 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      });
 
-    batch.set(
-      memberRef,
-      {
+      tx.create(memberRef, {
         uid,
         orgId: organizationId,
         email: email || null,
@@ -1550,30 +1615,48 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      });
 
-    await batch.commit();
-
-    await auditLog({
-      action: 'bootstrapSignup_create_org',
-      actorUid: uid,
-      actorEmail: email || null,
-      orgId: organizationId,
-      after: { organizationId, role: 'super_admin', status: 'active' },
+      return { created: true, isDemoOrg };
     });
 
-    if (isDemoOrg) {
-      await seedDemoOrganizationData({ organizationId, uid });
+    if (creationResult.created) {
+      await auditLog({
+        action: 'bootstrapSignup_create_org',
+        actorUid: uid,
+        actorEmail: email || null,
+        orgId: organizationId,
+        after: { organizationId, role: 'super_admin', status: 'active' },
+      });
+
+      if (isDemoOrg) {
+        await seedDemoOrganizationData({ organizationId, uid });
+      }
+
+      return { ok: true, mode: 'created', organizationId };
     }
 
-    return { ok: true, mode: 'created', organizationId };
+    orgSnap = await orgRef.get();
+    if (!orgSnap.exists) {
+      throw httpsError('internal', 'No se pudo crear la organización.');
+    }
   }
 
   const orgData = orgSnap.data() as any;
   const orgName = String(orgData?.name ?? organizationId);
   const inviteOnly = Boolean(orgData?.settings?.inviteOnly === true);
+  const existingMembershipSnap = await membershipRef.get();
+  if (existingMembershipSnap.exists) {
+    const membershipData = existingMembershipSnap.data() as any;
+    const membershipStatus =
+      String(membershipData?.status ?? '') ||
+      (membershipData?.active === true ? 'active' : 'pending');
+    return {
+      ok: true,
+      mode: membershipStatus === 'active' ? 'already_member' : 'pending',
+      organizationId,
+    };
+  }
 
   const inviteByUidRef = orgRef.collection('joinRequests').doc(uid);
   const inviteByEmailRef = email ? orgRef.collection('joinRequests').doc(`invite_${email}`) : null;
@@ -1681,22 +1764,52 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
     return { ok: true, mode: 'already_exists', organizationId };
   }
 
-  const now = admin.firestore.FieldValue.serverTimestamp();
   const orgDetails = requestData?.organizationDetails ?? {};
   const orgName = String(orgDetails?.name ?? requestData?.organizationName ?? organizationId).trim() || organizationId;
   const orgLegalName = String(orgDetails?.legalName ?? requestData?.organizationLegalName ?? '').trim() || null;
   const isDemoOrg = organizationId.startsWith('demo-');
   const organizationType = isDemoOrg ? 'demo' : 'standard';
+  const demoExpiresAt = isDemoOrg
+    ? admin.firestore.Timestamp.fromDate(
+        new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+      )
+    : null;
 
   const userRef = db.collection('users').doc(uid);
   const memberRef = orgRef.collection('members').doc(uid);
   const membershipRef = db.collection('memberships').doc(`${uid}_${organizationId}`);
 
-  const batch = db.batch();
+  const now = admin.firestore.FieldValue.serverTimestamp();
 
-  batch.set(
-    orgRef,
-    {
+  await db.runTransaction(async (tx) => {
+    const [userSnapTx, orgSnapTx] = await tx.getAll(userRef, orgRef);
+    if (orgSnapTx.exists) {
+      return;
+    }
+
+    const userData = userSnapTx.exists ? (userSnapTx.data() as any) : null;
+    const { accountPlan, createdOrganizationsCount, createdOrganizationsLimit, demoUsedAt } =
+      getUserOrgQuota(userData);
+
+    if (createdOrganizationsCount >= createdOrganizationsLimit) {
+      throw httpsError(
+        'failed-precondition',
+        'Has alcanzado el límite de organizaciones permitidas.',
+      );
+    }
+
+    if (isDemoOrg && demoUsedAt) {
+      throw httpsError(
+        'failed-precondition',
+        'Ya utilizaste tu organización demo. No es posible crear otra.',
+      );
+    }
+
+    const userCreatedAt = userSnapTx.exists
+      ? userSnapTx.get('createdAt') ?? now
+      : now;
+
+    tx.create(orgRef, {
       organizationId,
       name: orgName,
       legalName: orgLegalName,
@@ -1715,16 +1828,14 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
         maxUsers: 50,
         inviteOnly: false,
       },
+      demoExpiresAt,
+      createdByUserId: uid,
       createdAt: now,
       updatedAt: now,
       source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    });
 
-  batch.set(
-    orgPublicRef,
-    {
+    tx.create(orgPublicRef, {
       organizationId,
       name: orgName,
       nameLower: orgName.toLowerCase(),
@@ -1734,28 +1845,28 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       createdAt: now,
       updatedAt: now,
       source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    });
 
-  batch.set(
-    userRef,
-    {
-      organizationId,
-      email: authUser?.email ?? null,
-      displayName: authUser?.displayName ?? authUser?.email ?? 'Usuario',
-      role: 'super_admin',
-      active: true,
-      updatedAt: now,
-      createdAt: now,
-      source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    tx.set(
+      userRef,
+      {
+        organizationId,
+        email: authUser?.email ?? null,
+        displayName: authUser?.displayName ?? authUser?.email ?? 'Usuario',
+        role: 'super_admin',
+        active: true,
+        accountPlan,
+        createdOrganizationsCount: createdOrganizationsCount + 1,
+        createdOrganizationsLimit,
+        demoUsedAt: isDemoOrg ? now : demoUsedAt ?? null,
+        updatedAt: now,
+        createdAt: userCreatedAt,
+        source: 'bootstrapSignup_v1',
+      },
+      { merge: true },
+    );
 
-  batch.set(
-    membershipRef,
-    {
+    tx.create(membershipRef, {
       userId: uid,
       organizationId,
       organizationName: orgName,
@@ -1765,13 +1876,9 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       createdAt: now,
       updatedAt: now,
       source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    });
 
-  batch.set(
-    memberRef,
-    {
+    tx.create(memberRef, {
       uid,
       orgId: organizationId,
       email: authUser?.email ?? null,
@@ -1781,13 +1888,12 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       createdAt: now,
       updatedAt: now,
       source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    });
 
-  batch.delete(requestRef);
+    tx.delete(requestRef);
+  });
 
-  await batch.commit();
+  await requestRef.delete().catch(() => null);
 
   await auditLog({
     action: 'bootstrapSignup_create_org',

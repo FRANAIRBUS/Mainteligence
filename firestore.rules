@@ -145,6 +145,36 @@ service cloud.firestore {
       return request.resource.data.role == resource.data.role;
     }
 
+    function accountPlanUnchanged() {
+      return request.resource.data.accountPlan == resource.data.accountPlan;
+    }
+
+    function createdOrganizationsCountUnchanged() {
+      return request.resource.data.createdOrganizationsCount == resource.data.createdOrganizationsCount;
+    }
+
+    function createdOrganizationsLimitUnchanged() {
+      return request.resource.data.createdOrganizationsLimit == resource.data.createdOrganizationsLimit;
+    }
+
+    function demoUsedAtUnchanged() {
+      return request.resource.data.demoUsedAt == resource.data.demoUsedAt;
+    }
+
+    function userQuotaFieldsUnchanged() {
+      return accountPlanUnchanged()
+        && createdOrganizationsCountUnchanged()
+        && createdOrganizationsLimitUnchanged()
+        && demoUsedAtUnchanged();
+    }
+
+    function userQuotaFieldsUnset() {
+      return request.resource.data.accountPlan == null
+        && request.resource.data.createdOrganizationsCount == null
+        && request.resource.data.createdOrganizationsLimit == null
+        && request.resource.data.demoUsedAt == null;
+    }
+
     /* ------------------------------
        USERS (profile)
        - Only self-access from client.
@@ -161,12 +191,14 @@ service cloud.firestore {
 
       allow create: if isSignedIn()
         && request.auth.uid == userId
-        && request.resource.data.organizationId == null;
+        && request.resource.data.organizationId == null
+        && userQuotaFieldsUnset();
 
       allow update: if isSignedIn()
         && request.auth.uid == userId
         && organizationIdUnchanged()
-        && roleUnchanged();
+        && roleUnchanged()
+        && userQuotaFieldsUnchanged();
 
       allow delete: if false;
     }
