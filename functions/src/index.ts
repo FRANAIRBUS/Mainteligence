@@ -173,53 +173,37 @@ const GOOGLE_PLAY_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
 const GOOGLE_TOKEN_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 const GOOGLE_JWT_ALG = 'RS256';
 const GOOGLE_JWT_TYP = 'JWT';
-const APPLE_UPDATES_ENABLED =
-  (getRuntimeConfig().apple_app_store?.apply_updates ?? process.env.APPLE_APP_STORE_APPLY_UPDATES) === 'true';
+const APPLE_UPDATES_ENABLED = (process.env.APPLE_APP_STORE_APPLY_UPDATES ?? 'false') === 'true';
 
-function getRuntimeConfig(): Record<string, any> {
-  return (functions as unknown as { config: () => Record<string, any> }).config();
-}
+type StripeRuntimeConfig = { secretKey: string; webhookSecret: string };
+function resolveStripeConfig(): StripeRuntimeConfig | null {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-function resolveStripeConfig() {
-  const config = getRuntimeConfig();
-  const secretKey = config.stripe?.secret_key ?? process.env.STRIPE_SECRET_KEY;
-  const webhookSecret = config.stripe?.webhook_secret ?? process.env.STRIPE_WEBHOOK_SECRET;
-
-  if (!secretKey || !webhookSecret) {
-    throw new Error('Stripe config missing: set stripe.secret_key and stripe.webhook_secret.');
-  }
-
+  if (!secretKey || !webhookSecret) return null;
   return { secretKey, webhookSecret };
 }
 
-function resolveGooglePlayConfig() {
-  const config = getRuntimeConfig();
-  const clientEmail = config.google_play?.client_email ?? process.env.GOOGLE_PLAY_CLIENT_EMAIL;
-  const privateKey =
-    config.google_play?.private_key ?? process.env.GOOGLE_PLAY_PRIVATE_KEY;
-  const packageName =
-    config.google_play?.package_name ?? process.env.GOOGLE_PLAY_PACKAGE_NAME;
+type GooglePlayRuntimeConfig = { clientEmail: string; privateKey: string; packageName: string };
+function resolveGooglePlayConfig(): GooglePlayRuntimeConfig | null {
+  const clientEmail = process.env.GOOGLE_PLAY_CLIENT_EMAIL;
+  const privateKeyRaw = process.env.GOOGLE_PLAY_PRIVATE_KEY;
+  const packageName = process.env.GOOGLE_PLAY_PACKAGE_NAME ?? '';
 
-  if (!clientEmail || !privateKey) {
-    throw new Error('Google Play config missing: set google_play.client_email and google_play.private_key.');
-  }
+  if (!clientEmail || !privateKeyRaw) return null;
 
   return {
     clientEmail,
-    privateKey: privateKey.replace(/\\n/g, '\n'),
-    packageName: packageName ?? '',
+    privateKey: privateKeyRaw.replace(/\\n/g, '\n'),
+    packageName,
   };
 }
 
-function resolveAppleAppStoreConfig() {
-  const config = getRuntimeConfig();
-  const bundleId = config.apple_app_store?.bundle_id ?? process.env.APPLE_APP_STORE_BUNDLE_ID ?? '';
-
-  return {
-    bundleId,
-  };
+type AppleAppStoreRuntimeConfig = { bundleId: string };
+function resolveAppleAppStoreConfig(): AppleAppStoreRuntimeConfig {
+  const bundleId = process.env.APPLE_APP_STORE_BUNDLE_ID ?? '';
+  return { bundleId };
 }
-
 type StripeEvent = {
   type: string;
   data: {
@@ -461,7 +445,11 @@ async function fetchGooglePlayAccessToken(): Promise<string> {
     return googlePlayTokenCache.accessToken;
   }
 
-  const { clientEmail, privateKey } = resolveGooglePlayConfig();
+  const googleCfg = resolveGooglePlayConfig();
+  if (!googleCfg) {
+    throw new Error('Google Play not configured.');
+  }
+  const { clientEmail, privateKey } = googleCfg;
   const nowSeconds = Math.floor(Date.now() / 1000);
   const header = base64UrlEncode(JSON.stringify({ alg: GOOGLE_JWT_ALG, typ: GOOGLE_JWT_TYP }));
   const payload = base64UrlEncode(
@@ -3811,7 +3799,8 @@ export const registerGooglePlayPurchase = functions.https.onCall(async (data, co
 
   await requireCallerSuperAdminInOrg(actorUid, orgId);
 
-  const { packageName: configPackageName } = resolveGooglePlayConfig();
+  const googleCfg = resolveGooglePlayConfig();
+  const configPackageName = googleCfg?.packageName ?? ''; 
   const packageName = packageNameRaw || configPackageName;
   if (!packageName) throw httpsError('invalid-argument', 'packageName requerido.');
 
@@ -3937,7 +3926,8 @@ export const googlePlayRtdn = functions.pubsub.topic('google-play-rtdn').onPubli
     return;
   }
 
-  const { packageName: configPackageName } = resolveGooglePlayConfig();
+  const googleCfg = resolveGooglePlayConfig();
+  const configPackageName = googleCfg?.packageName ?? ''; 
   const packageName = String(
     purchaseData?.packageName ?? payload.packageName ?? configPackageName ?? ''
   ).trim();
@@ -4069,6 +4059,10 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
   let secretKey: string;
   try {
     const config = resolveStripeConfig();
+    if (!config) {
+      res.status(501).send('Stripe not configured.');
+      return;
+    }
     webhookSecret = config.webhookSecret;
     secretKey = config.secretKey;
     const signature = req.headers['stripe-signature'];
