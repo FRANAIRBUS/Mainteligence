@@ -9,6 +9,7 @@ import { useUser } from "@/lib/firebase";
 import MainNav from "@/components/main-nav";
 import { UserNav } from "@/components/user-nav";
 import MobileBottomNav from "@/components/mobile-bottom-nav";
+import { DemoModeBanner } from "@/components/demo-mode-banner";
 
 export type AppShellProps = {
   title?: string;
@@ -94,6 +95,7 @@ export function AppShell({ title, description, action, children, className }: Ap
           </div>
         </div>
       </header>
+      <DemoModeBanner />
 
       {/* Content */}
       <main className={cn("mx-auto w-full max-w-5xl px-4 pb-20 pt-4 sm:pt-6", className)}>
