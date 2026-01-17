@@ -356,7 +356,8 @@ export default function OnboardingPage() {
         await sendEmailVerification(auth.currentUser);
       }
 
-      const demoOrgId = `demo-${user.uid.slice(0, 6).toLowerCase()}`;
+      const demoSuffix = Date.now().toString(36);
+      const demoOrgId = `demo-${user.uid.slice(0, 6).toLowerCase()}-${demoSuffix}`;
       const fn = httpsCallable(getFunctions(app), 'bootstrapSignup');
       const res = await fn({
         organizationId: demoOrgId,

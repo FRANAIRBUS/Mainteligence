@@ -34,7 +34,12 @@ Este documento resume las buenas prácticas para el onboarding multi‑organizac
 - Bloquea lectura/escritura cuando el estado no sea `active` para evitar acceso a datos de organizaciones cerradas.
 - Registra en auditoría quién y cuándo cambia el estado.
 
-## 8) UX recomendada en la página de registro
+## 8) Datos en organizaciones demo
+- Las demos deben crear datos **dentro de su propia organización** (`organizationId` del tipo `demo-...`).
+- Los seeds de demo (tareas, incidencias, ubicaciones, etc.) se guardan con `organizationId` y se aíslan por organización, igual que cualquier entorno productivo.
+- Al expirar la demo, la limpieza debe borrar únicamente documentos con ese `organizationId`.
+
+## 9) UX recomendada en la página de registro
 1. Paso 1: email/contraseña y `organizationId` deseado.
 2. Paso 2: lookup de organización. Si existe, muestra ficha y permite solicitar alta o admin. Si no existe, avisa que se creará una nueva organización y que el usuario será el primer administrador.
 3. Paso 3: formulario breve de datos de organización (mínimos obligatorios + opcionales). 
