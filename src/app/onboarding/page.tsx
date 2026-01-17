@@ -53,6 +53,8 @@ export default function OnboardingPage() {
   const [orgTeamSize, setOrgTeamSize] = useState('');
 
   const [error, setError] = useState<string | null>(null);
+  const [quotaBlocked, setQuotaBlocked] = useState(false);
+  const [quotaRequiresUpgrade, setQuotaRequiresUpgrade] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState(false);
 
@@ -229,12 +231,27 @@ export default function OnboardingPage() {
     router.replace('/login');
   };
 
+  const handleSignupError = (err: any, fallbackMessage: string) => {
+    const rawCode = String(err?.code ?? '');
+    const code = rawCode.startsWith('functions/') ? rawCode.replace('functions/', '') : rawCode;
+    const message = String(err?.message ?? fallbackMessage);
+    const normalizedMessage = message.toLowerCase();
+    const isQuotaError = code === 'failed-precondition' && (normalizedMessage.includes('límite') || normalizedMessage.includes('demo'));
+    const requiresUpgrade = code === 'failed-precondition' && normalizedMessage.includes('límite de organizaciones');
+
+    setQuotaBlocked(isQuotaError);
+    setQuotaRequiresUpgrade(requiresUpgrade);
+    setError(message || fallbackMessage);
+  };
+
   const runSignup = async (mode: Exclude<SignupMode, 'demo'>) => {
     if (!auth || !app) return;
 
     setLoadingAction(true);
     setError(null);
     setNotice(null);
+    setQuotaBlocked(false);
+    setQuotaRequiresUpgrade(false);
 
     try {
       let orgId = sanitizedOrgId;
@@ -319,7 +336,7 @@ export default function OnboardingPage() {
         router.replace('/');
       }
     } catch (err: any) {
-      setError(err?.message || 'No se pudo completar el alta.');
+      handleSignupError(err, 'No se pudo completar el alta.');
     } finally {
       setLoadingAction(false);
     }
@@ -331,6 +348,8 @@ export default function OnboardingPage() {
     setLoadingAction(true);
     setError(null);
     setNotice(null);
+    setQuotaBlocked(false);
+    setQuotaRequiresUpgrade(false);
 
     try {
       if (auth.currentUser && !auth.currentUser.emailVerified) {
@@ -363,7 +382,7 @@ export default function OnboardingPage() {
 
       router.replace('/');
     } catch (err: any) {
-      setError(err?.message || 'No se pudo iniciar la demo.');
+      handleSignupError(err, 'No se pudo iniciar la demo.');
     } finally {
       setLoadingAction(false);
     }
@@ -404,7 +423,19 @@ export default function OnboardingPage() {
 
             {error && (
               <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-                {error}
+                <p>{error}</p>
+                {quotaBlocked && (
+                  <div className="mt-2 space-y-2 text-xs text-muted-foreground">
+                    <p>
+                      Puedes seguir trabajando creando <b>Ubicaciones</b> dentro de tu organización actual.
+                    </p>
+                    {quotaRequiresUpgrade && (
+                      <Button variant="outline" size="sm" onClick={() => router.push('/settings')}>
+                        Actualizar plan de cuenta
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
