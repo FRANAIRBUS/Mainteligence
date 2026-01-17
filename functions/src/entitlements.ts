@@ -1,4 +1,8 @@
 import * as admin from 'firebase-admin';
+
+if (admin.apps.length === 0) {
+  admin.initializeApp();
+}
 type EntitlementPlanId = 'free' | 'starter' | 'pro' | 'enterprise';
 type EntitlementFeature = 'EXPORT_PDF' | 'AUDIT_TRAIL' | 'PREVENTIVES';
 
