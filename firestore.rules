@@ -12,13 +12,18 @@ service cloud.firestore {
     --------------------------------- */
     function isSignedIn() { return request.auth != null; }
 
+    function isValidOrgId(orgId) {
+      return orgId is string && orgId.size() > 0;
+    }
+
     function memberDoc(orgId, uid) {
       return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
     }
 
     function isActiveMember(orgId, uid) {
-      let member = memberDoc(orgId, uid);
+      let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
       return isSignedIn()
+        && member != null
         && member.data != null
         && (
           member.data.status == "active"
@@ -27,8 +32,9 @@ service cloud.firestore {
     }
 
     function hasRole(orgId, uid, roles) {
-      let member = memberDoc(orgId, uid);
+      let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
       return isSignedIn()
+        && member != null
         && member.data != null
         && (
           member.data.status == "active"
@@ -38,10 +44,11 @@ service cloud.firestore {
     }
 
     function hasScope(orgId, uid, locationId) {
-      let member = memberDoc(orgId, uid);
+      let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
       return locationId == null
         || locationId == ""
         || (
+          member != null
           member.data != null
           && (
             member.data.siteId == locationId
@@ -301,10 +308,11 @@ service cloud.firestore {
     match /tickets/{ticketId} {
       allow read: if isSignedIn()
         && isActiveMember(resource.data.organizationId, request.auth.uid);
-      allow create: if isSignedIn()
-        && isMaintenanceInOrg(request.resource.data.organizationId, request.auth.uid)
-        && hasScope(request.resource.data.organizationId, request.auth.uid, request.resource.data.siteId)
-        && hasScope(request.resource.data.organizationId, request.auth.uid, request.resource.data.departmentId);
+        allow create: if isSignedIn()
+          && isMaintenanceInOrg(request.resource.data.organizationId, request.auth.uid)
+          && isValidOrgId(request.resource.data.organizationId)
+          && hasScope(request.resource.data.organizationId, request.auth.uid, request.resource.data.siteId)
+          && hasScope(request.resource.data.organizationId, request.auth.uid, request.resource.data.departmentId);
 
       allow update: if isSignedIn()
         && isMaintenanceInOrg(resource.data.organizationId, request.auth.uid)
@@ -322,10 +330,11 @@ service cloud.firestore {
     match /tasks/{taskId} {
       allow read: if isSignedIn()
         && isActiveMember(resource.data.organizationId, request.auth.uid);
-      allow create: if isSignedIn()
-        && isMaintenanceInOrg(request.resource.data.organizationId, request.auth.uid)
-        && hasScope(request.resource.data.organizationId, request.auth.uid, request.resource.data.siteId)
-        && hasScope(request.resource.data.organizationId, request.auth.uid, request.resource.data.departmentId);
+        allow create: if isSignedIn()
+          && isMaintenanceInOrg(request.resource.data.organizationId, request.auth.uid)
+          && isValidOrgId(request.resource.data.organizationId)
+          && hasScope(request.resource.data.organizationId, request.auth.uid, request.resource.data.siteId)
+          && hasScope(request.resource.data.organizationId, request.auth.uid, request.resource.data.departmentId);
 
       allow update: if isSignedIn()
         && isMaintenanceInOrg(resource.data.organizationId, request.auth.uid)
@@ -344,7 +353,8 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && isActiveMember(resource.data.organizationId, request.auth.uid);
       allow create: if isSignedIn()
-        && isAdminInOrg(request.resource.data.organizationId, request.auth.uid);
+        && isAdminInOrg(request.resource.data.organizationId, request.auth.uid)
+        && isValidOrgId(request.resource.data.organizationId);
       allow update: if isSignedIn()
         && isAdminInOrg(resource.data.organizationId, request.auth.uid)
         && organizationIdUnchanged();
@@ -356,7 +366,8 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && isActiveMember(resource.data.organizationId, request.auth.uid);
       allow create: if isSignedIn()
-        && isAdminInOrg(request.resource.data.organizationId, request.auth.uid);
+        && isAdminInOrg(request.resource.data.organizationId, request.auth.uid)
+        && isValidOrgId(request.resource.data.organizationId);
       allow update: if isSignedIn()
         && isAdminInOrg(resource.data.organizationId, request.auth.uid)
         && organizationIdUnchanged();
@@ -368,7 +379,8 @@ service cloud.firestore {
       allow read: if isSignedIn()
         && isActiveMember(resource.data.organizationId, request.auth.uid);
       allow create: if isSignedIn()
-        && isAdminInOrg(request.resource.data.organizationId, request.auth.uid);
+        && isAdminInOrg(request.resource.data.organizationId, request.auth.uid)
+        && isValidOrgId(request.resource.data.organizationId);
       allow update: if isSignedIn()
         && isAdminInOrg(resource.data.organizationId, request.auth.uid)
         && organizationIdUnchanged();

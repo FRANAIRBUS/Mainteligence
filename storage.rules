@@ -8,24 +8,31 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function isValidOrgId(orgId) {
+      return orgId is string && orgId.size() > 0;
+    }
+
     function memberDoc(orgId, uid) {
       return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
     }
 
-    function memberExists(orgId, uid) {
-      return exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
-    }
-
     function isActiveMember(orgId, uid) {
+      if (!isValidOrgId(orgId)) {
+        return false;
+      }
+      let member = memberDoc(orgId, uid);
       return isSignedIn()
-        && memberExists(orgId, uid)
+        && member.data != null
         && (
-          memberDoc(orgId, uid).data.status == "active"
-          || memberDoc(orgId, uid).data.active == true
+          member.data.status == "active"
+          || member.data.active == true
         );
     }
 
     function ticketBelongsToOrg(orgId, ticketId) {
+      if (!isValidOrgId(orgId)) {
+        return false;
+      }
       let orgPath = /databases/$(database)/documents/organizations/$(orgId)/tickets/$(ticketId);
       if (exists(orgPath)) {
         let data = get(orgPath).data;
@@ -36,6 +43,9 @@ service firebase.storage {
     }
 
     function taskBelongsToOrg(orgId, taskId) {
+      if (!isValidOrgId(orgId)) {
+        return false;
+      }
       let orgPath = /databases/$(database)/documents/organizations/$(orgId)/tasks/$(taskId);
       if (exists(orgPath)) {
         let data = get(orgPath).data;
@@ -46,6 +56,9 @@ service firebase.storage {
     }
 
     function assetBelongsToOrg(orgId, assetId) {
+      if (!isValidOrgId(orgId)) {
+        return false;
+      }
       let orgPath = /databases/$(database)/documents/organizations/$(orgId)/assets/$(assetId);
       if (exists(orgPath)) {
         let data = get(orgPath).data;
@@ -65,12 +78,15 @@ service firebase.storage {
 
     match /orgs/{orgId}/branding/logo.png {
       allow read: if true;
-      allow write: if isSignedIn() && isActiveMember(orgId, request.auth.uid);
+      allow write: if isSignedIn()
+        && isValidOrgId(orgId)
+        && isActiveMember(orgId, request.auth.uid);
     }
 
     // 2. Fotos de Incidencias (Tickets)
     match /orgs/{orgId}/tickets/{ticketId}/{allPaths=**} {
       allow read, write: if isSignedIn()
+        && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && ticketBelongsToOrg(orgId, ticketId);
     }
@@ -78,6 +94,7 @@ service firebase.storage {
     // 3. Fotos de Tareas (Tasks)
     match /orgs/{orgId}/tasks/{taskId}/{allPaths=**} {
       allow read, write: if isSignedIn()
+        && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && taskBelongsToOrg(orgId, taskId);
     }
@@ -85,6 +102,7 @@ service firebase.storage {
     // 4. Activos (Assets)
     match /orgs/{orgId}/assets/{assetId}/{allPaths=**} {
       allow read, write: if isSignedIn()
+        && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && assetBelongsToOrg(orgId, assetId);
     }
