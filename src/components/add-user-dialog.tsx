@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirebaseApp, useUser } from '@/lib/firebase';
 import type { Department } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
@@ -105,7 +106,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       return;
     }
 
-    if (!app?.options?.projectId) {
+    if (!app) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -128,29 +129,14 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       const selectedDepartmentId =
         data.departmentId && data.departmentId !== departmentNoneValue ? data.departmentId : null;
 
-      const token = await currentUser.getIdToken();
-      const functionUrl = `https://us-central1-${app.options.projectId}.cloudfunctions.net/orgInviteUser`;
-      const response = await fetch(functionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          organizationId,
-          displayName: data.displayName,
-          email: data.email,
-          role: normalizedRole,
-          departmentId: selectedDepartmentId,
-        }),
+      const fn = httpsCallable(getFunctions(app), 'inviteUserToOrg');
+      await fn({
+        organizationId,
+        displayName: data.displayName,
+        email: data.email,
+        role: normalizedRole,
+        departmentId: selectedDepartmentId,
       });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error || 'No se pudo enviar la invitación.');
-      }
-
-      await response.json().catch(() => null);
 
       toast({
         title: 'Éxito',
@@ -159,7 +145,8 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       onOpenChange(false);
       form.reset();
     } catch (error: any) {
-      if (error.code === 'permission-denied') {
+      const errorCode = String(error?.code ?? '');
+      if (errorCode.includes('permission-denied')) {
         const permissionError = new FirestorePermissionError({
           path: `organizations/${organizationId}/joinRequests`,
           operation: 'create',
@@ -172,6 +159,12 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
           },
         });
         errorEmitter.emit('permission-error', permissionError);
+      } else if (errorCode.includes('failed-precondition')) {
+        toast({
+          variant: 'destructive',
+          title: 'No se pudo invitar',
+          description: error.message || 'No se pudo enviar la invitación.',
+        });
       } else {
         toast({
           variant: 'destructive',

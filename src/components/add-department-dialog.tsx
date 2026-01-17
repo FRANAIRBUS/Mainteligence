@@ -5,11 +5,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { collection, addDoc } from 'firebase/firestore';
-import { useFirestore, useUser } from '@/lib/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useFirebaseApp, useUser } from '@/lib/firebase';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
-import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -49,7 +48,7 @@ interface AddDepartmentDialogProps {
 
 export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogProps) {
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const app = useFirebaseApp();
   const { organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
 
@@ -62,11 +61,11 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
   });
 
   const onSubmit = async (data: AddDepartmentFormValues) => {
-    if (!firestore) {
+    if (!app) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Firestore no está disponible.',
+        description: 'Firebase no está disponible.',
       });
       return;
     }
@@ -76,8 +75,8 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
       if (!organizationId) {
         throw new Error('Critical: Missing organizationId in transaction');
       }
-      const collectionRef = collection(firestore, 'departments');
-      await addDoc(collectionRef, { ...data, organizationId });
+      const fn = httpsCallable(getFunctions(app), 'createDepartment');
+      await fn({ organizationId, payload: data });
       toast({
         title: 'Éxito',
         description: `Departamento '${data.name}' creado correctamente.`,
@@ -85,13 +84,20 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
       onOpenChange(false);
       form.reset();
     } catch (error: any) {
-      if (error.code === 'permission-denied') {
+      const errorCode = String(error?.code ?? '');
+      if (errorCode.includes('permission-denied')) {
         const permissionError = new FirestorePermissionError({
           path: 'departments',
           operation: 'create',
           requestResourceData: data,
         });
         errorEmitter.emit('permission-error', permissionError);
+      } else if (errorCode.includes('failed-precondition')) {
+        toast({
+          variant: 'destructive',
+          title: 'Límite alcanzado',
+          description: error.message || 'No es posible crear más departamentos con tu plan actual.',
+        });
       } else {
         toast({
           variant: 'destructive',
