@@ -49,7 +49,7 @@ service cloud.firestore {
         || locationId == ""
         || (
           member != null
-          member.data != null
+          && member.data != null
           && (
             member.data.siteId == locationId
             || member.data.departmentId == locationId
