@@ -52,6 +52,14 @@ type Entitlement = {
   usage: EntitlementUsage;
 };
 
+type BillingProviderEntitlement = {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp;
+  currentPeriodEnd?: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
+};
+
 const DEFAULT_ACCOUNT_PLAN: AccountPlan = 'free';
 const DEFAULT_ENTERPRISE_LIMIT = 10;
 const CREATED_ORG_LIMITS: Record<AccountPlan, number> = {
