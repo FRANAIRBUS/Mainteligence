@@ -175,6 +175,11 @@ const ALLOWED_CORS_ORIGINS = new Set([
 ]);
 
 const STRIPE_API_VERSION = '2023-10-16';
+const GOOGLE_TOKEN_AUDIENCE = 'https://oauth2.googleapis.com/token';
+const GOOGLE_PLAY_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
+const GOOGLE_TOKEN_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
+const GOOGLE_JWT_ALG = 'RS256';
+const GOOGLE_JWT_TYP = 'JWT';
 
 function resolveStripeConfig() {
   const secretKey = functions.config().stripe?.secret_key ?? process.env.STRIPE_SECRET_KEY;
@@ -185,6 +190,24 @@ function resolveStripeConfig() {
   }
 
   return { secretKey, webhookSecret };
+}
+
+function resolveGooglePlayConfig() {
+  const clientEmail = functions.config().google_play?.client_email ?? process.env.GOOGLE_PLAY_CLIENT_EMAIL;
+  const privateKey =
+    functions.config().google_play?.private_key ?? process.env.GOOGLE_PLAY_PRIVATE_KEY;
+  const packageName =
+    functions.config().google_play?.package_name ?? process.env.GOOGLE_PLAY_PACKAGE_NAME;
+
+  if (!clientEmail || !privateKey) {
+    throw new Error('Google Play config missing: set google_play.client_email and google_play.private_key.');
+  }
+
+  return {
+    clientEmail,
+    privateKey: privateKey.replace(/\\n/g, '\n'),
+    packageName: packageName ?? '',
+  };
 }
 
 type StripeEvent = {
@@ -205,6 +228,33 @@ type StripeSubscription = {
 type StripeCheckoutSession = {
   metadata?: Record<string, string | null | undefined>;
   subscription?: string | { id: string };
+};
+
+type GooglePlayPurchaseRecord = {
+  organizationId?: string;
+  subscriptionId?: string;
+  packageName?: string;
+  planId?: EntitlementPlanId;
+};
+
+type GooglePlayRtdnMessage = {
+  version?: string;
+  packageName?: string;
+  eventTimeMillis?: string;
+  subscriptionNotification?: {
+    version?: string;
+    notificationType?: number;
+    purchaseToken?: string;
+    subscriptionId?: string;
+  };
+};
+
+type GooglePlaySubscription = {
+  expiryTimeMillis?: string;
+  paymentState?: number;
+  cancelReason?: number;
+  userCancellationTimeMillis?: string;
+  autoRenewing?: boolean;
 };
 
 function resolveEntitlementStatusFromStripe(status: string): EntitlementStatus {
@@ -243,6 +293,35 @@ function resolveEntitlementPlanId({
   return 'free';
 }
 
+function resolveEntitlementStatusFromGooglePlay(subscription: GooglePlaySubscription): EntitlementStatus {
+  const now = Date.now();
+  const expiryMs = subscription.expiryTimeMillis ? Number(subscription.expiryTimeMillis) : 0;
+  if (Number.isFinite(expiryMs) && expiryMs > 0 && expiryMs <= now) {
+    return 'canceled';
+  }
+
+  if (subscription.paymentState === 2) {
+    return 'trialing';
+  }
+
+  if (subscription.paymentState === 0) {
+    return 'past_due';
+  }
+
+  if (subscription.cancelReason != null && subscription.autoRenewing === false) {
+    return 'past_due';
+  }
+
+  return 'active';
+}
+
+function toTimestampFromMillis(value?: string | number | null): admin.firestore.Timestamp | null {
+  if (value == null) return null;
+  const millis = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(millis) || millis <= 0) return null;
+  return admin.firestore.Timestamp.fromMillis(millis);
+}
+
 function verifyStripeSignature({
   payload,
   signatureHeader,
@@ -270,6 +349,89 @@ function verifyStripeSignature({
     const signatureBuffer = Buffer.from(signature, 'utf8');
     if (signatureBuffer.length !== expectedBuffer.length) return false;
     return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+  });
+}
+
+function base64UrlEncode(input: string | Buffer) {
+  const buffer = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
+  return buffer
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+let googlePlayTokenCache: { accessToken: string; expiresAt: number } | null = null;
+
+async function fetchGooglePlayAccessToken(): Promise<string> {
+  if (googlePlayTokenCache && googlePlayTokenCache.expiresAt > Date.now() + 60_000) {
+    return googlePlayTokenCache.accessToken;
+  }
+
+  const { clientEmail, privateKey } = resolveGooglePlayConfig();
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const header = base64UrlEncode(JSON.stringify({ alg: GOOGLE_JWT_ALG, typ: GOOGLE_JWT_TYP }));
+  const payload = base64UrlEncode(
+    JSON.stringify({
+      iss: clientEmail,
+      scope: GOOGLE_PLAY_SCOPE,
+      aud: GOOGLE_TOKEN_AUDIENCE,
+      iat: nowSeconds,
+      exp: nowSeconds + 3600,
+    })
+  );
+  const unsignedJwt = `${header}.${payload}`;
+  const signature = crypto.createSign('RSA-SHA256').update(unsignedJwt).sign(privateKey);
+  const assertion = `${unsignedJwt}.${base64UrlEncode(signature)}`;
+
+  return new Promise((resolve, reject) => {
+    const body = `grant_type=${encodeURIComponent(GOOGLE_TOKEN_GRANT_TYPE)}&assertion=${encodeURIComponent(
+      assertion
+    )}`;
+    const req = https.request(
+      {
+        hostname: 'oauth2.googleapis.com',
+        path: '/token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          const responseBody = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const parsed = JSON.parse(responseBody) as { access_token?: string; expires_in?: number };
+              if (!parsed.access_token) {
+                reject(new Error('Google Play access token missing.'));
+                return;
+              }
+              googlePlayTokenCache = {
+                accessToken: parsed.access_token,
+                expiresAt: Date.now() + (Number(parsed.expires_in ?? 3600) - 30) * 1000,
+              };
+              resolve(parsed.access_token);
+            } catch (error) {
+              reject(error);
+            }
+            return;
+          }
+          reject(new Error(`Google Play token fetch failed: ${res.statusCode ?? 'unknown'} ${responseBody}`));
+        });
+      }
+    );
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+    req.write(body);
+    req.end();
   });
 }
 
@@ -301,6 +463,52 @@ async function fetchStripeSubscription(subscriptionId: string, secretKey: string
             return;
           }
           reject(new Error(`Stripe subscription fetch failed: ${res.statusCode ?? 'unknown'} ${body}`));
+        });
+      }
+    );
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+    req.end();
+  });
+}
+
+async function fetchGooglePlaySubscription(params: {
+  packageName: string;
+  subscriptionId: string;
+  purchaseToken: string;
+}): Promise<GooglePlaySubscription> {
+  const accessToken = await fetchGooglePlayAccessToken();
+  const { packageName, subscriptionId, purchaseToken } = params;
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'androidpublisher.googleapis.com',
+        path: `/androidpublisher/v3/applications/${encodeURIComponent(
+          packageName
+        )}/purchases/subscriptions/${encodeURIComponent(subscriptionId)}/tokens/${encodeURIComponent(purchaseToken)}`,
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(body) as GooglePlaySubscription);
+            } catch (error) {
+              reject(error);
+            }
+            return;
+          }
+          reject(new Error(`Google Play subscription fetch failed: ${res.statusCode ?? 'unknown'} ${body}`));
         });
       }
     );
@@ -382,6 +590,75 @@ async function updateOrganizationStripeEntitlement({
   });
 }
 
+async function updateOrganizationGooglePlayEntitlement({
+  orgId,
+  planId,
+  status,
+  trialEndsAt,
+  currentPeriodEnd,
+}: {
+  orgId: string;
+  planId?: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp | null;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+}) {
+  const orgRef = db.collection('organizations').doc(orgId);
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new Error(`Organization ${orgId} not found.`);
+    }
+
+    const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+    const entitlement = orgData?.entitlement;
+    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const resolvedPlanId = resolveEntitlementPlanId({
+      metadataPlanId: planId ?? null,
+      fallbackPlanId: entitlement?.planId,
+    });
+
+    const entitlementPayload = buildEntitlementPayload({
+      planId: resolvedPlanId,
+      status,
+      trialEndsAt,
+      currentPeriodEnd,
+      provider: 'google_play',
+      now,
+      limits,
+      usage,
+    });
+
+    const billingProviderPayload: Record<string, unknown> = {
+      planId: resolvedPlanId,
+      status,
+      updatedAt: now,
+    };
+
+    if (trialEndsAt) {
+      billingProviderPayload.trialEndsAt = trialEndsAt;
+    }
+
+    if (currentPeriodEnd) {
+      billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
+    }
+
+    tx.set(
+      orgRef,
+      {
+        entitlement: entitlementPayload,
+        billingProviders: {
+          google_play: billingProviderPayload,
+        },
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  });
+}
 function applyCors(req: Request, res: Response): boolean {
   const origin = String(req.headers.origin ?? '');
   if (origin && ALLOWED_CORS_ORIGINS.has(origin)) {
@@ -3301,6 +3578,143 @@ export const demoteToAdminWithinOrg = functions.https.onCall(async (data, contex
   const targetUid = await resolveTargetUidByEmailOrUid(data?.email, data?.uid);
 
   return setRoleWithinOrgImpl({ actorUid, actorEmail, isRoot, orgId, targetUid, role: 'admin' });
+});
+
+export const registerGooglePlayPurchase = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = String(data?.organizationId ?? '').trim();
+  const purchaseToken = String(data?.purchaseToken ?? '').trim();
+  const subscriptionId = String(data?.subscriptionId ?? '').trim();
+  const planIdRaw = String(data?.planId ?? '').trim();
+  const packageNameRaw = String(data?.packageName ?? '').trim();
+
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!purchaseToken) throw httpsError('invalid-argument', 'purchaseToken requerido.');
+  if (!subscriptionId) throw httpsError('invalid-argument', 'subscriptionId requerido.');
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  const { packageName: configPackageName } = resolveGooglePlayConfig();
+  const packageName = packageNameRaw || configPackageName;
+  if (!packageName) throw httpsError('invalid-argument', 'packageName requerido.');
+
+  const resolvedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: planIdRaw || null,
+  });
+
+  const purchaseRef = db.collection('googlePlayPurchases').doc(purchaseToken);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(purchaseRef);
+    const payload: Record<string, unknown> = {
+      organizationId: orgId,
+      subscriptionId,
+      packageName,
+      planId: resolvedPlanId,
+      updatedAt: now,
+      linkedBy: actorUid,
+      source: 'registerGooglePlayPurchase_v1',
+    };
+    if (!snap.exists) {
+      payload.createdAt = now;
+    }
+    tx.set(purchaseRef, payload, { merge: true });
+  });
+
+  await auditLog({
+    action: 'registerGooglePlayPurchase',
+    actorUid,
+    actorEmail,
+    orgId,
+    meta: { purchaseToken, subscriptionId, packageName, planId: resolvedPlanId },
+  });
+
+  return { ok: true, organizationId: orgId, purchaseToken };
+});
+
+export const googlePlayRtdn = functions.pubsub.topic('google-play-rtdn').onPublish(async (message) => {
+  const rawData = message.data ? Buffer.from(message.data, 'base64').toString('utf8') : '';
+  if (!rawData) {
+    console.warn('googlePlayRtdn: empty payload');
+    return;
+  }
+
+  let payload: GooglePlayRtdnMessage;
+  try {
+    payload = JSON.parse(rawData) as GooglePlayRtdnMessage;
+  } catch (error) {
+    console.error('googlePlayRtdn: invalid JSON', error);
+    return;
+  }
+
+  const notification = payload.subscriptionNotification;
+  if (!notification) {
+    console.warn('googlePlayRtdn: missing subscriptionNotification');
+    return;
+  }
+
+  const purchaseToken = String(notification.purchaseToken ?? '').trim();
+  const subscriptionId = String(notification.subscriptionId ?? '').trim();
+  if (!purchaseToken || !subscriptionId) {
+    console.warn('googlePlayRtdn: missing purchaseToken or subscriptionId');
+    return;
+  }
+
+  const purchaseSnap = await db.collection('googlePlayPurchases').doc(purchaseToken).get();
+  if (!purchaseSnap.exists) {
+    console.warn('googlePlayRtdn: purchase token not registered', { purchaseToken });
+    return;
+  }
+
+  const purchaseData = purchaseSnap.data() as GooglePlayPurchaseRecord | undefined;
+  const orgId = String(purchaseData?.organizationId ?? '').trim();
+  if (!orgId) {
+    console.warn('googlePlayRtdn: purchase token without org', { purchaseToken });
+    return;
+  }
+
+  const { packageName: configPackageName } = resolveGooglePlayConfig();
+  const packageName = String(
+    purchaseData?.packageName ?? payload.packageName ?? configPackageName ?? ''
+  ).trim();
+  if (!packageName) {
+    console.warn('googlePlayRtdn: missing packageName', { purchaseToken });
+    return;
+  }
+
+  const subscription = await fetchGooglePlaySubscription({
+    packageName,
+    subscriptionId,
+    purchaseToken,
+  });
+
+  const status = resolveEntitlementStatusFromGooglePlay(subscription);
+  const currentPeriodEnd = toTimestampFromMillis(subscription.expiryTimeMillis);
+  const trialEndsAt = status === 'trialing' ? currentPeriodEnd : null;
+
+  await updateOrganizationGooglePlayEntitlement({
+    orgId,
+    planId: purchaseData?.planId,
+    status,
+    trialEndsAt,
+    currentPeriodEnd,
+  });
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db
+    .collection('googlePlayPurchases')
+    .doc(purchaseToken)
+    .set(
+      {
+        lastNotificationType: notification.notificationType ?? null,
+        lastEventTime: toTimestampFromMillis(payload.eventTimeMillis),
+        updatedAt: now,
+        source: 'googlePlayRtdn_v1',
+      },
+      { merge: true }
+    );
 });
 
 export const stripeWebhook = functions.https.onRequest(async (req, res) => {
