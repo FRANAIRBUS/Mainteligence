@@ -60,6 +60,8 @@ type BillingProviderEntitlement = {
   trialEndsAt?: admin.firestore.Timestamp;
   currentPeriodEnd?: admin.firestore.Timestamp;
   updatedAt: admin.firestore.Timestamp;
+  conflict?: boolean;
+  conflictReason?: string;
 };
 
 const DEFAULT_ACCOUNT_PLAN: AccountPlan = 'free';
@@ -368,6 +370,32 @@ function resolveEntitlementStatusFromApple(notificationType?: string, renewal?: 
   }
 }
 
+function shouldBlockProviderUpdate(entitlement: Entitlement | undefined, incomingProvider: EntitlementProvider): boolean {
+  if (!entitlement?.provider) return false;
+  if (entitlement.provider === incomingProvider) return false;
+  return entitlement.status === 'active' || entitlement.status === 'trialing';
+}
+
+function buildConflictPayload({
+  planId,
+  status,
+  now,
+  reason,
+}: {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  now: admin.firestore.FieldValue;
+  reason: string;
+}): Record<string, unknown> {
+  return {
+    planId,
+    status,
+    updatedAt: now,
+    conflict: true,
+    conflictReason: reason,
+  };
+}
+
 function toTimestampFromMillis(value?: string | number | null): admin.firestore.Timestamp | null {
   if (value == null) return null;
   const millis = typeof value === 'string' ? Number(value) : value;
@@ -619,22 +647,19 @@ async function updateOrganizationStripeEntitlement({
       fallbackPlanId: entitlement?.planId,
     });
 
-    const entitlementPayload = buildEntitlementPayload({
-      planId: resolvedPlanId,
-      status,
-      trialEndsAt,
-      currentPeriodEnd,
-      provider: 'stripe',
-      now,
-      limits,
-      usage,
-    });
-
-    const billingProviderPayload: Record<string, unknown> = {
-      planId: resolvedPlanId,
-      status,
-      updatedAt: now,
-    };
+    const shouldBlock = shouldBlockProviderUpdate(entitlement, 'stripe');
+    const billingProviderPayload: Record<string, unknown> = shouldBlock
+      ? buildConflictPayload({
+          planId: resolvedPlanId,
+          status,
+          now,
+          reason: `active_provider_${entitlement?.provider ?? 'unknown'}`,
+        })
+      : {
+          planId: resolvedPlanId,
+          status,
+          updatedAt: now,
+        };
 
     if (trialEndsAt) {
       billingProviderPayload.trialEndsAt = trialEndsAt;
@@ -644,17 +669,27 @@ async function updateOrganizationStripeEntitlement({
       billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
     }
 
-    tx.set(
-      orgRef,
-      {
-        entitlement: entitlementPayload,
-        billingProviders: {
-          stripe: billingProviderPayload,
-        },
-        updatedAt: now,
+    const updatePayload: Record<string, unknown> = {
+      billingProviders: {
+        stripe: billingProviderPayload,
       },
-      { merge: true }
-    );
+      updatedAt: now,
+    };
+
+    if (!shouldBlock) {
+      updatePayload.entitlement = buildEntitlementPayload({
+        planId: resolvedPlanId,
+        status,
+        trialEndsAt,
+        currentPeriodEnd,
+        provider: 'stripe',
+        now,
+        limits,
+        usage,
+      });
+    }
+
+    tx.set(orgRef, updatePayload, { merge: true });
   });
 }
 
@@ -689,22 +724,19 @@ async function updateOrganizationGooglePlayEntitlement({
       fallbackPlanId: entitlement?.planId,
     });
 
-    const entitlementPayload = buildEntitlementPayload({
-      planId: resolvedPlanId,
-      status,
-      trialEndsAt,
-      currentPeriodEnd,
-      provider: 'google_play',
-      now,
-      limits,
-      usage,
-    });
-
-    const billingProviderPayload: Record<string, unknown> = {
-      planId: resolvedPlanId,
-      status,
-      updatedAt: now,
-    };
+    const shouldBlock = shouldBlockProviderUpdate(entitlement, 'google_play');
+    const billingProviderPayload: Record<string, unknown> = shouldBlock
+      ? buildConflictPayload({
+          planId: resolvedPlanId,
+          status,
+          now,
+          reason: `active_provider_${entitlement?.provider ?? 'unknown'}`,
+        })
+      : {
+          planId: resolvedPlanId,
+          status,
+          updatedAt: now,
+        };
 
     if (trialEndsAt) {
       billingProviderPayload.trialEndsAt = trialEndsAt;
@@ -714,17 +746,27 @@ async function updateOrganizationGooglePlayEntitlement({
       billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
     }
 
-    tx.set(
-      orgRef,
-      {
-        entitlement: entitlementPayload,
-        billingProviders: {
-          google_play: billingProviderPayload,
-        },
-        updatedAt: now,
+    const updatePayload: Record<string, unknown> = {
+      billingProviders: {
+        google_play: billingProviderPayload,
       },
-      { merge: true }
-    );
+      updatedAt: now,
+    };
+
+    if (!shouldBlock) {
+      updatePayload.entitlement = buildEntitlementPayload({
+        planId: resolvedPlanId,
+        status,
+        trialEndsAt,
+        currentPeriodEnd,
+        provider: 'google_play',
+        now,
+        limits,
+        usage,
+      });
+    }
+
+    tx.set(orgRef, updatePayload, { merge: true });
   });
 }
 function applyCors(req: Request, res: Response): boolean {
@@ -901,37 +943,44 @@ async function updateOrganizationAppleEntitlement({
       fallbackPlanId: entitlement?.planId,
     });
 
-    const entitlementPayload = buildEntitlementPayload({
-      planId: resolvedPlanId,
-      status,
-      currentPeriodEnd,
-      provider: 'apple_app_store',
-      now,
-      limits,
-      usage,
-    });
-
-    const billingProviderPayload: Record<string, unknown> = {
-      planId: resolvedPlanId,
-      status,
-      updatedAt: now,
-    };
+    const shouldBlock = shouldBlockProviderUpdate(entitlement, 'apple_app_store');
+    const billingProviderPayload: Record<string, unknown> = shouldBlock
+      ? buildConflictPayload({
+          planId: resolvedPlanId,
+          status,
+          now,
+          reason: `active_provider_${entitlement?.provider ?? 'unknown'}`,
+        })
+      : {
+          planId: resolvedPlanId,
+          status,
+          updatedAt: now,
+        };
 
     if (currentPeriodEnd) {
       billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
     }
 
-    tx.set(
-      orgRef,
-      {
-        entitlement: entitlementPayload,
-        billingProviders: {
-          apple_app_store: billingProviderPayload,
-        },
-        updatedAt: now,
+    const updatePayload: Record<string, unknown> = {
+      billingProviders: {
+        apple_app_store: billingProviderPayload,
       },
-      { merge: true }
-    );
+      updatedAt: now,
+    };
+
+    if (!shouldBlock) {
+      updatePayload.entitlement = buildEntitlementPayload({
+        planId: resolvedPlanId,
+        status,
+        currentPeriodEnd,
+        provider: 'apple_app_store',
+        now,
+        limits,
+        usage,
+      });
+    }
+
+    tx.set(orgRef, updatePayload, { merge: true });
   });
 }
 

@@ -41,6 +41,8 @@ type BillingProviderEntitlement = {
   trialEndsAt?: admin.firestore.Timestamp;
   currentPeriodEnd?: admin.firestore.Timestamp;
   updatedAt: admin.firestore.Timestamp;
+  conflict?: boolean;
+  conflictReason?: string;
 };
 
 type Organization = {

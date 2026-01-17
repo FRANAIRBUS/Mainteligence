@@ -52,6 +52,8 @@ export interface BillingProviderEntitlement {
   trialEndsAt?: Timestamp;
   currentPeriodEnd?: Timestamp;
   updatedAt: Timestamp;
+  conflict?: boolean;
+  conflictReason?: string;
 }
 
 export interface PlanCatalogEntry {
