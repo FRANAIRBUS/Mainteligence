@@ -149,8 +149,7 @@ service cloud.firestore {
     --------------------------------- */
     match /memberships/{membershipId} {
       allow read: if isSignedIn()
-        && resource.data.userId == request.auth.uid
-        && isActiveMember(resource.data.organizationId, request.auth.uid);
+        && resource.data.userId == request.auth.uid;
       allow create, update, delete: if false;
     }
 
