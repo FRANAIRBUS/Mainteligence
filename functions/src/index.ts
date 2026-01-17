@@ -4,8 +4,9 @@ import type { Request, Response } from 'express';
 import { sendAssignmentEmail } from './assignment-email';
 import { sendInviteEmail } from './invite-email';
 import { canCreate, isFeatureEnabled } from './entitlements';
-import crypto from 'crypto';
-import https from 'https';
+import * as crypto from 'crypto';
+import * as https from 'https';
+import type { IncomingMessage } from 'http';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -183,11 +184,16 @@ const GOOGLE_TOKEN_GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 const GOOGLE_JWT_ALG = 'RS256';
 const GOOGLE_JWT_TYP = 'JWT';
 const APPLE_UPDATES_ENABLED =
-  (functions.config().apple_app_store?.apply_updates ?? process.env.APPLE_APP_STORE_APPLY_UPDATES) === 'true';
+  (getRuntimeConfig().apple_app_store?.apply_updates ?? process.env.APPLE_APP_STORE_APPLY_UPDATES) === 'true';
+
+function getRuntimeConfig(): Record<string, any> {
+  return (functions as unknown as { config: () => Record<string, any> }).config();
+}
 
 function resolveStripeConfig() {
-  const secretKey = functions.config().stripe?.secret_key ?? process.env.STRIPE_SECRET_KEY;
-  const webhookSecret = functions.config().stripe?.webhook_secret ?? process.env.STRIPE_WEBHOOK_SECRET;
+  const config = getRuntimeConfig();
+  const secretKey = config.stripe?.secret_key ?? process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = config.stripe?.webhook_secret ?? process.env.STRIPE_WEBHOOK_SECRET;
 
   if (!secretKey || !webhookSecret) {
     throw new Error('Stripe config missing: set stripe.secret_key and stripe.webhook_secret.');
@@ -197,11 +203,12 @@ function resolveStripeConfig() {
 }
 
 function resolveGooglePlayConfig() {
-  const clientEmail = functions.config().google_play?.client_email ?? process.env.GOOGLE_PLAY_CLIENT_EMAIL;
+  const config = getRuntimeConfig();
+  const clientEmail = config.google_play?.client_email ?? process.env.GOOGLE_PLAY_CLIENT_EMAIL;
   const privateKey =
-    functions.config().google_play?.private_key ?? process.env.GOOGLE_PLAY_PRIVATE_KEY;
+    config.google_play?.private_key ?? process.env.GOOGLE_PLAY_PRIVATE_KEY;
   const packageName =
-    functions.config().google_play?.package_name ?? process.env.GOOGLE_PLAY_PACKAGE_NAME;
+    config.google_play?.package_name ?? process.env.GOOGLE_PLAY_PACKAGE_NAME;
 
   if (!clientEmail || !privateKey) {
     throw new Error('Google Play config missing: set google_play.client_email and google_play.private_key.');
@@ -215,8 +222,8 @@ function resolveGooglePlayConfig() {
 }
 
 function resolveAppleAppStoreConfig() {
-  const bundleId =
-    functions.config().apple_app_store?.bundle_id ?? process.env.APPLE_APP_STORE_BUNDLE_ID ?? '';
+  const config = getRuntimeConfig();
+  const bundleId = config.apple_app_store?.bundle_id ?? process.env.APPLE_APP_STORE_BUNDLE_ID ?? '';
 
   return {
     bundleId,
@@ -494,9 +501,9 @@ async function fetchGooglePlayAccessToken(): Promise<string> {
           'Content-Length': Buffer.byteLength(body),
         },
       },
-      (res) => {
+      (res: IncomingMessage) => {
         const chunks: Buffer[] = [];
-        res.on('data', (chunk) => {
+        res.on('data', (chunk: Buffer) => {
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         });
         res.on('end', () => {
@@ -523,7 +530,7 @@ async function fetchGooglePlayAccessToken(): Promise<string> {
       }
     );
 
-    req.on('error', (error) => {
+    req.on('error', (error: Error) => {
       reject(error);
     });
     req.write(body);
@@ -543,9 +550,9 @@ async function fetchStripeSubscription(subscriptionId: string, secretKey: string
           'Stripe-Version': STRIPE_API_VERSION,
         },
       },
-      (res) => {
+      (res: IncomingMessage) => {
         const chunks: Buffer[] = [];
-        res.on('data', (chunk) => {
+        res.on('data', (chunk: Buffer) => {
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         });
         res.on('end', () => {
@@ -563,7 +570,7 @@ async function fetchStripeSubscription(subscriptionId: string, secretKey: string
       }
     );
 
-    req.on('error', (error) => {
+    req.on('error', (error: Error) => {
       reject(error);
     });
     req.end();
@@ -589,9 +596,9 @@ async function fetchGooglePlaySubscription(params: {
           Authorization: `Bearer ${accessToken}`,
         },
       },
-      (res) => {
+      (res: IncomingMessage) => {
         const chunks: Buffer[] = [];
-        res.on('data', (chunk) => {
+        res.on('data', (chunk: Buffer) => {
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         });
         res.on('end', () => {
@@ -609,7 +616,7 @@ async function fetchGooglePlaySubscription(params: {
       }
     );
 
-    req.on('error', (error) => {
+    req.on('error', (error: Error) => {
       reject(error);
     });
     req.end();
