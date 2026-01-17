@@ -35,8 +35,21 @@ type Entitlement = {
   usage: EntitlementUsage;
 };
 
+type BillingProviderEntitlement = {
+  planId: EntitlementPlanId;
+  status: 'trialing' | 'active' | 'past_due' | 'canceled';
+  trialEndsAt?: admin.firestore.Timestamp;
+  currentPeriodEnd?: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
+  conflict?: boolean;
+  conflictReason?: string;
+};
+
 type Organization = {
   entitlement?: Entitlement;
+  billingProviders?: Partial<
+    Record<'stripe' | 'google_play' | 'apple_app_store' | 'manual', BillingProviderEntitlement>
+  >;
 };
 
 type PlanCatalogEntry = {
