@@ -16,37 +16,38 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
     }
 
-    function memberExists(orgId, uid) {
-      return exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
-    }
-
     function isActiveMember(orgId, uid) {
+      let member = memberDoc(orgId, uid);
       return isSignedIn()
-        && memberExists(orgId, uid)
+        && member.data != null
         && (
-          memberDoc(orgId, uid).data.status == "active"
-          || memberDoc(orgId, uid).data.active == true
+          member.data.status == "active"
+          || member.data.active == true
         );
     }
 
-    function roleInOrg(orgId, uid) {
-      return memberExists(orgId, uid) ? memberDoc(orgId, uid).data.role : null;
-    }
-
     function hasRole(orgId, uid, roles) {
-      return isActiveMember(orgId, uid) && roleInOrg(orgId, uid) in roles;
+      let member = memberDoc(orgId, uid);
+      return isSignedIn()
+        && member.data != null
+        && (
+          member.data.status == "active"
+          || member.data.active == true
+        )
+        && member.data.role in roles;
     }
 
     function hasScope(orgId, uid, locationId) {
+      let member = memberDoc(orgId, uid);
       return locationId == null
         || locationId == ""
         || (
-          memberExists(orgId, uid)
+          member.data != null
           && (
-            memberDoc(orgId, uid).data.siteId == locationId
-            || memberDoc(orgId, uid).data.departmentId == locationId
-            || locationId in (memberDoc(orgId, uid).data.siteIds != null ? memberDoc(orgId, uid).data.siteIds : [])
-            || locationId in (memberDoc(orgId, uid).data.departmentIds != null ? memberDoc(orgId, uid).data.departmentIds : [])
+            member.data.siteId == locationId
+            || member.data.departmentId == locationId
+            || locationId in (member.data.siteIds != null ? member.data.siteIds : [])
+            || locationId in (member.data.departmentIds != null ? member.data.departmentIds : [])
           )
         );
     }
@@ -252,6 +253,12 @@ service cloud.firestore {
 
       // Members snapshot (operational listing)
       match /members/{memberUid} {
+        allow read: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+        allow create, update, delete: if false;
+      }
+
+      // Billing providers are server-only (no client read/write).
+      match /billingProviders/{providerId} {
         allow read: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
         allow create, update, delete: if false;
       }
