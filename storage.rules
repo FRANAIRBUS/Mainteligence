@@ -34,12 +34,7 @@ service firebase.storage {
         return false;
       }
       let orgPath = /databases/$(database)/documents/organizations/$(orgId)/tickets/$(ticketId);
-      if (exists(orgPath)) {
-        let data = get(orgPath).data;
-        return data.organizationId == null || data.organizationId == orgId;
-      }
-      let legacyPath = /databases/$(database)/documents/tickets/$(ticketId);
-      return exists(legacyPath) && get(legacyPath).data.organizationId == orgId;
+      return exists(orgPath) && get(orgPath).data.organizationId == orgId;
     }
 
     function taskBelongsToOrg(orgId, taskId) {
@@ -47,12 +42,7 @@ service firebase.storage {
         return false;
       }
       let orgPath = /databases/$(database)/documents/organizations/$(orgId)/tasks/$(taskId);
-      if (exists(orgPath)) {
-        let data = get(orgPath).data;
-        return data.organizationId == null || data.organizationId == orgId;
-      }
-      let legacyPath = /databases/$(database)/documents/tasks/$(taskId);
-      return exists(legacyPath) && get(legacyPath).data.organizationId == orgId;
+      return exists(orgPath) && get(orgPath).data.organizationId == orgId;
     }
 
     function assetBelongsToOrg(orgId, assetId) {
@@ -60,22 +50,12 @@ service firebase.storage {
         return false;
       }
       let orgPath = /databases/$(database)/documents/organizations/$(orgId)/assets/$(assetId);
-      if (exists(orgPath)) {
-        let data = get(orgPath).data;
-        return data.organizationId == null || data.organizationId == orgId;
-      }
-      let legacyPath = /databases/$(database)/documents/assets/$(assetId);
-      return exists(legacyPath) && get(legacyPath).data.organizationId == orgId;
+      return exists(orgPath) && get(orgPath).data.organizationId == orgId;
     }
 
     // --- REGLAS DE CARPETAS ---
 
-    // 1. Logo de la empresa (legacy public read)
-    match /branding/logo.png {
-      allow read: if true;
-      allow write: if false;
-    }
-
+    // 1. Logo de la empresa
     match /orgs/{orgId}/branding/logo.png {
       allow read: if true;
       allow write: if isSignedIn()
@@ -105,28 +85,6 @@ service firebase.storage {
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && assetBelongsToOrg(orgId, assetId);
-    }
-
-    // Legacy paths (read-only during migration)
-    match /tickets/{ticketId}/{allPaths=**} {
-      allow read: if isSignedIn()
-        && exists(/databases/$(database)/documents/tickets/$(ticketId))
-        && isActiveMember(get(/databases/$(database)/documents/tickets/$(ticketId)).data.organizationId, request.auth.uid);
-      allow write: if false;
-    }
-
-    match /tasks/{taskId}/{allPaths=**} {
-      allow read: if isSignedIn()
-        && exists(/databases/$(database)/documents/tasks/$(taskId))
-        && isActiveMember(get(/databases/$(database)/documents/tasks/$(taskId)).data.organizationId, request.auth.uid);
-      allow write: if false;
-    }
-
-    match /assets/{assetId}/{allPaths=**} {
-      allow read: if isSignedIn()
-        && exists(/databases/$(database)/documents/assets/$(assetId))
-        && isActiveMember(get(/databases/$(database)/documents/assets/$(assetId)).data.organizationId, request.auth.uid);
-      allow write: if false;
     }
 
     // 5. Avatares de usuario
