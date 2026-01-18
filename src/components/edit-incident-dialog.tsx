@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useFirestore, useUser, useDoc } from '@/lib/firebase';
-import type { Ticket, User, Department } from '@/lib/firebase/models';
+import type { Ticket, User, Department, OrganizationMember } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { getTicketPermissions } from '@/lib/rbac';
@@ -53,7 +53,7 @@ interface EditIncidentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ticket: Ticket;
-  users: User[];
+  users: OrganizationMember[];
   departments: Department[];
 }
 

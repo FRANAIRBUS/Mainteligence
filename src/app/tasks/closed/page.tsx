@@ -25,7 +25,7 @@ import {
   useUser,
 } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
-import type { Department, User } from "@/lib/firebase/models";
+import type { Department, OrganizationMember, User } from "@/lib/firebase/models";
 import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
@@ -77,7 +77,9 @@ export default function ClosedTasksPage() {
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
   );
-  const { data: users } = useCollection<User>("users");
+  const { data: users } = useCollection<OrganizationMember>(
+    organizationId ? orgCollectionPath(organizationId, "members") : null
+  );
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("todas");
   const [departmentFilter, setDepartmentFilter] = useState("todas");

@@ -9,7 +9,7 @@ import { TaskForm, type TaskFormValues } from "@/components/task-form";
 import { useAuth, useCollection, useFirestore, useUser } from "@/lib/firebase";
 import { createTask } from "@/lib/firestore-tasks";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
-import type { Department, User } from "@/lib/firebase/models";
+import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { orgCollectionPath } from "@/lib/organization";
 
@@ -28,7 +28,9 @@ export default function NewTaskPage() {
   const firestore = useFirestore();
   const auth = useAuth();
   const { user, loading: userLoading, organizationId } = useUser();
-  const { data: users } = useCollection<User>("users");
+  const { data: users } = useCollection<OrganizationMember>(
+    organizationId ? orgCollectionPath(organizationId, "members") : null
+  );
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
   );

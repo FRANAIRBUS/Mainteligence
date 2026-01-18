@@ -57,7 +57,7 @@ type AddIncidentFormValues = z.infer<typeof formSchema>;
 
 export interface AddIncidentFormProps {
   onCancel?: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (payload: { title: string }) => void;
 }
 
 export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
@@ -138,11 +138,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
       await addDoc(collectionRef, docData);
 
-      toast({
-        title: 'Éxito',
-        description: `Incidencia '${data.title}' creada correctamente.`,
-      });
-      onSuccess?.();
+      onSuccess?.({ title: data.title });
       form.reset();
       setPhotos([]);
     } catch (error: any) {

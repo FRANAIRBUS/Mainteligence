@@ -20,7 +20,7 @@ import { Icons } from "@/components/icons";
 import { useCollection } from "@/lib/firebase";
 import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
-import type { Department, User } from "@/lib/firebase/models";
+import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { normalizeRole } from "@/lib/rbac";
 import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
 import { orgCollectionPath } from "@/lib/organization";
@@ -57,7 +57,9 @@ export default function TasksPage() {
   const { data: tasks, loading } = useCollection<MaintenanceTask>(
     organizationId ? orgCollectionPath(organizationId, "tasks") : null
   );
-  const { data: users, loading: usersLoading } = useCollection<User>("users");
+  const { data: users, loading: usersLoading } = useCollection<OrganizationMember>(
+    organizationId ? orgCollectionPath(organizationId, "members") : null
+  );
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
   );

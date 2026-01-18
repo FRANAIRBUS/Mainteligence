@@ -12,7 +12,9 @@ export default function NewIncidentPage() {
       <div className="rounded-lg border border-white/80 bg-card p-6 shadow-sm">
         <AddIncidentForm
           onCancel={() => router.push('/incidents')}
-          onSuccess={() => router.push('/incidents')}
+          onSuccess={({ title }) =>
+            router.push(`/incidents?created=1&title=${encodeURIComponent(title)}`)
+          }
         />
       </div>
     </AppShell>
