@@ -20,7 +20,7 @@ import {
 } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 export default function LoginPage() {
   const auth = useAuth();
@@ -28,13 +28,6 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, organizationId, activeMembership, isRoot, loading: userLoading } = useUser();
-  const emailVerificationSettings = useMemo(
-    () => ({
-      url: 'https://multi.maintelligence.app/onboarding',
-      handleCodeInApp: false,
-    }),
-    []
-  );
 
   const [isLoginView, setIsLoginView] = useState(true);
 
@@ -220,7 +213,7 @@ export default function LoginPage() {
 
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       if (!cred.user.emailVerified) {
-        await sendEmailVerification(cred.user, emailVerificationSettings);
+        await sendEmailVerification(cred.user);
       }
 
       setNotice('Cuenta creada. Revisa tu correo para verificar tu email y continúa el alta.');

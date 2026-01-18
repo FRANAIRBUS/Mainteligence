@@ -24,13 +24,6 @@ export default function OnboardingPage() {
   const auth = useAuth();
   const app = useFirebaseApp();
   const { user, profile, memberships, organizationId, activeMembership, loading, isRoot } = useUser();
-  const emailVerificationSettings = useMemo(
-    () => ({
-      url: 'https://multi.maintelligence.app/onboarding',
-      handleCodeInApp: false,
-    }),
-    []
-  );
   const [finalizeAttempted, setFinalizeAttempted] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [finalizeLoading, setFinalizeLoading] = useState(false);
@@ -283,7 +276,7 @@ export default function OnboardingPage() {
         orgId = orgSelectedSuggestion ?? String(payload?.normalizedId ?? orgId);
 
         if (auth.currentUser && !auth.currentUser.emailVerified) {
-          await sendEmailVerification(auth.currentUser, emailVerificationSettings);
+          await sendEmailVerification(auth.currentUser);
         }
       } else {
         if (!organizationIdInput.trim()) throw new Error('Indica el ID o nombre de la organización.');
@@ -360,7 +353,7 @@ export default function OnboardingPage() {
 
     try {
       if (auth.currentUser && !auth.currentUser.emailVerified) {
-        await sendEmailVerification(auth.currentUser, emailVerificationSettings);
+        await sendEmailVerification(auth.currentUser);
       }
 
       const demoSuffix = Date.now().toString(36);
