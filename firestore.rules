@@ -7,126 +7,68 @@ service cloud.firestore {
     /* ------------------------------
        Helpers
        NOTE:
-       - v11 data model was single-org using users/{uid}.organizationId
-       - v13 data model introduces memberships + organizations/{orgId}/members/{uid}
-       - Existing projects may have:
-         (a) memberships with random IDs (legacy)
-         (b) membership docs with {active:true} instead of {status:"active"}
-         (c) users/{uid}.organizationId populated (legacy primary org)
-       These helpers intentionally accept ALL compatible variants so that v13
-       code can read tenant data (tasks/incidents/sites/etc.) without breaking
-       existing datasets.
+       - Multi-org access is based exclusively on organizations/{orgId}/members/{uid}.
+       - Do not rely on users/{uid}.organizationId or legacy memberships for access.
     --------------------------------- */
     function isSignedIn() { return request.auth != null; }
 
-    // --- Legacy profile (single-org)
-    function userProfile(uid) {
-      return get(/databases/$(database)/documents/users/$(uid));
+    function isValidOrgId(orgId) {
+      return orgId is string && orgId.size() > 0;
     }
 
-    function legacyOrgId() {
-      return isSignedIn() ? (userProfile(request.auth.uid).data.organizationId) : null;
+    function memberDoc(orgId, uid) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
     }
 
-    function legacyRole() {
-      return isSignedIn() ? (userProfile(request.auth.uid).data.role) : null;
-    }
-
-    function legacyActiveInOrg(orgId) {
+    function isActiveMember(orgId, uid) {
+      let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
       return isSignedIn()
-        && legacyOrgId() != null
-        && legacyOrgId() == orgId
-        && (userProfile(request.auth.uid).data.active == true || userProfile(request.auth.uid).data.active == null);
+        && member != null
+        && member.data != null
+        && (
+          member.data.status == "active"
+          || member.data.active == true
+        );
     }
 
-    function organizationIsActive(orgId) {
-      return get(/databases/$(database)/documents/organizations/$(orgId)).data.isActive == true
+    function hasRole(orgId, uid, roles) {
+      let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
+      return isSignedIn()
+        && member != null
+        && member.data != null
         && (
-          get(/databases/$(database)/documents/organizations/$(orgId)).data.status == null
-          || (
-            get(/databases/$(database)/documents/organizations/$(orgId)).data.status != "suspended"
-            && get(/databases/$(database)/documents/organizations/$(orgId)).data.status != "deleted"
+          member.data.status == "active"
+          || member.data.active == true
+        )
+        && member.data.role in roles;
+    }
+
+    function hasScope(orgId, uid, locationId) {
+      let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
+      return locationId == null
+        || locationId == ""
+        || (
+          member != null
+          && member.data != null
+          && (
+            member.data.siteId == locationId
+            || member.data.departmentId == locationId
+            || locationId in (member.data.siteIds != null ? member.data.siteIds : [])
+            || locationId in (member.data.departmentIds != null ? member.data.departmentIds : [])
           )
         );
     }
 
-    // --- Org members (preferred, deterministic id = uid)
-    function memberDoc(uid, orgId) {
-      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
+    function isSuperAdminInOrg(orgId, uid) {
+      return hasRole(orgId, uid, ["super_admin"]);
     }
 
-    function hasMember(orgId) {
-      return isSignedIn() && exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+    function isAdminInOrg(orgId, uid) {
+      return hasRole(orgId, uid, ["admin", "super_admin"]);
     }
 
-    function memberStatus(orgId) {
-      return hasMember(orgId)
-        ? (
-            memberDoc(request.auth.uid, orgId).data.status != null
-              ? memberDoc(request.auth.uid, orgId).data.status
-              : (memberDoc(request.auth.uid, orgId).data.active == true ? "active" : "pending")
-          )
-        : null;
-    }
-
-    function memberRole(orgId) {
-      return hasMember(orgId) ? (memberDoc(request.auth.uid, orgId).data.role) : null;
-    }
-
-    // --- Membership doc (preferred deterministic id = uid_orgId; kept for compatibility)
-    function membershipId(uid, orgId) {
-      return uid + "_" + orgId;
-    }
-
-    function membershipDoc(uid, orgId) {
-      return get(/databases/$(database)/documents/memberships/$(membershipId(uid, orgId)));
-    }
-
-    function hasMembershipById(orgId) {
-      return isSignedIn() && exists(/databases/$(database)/documents/memberships/$(membershipId(request.auth.uid, orgId)));
-    }
-
-    function membershipStatusById(orgId) {
-      return hasMembershipById(orgId)
-        ? (
-            membershipDoc(request.auth.uid, orgId).data.status != null
-              ? membershipDoc(request.auth.uid, orgId).data.status
-              : (membershipDoc(request.auth.uid, orgId).data.active == true ? "active" : "pending")
-          )
-        : null;
-    }
-
-    function membershipRoleById(orgId) {
-      return hasMembershipById(orgId) ? (membershipDoc(request.auth.uid, orgId).data.role) : null;
-    }
-
-    // --- Unified checks
-    function isActiveMember(orgId) {
-      return isSignedIn() && organizationIsActive(orgId) && (
-        (hasMember(orgId) && memberStatus(orgId) == "active")
-        || (hasMembershipById(orgId) && membershipStatusById(orgId) == "active")
-        || (!hasMember(orgId) && !hasMembershipById(orgId) && legacyActiveInOrg(orgId))
-      );
-    }
-
-    function roleInOrg(orgId) {
-      return hasMember(orgId)
-        ? memberRole(orgId)
-        : (hasMembershipById(orgId)
-            ? membershipRoleById(orgId)
-            : (legacyOrgId() == orgId ? legacyRole() : null));
-    }
-
-    function isSuperAdminInOrg(orgId) {
-      return isActiveMember(orgId) && roleInOrg(orgId) == "super_admin";
-    }
-
-    function isAdminInOrg(orgId) {
-      return isActiveMember(orgId) && (roleInOrg(orgId) == "admin" || roleInOrg(orgId) == "super_admin");
-    }
-
-    function isManagerInOrg(orgId) {
-      return isActiveMember(orgId) && (roleInOrg(orgId) == "super_admin" || roleInOrg(orgId) == "admin" || roleInOrg(orgId) == "maintenance");
+    function isMaintenanceInOrg(orgId, uid) {
+      return hasRole(orgId, uid, ["maintenance", "admin", "super_admin", "dept_head_multi", "dept_head_single"]);
     }
 
     function organizationIdUnchanged() {
@@ -138,11 +80,41 @@ service cloud.firestore {
     }
 
     function resourceOrganizationIdMatchesPath(orgId) {
-      return resource.data.organizationId == null || resource.data.organizationId == orgId;
+      return resource.data.organizationId == orgId;
     }
 
     function roleUnchanged() {
       return request.resource.data.role == resource.data.role;
+    }
+
+    function accountPlanUnchanged() {
+      return request.resource.data.accountPlan == resource.data.accountPlan;
+    }
+
+    function createdOrganizationsCountUnchanged() {
+      return request.resource.data.createdOrganizationsCount == resource.data.createdOrganizationsCount;
+    }
+
+    function createdOrganizationsLimitUnchanged() {
+      return request.resource.data.createdOrganizationsLimit == resource.data.createdOrganizationsLimit;
+    }
+
+    function demoUsedAtUnchanged() {
+      return request.resource.data.demoUsedAt == resource.data.demoUsedAt;
+    }
+
+    function userQuotaFieldsUnchanged() {
+      return accountPlanUnchanged()
+        && createdOrganizationsCountUnchanged()
+        && createdOrganizationsLimitUnchanged()
+        && demoUsedAtUnchanged();
+    }
+
+    function userQuotaFieldsUnset() {
+      return request.resource.data.accountPlan == null
+        && request.resource.data.createdOrganizationsCount == null
+        && request.resource.data.createdOrganizationsLimit == null
+        && request.resource.data.demoUsedAt == null;
     }
 
     /* ------------------------------
@@ -154,19 +126,18 @@ service cloud.firestore {
       // Needed by v13 UI (tasks/incidents assignment, name maps, etc.)
       // Allow reading user docs within the caller's active organization.
       // Note: client queries are always scoped with where('organizationId'=='<activeOrgId>').
-      allow read: if isSignedIn() && (
-        request.auth.uid == userId ||
-        (resource.data.organizationId != null && isActiveMember(resource.data.organizationId))
-      );
+      allow read: if isSignedIn() && request.auth.uid == userId;
 
       allow create: if isSignedIn()
         && request.auth.uid == userId
-        && request.resource.data.organizationId == null;
+        && request.resource.data.organizationId == null
+        && userQuotaFieldsUnset();
 
       allow update: if isSignedIn()
         && request.auth.uid == userId
         && organizationIdUnchanged()
-        && roleUnchanged();
+        && roleUnchanged()
+        && userQuotaFieldsUnchanged();
 
       allow delete: if false;
     }
@@ -177,7 +148,8 @@ service cloud.firestore {
        - Write operations are server-only.
     --------------------------------- */
     match /memberships/{membershipId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
       allow create, update, delete: if false;
     }
 
@@ -189,86 +161,122 @@ service cloud.firestore {
     --------------------------------- */
     match /organizations/{orgId} {
       allow list: if false;
-      allow get: if isActiveMember(orgId);
+      allow get: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       allow create, update, delete: if false;
 
       // Organization-scoped settings
       match /settings/{settingId} {
-        allow read: if isSignedIn() && isSuperAdminInOrg(orgId);
+        allow read: if isSignedIn() && isSuperAdminInOrg(orgId, request.auth.uid);
         allow write: if false;
       }
 
       // Organization-scoped resources (v14+ data model)
       match /sites/{siteId} {
-        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
-        allow create: if isSignedIn() && isAdminInOrg(orgId) && organizationIdMatchesPath(orgId);
+        allow read: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow create: if isSignedIn()
+          && isAdminInOrg(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId);
         allow update: if isSignedIn()
-          && isAdminInOrg(orgId)
+          && isAdminInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId);
-        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
       match /assets/{assetId} {
-        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
-        allow create: if isSignedIn() && isAdminInOrg(orgId) && organizationIdMatchesPath(orgId);
+        allow read: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow create: if isSignedIn()
+          && isAdminInOrg(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId);
         allow update: if isSignedIn()
-          && isAdminInOrg(orgId)
+          && isAdminInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId);
-        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
       match /departments/{departmentId} {
-        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
-        allow create: if isSignedIn() && isAdminInOrg(orgId) && organizationIdMatchesPath(orgId);
+        allow read: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow create: if isSignedIn()
+          && isAdminInOrg(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId);
         allow update: if isSignedIn()
-          && isAdminInOrg(orgId)
+          && isAdminInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId);
-        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
       match /tickets/{ticketId} {
-        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
-        allow create: if isSignedIn() && isActiveMember(orgId) && organizationIdMatchesPath(orgId);
-        allow update: if isSignedIn()
-          && isActiveMember(orgId)
-          && organizationIdUnchanged()
+        allow read: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
           && resourceOrganizationIdMatchesPath(orgId);
-        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+        allow create: if isSignedIn()
+          && isMaintenanceInOrg(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId)
+          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
+          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+        allow update: if isSignedIn()
+          && isMaintenanceInOrg(orgId, request.auth.uid)
+          && organizationIdUnchanged()
+          && resourceOrganizationIdMatchesPath(orgId)
+          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
+          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
       match /tasks/{taskId} {
-        allow read: if isSignedIn() && isActiveMember(orgId) && resourceOrganizationIdMatchesPath(orgId);
-        allow create: if isSignedIn() && isActiveMember(orgId) && organizationIdMatchesPath(orgId);
-        allow update: if isSignedIn()
-          && isActiveMember(orgId)
-          && organizationIdUnchanged()
+        allow read: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
           && resourceOrganizationIdMatchesPath(orgId);
-        allow delete: if isSignedIn() && isAdminInOrg(orgId);
+        allow create: if isSignedIn()
+          && isMaintenanceInOrg(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId)
+          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
+          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+        allow update: if isSignedIn()
+          && isMaintenanceInOrg(orgId, request.auth.uid)
+          && organizationIdUnchanged()
+          && resourceOrganizationIdMatchesPath(orgId)
+          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
+          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
       match /auditLogs/{logId} {
-        allow read: if isSignedIn() && isAdminInOrg(orgId);
-        allow create: if isSignedIn() && isAdminInOrg(orgId) && organizationIdMatchesPath(orgId);
+        allow read: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+        allow create: if isSignedIn()
+          && isAdminInOrg(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId);
         allow update, delete: if false;
       }
 
       // Members snapshot (operational listing)
       match /members/{memberUid} {
-        allow read: if isActiveMember(orgId) && (isAdminInOrg(orgId) || request.auth.uid == memberUid);
+        allow read: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+        allow create, update, delete: if false;
+      }
+
+      // Billing providers are server-only (no client read/write).
+      match /billingProviders/{providerId} {
+        allow read: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
         allow create, update, delete: if false;
       }
 
       // Join requests (pending access)
       match /joinRequests/{requestUid} {
         allow get: if isSignedIn() && (
-          isSuperAdminInOrg(orgId) ||
+          isSuperAdminInOrg(orgId, request.auth.uid) ||
           request.auth.uid == requestUid
         );
 
-        allow list: if isSuperAdminInOrg(orgId);
+        allow list: if isSuperAdminInOrg(orgId, request.auth.uid);
 
         allow create, update, delete: if false;
       }
@@ -285,63 +293,7 @@ service cloud.firestore {
     }
 
     /* ------------------------------
-       SETTINGS
+       ROOT-LEVEL SETTINGS (removed)
     --------------------------------- */
-    match /settings/{settingId} {
-      allow read: if isSignedIn() && isSuperAdminInOrg(resource.data.organizationId);
-      allow write: if false;
-    }
-
-    /* ------------------------------
-       TICKETS (legacy root collections)
-    --------------------------------- */
-    match /tickets/{ticketId} {
-      allow read: if isSignedIn() && isActiveMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isActiveMember(request.resource.data.organizationId);
-
-      allow update: if isSignedIn()
-        && isActiveMember(resource.data.organizationId)
-        && organizationIdUnchanged();
-
-      allow delete: if isSignedIn() && isAdminInOrg(resource.data.organizationId);
-    }
-
-    /* ------------------------------
-       TASKS (legacy root collections)
-    --------------------------------- */
-    match /tasks/{taskId} {
-      allow read: if isSignedIn() && isActiveMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isActiveMember(request.resource.data.organizationId);
-
-      allow update: if isSignedIn()
-        && isActiveMember(resource.data.organizationId)
-        && organizationIdUnchanged();
-
-      allow delete: if isSignedIn() && isAdminInOrg(resource.data.organizationId);
-    }
-
-    /* ------------------------------
-       SITES / ASSETS / DEPARTMENTS (legacy root collections)
-    --------------------------------- */
-    match /sites/{siteId} {
-      allow read: if isSignedIn() && isActiveMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isAdminInOrg(request.resource.data.organizationId);
-      allow update: if isSignedIn() && isAdminInOrg(resource.data.organizationId) && organizationIdUnchanged();
-      allow delete: if isSignedIn() && isAdminInOrg(resource.data.organizationId);
-    }
-
-    match /assets/{assetId} {
-      allow read: if isSignedIn() && isActiveMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isAdminInOrg(request.resource.data.organizationId);
-      allow update: if isSignedIn() && isAdminInOrg(resource.data.organizationId) && organizationIdUnchanged();
-      allow delete: if isSignedIn() && isAdminInOrg(resource.data.organizationId);
-    }
-
-    match /departments/{departmentId} {
-      allow read: if isSignedIn() && isActiveMember(resource.data.organizationId);
-      allow create: if isSignedIn() && isAdminInOrg(request.resource.data.organizationId);
-      allow update: if isSignedIn() && isAdminInOrg(resource.data.organizationId) && organizationIdUnchanged();
-      allow delete: if isSignedIn() && isAdminInOrg(resource.data.organizationId);
-    }
   }
 }

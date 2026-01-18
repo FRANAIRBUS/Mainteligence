@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, onSnapshot, type DocumentData } from 'firebase/firestore';
+import {
+  collection,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  startAfter,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+} from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 import { AppShell } from '@/components/app-shell';
@@ -36,6 +46,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useCollection, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
 import type { Department, User } from '@/lib/firebase/models';
+import { orgCollectionPath } from '@/lib/organization';
 
 type Role = 'super_admin' | 'admin' | 'maintenance' | 'operator';
 type OrgMemberRow = {
@@ -88,11 +99,22 @@ export default function UsersPage() {
 
   const [members, setMembers] = useState<OrgMemberRow[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
+  const [membersLoadingMore, setMembersLoadingMore] = useState(false);
+  const [membersCursor, setMembersCursor] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [membersHasMore, setMembersHasMore] = useState(false);
 
   const [joinRequests, setJoinRequests] = useState<JoinRequestRow[]>([]);
   const [joinLoading, setJoinLoading] = useState(true);
+  const [joinLoadingMore, setJoinLoadingMore] = useState(false);
+  const [joinCursor, setJoinCursor] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [joinHasMore, setJoinHasMore] = useState(false);
   const { data: users = [], loading: usersLoading } = useCollection<User>(canManage ? 'users' : null);
-  const { data: departments = [] } = useCollection<Department>(canManage ? 'departments' : null);
+  const { data: departments = [] } = useCollection<Department>(
+    canManage && organizationId ? orgCollectionPath(organizationId, 'departments') : null
+  );
+
+  const membersPageSize = 50;
+  const joinRequestsPageSize = 50;
 
   const [addOpen, setAddOpen] = useState(false);
   // Per-request role selection (approve as role)
@@ -126,9 +148,10 @@ export default function UsersPage() {
 
     setMembersLoading(true);
     const colRef = collection(db, 'organizations', organizationId, 'members');
+    const baseQuery = query(colRef, orderBy('displayName', 'asc'), orderBy('email', 'asc'), limit(membersPageSize));
 
     const unsub = onSnapshot(
-      colRef,
+      baseQuery,
       (snap) => {
         const rows = snap.docs.map((d) => {
           const data = d.data() as DocumentData;
@@ -143,19 +166,65 @@ export default function UsersPage() {
           } satisfies OrgMemberRow;
         });
 
-        rows.sort((a, b) => safeText(a.displayName || a.email).localeCompare(safeText(b.displayName || b.email)));
         setMembers(rows);
         setMembersLoading(false);
+        setMembersCursor(snap.docs[snap.docs.length - 1] ?? null);
+        setMembersHasMore(snap.size === membersPageSize);
       },
       (err) => {
         console.error('Error loading org members:', err);
         setMembers([]);
         setMembersLoading(false);
+        setMembersCursor(null);
+        setMembersHasMore(false);
       }
     );
 
     return () => unsub();
   }, [db, userLoading, user, organizationId, canManage]);
+
+  const loadMoreMembers = async () => {
+    if (!organizationId || !membersCursor || membersLoadingMore) return;
+    setMembersLoadingMore(true);
+    try {
+      const colRef = collection(db, 'organizations', organizationId, 'members');
+      const nextQuery = query(
+        colRef,
+        orderBy('displayName', 'asc'),
+        orderBy('email', 'asc'),
+        startAfter(membersCursor),
+        limit(membersPageSize)
+      );
+      const snap = await getDocs(nextQuery);
+      const nextRows = snap.docs.map((d) => {
+        const data = d.data() as DocumentData;
+        return {
+          id: d.id,
+          role: normalizeRole(data?.role),
+          status: String(data?.status ?? 'active') as any,
+          email: (data?.email ?? null) as any,
+          displayName: (data?.displayName ?? null) as any,
+          createdAt: data?.createdAt,
+          updatedAt: data?.updatedAt,
+        } satisfies OrgMemberRow;
+      });
+      setMembers((prev) => {
+        const existing = new Set(prev.map((row) => row.id));
+        const merged = [...prev];
+        for (const row of nextRows) {
+          if (!existing.has(row.id)) merged.push(row);
+        }
+        return merged;
+      });
+      setMembersCursor(snap.docs[snap.docs.length - 1] ?? membersCursor);
+      setMembersHasMore(snap.size === membersPageSize);
+    } catch (err) {
+      console.error('Error loading more members:', err);
+      setMembersHasMore(false);
+    } finally {
+      setMembersLoadingMore(false);
+    }
+  };
 
   // Subscribe: joinRequests (organizations/{orgId}/joinRequests)
   useEffect(() => {
@@ -173,9 +242,10 @@ export default function UsersPage() {
 
     setJoinLoading(true);
     const colRef = collection(db, 'organizations', organizationId, 'joinRequests');
+    const baseQuery = query(colRef, orderBy('createdAt', 'desc'), limit(joinRequestsPageSize));
 
     const unsub = onSnapshot(
-      colRef,
+      baseQuery,
       (snap) => {
         const rows = snap.docs.map((d) => {
           const data = d.data() as DocumentData;
@@ -191,15 +261,9 @@ export default function UsersPage() {
           return row;
         });
 
-        // Sort newest first if createdAt exists, otherwise by email
-        rows.sort((a, b) => {
-          const at = (a.createdAt?.toMillis?.() ?? 0) as number;
-          const bt = (b.createdAt?.toMillis?.() ?? 0) as number;
-          if (bt !== at) return bt - at;
-          return safeText(a.email).localeCompare(safeText(b.email));
-        });
-
         setJoinRequests(rows);
+        setJoinCursor(snap.docs[snap.docs.length - 1] ?? null);
+        setJoinHasMore(snap.size === joinRequestsPageSize);
 
         // Seed approveRoleByUid with requestedRole (or operator)
         setApproveRoleByUid((prev) => {
@@ -216,11 +280,63 @@ export default function UsersPage() {
         console.error('Error loading join requests:', err);
         setJoinRequests([]);
         setJoinLoading(false);
+        setJoinCursor(null);
+        setJoinHasMore(false);
       }
     );
 
     return () => unsub();
   }, [db, userLoading, user, organizationId, canManage]);
+
+  const loadMoreJoinRequests = async () => {
+    if (!organizationId || !joinCursor || joinLoadingMore) return;
+    setJoinLoadingMore(true);
+    try {
+      const colRef = collection(db, 'organizations', organizationId, 'joinRequests');
+      const nextQuery = query(
+        colRef,
+        orderBy('createdAt', 'desc'),
+        startAfter(joinCursor),
+        limit(joinRequestsPageSize)
+      );
+      const snap = await getDocs(nextQuery);
+      const nextRows = snap.docs.map((d) => {
+        const data = d.data() as DocumentData;
+        const row: JoinRequestRow = {
+          id: d.id,
+          email: (data?.email ?? null) as any,
+          displayName: (data?.displayName ?? null) as any,
+          requestedRole: data?.requestedRole ? normalizeRole(data?.requestedRole) : null,
+          status: String(data?.status ?? 'pending') as any,
+          createdAt: data?.createdAt,
+          updatedAt: data?.updatedAt,
+        };
+        return row;
+      });
+      setJoinRequests((prev) => {
+        const existing = new Set(prev.map((row) => row.id));
+        const merged = [...prev];
+        for (const row of nextRows) {
+          if (!existing.has(row.id)) merged.push(row);
+        }
+        return merged;
+      });
+      setApproveRoleByUid((prev) => {
+        const next = { ...prev };
+        for (const r of nextRows) {
+          if (!next[r.id]) next[r.id] = r.requestedRole ?? 'operator';
+        }
+        return next;
+      });
+      setJoinCursor(snap.docs[snap.docs.length - 1] ?? joinCursor);
+      setJoinHasMore(snap.size === joinRequestsPageSize);
+    } catch (err) {
+      console.error('Error loading more join requests:', err);
+      setJoinHasMore(false);
+    } finally {
+      setJoinLoadingMore(false);
+    }
+  };
 
   const pendingRequests = useMemo(
     () => joinRequests.filter((r) => (r.status ?? 'pending') === 'pending'),
@@ -413,6 +529,13 @@ export default function UsersPage() {
                       ))}
                     </div>
                   )}
+                  {!joinLoading && joinHasMore && (
+                    <div className="mt-4 flex justify-center">
+                      <Button size="sm" variant="outline" onClick={loadMoreJoinRequests} disabled={joinLoadingMore}>
+                        {joinLoadingMore ? 'Cargando…' : 'Cargar más'}
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -480,6 +603,13 @@ export default function UsersPage() {
                           </div>
                         </button>
                       ))}
+                    </div>
+                  )}
+                  {!membersLoading && membersHasMore && (
+                    <div className="mt-4 flex justify-center">
+                      <Button size="sm" variant="outline" onClick={loadMoreMembers} disabled={membersLoadingMore}>
+                        {membersLoadingMore ? 'Cargando…' : 'Cargar más'}
+                      </Button>
                     </div>
                   )}
                 </CardContent>

@@ -1,6 +1,17 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, QueryConstraint, query, where } from 'firebase/firestore';
+import {
+  collection,
+  getDocs,
+  limit,
+  onSnapshot,
+  query,
+  startAfter,
+  where,
+  type DocumentData,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
+} from 'firebase/firestore';
 import { useFirestore } from '../provider';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
@@ -192,4 +203,151 @@ export function useCollectionQuery<T>(path: string | null, ...queries: QueryCons
   }, [db, organizationId, path, user, userLoading, isRoot, ...queries]);
 
   return { data, loading, error };
+}
+
+export function useCollectionPage<T>(
+  path: string | null,
+  options: { pageSize?: number; cursor?: QueryDocumentSnapshot<DocumentData> | null; listen?: boolean } = {},
+  ...queries: QueryConstraint[]
+) {
+  const [data, setData] = useState<T[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+
+  const db = useFirestore();
+  const { user, loading: userLoading, organizationId, isRoot } = useUser();
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+
+    const run = async () => {
+      try {
+        if (!path) {
+          setLoading(false);
+          setData([]);
+          setError(null);
+          setHasMore(false);
+          setNextCursor(null);
+          return;
+        }
+
+        if (!db || userLoading || organizationId === undefined) {
+          setLoading(true);
+          setData([]);
+          setError(null);
+          setHasMore(false);
+          setNextCursor(null);
+          return;
+        }
+
+        if (!user) {
+          setLoading(false);
+          setData([]);
+          setError(null);
+          setHasMore(false);
+          setNextCursor(null);
+          return;
+        }
+
+        if (isRoot) {
+          setLoading(false);
+          setData([]);
+          setError(null);
+          setHasMore(false);
+          setNextCursor(null);
+          return;
+        }
+
+        if (!organizationId) {
+          const organizationError = new Error('Critical: Missing organizationId in transaction');
+          setError(organizationError);
+          setData([]);
+          setLoading(false);
+          setHasMore(false);
+          setNextCursor(null);
+          return;
+        }
+
+        setLoading(true);
+        const pageSize = options.pageSize ?? 50;
+        const cursorConstraint = options.cursor ? [startAfter(options.cursor)] : [];
+        const collectionQuery = query(
+          collection(db, path),
+          where('organizationId', '==', organizationId),
+          ...queries,
+          ...cursorConstraint,
+          limit(pageSize)
+        );
+
+        if (options.listen === false) {
+          const snapshot = await getDocs(collectionQuery);
+          const newData = snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          })) as T[];
+          setData(newData);
+          setHasMore(snapshot.size === pageSize);
+          setNextCursor(snapshot.docs[snapshot.docs.length - 1] ?? null);
+          setLoading(false);
+          setError(null);
+          return;
+        }
+
+        unsubscribe = onSnapshot(
+          collectionQuery,
+          (snapshot) => {
+            try {
+              const newData = snapshot.docs.map((docSnap) => ({
+                id: docSnap.id,
+                ...docSnap.data(),
+              })) as T[];
+              setData(newData);
+              setHasMore(snapshot.size === pageSize);
+              setNextCursor(snapshot.docs[snapshot.docs.length - 1] ?? null);
+              setLoading(false);
+              setError(null);
+            } catch (snapshotError) {
+              setError(snapshotError as Error);
+              setData([]);
+              setHasMore(false);
+              setNextCursor(null);
+              setLoading(false);
+            }
+          },
+          (err: any) => {
+            if (err?.code === 'permission-denied') {
+              const permissionError = new FirestorePermissionError({
+                path,
+                operation: 'list',
+              });
+              errorEmitter.emit('permission-error', permissionError);
+            }
+            console.error(`Error fetching collection ${path}:`, err);
+            setError(err);
+            setData([]);
+            setHasMore(false);
+            setNextCursor(null);
+            setLoading(false);
+          }
+        );
+      } catch (err) {
+        setError(err as Error);
+        setData([]);
+        setHasMore(false);
+        setNextCursor(null);
+        setLoading(false);
+      }
+    };
+
+    void run();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, path, user, userLoading, organizationId, isRoot, options.pageSize, options.cursor, options.listen, ...queries]);
+
+  return { data, loading, error, hasMore, nextCursor };
 }

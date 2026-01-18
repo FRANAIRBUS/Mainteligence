@@ -5,11 +5,13 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebaseApp, useUser } from '@/lib/firebase';
-import type { Department } from '@/lib/firebase/models';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useDoc, useFirebaseApp, useUser } from '@/lib/firebase';
+import type { Department, Organization } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { normalizeRole } from '@/lib/rbac';
+import { canCreate } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -84,6 +86,20 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
   const app = useFirebaseApp();
   const { user: currentUser, organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
+  const { data: organization } = useDoc<Organization>(
+    organizationId ? `organizations/${organizationId}` : null
+  );
+  const hasEntitlementLimits = Boolean(
+    organization?.entitlement?.usage && organization?.entitlement?.limits
+  );
+  const canCreateUser = hasEntitlementLimits
+    ? canCreate(
+        'users',
+        organization?.entitlement?.usage,
+        organization?.entitlement?.limits
+      )
+    : true;
+  const isLimitBlocked = hasEntitlementLimits && !canCreateUser;
 
   const form = useForm<AddUserFormValues>({
     resolver: zodResolver(formSchema),
@@ -105,7 +121,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       return;
     }
 
-    if (!app?.options?.projectId) {
+    if (!app) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -128,29 +144,14 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       const selectedDepartmentId =
         data.departmentId && data.departmentId !== departmentNoneValue ? data.departmentId : null;
 
-      const token = await currentUser.getIdToken();
-      const functionUrl = `https://us-central1-${app.options.projectId}.cloudfunctions.net/orgInviteUser`;
-      const response = await fetch(functionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          organizationId,
-          displayName: data.displayName,
-          email: data.email,
-          role: normalizedRole,
-          departmentId: selectedDepartmentId,
-        }),
+      const fn = httpsCallable(getFunctions(app), 'inviteUserToOrg');
+      await fn({
+        organizationId,
+        displayName: data.displayName,
+        email: data.email,
+        role: normalizedRole,
+        departmentId: selectedDepartmentId,
       });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error || 'No se pudo enviar la invitación.');
-      }
-
-      await response.json().catch(() => null);
 
       toast({
         title: 'Éxito',
@@ -159,7 +160,8 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
       onOpenChange(false);
       form.reset();
     } catch (error: any) {
-      if (error.code === 'permission-denied') {
+      const errorCode = String(error?.code ?? '');
+      if (errorCode.includes('permission-denied')) {
         const permissionError = new FirestorePermissionError({
           path: `organizations/${organizationId}/joinRequests`,
           operation: 'create',
@@ -172,6 +174,12 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
           },
         });
         errorEmitter.emit('permission-error', permissionError);
+      } else if (errorCode.includes('failed-precondition')) {
+        toast({
+          variant: 'destructive',
+          title: 'No se pudo invitar',
+          description: error.message || 'No se pudo enviar la invitación.',
+        });
       } else {
         toast({
           variant: 'destructive',
@@ -291,10 +299,15 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
               <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)} disabled={isPending}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending || isLimitBlocked}>
                 {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Enviar Invitación
               </Button>
+              {isLimitBlocked ? (
+                <p className="text-xs text-destructive">
+                  Has alcanzado el límite de usuarios de tu plan actual.
+                </p>
+              ) : null}
             </DialogFooter>
           </form>
         </Form>

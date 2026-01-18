@@ -11,10 +11,10 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
-import { useUser, useCollectionQuery } from '@/lib/firebase';
-import type { Ticket } from '@/lib/firebase/models';
+import { useCollectionQuery, useDoc, useFirestore, useUser } from '@/lib/firebase';
+import type { Organization, Ticket } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Table,
   TableBody,
@@ -40,8 +40,10 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { where } from 'firebase/firestore';
+import { doc, getDoc, where } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { isFeatureEnabled } from '@/lib/entitlements';
+import { orgCollectionPath } from '@/lib/organization';
 
 function PreventiveTable({
   tickets,
@@ -122,8 +124,10 @@ function PreventiveTable({
 
 
 export default function PreventivePage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
+  const firestore = useFirestore();
+  const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -131,8 +135,42 @@ export default function PreventivePage() {
     }
   }, [user, userLoading, router]);
 
+  const { data: organization } = useDoc<Organization>(
+    organizationId ? `organizations/${organizationId}` : null
+  );
+
+  useEffect(() => {
+    if (!firestore || !organization?.entitlement?.planId) {
+      setPlanFeatures(null);
+      return;
+    }
+    let cancelled = false;
+    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+      .then((snap) => {
+        if (cancelled) return;
+        const features = (snap.exists() ? (snap.data()?.features as Record<string, boolean>) : null) ?? null;
+        setPlanFeatures(features);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPlanFeatures(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, organization?.entitlement?.planId]);
+
+  const entitlement = organization?.entitlement ?? null;
+  const preventivesAllowed =
+    planFeatures && entitlement
+      ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'PREVENTIVES')
+      : true;
+  const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);
+  const preventivesBlocked = planFeatures !== null && !preventivesAllowed;
+
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(
-    'tickets',
+    organizationId ? orgCollectionPath(organizationId, 'tickets') : null,
     where('type', '==', 'preventivo')
   );
 
@@ -177,8 +215,23 @@ export default function PreventivePage() {
                   <CardDescription className="mt-2">
                     Visualiza y gestiona todas las órdenes de mantenimiento preventivo.
                   </CardDescription>
+                  {preventivesBlocked ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-200">
+                      <span>
+                        Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.
+                      </span>
+                      <Button variant="outline" size="sm" onClick={() => router.push('/plans')}>
+                        Ver planes
+                      </Button>
+                    </div>
+                  ) : null}
+                  {preventivesPaused ? (
+                    <p className="mt-2 text-xs text-amber-200">
+                      Los preventivos están pausados por limitaciones del plan actual.
+                    </p>
+                  ) : null}
                 </div>
-                <Button>Crear Plantilla</Button>
+                <Button disabled={preventivesBlocked || preventivesPaused}>Crear Plantilla</Button>
               </div>
             </CardHeader>
             <CardContent>

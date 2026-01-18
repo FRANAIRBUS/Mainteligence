@@ -3,6 +3,10 @@ import * as admin from 'firebase-admin';
 import type { Request, Response } from 'express';
 import { sendAssignmentEmail } from './assignment-email';
 import { sendInviteEmail } from './invite-email';
+import { canCreate, isFeatureEnabled } from './entitlements';
+import * as crypto from 'crypto';
+import * as https from 'https';
+import type { IncomingMessage } from 'http';
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -17,6 +21,142 @@ type Role =
   | 'dept_head_single'
   | 'operator';
 
+type AccountPlan = 'free' | 'personal_plus' | 'business_creator' | 'enterprise';
+type EntitlementPlanId = 'free' | 'starter' | 'pro' | 'enterprise';
+type EntitlementStatus = 'trialing' | 'active' | 'past_due' | 'canceled';
+type EntitlementProvider = 'stripe' | 'google_play' | 'apple_app_store' | 'manual';
+
+type EntitlementLimits = {
+  maxSites: number;
+  maxAssets: number;
+  maxDepartments: number;
+  maxUsers: number;
+  maxActivePreventives: number;
+  attachmentsMonthlyMB: number;
+};
+
+type EntitlementUsage = {
+  sitesCount: number;
+  assetsCount: number;
+  departmentsCount: number;
+  usersCount: number;
+  activePreventivesCount: number;
+  attachmentsThisMonthMB: number;
+};
+
+type Entitlement = {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  provider: EntitlementProvider;
+  trialEndsAt?: admin.firestore.Timestamp;
+  currentPeriodEnd?: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
+  limits: EntitlementLimits;
+  usage: EntitlementUsage;
+};
+
+const DEFAULT_ACCOUNT_PLAN: AccountPlan = 'free';
+const DEFAULT_ENTERPRISE_LIMIT = 10;
+const CREATED_ORG_LIMITS: Record<AccountPlan, number> = {
+  free: 1,
+  personal_plus: 2,
+  business_creator: 3,
+  enterprise: DEFAULT_ENTERPRISE_LIMIT,
+};
+
+const DEFAULT_ENTITLEMENT_PROVIDER: EntitlementProvider = 'manual';
+const DEFAULT_ENTITLEMENT_LIMITS: EntitlementLimits = {
+  maxSites: 100,
+  maxAssets: 5000,
+  maxDepartments: 100,
+  maxUsers: 50,
+  maxActivePreventives: 1000,
+  attachmentsMonthlyMB: 1024,
+};
+
+const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
+  sitesCount: 0,
+  assetsCount: 0,
+  departmentsCount: 0,
+  usersCount: 0,
+  activePreventivesCount: 0,
+  attachmentsThisMonthMB: 0,
+};
+
+type MembershipScope = {
+  departmentId?: string;
+  departmentIds: string[];
+  siteId?: string;
+  siteIds: string[];
+};
+
+type ResolvedMembership = {
+  role: Role;
+  status: string;
+  scope: MembershipScope;
+  membershipData: FirebaseFirestore.DocumentData | null;
+  userData: FirebaseFirestore.DocumentData | null;
+};
+
+const ADMIN_LIKE_ROLES = new Set<Role>(['super_admin', 'admin', 'maintenance']);
+const SCOPED_HEAD_ROLES = new Set<Role>(['dept_head_multi', 'dept_head_single']);
+const MASTER_DATA_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
+
+const USAGE_FIELDS: Record<'sites' | 'assets' | 'departments' | 'users' | 'preventives', keyof EntitlementUsage> = {
+  sites: 'sitesCount',
+  assets: 'assetsCount',
+  departments: 'departmentsCount',
+  users: 'usersCount',
+  preventives: 'activePreventivesCount',
+};
+
+const LIMIT_MESSAGES: Record<keyof typeof USAGE_FIELDS, string> = {
+  sites: 'Has alcanzado el límite de ubicaciones de tu plan. Contacta para ampliarlo.',
+  assets: 'Has alcanzado el límite de activos de tu plan. Contacta para ampliarlo.',
+  departments: 'Has alcanzado el límite de departamentos de tu plan. Contacta para ampliarlo.',
+  users: 'Has alcanzado el límite de usuarios de tu plan. Contacta para ampliarlo.',
+  preventives: 'Has alcanzado el límite de preventivos activos de tu plan. Contacta para ampliarlo.',
+};
+
+function buildEntitlementPayload({
+  planId,
+  status,
+  trialEndsAt,
+  currentPeriodEnd,
+  provider = DEFAULT_ENTITLEMENT_PROVIDER,
+  now,
+  limits = DEFAULT_ENTITLEMENT_LIMITS,
+  usage = DEFAULT_ENTITLEMENT_USAGE,
+}: {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp | null;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+  provider?: EntitlementProvider;
+  now: admin.firestore.FieldValue;
+  limits?: EntitlementLimits;
+  usage?: EntitlementUsage;
+}) {
+  const payload: Record<string, unknown> = {
+    planId,
+    status,
+    provider,
+    updatedAt: now,
+    limits,
+    usage,
+  };
+
+  if (trialEndsAt) {
+    payload.trialEndsAt = trialEndsAt;
+  }
+
+  if (currentPeriodEnd) {
+    payload.currentPeriodEnd = currentPeriodEnd;
+  }
+
+  return payload;
+}
+
 function httpsError(code: functions.https.FunctionsErrorCode, message: string) {
   return new functions.https.HttpsError(code, message);
 }
@@ -26,6 +166,330 @@ const ALLOWED_CORS_ORIGINS = new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ]);
+
+const STRIPE_API_VERSION = '2023-10-16';
+const APPLE_UPDATES_ENABLED = (process.env.APPLE_APP_STORE_APPLY_UPDATES ?? 'false') === 'true';
+
+type StripeRuntimeConfig = { secretKey: string; webhookSecret: string };
+function resolveStripeConfig(): StripeRuntimeConfig | null {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!secretKey || !webhookSecret) return null;
+  return { secretKey, webhookSecret };
+}
+
+type GooglePlayRuntimeConfig = { clientEmail: string; privateKey: string; packageName: string };
+function resolveGooglePlayConfig(): GooglePlayRuntimeConfig | null {
+  const clientEmail = process.env.GOOGLE_PLAY_CLIENT_EMAIL;
+  const privateKeyRaw = process.env.GOOGLE_PLAY_PRIVATE_KEY;
+  const packageName = process.env.GOOGLE_PLAY_PACKAGE_NAME ?? '';
+
+  if (!clientEmail || !privateKeyRaw) return null;
+
+  return {
+    clientEmail,
+    privateKey: privateKeyRaw.replace(/\\n/g, '\n'),
+    packageName,
+  };
+}
+
+type AppleAppStoreRuntimeConfig = { bundleId: string };
+function resolveAppleAppStoreConfig(): AppleAppStoreRuntimeConfig {
+  const bundleId = process.env.APPLE_APP_STORE_BUNDLE_ID ?? '';
+  return { bundleId };
+}
+type StripeEvent = {
+  type: string;
+  data: {
+    object: Record<string, unknown>;
+  };
+};
+
+type StripeSubscription = {
+  id: string;
+  status: string;
+  current_period_end?: number | null;
+  trial_end?: number | null;
+  metadata?: Record<string, string | null | undefined>;
+};
+
+type StripeCheckoutSession = {
+  metadata?: Record<string, string | null | undefined>;
+  subscription?: string | { id: string };
+};
+
+type AppleNotificationPayload = {
+  notificationType?: string;
+  subtype?: string | null;
+  data?: {
+    appAppleId?: number;
+    bundleId?: string;
+    appAccountToken?: string;
+    signedTransactionInfo?: string;
+    signedRenewalInfo?: string;
+  };
+};
+
+type AppleTransactionPayload = {
+  appAccountToken?: string;
+  expiresDate?: number;
+};
+
+type AppleRenewalPayload = {
+  appAccountToken?: string;
+  autoRenewStatus?: number;
+};
+
+function resolveEntitlementStatusFromStripe(status: string): EntitlementStatus {
+  switch (status) {
+    case 'trialing':
+      return 'trialing';
+    case 'active':
+      return 'active';
+    case 'past_due':
+    case 'unpaid':
+    case 'incomplete':
+    case 'incomplete_expired':
+    case 'paused':
+      return 'past_due';
+    case 'canceled':
+      return 'canceled';
+    default:
+      return 'past_due';
+  }
+}
+
+function resolveEntitlementPlanId({
+  metadataPlanId,
+  fallbackPlanId,
+}: {
+  metadataPlanId?: string | null;
+  fallbackPlanId?: string;
+}): EntitlementPlanId {
+  const normalized = String(metadataPlanId ?? '').trim();
+  if (normalized === 'free' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
+    return normalized;
+  }
+  if (fallbackPlanId === 'free' || fallbackPlanId === 'starter' || fallbackPlanId === 'pro' || fallbackPlanId === 'enterprise') {
+    return fallbackPlanId;
+  }
+  return 'free';
+}
+
+function resolveEntitlementStatusFromApple(notificationType?: string, renewal?: AppleRenewalPayload | null): EntitlementStatus {
+  switch (String(notificationType ?? '').toUpperCase()) {
+    case 'DID_RENEW':
+    case 'DID_RECOVER':
+    case 'DID_CHANGE_RENEWAL_PREF':
+      return 'active';
+    case 'DID_FAIL_TO_RENEW':
+      return 'past_due';
+    case 'EXPIRED':
+    case 'REFUND':
+    case 'REVOKE':
+      return 'canceled';
+    case 'DID_CHANGE_RENEWAL_STATUS':
+      if (renewal && renewal.autoRenewStatus === 0) return 'past_due';
+      return 'active';
+    default:
+      return 'past_due';
+  }
+}
+
+function shouldBlockProviderUpdate(entitlement: Entitlement | undefined, incomingProvider: EntitlementProvider): boolean {
+  if (!entitlement?.provider) return false;
+  if (entitlement.provider === incomingProvider) return false;
+  return entitlement.status === 'active' || entitlement.status === 'trialing';
+}
+
+function buildConflictPayload({
+  planId,
+  status,
+  now,
+  reason,
+}: {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  now: admin.firestore.FieldValue;
+  reason: string;
+}): Record<string, unknown> {
+  return {
+    planId,
+    status,
+    updatedAt: now,
+    conflict: true,
+    conflictReason: reason,
+  };
+}
+
+function toTimestampFromMillis(value?: string | number | null): admin.firestore.Timestamp | null {
+  if (value == null) return null;
+  const millis = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(millis) || millis <= 0) return null;
+  return admin.firestore.Timestamp.fromMillis(millis);
+}
+
+function decodeJwtPayload<T>(token?: string | null): T | null {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+  const payload = parts[1];
+  const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+  const buffer = Buffer.from(`${normalized}${padding}`, 'base64');
+  try {
+    return JSON.parse(buffer.toString('utf8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+function verifyStripeSignature({
+  payload,
+  signatureHeader,
+  webhookSecret,
+}: {
+  payload: string;
+  signatureHeader: string;
+  webhookSecret: string;
+}): boolean {
+  const elements = signatureHeader.split(',');
+  const timestampElement = elements.find((entry) => entry.startsWith('t='));
+  const signatureElements = elements.filter((entry) => entry.startsWith('v1='));
+  if (!timestampElement || signatureElements.length === 0) return false;
+
+  const timestamp = timestampElement.replace('t=', '');
+  const signedPayload = `${timestamp}.${payload}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', webhookSecret)
+    .update(signedPayload, 'utf8')
+    .digest('hex');
+
+  const expectedBuffer = Buffer.from(expectedSignature, 'utf8');
+  return signatureElements.some((entry) => {
+    const signature = entry.replace('v1=', '');
+    const signatureBuffer = Buffer.from(signature, 'utf8');
+    if (signatureBuffer.length !== expectedBuffer.length) return false;
+    return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+  });
+}
+
+async function fetchStripeSubscription(subscriptionId: string, secretKey: string): Promise<StripeSubscription> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'api.stripe.com',
+        path: `/v1/subscriptions/${subscriptionId}`,
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          'Stripe-Version': STRIPE_API_VERSION,
+        },
+      },
+      (res: IncomingMessage) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8');
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(body) as StripeSubscription);
+            } catch (error) {
+              reject(error);
+            }
+            return;
+          }
+          reject(new Error(`Stripe subscription fetch failed: ${res.statusCode ?? 'unknown'} ${body}`));
+        });
+      }
+    );
+
+    req.on('error', (error: Error) => {
+      reject(error);
+    });
+    req.end();
+  });
+}
+
+async function updateOrganizationStripeEntitlement({
+  orgId,
+  planId,
+  status,
+  trialEndsAt,
+  currentPeriodEnd,
+}: {
+  orgId: string;
+  planId?: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp | null;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+}) {
+  const orgRef = db.collection('organizations').doc(orgId);
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new Error(`Organization ${orgId} not found.`);
+    }
+
+    const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+    const entitlement = orgData?.entitlement;
+    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const resolvedPlanId = resolveEntitlementPlanId({
+      metadataPlanId: planId ?? null,
+      fallbackPlanId: entitlement?.planId,
+    });
+
+    const shouldBlock = shouldBlockProviderUpdate(entitlement, 'stripe');
+    const billingProviderPayload: Record<string, unknown> = shouldBlock
+      ? buildConflictPayload({
+          planId: resolvedPlanId,
+          status,
+          now,
+          reason: `active_provider_${entitlement?.provider ?? 'unknown'}`,
+        })
+      : {
+          planId: resolvedPlanId,
+          status,
+          updatedAt: now,
+        };
+
+    if (trialEndsAt) {
+      billingProviderPayload.trialEndsAt = trialEndsAt;
+    }
+
+    if (currentPeriodEnd) {
+      billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      billingProviders: {
+        stripe: billingProviderPayload,
+      },
+      updatedAt: now,
+    };
+
+    if (!shouldBlock) {
+      updatePayload.entitlement = buildEntitlementPayload({
+        planId: resolvedPlanId,
+        status,
+        trialEndsAt,
+        currentPeriodEnd,
+        provider: 'stripe',
+        now,
+        limits,
+        usage,
+      });
+    }
+
+    tx.set(orgRef, updatePayload, { merge: true });
+  });
+}
 
 function applyCors(req: Request, res: Response): boolean {
   const origin = String(req.headers.origin ?? '');
@@ -172,6 +636,76 @@ async function updateOrganizationUserProfile({
   });
 }
 
+async function updateOrganizationAppleEntitlement({
+  orgId,
+  planId,
+  status,
+  currentPeriodEnd,
+}: {
+  orgId: string;
+  planId?: EntitlementPlanId;
+  status: EntitlementStatus;
+  currentPeriodEnd?: admin.firestore.Timestamp | null;
+}) {
+  const orgRef = db.collection('organizations').doc(orgId);
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new Error(`Organization ${orgId} not found.`);
+    }
+
+    const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+    const entitlement = orgData?.entitlement;
+    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const resolvedPlanId = resolveEntitlementPlanId({
+      metadataPlanId: planId ?? null,
+      fallbackPlanId: entitlement?.planId,
+    });
+
+    const shouldBlock = shouldBlockProviderUpdate(entitlement, 'apple_app_store');
+    const billingProviderPayload: Record<string, unknown> = shouldBlock
+      ? buildConflictPayload({
+          planId: resolvedPlanId,
+          status,
+          now,
+          reason: `active_provider_${entitlement?.provider ?? 'unknown'}`,
+        })
+      : {
+          planId: resolvedPlanId,
+          status,
+          updatedAt: now,
+        };
+
+    if (currentPeriodEnd) {
+      billingProviderPayload.currentPeriodEnd = currentPeriodEnd;
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      billingProviders: {
+        apple_app_store: billingProviderPayload,
+      },
+      updatedAt: now,
+    };
+
+    if (!shouldBlock) {
+      updatePayload.entitlement = buildEntitlementPayload({
+        planId: resolvedPlanId,
+        status,
+        currentPeriodEnd,
+        provider: 'apple_app_store',
+        now,
+        limits,
+        usage,
+      });
+    }
+
+    tx.set(orgRef, updatePayload, { merge: true });
+  });
+}
+
 function sendHttpError(res: Response, err: any) {
   const code = String(err?.code ?? 'internal');
   const message = String(err?.message ?? 'Error inesperado.');
@@ -198,6 +732,50 @@ function sendHttpError(res: Response, err: any) {
 function requireAuth(context: functions.https.CallableContext) {
   if (!context.auth?.uid) throw httpsError('unauthenticated', 'Debes iniciar sesión.');
   return context.auth.uid;
+}
+
+function normalizeAccountPlan(value: unknown): AccountPlan {
+  const plan = String(value ?? '').trim().toLowerCase();
+  if (plan === 'personal_plus' || plan === 'business_creator' || plan === 'enterprise') {
+    return plan as AccountPlan;
+  }
+  return DEFAULT_ACCOUNT_PLAN;
+}
+
+function resolveCreatedOrganizationsLimit(plan: AccountPlan, storedLimit: unknown): number {
+  if (plan === 'enterprise') {
+    const limit = Number(storedLimit);
+    if (Number.isFinite(limit) && limit > 0) {
+      return Math.floor(limit);
+    }
+  }
+  return CREATED_ORG_LIMITS[plan] ?? CREATED_ORG_LIMITS[DEFAULT_ACCOUNT_PLAN];
+}
+
+function getUserOrgQuota(userData?: FirebaseFirestore.DocumentData | null) {
+  const accountPlan = normalizeAccountPlan(userData?.accountPlan);
+  const createdOrganizationsCountRaw = Number(userData?.createdOrganizationsCount ?? 0);
+  let createdOrganizationsCount =
+    Number.isFinite(createdOrganizationsCountRaw) && createdOrganizationsCountRaw >= 0
+      ? Math.floor(createdOrganizationsCountRaw)
+      : 0;
+  const createdOrganizationsLimit = resolveCreatedOrganizationsLimit(
+    accountPlan,
+    userData?.createdOrganizationsLimit,
+  );
+  const demoUsedAt = userData?.demoUsedAt ?? null;
+  const primaryOrgId = String(userData?.organizationId ?? '');
+
+  if (demoUsedAt && primaryOrgId.startsWith('demo-') && createdOrganizationsCount > 0) {
+    createdOrganizationsCount -= 1;
+  }
+
+  return {
+    accountPlan,
+    createdOrganizationsCount,
+    createdOrganizationsLimit,
+    demoUsedAt,
+  };
 }
 
 async function seedDemoOrganizationData({
@@ -301,9 +879,10 @@ async function seedDemoOrganizationData({
   ];
 
   const batch = db.batch();
+  const orgRef = db.collection('organizations').doc(organizationId);
 
   sites.forEach((site) => {
-    const ref = db.collection('sites').doc(site.id);
+    const ref = orgRef.collection('sites').doc(site.id);
     batch.set(
       ref,
       {
@@ -319,7 +898,7 @@ async function seedDemoOrganizationData({
   });
 
   departments.forEach((department) => {
-    const ref = db.collection('departments').doc(department.id);
+    const ref = orgRef.collection('departments').doc(department.id);
     batch.set(
       ref,
       {
@@ -335,7 +914,7 @@ async function seedDemoOrganizationData({
   });
 
   tasks.forEach((task) => {
-    const ref = db.collection('tasks').doc(task.id);
+    const ref = orgRef.collection('tasks').doc(task.id);
     batch.set(
       ref,
       {
@@ -359,7 +938,7 @@ async function seedDemoOrganizationData({
   });
 
   tickets.forEach((ticket) => {
-    const ref = db.collection('tickets').doc(ticket.id);
+    const ref = orgRef.collection('tickets').doc(ticket.id);
     batch.set(
       ref,
       {
@@ -439,17 +1018,215 @@ function normalizeRole(input: any): Role {
   return normalizeRoleOrNull(input) ?? 'operator';
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item ?? '').trim())
+    .filter((item) => Boolean(item));
+}
+
+function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null): MembershipScope {
+  const departmentId = String(userData?.departmentId ?? '').trim();
+  const siteId = String(userData?.siteId ?? '').trim();
+  return {
+    departmentId: departmentId || undefined,
+    departmentIds: normalizeStringArray(userData?.departmentIds),
+    siteId: siteId || undefined,
+    siteIds: normalizeStringArray(userData?.siteIds),
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requireRoleAllowed(role: Role, allowed: Set<Role>, message: string) {
+  if (!allowed.has(role)) {
+    throw httpsError('permission-denied', message);
+  }
+}
+
+function requireScopedAccessToDepartment(role: Role, scope: MembershipScope, departmentId: string) {
+  if (!SCOPED_HEAD_ROLES.has(role)) return;
+  const allowedDepartmentIds = new Set([scope.departmentId, ...scope.departmentIds].filter(Boolean));
+  if (!departmentId) {
+    throw httpsError('invalid-argument', 'departmentId requerido para validar alcance.');
+  }
+  if (allowedDepartmentIds.size === 0 || !allowedDepartmentIds.has(departmentId)) {
+    throw httpsError('permission-denied', 'No tienes acceso a ese departamento.');
+  }
+}
+
+function requireScopedAccessToSite(role: Role, scope: MembershipScope, siteId: string) {
+  if (!SCOPED_HEAD_ROLES.has(role)) return;
+  const allowedSiteIds = new Set([scope.siteId, ...scope.siteIds].filter(Boolean));
+  if (!siteId) {
+    throw httpsError('invalid-argument', 'siteId requerido para validar alcance.');
+  }
+  if (allowedSiteIds.size === 0 || !allowedSiteIds.has(siteId)) {
+    throw httpsError('permission-denied', 'No tienes acceso a esa ubicación.');
+  }
+}
+
+function requireStringField(value: unknown, field: string): string {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) throw httpsError('invalid-argument', `${field} requerido.`);
+  return normalized;
+}
+
+async function requireActiveMembership(actorUid: string, orgId: string): Promise<ResolvedMembership> {
+  const membershipRef = db.collection('memberships').doc(`${actorUid}_${orgId}`);
+  const userRef = db.collection('users').doc(actorUid);
+
+  const [membershipSnap, userSnap] = await Promise.all([membershipRef.get(), userRef.get()]);
+  if (!membershipSnap.exists) {
+    throw httpsError('permission-denied', 'No perteneces a esa organización.');
+  }
+
+  const membershipData = membershipSnap.data() as FirebaseFirestore.DocumentData | null;
+  const status =
+    String(membershipData?.status ?? '') ||
+    (membershipData?.active === true ? 'active' : 'pending');
+
+  if (status !== 'active') {
+    throw httpsError('failed-precondition', 'Tu membresía no está activa.');
+  }
+
+  const role = normalizeRole(membershipData?.role);
+  const userData = userSnap.exists ? (userSnap.data() as FirebaseFirestore.DocumentData) : null;
+
+  return {
+    role,
+    status,
+    scope: resolveMembershipScope(userData),
+    membershipData,
+    userData,
+  };
+}
+
+async function resolvePlanFeaturesForTx(tx: FirebaseFirestore.Transaction, planId: string | undefined) {
+  if (!planId) return undefined;
+  const planSnap = await tx.get(db.collection('planCatalog').doc(planId));
+  if (!planSnap.exists) return undefined;
+  return planSnap.get('features') as Record<string, boolean> | undefined;
+}
+
+function ensureEntitlementAllowsCreate({
+  kind,
+  entitlement,
+  features,
+}: {
+  kind: keyof typeof USAGE_FIELDS;
+  entitlement: {
+    status?: string;
+    planId?: EntitlementPlanId;
+    limits?: EntitlementLimits;
+    usage?: EntitlementUsage;
+    trialEndsAt?: admin.firestore.Timestamp;
+  };
+  features?: Record<string, boolean>;
+}) {
+  const status = String(entitlement?.status ?? '');
+  if (status !== 'active' && status !== 'trialing') {
+    throw httpsError('failed-precondition', 'Tu plan no está activo para crear nuevos elementos.');
+  }
+
+  if (entitlement?.trialEndsAt instanceof admin.firestore.Timestamp) {
+    const now = admin.firestore.Timestamp.now();
+    if (entitlement.trialEndsAt.toMillis() <= now.toMillis()) {
+      throw httpsError('failed-precondition', 'Tu periodo de prueba expiró.');
+    }
+  }
+
+  if (kind === 'preventives' && String(entitlement?.planId ?? '') === 'free') {
+    throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
+  }
+
+  if (kind === 'preventives' && !isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) {
+    throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
+  }
+
+  if (!canCreate(kind, entitlement?.usage, entitlement?.limits)) {
+    throw httpsError('failed-precondition', LIMIT_MESSAGES[kind]);
+  }
+}
+
+function resolveOrgIdFromData(data: any): string {
+  const orgId = sanitizeOrganizationId(String(data?.orgId ?? data?.organizationId ?? ''));
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  return orgId;
+}
+
+async function pausePreventiveTicketsForOrg(orgId: string, now: admin.firestore.Timestamp) {
+  const ticketsRef = db.collection('organizations').doc(orgId).collection('tickets');
+  let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+
+  while (true) {
+    let query = ticketsRef
+      .where('type', '==', 'preventivo')
+      .orderBy(admin.firestore.FieldPath.documentId())
+      .limit(200);
+
+    if (lastDoc) {
+      query = query.startAfter(lastDoc);
+    }
+
+    const ticketsSnap = await query.get();
+    if (ticketsSnap.empty) break;
+
+    const batch = db.batch();
+    let updates = 0;
+
+    ticketsSnap.docs.forEach((docSnap) => {
+      const data = docSnap.data() as any;
+      if (data?.preventivePausedByEntitlement === true) return;
+      const status = String(data?.status ?? '');
+      if (status === 'Cerrada' || status === 'Resuelta') return;
+
+      batch.update(docSnap.ref, {
+        status: 'En espera',
+        preventivePausedByEntitlement: true,
+        preventivePausedAt: now,
+        updatedAt: now,
+      });
+      updates += 1;
+    });
+
+    if (updates > 0) {
+      await batch.commit();
+    }
+
+    lastDoc = ticketsSnap.docs[ticketsSnap.docs.length - 1] ?? null;
+    if (ticketsSnap.size < 200) break;
+  }
+
+  await db.collection('organizations').doc(orgId).set(
+    {
+      preventivesPausedAt: now,
+      preventivesPausedByEntitlement: true,
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+}
+
 async function ensureDefaultOrganizationExists() {
   const ref = db.collection('organizations').doc('default');
   const snap = await ref.get();
   if (!snap.exists) {
+    const now = admin.firestore.FieldValue.serverTimestamp();
     await ref.set(
       {
         organizationId: 'default',
         name: 'default',
         isActive: true,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        entitlement: buildEntitlementPayload({
+          planId: 'free',
+          status: 'active',
+          now,
+        }),
+        createdAt: now,
+        updatedAt: now,
         source: 'ensure_default_org_v1',
       },
       { merge: true }
@@ -457,8 +1234,24 @@ async function ensureDefaultOrganizationExists() {
   } else {
     const d = snap.data() as any;
     // si no existe el campo, lo normalizamos para que nunca se "pierda" en queries futuras
-    if (d?.isActive === undefined) {
-      await ref.set({ isActive: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    if (d?.isActive === undefined || !d?.entitlement) {
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      await ref.set(
+        {
+          ...(d?.isActive === undefined ? { isActive: true } : {}),
+          ...(!d?.entitlement
+            ? {
+                entitlement: buildEntitlementPayload({
+                  planId: 'free',
+                  status: 'active',
+                  now,
+                }),
+              }
+            : {}),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
     }
   }
 }
@@ -486,7 +1279,10 @@ async function auditLog(params: {
   after?: any;
   meta?: any;
 }) {
-  await db.collection('auditLogs').add({
+  const collectionRef = params.orgId
+    ? db.collection('organizations').doc(params.orgId).collection('auditLogs')
+    : db.collection('auditLogs');
+  await collectionRef.add({
     ...params,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -497,7 +1293,7 @@ async function auditLog(params: {
 --------------------------------- */
 
 export const onTicketAssign = functions.firestore
-  .document('tickets/{ticketId}')
+  .document('organizations/{orgId}/tickets/{ticketId}')
   .onUpdate(async (change, context) => {
     const before = change.before.data() as any;
     const after = change.after.data() as any;
@@ -507,8 +1303,9 @@ export const onTicketAssign = functions.firestore
     if (after.assignmentEmailSource === 'client') return;
 
     try {
+      const orgId = after.organizationId ?? context.params.orgId ?? null;
       await sendAssignmentEmail({
-        organizationId: after.organizationId ?? null,
+        organizationId: orgId,
         assignedTo: after.assignedTo ?? null,
         departmentId: after.departmentId ?? null,
         title: after.title ?? '(sin título)',
@@ -526,7 +1323,7 @@ export const onTicketAssign = functions.firestore
   });
 
 export const onTaskAssign = functions.firestore
-  .document('tasks/{taskId}')
+  .document('organizations/{orgId}/tasks/{taskId}')
   .onUpdate(async (change, context) => {
     const before = change.before.data() as any;
     const after = change.after.data() as any;
@@ -536,8 +1333,9 @@ export const onTaskAssign = functions.firestore
     if (after.assignmentEmailSource === 'client') return;
 
     try {
+      const orgId = after.organizationId ?? context.params.orgId ?? null;
       await sendAssignmentEmail({
-        organizationId: after.organizationId ?? null,
+        organizationId: orgId,
         assignedTo: after.assignedTo ?? null,
         departmentId: after.location ?? null,
         title: after.title ?? '(sin título)',
@@ -557,15 +1355,16 @@ export const onTaskAssign = functions.firestore
   });
 
 export const onTicketCreate = functions.firestore
-  .document('tickets/{ticketId}')
+  .document('organizations/{orgId}/tickets/{ticketId}')
   .onCreate(async (snap, context) => {
     const data = snap.data() as any;
     if (!data?.assignedTo) return;
     if (data.assignmentEmailSource === 'client') return;
 
     try {
+      const orgId = data.organizationId ?? context.params.orgId ?? null;
       await sendAssignmentEmail({
-        organizationId: data.organizationId ?? null,
+        organizationId: orgId,
         assignedTo: data.assignedTo ?? null,
         departmentId: data.departmentId ?? null,
         title: data.title ?? '(sin título)',
@@ -583,15 +1382,16 @@ export const onTicketCreate = functions.firestore
   });
 
 export const onTaskCreate = functions.firestore
-  .document('tasks/{taskId}')
+  .document('organizations/{orgId}/tasks/{taskId}')
   .onCreate(async (snap, context) => {
     const data = snap.data() as any;
     if (!data?.assignedTo) return;
     if (data.assignmentEmailSource === 'client') return;
 
     try {
+      const orgId = data.organizationId ?? context.params.orgId ?? null;
       await sendAssignmentEmail({
-        organizationId: data.organizationId ?? null,
+        organizationId: orgId,
         assignedTo: data.assignedTo ?? null,
         departmentId: data.location ?? null,
         title: data.title ?? '(sin título)',
@@ -611,7 +1411,7 @@ export const onTaskCreate = functions.firestore
   });
 
 export const onTicketClosed = functions.firestore
-  .document('tickets/{ticketId}')
+  .document('organizations/{orgId}/tickets/{ticketId}')
   .onUpdate(async (change, context) => {
     const before = change.before.data() as any;
     const after = change.after.data() as any;
@@ -626,13 +1426,13 @@ export const onTicketClosed = functions.firestore
   });
 
 export const onTicketDeleted = functions.firestore
-  .document('tickets/{ticketId}')
+  .document('organizations/{orgId}/tickets/{ticketId}')
   .onDelete(async (_snap, context) => {
     console.log('[onTicketDeleted]', context.params.ticketId);
   });
 
 export const onTaskDeleted = functions.firestore
-  .document('tasks/{taskId}')
+  .document('organizations/{orgId}/tasks/{taskId}')
   .onDelete(async (_snap, context) => {
     console.log('[onTaskDeleted]', context.params.taskId);
   });
@@ -726,13 +1526,13 @@ export const rootOrgSummary = functions.https.onCall(async (data, context) => {
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
 
   const membersQ = db.collection('organizations').doc(orgId).collection('members');
-  const usersQ = db.collection('users').where('organizationId', '==', orgId);
+  const usersQ = db.collection('organizations').doc(orgId).collection('members');
 
-  const ticketsQ = db.collection('tickets').where('organizationId', '==', orgId);
-  const tasksQ = db.collection('tasks').where('organizationId', '==', orgId);
-  const sitesQ = db.collection('sites').where('organizationId', '==', orgId);
-  const assetsQ = db.collection('assets').where('organizationId', '==', orgId);
-  const depsQ = db.collection('departments').where('organizationId', '==', orgId);
+  const ticketsQ = db.collection('organizations').doc(orgId).collection('tickets');
+  const tasksQ = db.collection('organizations').doc(orgId).collection('tasks');
+  const sitesQ = db.collection('organizations').doc(orgId).collection('sites');
+  const assetsQ = db.collection('organizations').doc(orgId).collection('assets');
+  const depsQ = db.collection('organizations').doc(orgId).collection('departments');
 
   const [members, users, tickets, tasks, sites, assets, departments] = await Promise.all([
     countQuery(membersQ),
@@ -836,13 +1636,25 @@ export const rootUpsertUserToOrganization = functions.https.onCall(async (data, 
   if (!authUser?.uid) throw httpsError('not-found', 'No existe ese usuario en Auth.');
 
   const uid = authUser.uid;
+  const orgRef = db.collection('organizations').doc(orgId);
+  const orgSnap = await orgRef.get();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const entitlementPayload =
+    !orgSnap.exists || !orgSnap.get('entitlement')
+      ? buildEntitlementPayload({
+          planId: 'free',
+          status: 'active',
+          now,
+        })
+      : null;
 
-  await db.collection('organizations').doc(orgId).set(
+  await orgRef.set(
     {
       organizationId: orgId,
       name: orgId,
       isActive: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: now,
+      ...(entitlementPayload ? { entitlement: entitlementPayload } : {}),
       source: 'root_upsert_user_v1',
     },
     { merge: true }
@@ -866,10 +1678,8 @@ export const rootUpsertUserToOrganization = functions.https.onCall(async (data, 
       organizationId: orgId,
       role,
       active: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: beforeSnap.exists
-        ? beforeSnap.get('createdAt') ?? admin.firestore.FieldValue.serverTimestamp()
-        : admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: now,
+      createdAt: beforeSnap.exists ? beforeSnap.get('createdAt') ?? now : now,
       source: 'root_upsert_user_v1',
     },
     { merge: true }
@@ -884,8 +1694,8 @@ export const rootUpsertUserToOrganization = functions.https.onCall(async (data, 
       displayName: authUser.displayName ?? null,
       active: true,
       role,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: now,
+      createdAt: now,
       source: 'root_upsert_user_v1',
     },
     { merge: true }
@@ -898,8 +1708,8 @@ export const rootUpsertUserToOrganization = functions.https.onCall(async (data, 
       organizationId: orgId,
       role,
       active: true,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: now,
+      createdAt: now,
       source: 'root_upsert_user_v1',
     },
     { merge: true }
@@ -1046,13 +1856,13 @@ export const rootPurgeOrganizationCollection = functions.https.onCall(async (dat
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
   if (!collection) throw httpsError('invalid-argument', 'collection requerida.');
 
-  const allowed = new Set(['tickets', 'tasks', 'sites', 'assets', 'departments', 'memberships', 'users']);
+  const allowed = new Set(['tickets', 'tasks', 'sites', 'assets', 'departments', 'members', 'joinRequests']);
   if (!allowed.has(collection)) throw httpsError('invalid-argument', 'Colección no permitida para purge.');
 
   let totalDeleted = 0;
 
   while (true) {
-    const q = db.collection(collection).where('organizationId', '==', orgId).limit(batchSize);
+    const q = db.collection('organizations').doc(orgId).collection(collection).limit(batchSize);
     const snap = await q.get();
     if (snap.empty) break;
 
@@ -1408,8 +2218,6 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const displayName = (authUser?.displayName ?? String(data?.displayName ?? '').trim()) || null;
   const orgRef = db.collection('organizations').doc(organizationId);
   const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
-  const orgSnap = await orgRef.get();
-
   const userRef = db.collection('users').doc(uid);
   const memberRef = orgRef.collection('members').doc(uid);
   void memberRef;
@@ -1417,6 +2225,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
 
   const now = admin.firestore.FieldValue.serverTimestamp();
 
+  let orgSnap = await orgRef.get();
   if (!orgSnap.exists) {
     const details = (data?.organizationDetails ?? {}) as any;
 
@@ -1454,17 +2263,41 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
       return { ok: true, mode: 'verification_required', organizationId };
     }
 
-    const batch = db.batch();
-
     const demoExpiresAt = isDemoOrg
       ? admin.firestore.Timestamp.fromDate(
           new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
         )
       : null;
 
-    batch.set(
-      orgRef,
-      {
+    const creationResult = await db.runTransaction(async (tx) => {
+      const [userSnapTx, orgSnapTx] = await tx.getAll(userRef, orgRef);
+      if (orgSnapTx.exists) {
+        return { created: false };
+      }
+
+      const userData = userSnapTx.exists ? (userSnapTx.data() as any) : null;
+      const { accountPlan, createdOrganizationsCount, createdOrganizationsLimit, demoUsedAt } =
+        getUserOrgQuota(userData);
+
+      if (!isDemoOrg && createdOrganizationsCount >= createdOrganizationsLimit) {
+        throw httpsError(
+          'failed-precondition',
+          'Has alcanzado el límite de organizaciones permitidas.',
+        );
+      }
+
+      if (isDemoOrg && demoUsedAt) {
+        throw httpsError(
+          'failed-precondition',
+          'Ya utilizaste tu organización demo. No es posible crear otra.',
+        );
+      }
+
+      const userCreatedAt = userSnapTx.exists
+        ? userSnapTx.get('createdAt') ?? now
+        : now;
+
+      tx.create(orgRef, {
         organizationId,
         name: orgName,
         legalName: orgLegalName,
@@ -1478,22 +2311,25 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         isActive: true,
         type: organizationType,
         status: 'active',
+        entitlement: buildEntitlementPayload({
+          planId: 'free',
+          status: 'trialing',
+          trialEndsAt: demoExpiresAt ?? undefined,
+          now,
+        }),
         settings: {
           allowGuestAccess: false,
           maxUsers: 50,
           inviteOnly: false,
         },
         demoExpiresAt,
+        createdByUserId: uid,
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      });
 
-    batch.set(
-      orgPublicRef,
-      {
+      tx.create(orgPublicRef, {
         organizationId,
         name: orgName,
         nameLower: orgName.toLowerCase(),
@@ -1503,28 +2339,28 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      });
 
-    batch.set(
-      userRef,
-      {
-        organizationId,
-        email: email || null,
-        displayName: displayName || email || 'Usuario',
-        role: 'super_admin',
-        active: true,
-        updatedAt: now,
-        createdAt: now,
-        source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      tx.set(
+        userRef,
+        {
+          organizationId,
+          email: email || null,
+          displayName: displayName || email || 'Usuario',
+          role: 'super_admin',
+          active: true,
+          accountPlan,
+          createdOrganizationsCount: createdOrganizationsCount + (isDemoOrg ? 0 : 1),
+          createdOrganizationsLimit,
+          demoUsedAt: isDemoOrg ? now : demoUsedAt ?? null,
+          updatedAt: now,
+          createdAt: userCreatedAt,
+          source: 'bootstrapSignup_v1',
+        },
+        { merge: true },
+      );
 
-    batch.set(
-      membershipRef,
-      {
+      tx.create(membershipRef, {
         userId: uid,
         organizationId,
         organizationName: orgName,
@@ -1534,13 +2370,9 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      });
 
-    batch.set(
-      memberRef,
-      {
+      tx.create(memberRef, {
         uid,
         orgId: organizationId,
         email: email || null,
@@ -1550,30 +2382,48 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         createdAt: now,
         updatedAt: now,
         source: 'bootstrapSignup_v1',
-      },
-      { merge: true },
-    );
+      });
 
-    await batch.commit();
-
-    await auditLog({
-      action: 'bootstrapSignup_create_org',
-      actorUid: uid,
-      actorEmail: email || null,
-      orgId: organizationId,
-      after: { organizationId, role: 'super_admin', status: 'active' },
+      return { created: true, isDemoOrg };
     });
 
-    if (isDemoOrg) {
-      await seedDemoOrganizationData({ organizationId, uid });
+    if (creationResult.created) {
+      await auditLog({
+        action: 'bootstrapSignup_create_org',
+        actorUid: uid,
+        actorEmail: email || null,
+        orgId: organizationId,
+        after: { organizationId, role: 'super_admin', status: 'active' },
+      });
+
+      if (isDemoOrg) {
+        await seedDemoOrganizationData({ organizationId, uid });
+      }
+
+      return { ok: true, mode: 'created', organizationId };
     }
 
-    return { ok: true, mode: 'created', organizationId };
+    orgSnap = await orgRef.get();
+    if (!orgSnap.exists) {
+      throw httpsError('internal', 'No se pudo crear la organización.');
+    }
   }
 
   const orgData = orgSnap.data() as any;
   const orgName = String(orgData?.name ?? organizationId);
   const inviteOnly = Boolean(orgData?.settings?.inviteOnly === true);
+  const existingMembershipSnap = await membershipRef.get();
+  if (existingMembershipSnap.exists) {
+    const membershipData = existingMembershipSnap.data() as any;
+    const membershipStatus =
+      String(membershipData?.status ?? '') ||
+      (membershipData?.active === true ? 'active' : 'pending');
+    return {
+      ok: true,
+      mode: membershipStatus === 'active' ? 'already_member' : 'pending',
+      organizationId,
+    };
+  }
 
   const inviteByUidRef = orgRef.collection('joinRequests').doc(uid);
   const inviteByEmailRef = email ? orgRef.collection('joinRequests').doc(`invite_${email}`) : null;
@@ -1681,22 +2531,52 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
     return { ok: true, mode: 'already_exists', organizationId };
   }
 
-  const now = admin.firestore.FieldValue.serverTimestamp();
   const orgDetails = requestData?.organizationDetails ?? {};
   const orgName = String(orgDetails?.name ?? requestData?.organizationName ?? organizationId).trim() || organizationId;
   const orgLegalName = String(orgDetails?.legalName ?? requestData?.organizationLegalName ?? '').trim() || null;
   const isDemoOrg = organizationId.startsWith('demo-');
   const organizationType = isDemoOrg ? 'demo' : 'standard';
+  const demoExpiresAt = isDemoOrg
+    ? admin.firestore.Timestamp.fromDate(
+        new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+      )
+    : null;
 
   const userRef = db.collection('users').doc(uid);
   const memberRef = orgRef.collection('members').doc(uid);
   const membershipRef = db.collection('memberships').doc(`${uid}_${organizationId}`);
 
-  const batch = db.batch();
+  const now = admin.firestore.FieldValue.serverTimestamp();
 
-  batch.set(
-    orgRef,
-    {
+  await db.runTransaction(async (tx) => {
+    const [userSnapTx, orgSnapTx] = await tx.getAll(userRef, orgRef);
+    if (orgSnapTx.exists) {
+      return;
+    }
+
+    const userData = userSnapTx.exists ? (userSnapTx.data() as any) : null;
+    const { accountPlan, createdOrganizationsCount, createdOrganizationsLimit, demoUsedAt } =
+      getUserOrgQuota(userData);
+
+    if (!isDemoOrg && createdOrganizationsCount >= createdOrganizationsLimit) {
+      throw httpsError(
+        'failed-precondition',
+        'Has alcanzado el límite de organizaciones permitidas.',
+      );
+    }
+
+    if (isDemoOrg && demoUsedAt) {
+      throw httpsError(
+        'failed-precondition',
+        'Ya utilizaste tu organización demo. No es posible crear otra.',
+      );
+    }
+
+    const userCreatedAt = userSnapTx.exists
+      ? userSnapTx.get('createdAt') ?? now
+      : now;
+
+    tx.create(orgRef, {
       organizationId,
       name: orgName,
       legalName: orgLegalName,
@@ -1710,21 +2590,25 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       isActive: true,
       type: organizationType,
       status: 'active',
+      entitlement: buildEntitlementPayload({
+        planId: 'free',
+        status: 'trialing',
+        trialEndsAt: demoExpiresAt ?? undefined,
+        now,
+      }),
       settings: {
         allowGuestAccess: false,
         maxUsers: 50,
         inviteOnly: false,
       },
+      demoExpiresAt,
+      createdByUserId: uid,
       createdAt: now,
       updatedAt: now,
       source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    });
 
-  batch.set(
-    orgPublicRef,
-    {
+    tx.create(orgPublicRef, {
       organizationId,
       name: orgName,
       nameLower: orgName.toLowerCase(),
@@ -1734,28 +2618,28 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       createdAt: now,
       updatedAt: now,
       source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    });
 
-  batch.set(
-    userRef,
-    {
-      organizationId,
-      email: authUser?.email ?? null,
-      displayName: authUser?.displayName ?? authUser?.email ?? 'Usuario',
-      role: 'super_admin',
-      active: true,
-      updatedAt: now,
-      createdAt: now,
-      source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    tx.set(
+      userRef,
+      {
+        organizationId,
+        email: authUser?.email ?? null,
+        displayName: authUser?.displayName ?? authUser?.email ?? 'Usuario',
+        role: 'super_admin',
+        active: true,
+        accountPlan,
+        createdOrganizationsCount: createdOrganizationsCount + (isDemoOrg ? 0 : 1),
+        createdOrganizationsLimit,
+        demoUsedAt: isDemoOrg ? now : demoUsedAt ?? null,
+        updatedAt: now,
+        createdAt: userCreatedAt,
+        source: 'bootstrapSignup_v1',
+      },
+      { merge: true },
+    );
 
-  batch.set(
-    membershipRef,
-    {
+    tx.create(membershipRef, {
       userId: uid,
       organizationId,
       organizationName: orgName,
@@ -1765,13 +2649,9 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       createdAt: now,
       updatedAt: now,
       source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    });
 
-  batch.set(
-    memberRef,
-    {
+    tx.create(memberRef, {
       uid,
       orgId: organizationId,
       email: authUser?.email ?? null,
@@ -1781,13 +2661,12 @@ export const finalizeOrganizationSignup = functions.https.onCall(async (_data, c
       createdAt: now,
       updatedAt: now,
       source: 'bootstrapSignup_v1',
-    },
-    { merge: true },
-  );
+    });
 
-  batch.delete(requestRef);
+    tx.delete(requestRef);
+  });
 
-  await batch.commit();
+  await requestRef.delete().catch(() => null);
 
   await auditLog({
     action: 'bootstrapSignup_create_org',
@@ -1825,6 +2704,424 @@ export const setActiveOrganization = functions.https.onCall(async (data, context
 
   return { ok: true, organizationId: orgId };
 });
+
+/* ------------------------------
+   ENTITLEMENT-LIMITED CREATION
+--------------------------------- */
+
+export const createSite = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, ADMIN_LIKE_ROLES, 'No tienes permisos para crear ubicaciones.');
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+
+  const name = requireStringField(data.payload.name, 'name');
+  const code = requireStringField(data.payload.code, 'code');
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const siteRef = orgRef.collection('sites').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'sites', entitlement, features });
+
+    tx.create(siteRef, {
+      name,
+      code,
+      organizationId: orgId,
+      createdAt: now,
+      updatedAt: now,
+      source: 'createSite_v1',
+    });
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.sites}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  await auditLog({
+    action: 'createSite',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { siteId: siteRef.id, name, code },
+  });
+
+  return { ok: true, organizationId: orgId, siteId: siteRef.id };
+});
+
+export const createDepartment = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, ADMIN_LIKE_ROLES, 'No tienes permisos para crear departamentos.');
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+
+  const name = requireStringField(data.payload.name, 'name');
+  const code = requireStringField(data.payload.code, 'code');
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const departmentRef = orgRef.collection('departments').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'departments', entitlement, features });
+
+    tx.create(departmentRef, {
+      name,
+      code,
+      organizationId: orgId,
+      createdAt: now,
+      updatedAt: now,
+      source: 'createDepartment_v1',
+    });
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.departments}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  await auditLog({
+    action: 'createDepartment',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { departmentId: departmentRef.id, name, code },
+  });
+
+  return { ok: true, organizationId: orgId, departmentId: departmentRef.id };
+});
+
+export const createAsset = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para crear activos.');
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+
+  const name = requireStringField(data.payload.name, 'name');
+  const code = requireStringField(data.payload.code, 'code');
+  const siteId = requireStringField(data.payload.siteId, 'siteId');
+
+  requireScopedAccessToSite(role, scope, siteId);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const siteRef = orgRef.collection('sites').doc(siteId);
+  const assetRef = orgRef.collection('assets').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const siteSnap = await tx.get(siteRef);
+    if (!siteSnap.exists || String(siteSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('failed-precondition', 'La ubicación indicada no existe en esta organización.');
+    }
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'assets', entitlement, features });
+
+    tx.create(assetRef, {
+      name,
+      code,
+      siteId,
+      organizationId: orgId,
+      createdAt: now,
+      updatedAt: now,
+      source: 'createAsset_v1',
+    });
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.assets}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  await auditLog({
+    action: 'createAsset',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { assetId: assetRef.id, name, code, siteId },
+  });
+
+  return { ok: true, organizationId: orgId, assetId: assetRef.id };
+});
+
+export const createPreventive = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(
+    role,
+    new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]),
+    'No tienes permisos para crear preventivos.',
+  );
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+
+  const payload = data.payload;
+  const title = requireStringField(payload.title, 'title');
+  const siteId = requireStringField(payload.siteId, 'siteId');
+  const departmentId = requireStringField(payload.departmentId, 'departmentId');
+
+  requireScopedAccessToDepartment(role, scope, departmentId);
+  requireScopedAccessToSite(role, scope, siteId);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const siteRef = orgRef.collection('sites').doc(siteId);
+  const departmentRef = orgRef.collection('departments').doc(departmentId);
+  const assetId = String(payload.assetId ?? '').trim();
+  const assetRef = assetId ? orgRef.collection('assets').doc(assetId) : null;
+  const ticketRef = orgRef.collection('tickets').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const [siteSnap, departmentSnap] = await Promise.all([tx.get(siteRef), tx.get(departmentRef)]);
+    if (!siteSnap.exists || String(siteSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('failed-precondition', 'La ubicación indicada no existe en esta organización.');
+    }
+    if (!departmentSnap.exists || String(departmentSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('failed-precondition', 'El departamento indicado no existe en esta organización.');
+    }
+
+    if (assetRef) {
+      const assetSnap = await tx.get(assetRef);
+      if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+        throw httpsError('failed-precondition', 'El activo indicado no existe en esta organización.');
+      }
+    }
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+
+    const sanitizedPayload = {
+      ...payload,
+      title,
+      siteId,
+      departmentId,
+      assetId: assetId || null,
+      status: String(payload.status ?? 'Abierta'),
+      type: 'preventivo',
+      organizationId: orgId,
+      createdBy: actorUid,
+      createdAt: now,
+      updatedAt: now,
+      source: 'createPreventive_v1',
+    };
+
+    tx.create(ticketRef, sanitizedPayload);
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.preventives}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  await auditLog({
+    action: 'createPreventive',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { ticketId: ticketRef.id, title, siteId, departmentId },
+  });
+
+  return { ok: true, organizationId: orgId, ticketId: ticketRef.id };
+});
+
+export const inviteUserToOrg = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = resolveOrgIdFromData(data);
+  const email = requireStringField(data?.email, 'email').toLowerCase();
+  const displayName = String(data?.displayName ?? '').trim();
+  const requestedRole: Role = normalizeRole(data?.role) ?? 'operator';
+  const departmentId = String(data?.departmentId ?? '').trim();
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  let targetUid = '';
+  try {
+    const authUser = await admin.auth().getUserByEmail(email);
+    targetUid = authUser.uid;
+  } catch {
+    targetUid = '';
+  }
+
+  const inviteId = targetUid || `invite_${email}`;
+  const orgRef = db.collection('organizations').doc(orgId);
+  const joinReqRef = orgRef.collection('joinRequests').doc(inviteId);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  let alreadyPending = false;
+  let orgName = orgId;
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    orgName = String((orgSnap.data() as any)?.name ?? orgId);
+
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({ kind: 'users', entitlement, features });
+
+    if (targetUid) {
+      const membershipRef = db.collection('memberships').doc(`${targetUid}_${orgId}`);
+      const membershipSnap = await tx.get(membershipRef);
+      if (membershipSnap.exists) {
+        const status =
+          String(membershipSnap.get('status') ?? '') ||
+          (membershipSnap.get('active') === true ? 'active' : 'pending');
+        if (status === 'active') {
+          throw httpsError('failed-precondition', 'El usuario ya pertenece a la organización.');
+        }
+      }
+    }
+
+    const existingJoinReq = await tx.get(joinReqRef);
+    if (existingJoinReq.exists && String(existingJoinReq.get('status') ?? '') === 'pending') {
+      alreadyPending = true;
+      return;
+    }
+
+    tx.set(
+      joinReqRef,
+      {
+        userId: targetUid || null,
+        organizationId: orgId,
+        organizationName: orgName,
+        email,
+        displayName: displayName || email,
+        requestedRole,
+        status: 'pending',
+        departmentId: departmentId || null,
+        invitedBy: actorUid,
+        invitedByEmail: actorEmail,
+        invitedAt: now,
+        createdAt: now,
+        updatedAt: now,
+        source: 'inviteUserToOrg_v1',
+      },
+      { merge: true },
+    );
+
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.users}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': now,
+    });
+  });
+
+  if (!alreadyPending) {
+    try {
+      await sendInviteEmail({
+        recipientEmail: email,
+        orgName,
+        role: requestedRole,
+        inviteLink: 'https://multi.maintelligence.app/login',
+      });
+    } catch (error) {
+      console.warn('Error enviando email de invitación.', error);
+    }
+  }
+
+  await auditLog({
+    action: 'inviteUserToOrg',
+    actorUid,
+    actorEmail,
+    orgId,
+    targetUid: targetUid || null,
+    targetEmail: email,
+    after: { status: 'pending', role: requestedRole, requestId: inviteId },
+  });
+
+  return { ok: true, organizationId: orgId, uid: targetUid || null, requestId: inviteId, alreadyPending };
+});
+
+export const pauseExpiredDemoPreventives = functions.pubsub
+  .schedule('every 24 hours')
+  .timeZone('UTC')
+  .onRun(async () => {
+    const now = admin.firestore.Timestamp.now();
+    const orgsSnap = await db
+      .collection('organizations')
+      .where('demoExpiresAt', '<=', now)
+      .get();
+
+    if (orgsSnap.empty) return null;
+
+    for (const orgDoc of orgsSnap.docs) {
+      await pausePreventiveTicketsForOrg(orgDoc.id, now);
+    }
+
+    return null;
+  });
+
+export const pausePreventivesWithoutEntitlement = functions.pubsub
+  .schedule('every 24 hours')
+  .timeZone('UTC')
+  .onRun(async () => {
+    const planCatalogSnap = await db.collection('planCatalog').get();
+    if (planCatalogSnap.empty) return null;
+
+    const blockedPlanIds = planCatalogSnap.docs
+      .filter((planDoc) => {
+        const features = planDoc.get('features') as Record<string, boolean> | undefined;
+        return features?.PREVENTIVES !== true;
+      })
+      .map((planDoc) => planDoc.id);
+
+    if (blockedPlanIds.length === 0) return null;
+
+    const now = admin.firestore.Timestamp.now();
+
+    for (let i = 0; i < blockedPlanIds.length; i += 10) {
+      const chunk = blockedPlanIds.slice(i, i + 10);
+      const orgsSnap = await db
+        .collection('organizations')
+        .where('entitlement.planId', 'in', chunk)
+        .get();
+
+      if (orgsSnap.empty) continue;
+
+      for (const orgDoc of orgsSnap.docs) {
+        await pausePreventiveTicketsForOrg(orgDoc.id, now);
+      }
+    }
+
+    return null;
+  });
 
 export const orgInviteUser = functions.https.onRequest(async (req, res) => {
   if (applyCors(req, res)) return;
@@ -2050,6 +3347,8 @@ export const orgApproveJoinRequest = functions.https.onCall(async (data, context
   batch.set(
     membershipRef,
     {
+      userId: targetUid,
+      organizationId: orgId,
       role,
       status: 'active',
       organizationName: orgName,
@@ -2237,4 +3536,308 @@ export const demoteToAdminWithinOrg = functions.https.onCall(async (data, contex
   const targetUid = await resolveTargetUidByEmailOrUid(data?.email, data?.uid);
 
   return setRoleWithinOrgImpl({ actorUid, actorEmail, isRoot, orgId, targetUid, role: 'admin' });
+});
+
+export const registerGooglePlayPurchase = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = String(data?.organizationId ?? '').trim();
+  const purchaseToken = String(data?.purchaseToken ?? '').trim();
+  const subscriptionId = String(data?.subscriptionId ?? '').trim();
+  const planIdRaw = String(data?.planId ?? '').trim();
+  const packageNameRaw = String(data?.packageName ?? '').trim();
+
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!purchaseToken) throw httpsError('invalid-argument', 'purchaseToken requerido.');
+  if (!subscriptionId) throw httpsError('invalid-argument', 'subscriptionId requerido.');
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  const googleCfg = resolveGooglePlayConfig();
+  const configPackageName = googleCfg?.packageName ?? ''; 
+  const packageName = packageNameRaw || configPackageName;
+  if (!packageName) throw httpsError('invalid-argument', 'packageName requerido.');
+
+  const resolvedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: planIdRaw || null,
+  });
+
+  const purchaseRef = db.collection('googlePlayPurchases').doc(purchaseToken);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(purchaseRef);
+    const payload: Record<string, unknown> = {
+      organizationId: orgId,
+      subscriptionId,
+      packageName,
+      planId: resolvedPlanId,
+      updatedAt: now,
+      linkedBy: actorUid,
+      source: 'registerGooglePlayPurchase_v1',
+    };
+    if (!snap.exists) {
+      payload.createdAt = now;
+    }
+    tx.set(purchaseRef, payload, { merge: true });
+  });
+
+  await auditLog({
+    action: 'registerGooglePlayPurchase',
+    actorUid,
+    actorEmail,
+    orgId,
+    meta: { purchaseToken, subscriptionId, packageName, planId: resolvedPlanId },
+  });
+
+  return { ok: true, organizationId: orgId, purchaseToken };
+});
+
+export const registerAppleAppAccountToken = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = String(data?.organizationId ?? '').trim();
+  const appAccountToken = String(data?.appAccountToken ?? '').trim();
+  const uid = String(data?.uid ?? actorUid).trim();
+  const planIdRaw = String(data?.planId ?? '').trim();
+
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+  if (!appAccountToken) throw httpsError('invalid-argument', 'appAccountToken requerido.');
+
+  await requireCallerSuperAdminInOrg(actorUid, orgId);
+
+  const resolvedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: planIdRaw || null,
+  });
+
+  const tokenRef = db.collection('appleAppAccountTokens').doc(appAccountToken);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(tokenRef);
+    const payload: Record<string, unknown> = {
+      organizationId: orgId,
+      uid,
+      planId: resolvedPlanId,
+      updatedAt: now,
+      linkedBy: actorUid,
+      source: 'registerAppleAppAccountToken_v1',
+    };
+    if (!snap.exists) {
+      payload.createdAt = now;
+    }
+    tx.set(tokenRef, payload, { merge: true });
+  });
+
+  await auditLog({
+    action: 'registerAppleAppAccountToken',
+    actorUid,
+    actorEmail,
+    orgId,
+    meta: { appAccountToken, uid, planId: resolvedPlanId },
+  });
+
+  return { ok: true, organizationId: orgId, appAccountToken };
+});
+
+export const appleAppStoreNotifications = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).send('Method not allowed');
+    return;
+  }
+
+  const rawBody = req.rawBody?.toString('utf8') ?? '';
+  if (!rawBody) {
+    res.status(400).send('Missing payload.');
+    return;
+  }
+
+  let signedPayload: string | null = null;
+  try {
+    const parsed = JSON.parse(rawBody) as { signedPayload?: string };
+    signedPayload = parsed.signedPayload ?? null;
+  } catch (error) {
+    console.error('appleAppStoreNotifications: invalid JSON', error);
+    res.status(400).send('Invalid JSON.');
+    return;
+  }
+
+  if (!signedPayload) {
+    res.status(400).send('Missing signedPayload.');
+    return;
+  }
+
+  const notificationPayload = decodeJwtPayload<AppleNotificationPayload>(signedPayload);
+  const transactionPayload = decodeJwtPayload<AppleTransactionPayload>(
+    notificationPayload?.data?.signedTransactionInfo ?? null
+  );
+  const renewalPayload = decodeJwtPayload<AppleRenewalPayload>(
+    notificationPayload?.data?.signedRenewalInfo ?? null
+  );
+
+  const appAccountToken =
+    transactionPayload?.appAccountToken ??
+    renewalPayload?.appAccountToken ??
+    notificationPayload?.data?.appAccountToken ??
+    '';
+
+  const { bundleId } = resolveAppleAppStoreConfig();
+  if (bundleId && notificationPayload?.data?.bundleId && notificationPayload.data.bundleId !== bundleId) {
+    res.status(400).send('Bundle mismatch.');
+    return;
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await db.collection('appleAppStoreNotifications').add({
+    signedPayload,
+    notificationType: notificationPayload?.notificationType ?? null,
+    subtype: notificationPayload?.subtype ?? null,
+    appAccountToken: appAccountToken || null,
+    bundleId: notificationPayload?.data?.bundleId ?? null,
+    receivedAt: now,
+    source: 'appleAppStoreNotifications_v1',
+  });
+
+  if (APPLE_UPDATES_ENABLED && appAccountToken) {
+    const tokenSnap = await db.collection('appleAppAccountTokens').doc(appAccountToken).get();
+    if (tokenSnap.exists) {
+      const tokenData = tokenSnap.data() as { organizationId?: string; planId?: EntitlementPlanId } | undefined;
+      const orgId = String(tokenData?.organizationId ?? '').trim();
+      if (orgId) {
+        const status = resolveEntitlementStatusFromApple(notificationPayload?.notificationType, renewalPayload);
+        const currentPeriodEnd = toTimestampFromMillis(transactionPayload?.expiresDate ?? null);
+        await updateOrganizationAppleEntitlement({
+          orgId,
+          planId: tokenData?.planId,
+          status,
+          currentPeriodEnd,
+        });
+      }
+    }
+  }
+
+  res.status(200).send({ received: true });
+});
+
+export const stripeWebhook = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).send('Method not allowed');
+    return;
+  }
+
+  let event: StripeEvent;
+  let webhookSecret: string;
+  let secretKey: string;
+  try {
+    const config = resolveStripeConfig();
+    if (!config) {
+      res.status(501).send('Stripe not configured.');
+      return;
+    }
+    webhookSecret = config.webhookSecret;
+    secretKey = config.secretKey;
+    const signature = req.headers['stripe-signature'];
+    if (!signature || typeof signature !== 'string') {
+      res.status(400).send('Missing Stripe signature.');
+      return;
+    }
+    const payload = req.rawBody?.toString('utf8') ?? '';
+    const valid = verifyStripeSignature({
+      payload,
+      signatureHeader: signature,
+      webhookSecret,
+    });
+    if (!valid) {
+      res.status(400).send('Invalid signature.');
+      return;
+    }
+    event = JSON.parse(payload) as StripeEvent;
+  } catch (error) {
+    console.error('stripeWebhook: signature verification failed', error);
+    res.status(400).send('Invalid signature.');
+    return;
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as StripeCheckoutSession;
+        const orgId = String(session.metadata?.orgId ?? '').trim();
+        if (!orgId) {
+          res.status(400).send('orgId missing in checkout session metadata.');
+          return;
+        }
+
+        const subscriptionId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
+        if (!subscriptionId) {
+          res.status(400).send('Subscription missing in checkout session.');
+          return;
+        }
+
+        const subscription = await fetchStripeSubscription(subscriptionId, secretKey);
+        const status = resolveEntitlementStatusFromStripe(subscription.status ?? '');
+        const planId = resolveEntitlementPlanId({
+          metadataPlanId: session.metadata?.planId ?? subscription.metadata?.planId ?? null,
+        });
+        const trialEndsAt =
+          subscription.trial_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.trial_end * 1000)
+            : null;
+        const currentPeriodEnd =
+          subscription.current_period_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000)
+            : null;
+
+        await updateOrganizationStripeEntitlement({
+          orgId,
+          planId,
+          status,
+          trialEndsAt,
+          currentPeriodEnd,
+        });
+        break;
+      }
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as StripeSubscription;
+        const orgId = String(subscription.metadata?.orgId ?? '').trim();
+        if (!orgId) {
+          res.status(400).send('orgId missing in subscription metadata.');
+          return;
+        }
+
+        const status =
+          event.type === 'customer.subscription.deleted'
+            ? 'canceled'
+            : resolveEntitlementStatusFromStripe(subscription.status);
+        const planId = resolveEntitlementPlanId({
+          metadataPlanId: subscription.metadata?.planId ?? null,
+        });
+        const trialEndsAt =
+          subscription.trial_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.trial_end * 1000)
+            : null;
+        const currentPeriodEnd =
+          subscription.current_period_end != null
+            ? admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000)
+            : null;
+
+        await updateOrganizationStripeEntitlement({
+          orgId,
+          planId,
+          status,
+          trialEndsAt,
+          currentPeriodEnd,
+        });
+        break;
+      }
+      default:
+        break;
+    }
+
+    res.status(200).send({ received: true });
+  } catch (error) {
+    console.error('stripeWebhook: handler error', error);
+    res.status(500).send('Webhook handler error.');
+  }
 });

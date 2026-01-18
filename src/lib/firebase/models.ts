@@ -10,8 +10,58 @@ export interface BaseEntity {
 export type OrganizationType = "demo" | "standard" | "enterprise" | "partner";
 export type OrganizationStatus = "active" | "suspended" | "deleted";
 export type SubscriptionPlan = "trial" | "standard" | "enterprise";
+export type EntitlementPlanId = "free" | "starter" | "pro" | "enterprise";
+export type EntitlementStatus = "trialing" | "active" | "past_due" | "canceled";
+export type EntitlementProvider = "stripe" | "google_play" | "apple_app_store" | "manual";
+export type EntitlementFeature = "EXPORT_PDF" | "AUDIT_TRAIL" | "PREVENTIVES";
 export type MembershipStatus = "active" | "pending" | "revoked";
 export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
+
+export interface EntitlementLimits {
+  maxSites: number;
+  maxAssets: number;
+  maxDepartments: number;
+  maxUsers: number;
+  maxActivePreventives: number;
+  attachmentsMonthlyMB: number;
+}
+
+export interface EntitlementUsage {
+  sitesCount: number;
+  assetsCount: number;
+  departmentsCount: number;
+  usersCount: number;
+  activePreventivesCount: number;
+  attachmentsThisMonthMB: number;
+}
+
+export interface Entitlement {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  provider: EntitlementProvider;
+  trialEndsAt?: Timestamp;
+  currentPeriodEnd?: Timestamp;
+  updatedAt: Timestamp;
+  limits: EntitlementLimits;
+  usage: EntitlementUsage;
+}
+
+export interface BillingProviderEntitlement {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: Timestamp;
+  currentPeriodEnd?: Timestamp;
+  updatedAt: Timestamp;
+  conflict?: boolean;
+  conflictReason?: string;
+}
+
+export interface PlanCatalogEntry {
+  planId: EntitlementPlanId;
+  limits: EntitlementLimits;
+  features: Record<EntitlementFeature, boolean>;
+  updatedAt: Timestamp;
+}
 
 export interface Organization extends BaseEntity {
   name: string;
@@ -23,6 +73,10 @@ export interface Organization extends BaseEntity {
   status?: OrganizationStatus;
   billingEmail?: string | null;
   modulesEnabled?: string[];
+  entitlement?: Entitlement;
+  billingProviders?: Partial<Record<EntitlementProvider, BillingProviderEntitlement>>;
+  preventivesPausedByEntitlement?: boolean;
+  preventivesPausedAt?: Timestamp;
   settings: {
     allowGuestAccess: boolean;
     maxUsers: number;

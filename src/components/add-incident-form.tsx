@@ -12,6 +12,7 @@ import { useFirestore, useUser, useStorage, useCollection } from '@/lib/firebase
 import type { Site, Department, Asset } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
+import { orgCollectionPath, orgStoragePath } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -68,9 +69,15 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const [photos, setPhotos] = useState<File[]>([]);
   const canSubmit = Boolean(firestore && storage && user && organizationId);
 
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
-  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(
+    organizationId ? orgCollectionPath(organizationId, 'sites') : null
+  );
+  const { data: departments, loading: deptsLoading } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, 'departments') : null
+  );
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(
+    organizationId ? orgCollectionPath(organizationId, 'assets') : null
+  );
 
   const form = useForm<AddIncidentFormValues>({
     resolver: zodResolver(formSchema),
@@ -103,7 +110,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const ticketId = `TICKET_${Date.now()}`; // Temporary ID for storage path
       const photoUrls: string[] = [];
 
-      const collectionRef = collection(firestore, 'tickets');
+      const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
       const docData = {
         ...data,
         type: 'correctivo' as const,
@@ -123,7 +130,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       }
 
       for (const photo of photos) {
-        const photoRef = ref(storage, `tickets/${ticketId}/${photo.name}`);
+        const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
         const snapshot = await uploadBytes(photoRef, photo);
         const url = await getDownloadURL(snapshot.ref);
         photoUrls.push(url);
@@ -141,13 +148,13 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     } catch (error: any) {
       if (error.code === 'storage/unauthorized') {
         const permissionError = new StoragePermissionError({
-          path: error.customData?.['path'] || 'tickets/photos',
+          path: error.customData?.['path'] || orgStoragePath(organizationId, 'tickets', 'photos'),
           operation: 'write',
         });
         errorEmitter.emit('permission-error', permissionError);
       } else if (error.code === 'permission-denied') {
         const permissionError = new FirestorePermissionError({
-          path: 'tickets',
+          path: orgCollectionPath(organizationId, 'tickets'),
           operation: 'create',
           requestResourceData: data,
         });

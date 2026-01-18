@@ -5,11 +5,13 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { collection, addDoc } from 'firebase/firestore';
-import { useFirestore, useUser } from '@/lib/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useDoc, useFirebaseApp, useUser } from '@/lib/firebase';
+import type { Organization } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
-import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
+import { canCreate } from '@/lib/entitlements';
+import { orgCollectionPath } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -49,9 +51,23 @@ interface AddDepartmentDialogProps {
 
 export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogProps) {
   const { toast } = useToast();
-  const firestore = useFirestore();
+  const app = useFirebaseApp();
   const { organizationId } = useUser();
   const [isPending, setIsPending] = useState(false);
+  const { data: organization } = useDoc<Organization>(
+    organizationId ? `organizations/${organizationId}` : null
+  );
+  const hasEntitlementLimits = Boolean(
+    organization?.entitlement?.usage && organization?.entitlement?.limits
+  );
+  const canCreateDepartment = hasEntitlementLimits
+    ? canCreate(
+        'departments',
+        organization?.entitlement?.usage,
+        organization?.entitlement?.limits
+      )
+    : true;
+  const isLimitBlocked = hasEntitlementLimits && !canCreateDepartment;
 
   const form = useForm<AddDepartmentFormValues>({
     resolver: zodResolver(formSchema),
@@ -62,11 +78,11 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
   });
 
   const onSubmit = async (data: AddDepartmentFormValues) => {
-    if (!firestore) {
+    if (!app) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Firestore no está disponible.',
+        description: 'Firebase no está disponible.',
       });
       return;
     }
@@ -76,8 +92,8 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
       if (!organizationId) {
         throw new Error('Critical: Missing organizationId in transaction');
       }
-      const collectionRef = collection(firestore, 'departments');
-      await addDoc(collectionRef, { ...data, organizationId });
+      const fn = httpsCallable(getFunctions(app), 'createDepartment');
+      await fn({ organizationId, payload: data });
       toast({
         title: 'Éxito',
         description: `Departamento '${data.name}' creado correctamente.`,
@@ -85,13 +101,20 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
       onOpenChange(false);
       form.reset();
     } catch (error: any) {
-      if (error.code === 'permission-denied') {
+      const errorCode = String(error?.code ?? '');
+      if (errorCode.includes('permission-denied')) {
         const permissionError = new FirestorePermissionError({
-          path: 'departments',
+          path: organizationId ? orgCollectionPath(organizationId, 'departments') : 'departments',
           operation: 'create',
           requestResourceData: data,
         });
         errorEmitter.emit('permission-error', permissionError);
+      } else if (errorCode.includes('failed-precondition')) {
+        toast({
+          variant: 'destructive',
+          title: 'Límite alcanzado',
+          description: error.message || 'No es posible crear más departamentos con tu plan actual.',
+        });
       } else {
         toast({
           variant: 'destructive',
@@ -151,12 +174,17 @@ export function AddDepartmentDialog({ open, onOpenChange }: AddDepartmentDialogP
               )}
             />
             <DialogFooter>
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending || isLimitBlocked}>
                 {isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
                 Crear Departamento
               </Button>
+              {isLimitBlocked ? (
+                <p className="text-xs text-destructive">
+                  Has alcanzado el límite de departamentos de tu plan actual.
+                </p>
+              ) : null}
             </DialogFooter>
           </form>
         </Form>
