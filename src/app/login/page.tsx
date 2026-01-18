@@ -35,6 +35,18 @@ export default function LoginPage() {
     }),
     []
   );
+  const sendVerificationEmail = async (userToVerify: Parameters<typeof sendEmailVerification>[0]) => {
+    try {
+      await sendEmailVerification(userToVerify, emailVerificationSettings);
+    } catch (err: any) {
+      const code = String(err?.code ?? '');
+      if (code === 'auth/unauthorized-continue-uri' || code === 'auth/invalid-continue-uri') {
+        await sendEmailVerification(userToVerify);
+        return;
+      }
+      throw err;
+    }
+  };
 
   const [isLoginView, setIsLoginView] = useState(true);
 
@@ -220,7 +232,7 @@ export default function LoginPage() {
 
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       if (!cred.user.emailVerified) {
-        await sendEmailVerification(cred.user, emailVerificationSettings);
+        await sendVerificationEmail(cred.user);
       }
 
       setNotice('Cuenta creada. Revisa tu correo para verificar tu email y continúa el alta.');
