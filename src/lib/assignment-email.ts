@@ -1,10 +1,18 @@
-import type { Department, User } from "@/lib/firebase/models";
+import type { Department } from "@/lib/firebase/models";
 import { sendEmailAction } from "@/app/actions/email";
 
 type AssignmentType = "tarea" | "incidencia";
 
+type AssignmentUser = {
+  id: string;
+  displayName?: string | null;
+  email?: string | null;
+  departmentId?: string | null;
+  isMaintenanceLead?: boolean;
+};
+
 interface RecipientOptions {
-  users?: User[];
+  users?: AssignmentUser[];
   departments?: Department[];
   assignedTo?: string | null;
   departmentId?: string | null;
@@ -24,7 +32,7 @@ interface AssignmentEmailInput extends RecipientOptions {
 }
 
 const resolveAssignedUser = (
-  users: User[] | undefined,
+  users: AssignmentUser[] | undefined,
   assignedTo: string | null | undefined
 ) =>
   users?.find(
@@ -61,10 +69,10 @@ export const collectRecipients = ({
   }
 
   users?.forEach((user) => {
-    if (resolvedDepartmentId && user.departmentId === resolvedDepartmentId) {
+    if (resolvedDepartmentId && user.departmentId === resolvedDepartmentId && user.email) {
       recipients.add(user.email);
     }
-    if (user.isMaintenanceLead) {
+    if (user.isMaintenanceLead && user.email) {
       recipients.add(user.email);
     }
   });

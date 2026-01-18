@@ -30,7 +30,7 @@ import { TaskForm, type TaskFormValues } from "@/components/task-form";
 import { Icons } from "@/components/icons";
 import { useAuth, useCollection, useDoc, useFirestore, useUser } from "@/lib/firebase";
 import { addTaskReport, updateTask } from "@/lib/firestore-tasks";
-import type { Department, User } from "@/lib/firebase/models";
+import type { Department, OrganizationMember, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRole } from "@/lib/rbac";
@@ -70,8 +70,10 @@ export default function TaskDetailPage() {
   const router = useRouter();
   const params = useParams();
   const taskId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const { data: users } = useCollection<User>("users");
   const { user, loading: userLoading, organizationId } = useUser();
+  const { data: users, loading: usersLoading } = useCollection<OrganizationMember>(
+    organizationId ? orgCollectionPath(organizationId, "members") : null
+  );
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
   );
@@ -81,10 +83,14 @@ export default function TaskDetailPage() {
   const { data: task, loading } = useDoc<MaintenanceTask>(
     taskId && organizationId ? orgDocPath(organizationId, "tasks", taskId) : null
   );
-  const { data: assignedUser, loading: assignedUserLoading } = useDoc<User>(
-    task?.assignedTo ? `users/${task.assignedTo}` : null
+  const assignedUser = useMemo(
+    () => users.find((item) => item.id === task?.assignedTo) ?? null,
+    [task?.assignedTo, users]
   );
-  const { data: createdByUser } = useDoc<User>(task ? `users/${task.createdBy}` : null);
+  const createdByUser = useMemo(
+    () => users.find((item) => item.id === task?.createdBy) ?? null,
+    [task?.createdBy, users]
+  );
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reportDescription, setReportDescription] = useState("");
@@ -126,7 +132,7 @@ export default function TaskDetailPage() {
   const canEdit =
     isPrivileged ||
     (!!task && task.createdBy === user?.uid && !isTaskClosed);
-  const isLoading = userLoading || profileLoading || loading || assignedUserLoading;
+  const isLoading = userLoading || profileLoading || loading || usersLoading;
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -322,7 +328,7 @@ export default function TaskDetailPage() {
       !auth ||
       !task?.id ||
       !task.assignedTo ||
-      assignedUserLoading ||
+      usersLoading ||
       assignmentChecked ||
       !canEdit
     ) {
@@ -331,7 +337,7 @@ export default function TaskDetailPage() {
 
     const assigneeExists = users.some((item) => item.id === task.assignedTo);
 
-    if (assigneeExists || assignedUser) {
+    if (assigneeExists) {
       setAssignmentChecked(true);
       return;
     }
@@ -350,8 +356,7 @@ export default function TaskDetailPage() {
 
     void unassign();
   }, [
-    assignedUser,
-    assignedUserLoading,
+    usersLoading,
     assignmentChecked,
     auth,
     canEdit,

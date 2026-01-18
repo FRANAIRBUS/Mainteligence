@@ -3,8 +3,8 @@
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
-import type { Ticket, Site, Department, User } from '@/lib/firebase/models';
-import { useRouter } from 'next/navigation';
+import type { Ticket, Site, Department, OrganizationMember } from '@/lib/firebase/models';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +36,7 @@ import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import Link from 'next/link';
 import { orgCollectionPath } from '@/lib/organization';
+import { useToast } from '@/hooks/use-toast';
 
 const incidentPriorityOrder: Record<Ticket['priority'], number> = {
   Crítica: 3,
@@ -47,6 +48,8 @@ const incidentPriorityOrder: Record<Ticket['priority'], number> = {
 export default function IncidentsPage() {
   const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -61,6 +64,18 @@ export default function IncidentsPage() {
       router.push('/login');
     }
   }, [userLoading, user, router]);
+
+  useEffect(() => {
+    if (!searchParams) return;
+    if (searchParams.get('created') !== '1') return;
+
+    const title = searchParams.get('title') ?? 'Nueva incidencia';
+    toast({
+      title: 'Incidencia creada',
+      description: `Incidencia '${title}' creada correctamente.`,
+    });
+    router.replace('/incidents');
+  }, [router, searchParams, toast]);
 
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
@@ -124,7 +139,9 @@ export default function IncidentsPage() {
     organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );
   // Only fetch users if the current user is an admin or maintenance staff.
-  const { data: users = [], loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
+  const { data: users = [], loading: usersLoading } = useCollection<OrganizationMember>(
+    isMantenimiento && organizationId ? orgCollectionPath(organizationId, 'members') : null
+  );
 
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);

@@ -17,6 +17,20 @@ import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 import { useUser } from '../auth/use-user';
 
+const getOrgScopedCollectionName = (path: string, organizationId: string | null) => {
+  if (!organizationId) return null;
+  const prefix = `organizations/${organizationId}/`;
+  if (!path.startsWith(prefix)) return null;
+  const remainder = path.slice(prefix.length);
+  return remainder.split('/')[0] ?? null;
+};
+
+const shouldApplyOrgFilter = (path: string, organizationId: string | null) => {
+  const collectionName = getOrgScopedCollectionName(path, organizationId);
+  if (!collectionName) return true;
+  return collectionName !== 'members';
+};
+
 export function useCollection<T>(path: string | null, ...queries: QueryConstraint[]) {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +79,9 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
       }
 
       setLoading(true);
-      const orgScope = [where('organizationId', '==', organizationId)];
+      const orgScope = shouldApplyOrgFilter(path, organizationId)
+        ? [where('organizationId', '==', organizationId)]
+        : [];
 
       const collectionQuery = query(collection(db, path), ...orgScope, ...queries);
 
@@ -159,7 +175,10 @@ export function useCollectionQuery<T>(path: string | null, ...queries: QueryCons
         return;
       }
 
-      const preparedQuery = query(collection(db, path), where('organizationId', '==', organizationId), ...queries);
+      const orgScope = shouldApplyOrgFilter(path, organizationId)
+        ? [where('organizationId', '==', organizationId)]
+        : [];
+      const preparedQuery = query(collection(db, path), ...orgScope, ...queries);
 
       setLoading(true);
       const unsubscribe = onSnapshot(
@@ -273,9 +292,12 @@ export function useCollectionPage<T>(
         setLoading(true);
         const pageSize = options.pageSize ?? 50;
         const cursorConstraint = options.cursor ? [startAfter(options.cursor)] : [];
+        const orgScope = shouldApplyOrgFilter(path, organizationId)
+          ? [where('organizationId', '==', organizationId)]
+          : [];
         const collectionQuery = query(
           collection(db, path),
-          where('organizationId', '==', organizationId),
+          ...orgScope,
           ...queries,
           ...cursorConstraint,
           limit(pageSize)
