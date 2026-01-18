@@ -33,7 +33,7 @@ import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { ClientLogo } from '@/components/client-logo';
 import { Progress } from '@/components/ui/progress';
-import { DEFAULT_ORGANIZATION_ID } from '@/lib/organization';
+import { DEFAULT_ORGANIZATION_ID, orgDocPath, orgStoragePath } from '@/lib/organization';
 import { normalizeRole } from '@/lib/rbac';
 
 
@@ -54,7 +54,9 @@ export default function SettingsPage() {
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
 
-  const { data: settings, loading: settingsLoading } = useDoc<AppSettings>('settings/app');
+  const { data: settings, loading: settingsLoading } = useDoc<AppSettings>(
+    resolvedOrganizationId ? orgDocPath(resolvedOrganizationId, 'settings', 'app') : null
+  );
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -197,8 +199,8 @@ export default function SettingsPage() {
     setIsPending(true);
     setUploadProgress(0);
 
-    const logoRef = ref(storage, 'branding/logo.png');
-    const settingsRef = doc(firestore, 'settings', 'app');
+    const logoRef = ref(storage, orgStoragePath(resolvedOrganizationId, 'branding', 'logo.png'));
+    const settingsRef = doc(firestore, orgDocPath(resolvedOrganizationId, 'settings', 'app'));
     if (uploadUnsubscribe.current) {
       uploadUnsubscribe.current();
       uploadUnsubscribe.current = null;

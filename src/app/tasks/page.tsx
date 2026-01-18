@@ -23,6 +23,7 @@ import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, User } from "@/lib/firebase/models";
 import { normalizeRole } from "@/lib/rbac";
 import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
+import { orgCollectionPath } from "@/lib/organization";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -53,9 +54,13 @@ export default function TasksPage() {
     normalizedRole === "admin" ||
     normalizedRole === "maintenance";
 
-  const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
+  const { data: tasks, loading } = useCollection<MaintenanceTask>(
+    organizationId ? orgCollectionPath(organizationId, "tasks") : null
+  );
   const { data: users, loading: usersLoading } = useCollection<User>("users");
-  const { data: departments } = useCollection<Department>("departments");
+  const { data: departments } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, "departments") : null
+  );
   const [statusFilter, setStatusFilter] = useState<string>("todas");
   const [priorityFilter, setPriorityFilter] = useState<string>("todas");
   const [dateFilter, setDateFilter] = useState<string>("recientes");

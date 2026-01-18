@@ -1,9 +1,10 @@
 'use client';
 
-import { useDoc } from '@/lib/firebase';
+import { useDoc, useUser } from '@/lib/firebase';
 import { Skeleton } from './ui/skeleton';
 import { ClientLogo } from './client-logo';
 import { cn } from '@/lib/utils';
+import { orgDocPath } from '@/lib/organization';
 
 interface AppSettings {
   logoUrl?: string;
@@ -18,8 +19,10 @@ export function DynamicClientLogo({
   height?: number;
   className?: string;
 }) {
-  // We make settings readable by anyone, so no need to wait for user auth
-  const { data: settings, loading } = useDoc<AppSettings>('settings/app');
+  const { organizationId } = useUser();
+  const { data: settings, loading } = useDoc<AppSettings>(
+    organizationId ? orgDocPath(organizationId, 'settings', 'app') : null
+  );
 
   if (loading) {
     return (

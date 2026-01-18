@@ -30,6 +30,7 @@ import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRole } from "@/lib/rbac";
+import { orgCollectionPath } from "@/lib/organization";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -70,10 +71,12 @@ export default function ClosedTasksPage() {
   }, [user, userProfile]);
 
   const { data: tasks, loading } = useCollectionQuery<TaskWithId>(
-    tasksConstraints ? "tasks" : null,
+    tasksConstraints && organizationId ? orgCollectionPath(organizationId, "tasks") : null,
     ...(tasksConstraints ?? [])
   );
-  const { data: departments } = useCollection<Department>("departments");
+  const { data: departments } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, "departments") : null
+  );
   const { data: users } = useCollection<User>("users");
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("todas");
@@ -145,7 +148,9 @@ export default function ClosedTasksPage() {
     if (!firestore || !auth || !user || !isAdmin) return;
 
     try {
-      await updateTask(firestore, auth, task.id, {
+      const targetOrgId = organizationId ?? task.organizationId;
+      if (!targetOrgId) return;
+      await updateTask(firestore, auth, targetOrgId, task.id, {
         status: "pendiente",
         reopened: true,
         reopenedBy: user.uid,

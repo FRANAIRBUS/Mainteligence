@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { normalizeRole } from "@/lib/rbac";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
+import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
 const statusCopy: Record<MaintenanceTask["status"], string> = {
   pendiente: "Pendiente",
@@ -70,12 +71,16 @@ export default function TaskDetailPage() {
   const params = useParams();
   const taskId = Array.isArray(params.id) ? params.id[0] : params.id;
   const { data: users } = useCollection<User>("users");
-  const { data: departments } = useCollection<Department>("departments");
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
+  const { data: departments } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, "departments") : null
+  );
   const { data: userProfile, loading: profileLoading } = useDoc<User>(
     user ? `users/${user.uid}` : null
   );
-  const { data: task, loading } = useDoc<MaintenanceTask>(taskId ? `tasks/${taskId}` : null);
+  const { data: task, loading } = useDoc<MaintenanceTask>(
+    taskId && organizationId ? orgDocPath(organizationId, "tasks", taskId) : null
+  );
   const { data: assignedUser, loading: assignedUserLoading } = useDoc<User>(
     task?.assignedTo ? `users/${task.assignedTo}` : null
   );
@@ -260,7 +265,13 @@ export default function TaskDetailPage() {
     }
 
     try {
-      await updateTask(firestore, auth, task.id, updates);
+      const targetOrgId = task.organizationId ?? organizationId;
+      if (!targetOrgId) {
+        setErrorMessage("No se encontró la organización asociada a la tarea.");
+        setSubmitting(false);
+        return;
+      }
+      await updateTask(firestore, auth, targetOrgId, task.id, updates);
 
       if (assignmentChanged && trimmedAssignedTo) {
         const baseUrl =
@@ -327,7 +338,9 @@ export default function TaskDetailPage() {
 
     const unassign = async () => {
       try {
-        await updateTask(firestore, auth, task.id, { assignedTo: "" });
+        const targetOrgId = task.organizationId ?? organizationId;
+        if (!targetOrgId) return;
+        await updateTask(firestore, auth, targetOrgId, task.id, { assignedTo: "" });
       } catch (error) {
         console.error("No se pudo desasignar la tarea automáticamente", error);
       } finally {
@@ -389,7 +402,17 @@ export default function TaskDetailPage() {
     setReportSubmitting(true);
 
     try {
-      await addTaskReport(firestore, auth, task.id, {
+      const targetOrgId = task.organizationId ?? organizationId;
+      if (!targetOrgId) {
+        toast({
+          title: "No se pudo registrar el informe",
+          description: "No se encontró la organización asociada a la tarea.",
+          variant: "destructive",
+        });
+        setReportSubmitting(false);
+        return;
+      }
+      await addTaskReport(firestore, auth, targetOrgId, task.id, {
         description,
         createdBy: user.uid,
       });
@@ -442,7 +465,17 @@ export default function TaskDetailPage() {
     setCloseSubmitting(true);
 
     try {
-      await updateTask(firestore, auth, task.id, {
+      const targetOrgId = task.organizationId ?? organizationId;
+      if (!targetOrgId) {
+        toast({
+          title: "No se pudo cerrar la tarea",
+          description: "No se encontró la organización asociada a la tarea.",
+          variant: "destructive",
+        });
+        setCloseSubmitting(false);
+        return;
+      }
+      await updateTask(firestore, auth, targetOrgId, task.id, {
         status: "completada",
         closedAt: serverTimestamp(),
         closedBy: user.uid,
