@@ -4,7 +4,7 @@ import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
 import type { Ticket, Site, Department, OrganizationMember } from '@/lib/firebase/models';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +36,7 @@ import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import Link from 'next/link';
 import { orgCollectionPath } from '@/lib/organization';
+import { useToast } from '@/hooks/use-toast';
 
 const incidentPriorityOrder: Record<Ticket['priority'], number> = {
   Crítica: 3,
@@ -47,6 +48,8 @@ const incidentPriorityOrder: Record<Ticket['priority'], number> = {
 export default function IncidentsPage() {
   const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
   const [isEditIncidentOpen, setIsEditIncidentOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -61,6 +64,18 @@ export default function IncidentsPage() {
       router.push('/login');
     }
   }, [userLoading, user, router]);
+
+  useEffect(() => {
+    if (!searchParams) return;
+    if (searchParams.get('created') !== '1') return;
+
+    const title = searchParams.get('title') ?? 'Nueva incidencia';
+    toast({
+      title: 'Incidencia creada',
+      description: `Incidencia '${title}' creada correctamente.`,
+    });
+    router.replace('/incidents');
+  }, [router, searchParams, toast]);
 
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
