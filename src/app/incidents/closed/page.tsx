@@ -20,7 +20,7 @@ import {
   useFirestore,
   useUser,
 } from "@/lib/firebase";
-import type { Department, Site, Ticket, User } from "@/lib/firebase/models";
+import type { Department, Site, Ticket, OrganizationMember } from "@/lib/firebase/models";
 import {
   addDoc,
   collection,
@@ -75,7 +75,9 @@ export default function ClosedIncidentsPage() {
   const { data: sites } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, "sites") : null
   );
-  const { data: users } = useCollection<User>("users");
+  const { data: users } = useCollection<OrganizationMember>(
+    organizationId ? orgCollectionPath(organizationId, "members") : null
+  );
 
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("todas");

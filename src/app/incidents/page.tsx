@@ -3,7 +3,7 @@
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
-import type { Ticket, Site, Department, User } from '@/lib/firebase/models';
+import type { Ticket, Site, Department, OrganizationMember } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
@@ -124,7 +124,9 @@ export default function IncidentsPage() {
     organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );
   // Only fetch users if the current user is an admin or maintenance staff.
-  const { data: users = [], loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
+  const { data: users = [], loading: usersLoading } = useCollection<OrganizationMember>(
+    isMantenimiento && organizationId ? orgCollectionPath(organizationId, 'members') : null
+  );
 
 
   const sitesMap = useMemo(() => sites.reduce((acc, site) => ({ ...acc, [site.id]: site.name }), {} as Record<string, string>), [sites]);
