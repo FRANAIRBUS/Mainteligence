@@ -31,18 +31,6 @@ export default function OnboardingPage() {
     }),
     []
   );
-  const sendVerificationEmail = async (userToVerify: Parameters<typeof sendEmailVerification>[0]) => {
-    try {
-      await sendEmailVerification(userToVerify, emailVerificationSettings);
-    } catch (err: any) {
-      const code = String(err?.code ?? '');
-      if (code === 'auth/unauthorized-continue-uri' || code === 'auth/invalid-continue-uri') {
-        await sendEmailVerification(userToVerify);
-        return;
-      }
-      throw err;
-    }
-  };
   const [finalizeAttempted, setFinalizeAttempted] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [finalizeLoading, setFinalizeLoading] = useState(false);
@@ -295,7 +283,7 @@ export default function OnboardingPage() {
         orgId = orgSelectedSuggestion ?? String(payload?.normalizedId ?? orgId);
 
         if (auth.currentUser && !auth.currentUser.emailVerified) {
-          await sendVerificationEmail(auth.currentUser);
+          await sendEmailVerification(auth.currentUser, emailVerificationSettings);
         }
       } else {
         if (!organizationIdInput.trim()) throw new Error('Indica el ID o nombre de la organización.');
@@ -372,7 +360,7 @@ export default function OnboardingPage() {
 
     try {
       if (auth.currentUser && !auth.currentUser.emailVerified) {
-        await sendVerificationEmail(auth.currentUser);
+        await sendEmailVerification(auth.currentUser, emailVerificationSettings);
       }
 
       const demoSuffix = Date.now().toString(36);
