@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useEffect, useState } from 'react';
+import { useForm, useFormState, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
@@ -12,6 +12,7 @@ import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { canCreate } from '@/lib/entitlements';
 import { orgCollectionPath } from '@/lib/organization';
+import { generateCode } from '@/lib/code';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -76,6 +77,23 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
       code: '',
     },
   });
+  const nameValue = useWatch({ control: form.control, name: 'name' });
+  const { dirtyFields } = useFormState({ control: form.control });
+
+  useEffect(() => {
+    if (dirtyFields.code) {
+      return;
+    }
+
+    const nextCode = nameValue ? generateCode(nameValue) : '';
+    if (nextCode !== form.getValues('code')) {
+      form.setValue('code', nextCode, {
+        shouldDirty: false,
+        shouldTouch: false,
+        shouldValidate: true,
+      });
+    }
+  }, [dirtyFields.code, form, nameValue]);
 
   const onSubmit = async (data: AddLocationFormValues) => {
     if (!app) {
