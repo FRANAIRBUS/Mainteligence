@@ -31,7 +31,7 @@ import {
   where,
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
-import { DEFAULT_ORGANIZATION_ID } from "@/lib/organization";
+import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { format } from "date-fns";
 import { normalizeRole } from "@/lib/rbac";
 
@@ -66,11 +66,15 @@ export default function ClosedIncidentsPage() {
   }, [user, userLoading, userProfile]);
 
   const { data: tickets, loading } = useCollectionQuery<Ticket>(
-    ticketsConstraints ? "tickets" : null,
+    ticketsConstraints && organizationId ? orgCollectionPath(organizationId, "tickets") : null,
     ...(ticketsConstraints ?? [])
   );
-  const { data: departments } = useCollection<Department>("departments");
-  const { data: sites } = useCollection<Site>("sites");
+  const { data: departments } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, "departments") : null
+  );
+  const { data: sites } = useCollection<Site>(
+    organizationId ? orgCollectionPath(organizationId, "sites") : null
+  );
   const { data: users } = useCollection<User>("users");
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -150,7 +154,7 @@ export default function ClosedIncidentsPage() {
     }
 
     try {
-      await updateDoc(doc(firestore, "tickets", ticket.id), {
+      await updateDoc(doc(firestore, orgDocPath(organizationId, "tickets", ticket.id)), {
         status: "Abierta",
         reopened: true,
         reopenedBy: user.uid,
@@ -182,7 +186,7 @@ export default function ClosedIncidentsPage() {
     }
 
     try {
-      await addDoc(collection(firestore, "tickets"), {
+      await addDoc(collection(firestore, orgCollectionPath(organizationId, "tickets")), {
         title: ticket.title,
         description: ticket.description,
         status: "Abierta",

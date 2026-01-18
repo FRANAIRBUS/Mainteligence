@@ -37,6 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { canManageMasterData, normalizeRole } from '@/lib/rbac';
+import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 
 function LocationsTable({
   sites,
@@ -102,7 +103,7 @@ function LocationsTable({
 }
 
 export default function LocationsPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
   
   useEffect(() => {
@@ -118,7 +119,9 @@ export default function LocationsPage() {
   const normalizedRole = normalizeRole(userProfile?.role);
   const canManage = canManageMasterData(normalizedRole);
 
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(canManage ? 'sites' : null);
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(
+    canManage && organizationId ? orgCollectionPath(organizationId, 'sites') : null
+  );
   
   const [isAddLocationOpen, setIsAddLocationOpen] = useState(false);
   const [isEditLocationOpen, setIsEditLocationOpen] = useState(false);
@@ -137,9 +140,9 @@ export default function LocationsPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deletingSiteId || !firestore) return;
+    if (!deletingSiteId || !firestore || !organizationId) return;
     try {
-      await deleteDoc(doc(firestore, 'sites', deletingSiteId));
+      await deleteDoc(doc(firestore, orgDocPath(organizationId, 'sites', deletingSiteId)));
       toast({
         title: 'Éxito',
         description: 'Ubicación eliminada correctamente.',

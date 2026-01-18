@@ -36,6 +36,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 
 function DepartmentsTable({
   departments,
@@ -99,7 +100,7 @@ function DepartmentsTable({
 }
 
 export default function DepartmentsPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
   
   useEffect(() => {
@@ -115,7 +116,9 @@ export default function DepartmentsPage() {
   const normalizedRole = normalizeRole(userProfile?.role);
   const canManage = canManageMasterData(normalizedRole);
 
-  const { data: departments, loading: departmentsLoading } = useCollection<Department>(canManage ? 'departments' : null);
+  const { data: departments, loading: departmentsLoading } = useCollection<Department>(
+    canManage && organizationId ? orgCollectionPath(organizationId, 'departments') : null
+  );
 
   const [isAddDepartmentOpen, setIsAddDepartmentOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -127,9 +130,9 @@ export default function DepartmentsPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deletingDeptId || !firestore) return;
+    if (!deletingDeptId || !firestore || !organizationId) return;
     try {
-      await deleteDoc(doc(firestore, 'departments', deletingDeptId));
+      await deleteDoc(doc(firestore, orgDocPath(organizationId, 'departments', deletingDeptId)));
       toast({
         title: 'Éxito',
         description: 'Departamento eliminado correctamente.',

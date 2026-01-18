@@ -43,6 +43,7 @@ import { Badge } from '@/components/ui/badge';
 import { doc, getDoc, where } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { isFeatureEnabled } from '@/lib/entitlements';
+import { orgCollectionPath } from '@/lib/organization';
 
 function PreventiveTable({
   tickets,
@@ -169,7 +170,7 @@ export default function PreventivePage() {
   const preventivesBlocked = planFeatures !== null && !preventivesAllowed;
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(
-    'tickets',
+    organizationId ? orgCollectionPath(organizationId, 'tickets') : null,
     where('type', '==', 'preventivo')
   );
 

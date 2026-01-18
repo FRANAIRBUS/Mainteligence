@@ -11,6 +11,7 @@ import type { Organization } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { canCreate } from '@/lib/entitlements';
+import { orgCollectionPath } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -103,7 +104,7 @@ export function AddLocationDialog({ open, onOpenChange }: AddLocationDialogProps
       const errorCode = String(error?.code ?? '');
       if (errorCode.includes('permission-denied')) {
         const permissionError = new FirestorePermissionError({
-          path: 'sites',
+          path: organizationId ? orgCollectionPath(organizationId, 'sites') : 'sites',
           operation: 'create',
           requestResourceData: data,
         });

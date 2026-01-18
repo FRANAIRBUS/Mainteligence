@@ -35,6 +35,7 @@ import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import Link from 'next/link';
+import { orgCollectionPath } from '@/lib/organization';
 
 const incidentPriorityOrder: Record<Ticket['priority'], number> = {
   Crítica: 3,
@@ -113,11 +114,15 @@ export default function IncidentsPage() {
 
   // Phase 4: Execute the query for tickets and load other collections.
   const { data: tickets = [], loading: ticketsLoading } = useCollectionQuery<Ticket>(
-    ticketsConstraints ? 'tickets' : null,
+    ticketsConstraints && organizationId ? orgCollectionPath(organizationId, 'tickets') : null,
     ...(ticketsConstraints ?? [])
   );
-  const { data: sites = [], loading: sitesLoading } = useCollection<Site>('sites');
-  const { data: departments = [], loading: deptsLoading } = useCollection<Department>('departments');
+  const { data: sites = [], loading: sitesLoading } = useCollection<Site>(
+    organizationId ? orgCollectionPath(organizationId, 'sites') : null
+  );
+  const { data: departments = [], loading: deptsLoading } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, 'departments') : null
+  );
   // Only fetch users if the current user is an admin or maintenance staff.
   const { data: users = [], loading: usersLoading } = useCollection<User>(isMantenimiento ? 'users' : null);
 

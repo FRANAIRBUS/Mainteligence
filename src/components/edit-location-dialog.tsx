@@ -10,6 +10,7 @@ import { useFirestore } from '@/lib/firebase';
 import type { Site } from '@/lib/firebase/models';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
+import { orgDocPath } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -75,9 +76,17 @@ export function EditLocationDialog({ open, onOpenChange, site }: EditLocationDia
         });
         return;
     }
+    if (!site.organizationId) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'La ubicación no tiene organizationId asociado.',
+      });
+      return;
+    }
     setIsPending(true);
     
-    const siteRef = doc(firestore, "sites", site.id);
+    const siteRef = doc(firestore, orgDocPath(site.organizationId, 'sites', site.id));
     
     try {
       await updateDoc(siteRef, { ...data, updatedAt: serverTimestamp() });

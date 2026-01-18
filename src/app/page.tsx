@@ -14,7 +14,7 @@ import { AppShell } from "@/components/app-shell";
 import { useCollection, useUser } from "@/lib/firebase";
 import type { Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
-import { where } from "firebase/firestore";
+import { orgCollectionPath } from "@/lib/organization";
 
 const priorityLabel: Record<string, string> = {
   alta: "Alta",
@@ -47,9 +47,11 @@ export default function Home() {
       router.replace("/onboarding");
     }
   }, [userLoading, user, organizationId, isRoot, router]);
-  const { data: tasks, loading } = useCollection<MaintenanceTask>("tasks");
+  const { data: tasks, loading } = useCollection<MaintenanceTask>(
+    organizationId ? orgCollectionPath(organizationId, "tasks") : null
+  );
   const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
-    organizationId ? "tickets" : null
+    organizationId ? orgCollectionPath(organizationId, "tickets") : null
   );
 
   const organizationLabel =

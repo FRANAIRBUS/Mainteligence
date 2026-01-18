@@ -12,6 +12,7 @@ import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { getTicketPermissions } from '@/lib/rbac';
 import { sendAssignmentEmail } from '@/lib/assignment-email';
+import { orgDocPath } from '@/lib/organization';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -106,7 +107,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
 
     setIsPending(true);
     
-    const ticketRef = doc(firestore, 'tickets', ticket.id);
+    const ticketRef = doc(firestore, orgDocPath(organizationId, 'tickets', ticket.id));
     const newAssignee = data.assignedTo === 'null' ? null : data.assignedTo ?? null;
 
     const updateData: Record<string, unknown> = {

@@ -46,6 +46,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useCollection, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
 import type { Department, User } from '@/lib/firebase/models';
+import { orgCollectionPath } from '@/lib/organization';
 
 type Role = 'super_admin' | 'admin' | 'maintenance' | 'operator';
 type OrgMemberRow = {
@@ -108,7 +109,9 @@ export default function UsersPage() {
   const [joinCursor, setJoinCursor] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [joinHasMore, setJoinHasMore] = useState(false);
   const { data: users = [], loading: usersLoading } = useCollection<User>(canManage ? 'users' : null);
-  const { data: departments = [] } = useCollection<Department>(canManage ? 'departments' : null);
+  const { data: departments = [] } = useCollection<Department>(
+    canManage && organizationId ? orgCollectionPath(organizationId, 'departments') : null
+  );
 
   const membersPageSize = 50;
   const joinRequestsPageSize = 50;
