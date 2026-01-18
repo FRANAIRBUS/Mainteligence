@@ -879,9 +879,10 @@ async function seedDemoOrganizationData({
   ];
 
   const batch = db.batch();
+  const orgRef = db.collection('organizations').doc(organizationId);
 
   sites.forEach((site) => {
-    const ref = db.collection('sites').doc(site.id);
+    const ref = orgRef.collection('sites').doc(site.id);
     batch.set(
       ref,
       {
@@ -897,7 +898,7 @@ async function seedDemoOrganizationData({
   });
 
   departments.forEach((department) => {
-    const ref = db.collection('departments').doc(department.id);
+    const ref = orgRef.collection('departments').doc(department.id);
     batch.set(
       ref,
       {
@@ -913,7 +914,7 @@ async function seedDemoOrganizationData({
   });
 
   tasks.forEach((task) => {
-    const ref = db.collection('tasks').doc(task.id);
+    const ref = orgRef.collection('tasks').doc(task.id);
     batch.set(
       ref,
       {
@@ -937,7 +938,7 @@ async function seedDemoOrganizationData({
   });
 
   tickets.forEach((ticket) => {
-    const ref = db.collection('tickets').doc(ticket.id);
+    const ref = orgRef.collection('tickets').doc(ticket.id);
     batch.set(
       ref,
       {
@@ -1157,12 +1158,11 @@ function resolveOrgIdFromData(data: any): string {
 }
 
 async function pausePreventiveTicketsForOrg(orgId: string, now: admin.firestore.Timestamp) {
-  const ticketsRef = db.collection('tickets');
+  const ticketsRef = db.collection('organizations').doc(orgId).collection('tickets');
   let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
 
   while (true) {
     let query = ticketsRef
-      .where('organizationId', '==', orgId)
       .where('type', '==', 'preventivo')
       .orderBy(admin.firestore.FieldPath.documentId())
       .limit(200);
@@ -1279,7 +1279,10 @@ async function auditLog(params: {
   after?: any;
   meta?: any;
 }) {
-  await db.collection('auditLogs').add({
+  const collectionRef = params.orgId
+    ? db.collection('organizations').doc(params.orgId).collection('auditLogs')
+    : db.collection('auditLogs');
+  await collectionRef.add({
     ...params,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -1290,7 +1293,7 @@ async function auditLog(params: {
 --------------------------------- */
 
 export const onTicketAssign = functions.firestore
-  .document('tickets/{ticketId}')
+  .document('organizations/{orgId}/tickets/{ticketId}')
   .onUpdate(async (change, context) => {
     const before = change.before.data() as any;
     const after = change.after.data() as any;
@@ -1300,8 +1303,9 @@ export const onTicketAssign = functions.firestore
     if (after.assignmentEmailSource === 'client') return;
 
     try {
+      const orgId = after.organizationId ?? context.params.orgId ?? null;
       await sendAssignmentEmail({
-        organizationId: after.organizationId ?? null,
+        organizationId: orgId,
         assignedTo: after.assignedTo ?? null,
         departmentId: after.departmentId ?? null,
         title: after.title ?? '(sin título)',
@@ -1319,7 +1323,7 @@ export const onTicketAssign = functions.firestore
   });
 
 export const onTaskAssign = functions.firestore
-  .document('tasks/{taskId}')
+  .document('organizations/{orgId}/tasks/{taskId}')
   .onUpdate(async (change, context) => {
     const before = change.before.data() as any;
     const after = change.after.data() as any;
@@ -1329,8 +1333,9 @@ export const onTaskAssign = functions.firestore
     if (after.assignmentEmailSource === 'client') return;
 
     try {
+      const orgId = after.organizationId ?? context.params.orgId ?? null;
       await sendAssignmentEmail({
-        organizationId: after.organizationId ?? null,
+        organizationId: orgId,
         assignedTo: after.assignedTo ?? null,
         departmentId: after.location ?? null,
         title: after.title ?? '(sin título)',
@@ -1350,15 +1355,16 @@ export const onTaskAssign = functions.firestore
   });
 
 export const onTicketCreate = functions.firestore
-  .document('tickets/{ticketId}')
+  .document('organizations/{orgId}/tickets/{ticketId}')
   .onCreate(async (snap, context) => {
     const data = snap.data() as any;
     if (!data?.assignedTo) return;
     if (data.assignmentEmailSource === 'client') return;
 
     try {
+      const orgId = data.organizationId ?? context.params.orgId ?? null;
       await sendAssignmentEmail({
-        organizationId: data.organizationId ?? null,
+        organizationId: orgId,
         assignedTo: data.assignedTo ?? null,
         departmentId: data.departmentId ?? null,
         title: data.title ?? '(sin título)',
@@ -1376,15 +1382,16 @@ export const onTicketCreate = functions.firestore
   });
 
 export const onTaskCreate = functions.firestore
-  .document('tasks/{taskId}')
+  .document('organizations/{orgId}/tasks/{taskId}')
   .onCreate(async (snap, context) => {
     const data = snap.data() as any;
     if (!data?.assignedTo) return;
     if (data.assignmentEmailSource === 'client') return;
 
     try {
+      const orgId = data.organizationId ?? context.params.orgId ?? null;
       await sendAssignmentEmail({
-        organizationId: data.organizationId ?? null,
+        organizationId: orgId,
         assignedTo: data.assignedTo ?? null,
         departmentId: data.location ?? null,
         title: data.title ?? '(sin título)',
@@ -1404,7 +1411,7 @@ export const onTaskCreate = functions.firestore
   });
 
 export const onTicketClosed = functions.firestore
-  .document('tickets/{ticketId}')
+  .document('organizations/{orgId}/tickets/{ticketId}')
   .onUpdate(async (change, context) => {
     const before = change.before.data() as any;
     const after = change.after.data() as any;
@@ -1419,13 +1426,13 @@ export const onTicketClosed = functions.firestore
   });
 
 export const onTicketDeleted = functions.firestore
-  .document('tickets/{ticketId}')
+  .document('organizations/{orgId}/tickets/{ticketId}')
   .onDelete(async (_snap, context) => {
     console.log('[onTicketDeleted]', context.params.ticketId);
   });
 
 export const onTaskDeleted = functions.firestore
-  .document('tasks/{taskId}')
+  .document('organizations/{orgId}/tasks/{taskId}')
   .onDelete(async (_snap, context) => {
     console.log('[onTaskDeleted]', context.params.taskId);
   });
@@ -1519,13 +1526,13 @@ export const rootOrgSummary = functions.https.onCall(async (data, context) => {
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
 
   const membersQ = db.collection('organizations').doc(orgId).collection('members');
-  const usersQ = db.collection('users').where('organizationId', '==', orgId);
+  const usersQ = db.collection('organizations').doc(orgId).collection('members');
 
-  const ticketsQ = db.collection('tickets').where('organizationId', '==', orgId);
-  const tasksQ = db.collection('tasks').where('organizationId', '==', orgId);
-  const sitesQ = db.collection('sites').where('organizationId', '==', orgId);
-  const assetsQ = db.collection('assets').where('organizationId', '==', orgId);
-  const depsQ = db.collection('departments').where('organizationId', '==', orgId);
+  const ticketsQ = db.collection('organizations').doc(orgId).collection('tickets');
+  const tasksQ = db.collection('organizations').doc(orgId).collection('tasks');
+  const sitesQ = db.collection('organizations').doc(orgId).collection('sites');
+  const assetsQ = db.collection('organizations').doc(orgId).collection('assets');
+  const depsQ = db.collection('organizations').doc(orgId).collection('departments');
 
   const [members, users, tickets, tasks, sites, assets, departments] = await Promise.all([
     countQuery(membersQ),
@@ -1849,13 +1856,13 @@ export const rootPurgeOrganizationCollection = functions.https.onCall(async (dat
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
   if (!collection) throw httpsError('invalid-argument', 'collection requerida.');
 
-  const allowed = new Set(['tickets', 'tasks', 'sites', 'assets', 'departments', 'memberships', 'users']);
+  const allowed = new Set(['tickets', 'tasks', 'sites', 'assets', 'departments', 'members', 'joinRequests']);
   if (!allowed.has(collection)) throw httpsError('invalid-argument', 'Colección no permitida para purge.');
 
   let totalDeleted = 0;
 
   while (true) {
-    const q = db.collection(collection).where('organizationId', '==', orgId).limit(batchSize);
+    const q = db.collection('organizations').doc(orgId).collection(collection).limit(batchSize);
     const snap = await q.get();
     if (snap.empty) break;
 
@@ -2716,7 +2723,7 @@ export const createSite = functions.https.onCall(async (data, context) => {
   const code = requireStringField(data.payload.code, 'code');
 
   const orgRef = db.collection('organizations').doc(orgId);
-  const siteRef = db.collection('sites').doc();
+  const siteRef = orgRef.collection('sites').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   await db.runTransaction(async (tx) => {
@@ -2767,7 +2774,7 @@ export const createDepartment = functions.https.onCall(async (data, context) => 
   const code = requireStringField(data.payload.code, 'code');
 
   const orgRef = db.collection('organizations').doc(orgId);
-  const departmentRef = db.collection('departments').doc();
+  const departmentRef = orgRef.collection('departments').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   await db.runTransaction(async (tx) => {
@@ -2821,8 +2828,8 @@ export const createAsset = functions.https.onCall(async (data, context) => {
   requireScopedAccessToSite(role, scope, siteId);
 
   const orgRef = db.collection('organizations').doc(orgId);
-  const siteRef = db.collection('sites').doc(siteId);
-  const assetRef = db.collection('assets').doc();
+  const siteRef = orgRef.collection('sites').doc(siteId);
+  const assetRef = orgRef.collection('assets').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   await db.runTransaction(async (tx) => {
@@ -2888,11 +2895,11 @@ export const createPreventive = functions.https.onCall(async (data, context) => 
   requireScopedAccessToSite(role, scope, siteId);
 
   const orgRef = db.collection('organizations').doc(orgId);
-  const siteRef = db.collection('sites').doc(siteId);
-  const departmentRef = db.collection('departments').doc(departmentId);
+  const siteRef = orgRef.collection('sites').doc(siteId);
+  const departmentRef = orgRef.collection('departments').doc(departmentId);
   const assetId = String(payload.assetId ?? '').trim();
-  const assetRef = assetId ? db.collection('assets').doc(assetId) : null;
-  const ticketRef = db.collection('tickets').doc();
+  const assetRef = assetId ? orgRef.collection('assets').doc(assetId) : null;
+  const ticketRef = orgRef.collection('tickets').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   await db.runTransaction(async (tx) => {

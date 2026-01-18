@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { arrayUnion, doc, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
+import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 
 function InfoCard({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value: string | React.ReactNode }) {
     return (
@@ -64,7 +65,9 @@ export default function IncidentDetailPage() {
   const firestore = useFirestore();
 
   const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
-  const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(ticketId ? `tickets/${ticketId}` : null);
+  const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(
+    ticketId && organizationId ? orgDocPath(organizationId, 'tickets', ticketId) : null
+  );
   
   // Fetch all collections needed for display unconditionally
   const canReadLegacyUser = (targetUserId?: string | null) =>
@@ -73,9 +76,15 @@ export default function IncidentDetailPage() {
   const assignedToUserPath = canReadLegacyUser(ticket?.assignedTo) ? `users/${ticket?.assignedTo}` : null;
   const { data: createdByUser, loading: createdByLoading } = useDoc<User>(createdByUserPath);
   const { data: assignedToUser, loading: assignedToLoading } = useDoc<User>(assignedToUserPath);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>('sites');
-  const { data: departments, loading: deptsLoading } = useCollection<Department>('departments');
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>('assets');
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(
+    organizationId ? orgCollectionPath(organizationId, 'sites') : null
+  );
+  const { data: departments, loading: deptsLoading } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, 'departments') : null
+  );
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(
+    organizationId ? orgCollectionPath(organizationId, 'assets') : null
+  );
   // Fetch users for report attribution and assignment display.
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
@@ -196,7 +205,7 @@ export default function IncidentDetailPage() {
     setReportSubmitting(true);
 
     try {
-      const ticketRef = doc(firestore, 'tickets', ticket.id);
+      const ticketRef = doc(firestore, orgDocPath(targetOrganizationId, 'tickets', ticket.id));
       await updateDoc(ticketRef, {
         reports: arrayUnion({
           description,
@@ -276,7 +285,7 @@ export default function IncidentDetailPage() {
     setCloseSubmitting(true);
 
     try {
-      const ticketRef = doc(firestore, 'tickets', ticket.id);
+      const ticketRef = doc(firestore, orgDocPath(targetOrganizationId, 'tickets', ticket.id));
       await updateDoc(ticketRef, {
         status: 'Cerrada',
         closedAt: serverTimestamp(),

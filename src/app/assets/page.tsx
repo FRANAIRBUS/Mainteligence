@@ -37,6 +37,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { canManageMasterData, normalizeRole } from '@/lib/rbac';
+import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 
 function AssetsTable({
   assets,
@@ -116,7 +117,7 @@ function AssetsTable({
 }
 
 export default function AssetsPage() {
-  const { user, loading: userLoading } = useUser();
+  const { user, loading: userLoading, organizationId } = useUser();
   const router = useRouter();
 
   useEffect(() => {
@@ -132,8 +133,12 @@ export default function AssetsPage() {
   const normalizedRole = normalizeRole(userProfile?.role);
   const canManage = canManageMasterData(normalizedRole);
   
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(canManage ? 'assets' : null);
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(canManage ? 'sites' : null);
+  const { data: assets, loading: assetsLoading } = useCollection<Asset>(
+    canManage && organizationId ? orgCollectionPath(organizationId, 'assets') : null
+  );
+  const { data: sites, loading: sitesLoading } = useCollection<Site>(
+    canManage && organizationId ? orgCollectionPath(organizationId, 'sites') : null
+  );
 
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -145,9 +150,9 @@ export default function AssetsPage() {
   };
 
   const handleDeleteConfirm = async () => {
-    if (!deletingAssetId || !firestore) return;
+    if (!deletingAssetId || !firestore || !organizationId) return;
     try {
-      await deleteDoc(doc(firestore, 'assets', deletingAssetId));
+      await deleteDoc(doc(firestore, orgDocPath(organizationId, 'assets', deletingAssetId)));
       toast({
         title: 'Éxito',
         description: 'Activo eliminado correctamente.',
