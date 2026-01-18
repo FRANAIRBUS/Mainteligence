@@ -27,8 +27,7 @@ const getOrgScopedCollectionName = (path: string, organizationId: string | null)
 
 const shouldApplyOrgFilter = (path: string, organizationId: string | null) => {
   const collectionName = getOrgScopedCollectionName(path, organizationId);
-  if (!collectionName) return true;
-  return collectionName !== 'members';
+  return !collectionName;
 };
 
 export function useCollection<T>(path: string | null, ...queries: QueryConstraint[]) {
