@@ -126,6 +126,24 @@ export interface Membership extends BaseEntity {
   acceptedAt?: Timestamp;
 }
 
+export interface OrganizationMember {
+  id: string;
+  uid?: string;
+  orgId?: string;
+  organizationId?: string;
+  email?: string | null;
+  displayName?: string | null;
+  role?: UserRole | null;
+  departmentId?: string | null;
+  departmentIds?: string[] | null;
+  siteId?: string | null;
+  siteIds?: string[] | null;
+  isMaintenanceLead?: boolean;
+  active?: boolean;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
 export interface Invitation extends BaseEntity {
   invitedEmail: string;
   role: User['role'];
