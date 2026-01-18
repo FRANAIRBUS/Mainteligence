@@ -17,8 +17,19 @@ import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 import { useUser } from '../auth/use-user';
 
-const isOrgScopedPath = (path: string, organizationId: string | null) =>
-  Boolean(organizationId && path.startsWith(`organizations/${organizationId}/`));
+const getOrgScopedCollectionName = (path: string, organizationId: string | null) => {
+  if (!organizationId) return null;
+  const prefix = `organizations/${organizationId}/`;
+  if (!path.startsWith(prefix)) return null;
+  const remainder = path.slice(prefix.length);
+  return remainder.split('/')[0] ?? null;
+};
+
+const shouldApplyOrgFilter = (path: string, organizationId: string | null) => {
+  const collectionName = getOrgScopedCollectionName(path, organizationId);
+  if (!collectionName) return true;
+  return collectionName !== 'members';
+};
 
 export function useCollection<T>(path: string | null, ...queries: QueryConstraint[]) {
   const [data, setData] = useState<T[]>([]);
@@ -68,9 +79,9 @@ export function useCollection<T>(path: string | null, ...queries: QueryConstrain
       }
 
       setLoading(true);
-      const orgScope = isOrgScopedPath(path, organizationId)
-        ? []
-        : [where('organizationId', '==', organizationId)];
+      const orgScope = shouldApplyOrgFilter(path, organizationId)
+        ? [where('organizationId', '==', organizationId)]
+        : [];
 
       const collectionQuery = query(collection(db, path), ...orgScope, ...queries);
 
@@ -164,9 +175,9 @@ export function useCollectionQuery<T>(path: string | null, ...queries: QueryCons
         return;
       }
 
-      const orgScope = isOrgScopedPath(path, organizationId)
-        ? []
-        : [where('organizationId', '==', organizationId)];
+      const orgScope = shouldApplyOrgFilter(path, organizationId)
+        ? [where('organizationId', '==', organizationId)]
+        : [];
       const preparedQuery = query(collection(db, path), ...orgScope, ...queries);
 
       setLoading(true);
@@ -281,9 +292,9 @@ export function useCollectionPage<T>(
         setLoading(true);
         const pageSize = options.pageSize ?? 50;
         const cursorConstraint = options.cursor ? [startAfter(options.cursor)] : [];
-        const orgScope = isOrgScopedPath(path, organizationId)
-          ? []
-          : [where('organizationId', '==', organizationId)];
+        const orgScope = shouldApplyOrgFilter(path, organizationId)
+          ? [where('organizationId', '==', organizationId)]
+          : [];
         const collectionQuery = query(
           collection(db, path),
           ...orgScope,
