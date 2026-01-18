@@ -11,6 +11,7 @@ import { createTask } from "@/lib/firestore-tasks";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
 import type { Department, User } from "@/lib/firebase/models";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
+import { orgCollectionPath } from "@/lib/organization";
 
 const emptyValues: TaskFormValues = {
   title: "",
@@ -28,7 +29,9 @@ export default function NewTaskPage() {
   const auth = useAuth();
   const { user, loading: userLoading, organizationId } = useUser();
   const { data: users } = useCollection<User>("users");
-  const { data: departments } = useCollection<Department>("departments");
+  const { data: departments } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, "departments") : null
+  );
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

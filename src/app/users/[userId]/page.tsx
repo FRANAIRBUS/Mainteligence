@@ -21,6 +21,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useCollection, useDoc, useFirebaseApp, useUser } from '@/lib/firebase';
 import type { Department, User } from '@/lib/firebase/models';
+import { orgCollectionPath } from '@/lib/organization';
 
 function normalizeParam(input: string | string[] | undefined): string {
   if (Array.isArray(input)) return input[0] ?? '';
@@ -40,7 +41,7 @@ export default function UserProfilePage() {
 
   const { data: userProfile, loading: profileLoading } = useDoc<User>(userId ? `users/${userId}` : null);
   const { data: departments = [], loading: departmentsLoading } = useCollection<Department>(
-    canManage ? 'departments' : null
+    canManage && organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);

@@ -85,6 +85,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { isFeatureEnabled } from '@/lib/entitlements';
+import { orgCollectionPath } from '@/lib/organization';
 
 export default function ReportsPage() {
   const { user, loading, organizationId } = useUser();
@@ -140,14 +141,18 @@ export default function ReportsPage() {
       : true;
   const exportBlocked = Boolean(entitlement) && planFeatures !== null && !exportAllowed;
 
-  const { data: tickets = [], loading: ticketsLoading } =
-    useCollection<Ticket>('tickets');
-  const { data: tasks = [], loading: tasksLoading } =
-    useCollection<MaintenanceTask>('tasks');
-  const { data: departments = [], loading: departmentsLoading } =
-    useCollection<Department>('departments');
-  const { data: sites = [], loading: sitesLoading } =
-    useCollection<Site>('sites');
+  const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
+    organizationId ? orgCollectionPath(organizationId, 'tickets') : null
+  );
+  const { data: tasks = [], loading: tasksLoading } = useCollection<MaintenanceTask>(
+    organizationId ? orgCollectionPath(organizationId, 'tasks') : null
+  );
+  const { data: departments = [], loading: departmentsLoading } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, 'departments') : null
+  );
+  const { data: sites = [], loading: sitesLoading } = useCollection<Site>(
+    organizationId ? orgCollectionPath(organizationId, 'sites') : null
+  );
   const { data: users = [], loading: usersLoading } =
     useCollection<User>('users');
 
