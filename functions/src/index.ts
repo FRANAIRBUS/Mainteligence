@@ -2202,6 +2202,74 @@ export const bootstrapFromInvites = functions.https.onCall(async (_data, context
   return { ok: true, created };
 });
 
+export const bootstrapLegacyMembershipFromProfile = functions.https.onCall(async (_data, context) => {
+  const uid = requireAuth(context);
+
+  const userRef = db.collection('users').doc(uid);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) return { ok: true, mode: 'no_profile' };
+
+  const orgId = sanitizeOrganizationId(String(userSnap.get('organizationId') ?? ''));
+  if (!orgId) return { ok: true, mode: 'no_org' };
+
+  const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+  const membershipSnap = await membershipRef.get();
+  if (membershipSnap.exists) return { ok: true, mode: 'exists', organizationId: orgId };
+
+  // Security: only bootstrap if a member snapshot already exists for this user+org.
+  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(uid);
+  const memberSnap = await memberRef.get();
+  if (!memberSnap.exists) return { ok: true, mode: 'missing_member', organizationId: orgId };
+
+  const role = normalizeRole(memberSnap.get('role') ?? userSnap.get('role') ?? 'operator');
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const orgSnap = await db.collection('organizations').doc(orgId).get();
+  const organizationName = String(orgSnap.get('name') ?? orgId);
+
+  const batch = db.batch();
+  batch.set(
+    membershipRef,
+    {
+      userId: uid,
+      organizationId: orgId,
+      organizationName,
+      role,
+      status: 'active',
+      primary: true,
+      createdAt: now,
+      updatedAt: now,
+      source: 'bootstrapLegacyMembershipFromProfile_v1',
+    },
+    { merge: true },
+  );
+
+  batch.set(
+    memberRef,
+    {
+      uid,
+      orgId,
+      role,
+      active: true,
+      updatedAt: now,
+      source: 'bootstrapLegacyMembershipFromProfile_v1',
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
+
+  await auditLog({
+    action: 'bootstrapLegacyMembershipFromProfile',
+    actorUid: uid,
+    actorEmail: (context.auth?.token as any)?.email ?? null,
+    orgId,
+    after: { organizationId: orgId, role, status: 'active' },
+  });
+
+  return { ok: true, mode: 'created', organizationId: orgId, role };
+});
+
 export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const uid = requireAuth(context);
 

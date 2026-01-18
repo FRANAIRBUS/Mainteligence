@@ -86,6 +86,8 @@ function pickDefaultOrgId(opts: {
   }
 
   if (active.length > 0) return active[0].organizationId;
+  if (profileOrgId) return profileOrgId;
+  if (preferredOrgId) return preferredOrgId;
   return null;
 }
 
@@ -208,6 +210,16 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       try {
         const fn = httpsCallable(getFunctions(app, 'us-central1'), 'bootstrapFromInvites');
         await fn({});
+
+        const profileOrgId = String((profile as any)?.organizationId ?? '').trim();
+        const hasActiveMembership = memberships.some((m) => m.status === 'active' && m.organizationId);
+        if (!hasActiveMembership && profileOrgId) {
+          const fnLegacy = httpsCallable(
+            getFunctions(app, 'us-central1'),
+            'bootstrapLegacyMembershipFromProfile'
+          );
+          await fnLegacy({});
+        }
       } catch (err) {
         // Non-blocking: onboarding can still guide the user.
         console.warn('[bootstrapFromInvites] failed', err);
@@ -235,7 +247,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
     setActiveMembership(nextMembership);
 
-    const derivedRole = nextMembership?.status === 'active' ? (nextMembership.role ?? 'operator') : null;
+    let derivedRole = nextMembership?.status === 'active' ? (nextMembership.role ?? 'operator') : null;
+    if (!derivedRole && nextOrgId && (profile as any)?.organizationId === nextOrgId) {
+      const pr = String((profile as any)?.role ?? '').trim();
+      if (pr && pr !== 'pending') derivedRole = pr;
+    }
     setRole(derivedRole);
 
     setLoading(false);
