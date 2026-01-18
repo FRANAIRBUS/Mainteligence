@@ -2,8 +2,8 @@
 
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useDoc, useFirestore } from '@/lib/firebase';
-import type { Site, User } from '@/lib/firebase/models';
+import { useUser, useCollection, useFirestore } from '@/lib/firebase';
+import type { Site } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -103,7 +103,7 @@ function LocationsTable({
 }
 
 export default function LocationsPage() {
-  const { user, loading: userLoading, organizationId } = useUser();
+  const { user, loading: userLoading, organizationId, role } = useUser();
   const router = useRouter();
   
   useEffect(() => {
@@ -115,8 +115,7 @@ export default function LocationsPage() {
   const firestore = useFirestore();
   const { toast } = useToast();
   
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
-  const normalizedRole = normalizeRole(userProfile?.role);
+  const normalizedRole = normalizeRole(role);
   const canManage = canManageMasterData(normalizedRole);
 
   const { data: sites, loading: sitesLoading } = useCollection<Site>(
@@ -159,7 +158,7 @@ export default function LocationsPage() {
     }
   };
 
-  const initialLoading = userLoading || profileLoading;
+  const initialLoading = userLoading;
 
   if (initialLoading) {
     return (
