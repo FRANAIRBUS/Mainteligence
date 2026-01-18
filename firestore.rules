@@ -20,27 +20,37 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
     }
 
+    function membershipDoc(orgId, uid) {
+      return get(/databases/$(database)/documents/memberships/$(uid)_$(orgId));
+    }
+
+    function isActiveMembership(doc) {
+      return doc != null
+        && doc.data != null
+        && (
+          doc.data.status == "active"
+          || doc.data.active == true
+        );
+    }
+
     function isActiveMember(orgId, uid) {
       let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
+      let membership = isValidOrgId(orgId) ? membershipDoc(orgId, uid) : null;
       return isSignedIn()
-        && member != null
-        && member.data != null
         && (
-          member.data.status == "active"
-          || member.data.active == true
+          isActiveMembership(member)
+          || isActiveMembership(membership)
         );
     }
 
     function hasRole(orgId, uid, roles) {
       let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
+      let membership = isValidOrgId(orgId) ? membershipDoc(orgId, uid) : null;
       return isSignedIn()
-        && member != null
-        && member.data != null
         && (
-          member.data.status == "active"
-          || member.data.active == true
-        )
-        && member.data.role in roles;
+          (isActiveMembership(member) && member.data.role in roles)
+          || (isActiveMembership(membership) && membership.data.role in roles)
+        );
     }
 
     function hasScope(orgId, uid, locationId) {

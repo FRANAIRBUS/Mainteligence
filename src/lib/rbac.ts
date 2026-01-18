@@ -2,9 +2,51 @@ import type { Ticket, User, UserRole } from '@/lib/firebase/models';
 
 export const normalizeRole = (role?: UserRole | string | null) => {
   if (!role) return undefined;
-  const normalized = role.toLowerCase();
-  if (normalized === 'operario') return 'operator';
-  if (normalized === 'mantenimiento' || normalized === 'manteniendo') return 'maintenance';
+  const normalized = role.toLowerCase().trim();
+
+  if (normalized === 'super_admin' || normalized === 'superadmin') return 'super_admin';
+  if (normalized === 'admin' || normalized === 'administrator') return 'admin';
+
+  if (
+    normalized === 'maintenance' ||
+    normalized === 'mantenimiento' ||
+    normalized === 'manteniendo' ||
+    normalized === 'maint' ||
+    normalized === 'maintainer'
+  ) {
+    return 'maintenance';
+  }
+
+  if (
+    normalized === 'dept_head_multi' ||
+    normalized === 'deptheadmulti' ||
+    normalized === 'dept-head-multi' ||
+    normalized === 'dept head multi' ||
+    normalized === 'department_head_multi' ||
+    normalized === 'departmentheadmulti' ||
+    normalized === 'jefe_departamento_multi' ||
+    normalized === 'jefe de departamento multi'
+  ) {
+    return 'dept_head_multi';
+  }
+
+  if (
+    normalized === 'dept_head_single' ||
+    normalized === 'deptheadsingle' ||
+    normalized === 'dept-head-single' ||
+    normalized === 'dept head single' ||
+    normalized === 'dept_head' ||
+    normalized === 'depthead' ||
+    normalized === 'department_head_single' ||
+    normalized === 'departmentheadsingle' ||
+    normalized === 'jefe_departamento' ||
+    normalized === 'jefe de departamento'
+  ) {
+    return 'dept_head_single';
+  }
+
+  if (normalized === 'operator' || normalized === 'operario' || normalized === 'op') return 'operator';
+
   return normalized as UserRole;
 };
 
