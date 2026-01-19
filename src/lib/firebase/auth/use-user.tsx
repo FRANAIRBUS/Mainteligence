@@ -86,8 +86,6 @@ function pickDefaultOrgId(opts: {
   }
 
   if (active.length > 0) return active[0].organizationId;
-  if (profileOrgId) return profileOrgId;
-  if (preferredOrgId) return preferredOrgId;
   return null;
 }
 
@@ -109,6 +107,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [profileReady, setProfileReady] = useState(false);
   const [membershipsReady, setMembershipsReady] = useState(false);
   const bootstrapAttemptedRef = useRef(false);
+  const selfRepairAttemptedRef = useRef(false);
 
   const refreshProfile = async () => {
     if (!user || !firestore) return;
@@ -128,6 +127,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setProfileReady(false);
       setMembershipsReady(false);
       bootstrapAttemptedRef.current = false;
+      selfRepairAttemptedRef.current = false;
       if (u) {
         u.getIdTokenResult()
           .then((r) => setIsRoot(Boolean((r?.claims as any)?.root) || (r?.claims as any)?.role === 'root'))
@@ -210,22 +210,44 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       try {
         const fn = httpsCallable(getFunctions(app, 'us-central1'), 'bootstrapFromInvites');
         await fn({});
-
-        const profileOrgId = String((profile as any)?.organizationId ?? '').trim();
-        const hasActiveMembership = memberships.some((m) => m.status === 'active' && m.organizationId);
-        if (!hasActiveMembership && profileOrgId) {
-          const fnLegacy = httpsCallable(
-            getFunctions(app, 'us-central1'),
-            'bootstrapLegacyMembershipFromProfile'
-          );
-          await fnLegacy({});
-        }
       } catch (err) {
         // Non-blocking: onboarding can still guide the user.
         console.warn('[bootstrapFromInvites] failed', err);
       }
     })();
   }, [app, user, profile, memberships, profileReady, membershipsReady]);
+
+
+  // Self-heal legacy accounts where memberships/members docs were not created during previous migrations.
+  // This is non-blocking and only targets the user's own users/{uid}.organizationId.
+  useEffect(() => {
+    if (!app || !user) return;
+    if (selfRepairAttemptedRef.current) return;
+    if (!profileReady || !membershipsReady) return;
+
+    const profileOrgId = String((profile as any)?.organizationId ?? '').trim();
+    const profileRole = String((profile as any)?.role ?? '').trim();
+    const profileActive = Boolean((profile as any)?.active === true);
+
+    // Only attempt repair for active profiles with a concrete orgId but missing memberships/role.
+    if (!profileOrgId) return;
+    if (!profileActive) return;
+    if (!profileRole || profileRole === 'pending') return;
+    if (memberships.length > 0 && memberships.some((m) => m.status === 'active')) return;
+
+    selfRepairAttemptedRef.current = true;
+
+    (async () => {
+      try {
+        const fn = httpsCallable(getFunctions(app, 'us-central1'), 'ensureSelfOrgMembership');
+        await fn({});
+      } catch (err) {
+        // Non-blocking.
+        console.warn('[ensureSelfOrgMembership] failed', err);
+      }
+    })();
+  }, [app, user, profile, memberships, profileReady, membershipsReady]);
+
 
   // Derive active org / active membership / role
   useEffect(() => {
@@ -235,23 +257,54 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const preferredOrgId =
       typeof window !== 'undefined' ? window.localStorage.getItem('preferredOrganizationId') : null;
 
-    const nextOrgId = pickDefaultOrgId({
+    const profileOrgId = String((profile as any)?.organizationId ?? '').trim() || null;
+    const profileRole = String((profile as any)?.role ?? '').trim();
+    const profileActive = Boolean((profile as any)?.active === true);
+    const profileRoleIsUsable =
+      profileActive &&
+      (profileRole === 'super_admin' ||
+        profileRole === 'admin' ||
+        profileRole === 'maintenance' ||
+        profileRole === 'operator' ||
+        profileRole === 'dept_head_multi' ||
+        profileRole === 'dept_head_single');
+
+    let nextOrgId = pickDefaultOrgId({
       preferredOrgId,
-      profileOrgId: (profile as any)?.organizationId ?? null,
+      profileOrgId,
       memberships,
     });
 
+    // Fallback for legacy accounts where memberships index is missing but users/{uid}.organizationId exists.
+    if (!nextOrgId && profileOrgId && profileRoleIsUsable) {
+      nextOrgId = profileOrgId;
+    }
+
     setOrganizationId((prev) => (prev === nextOrgId ? prev : nextOrgId));
 
-    const nextMembership =
-      nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
-    setActiveMembership(nextMembership);
+    const nextMembership = nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
 
-    let derivedRole = nextMembership?.status === 'active' ? (nextMembership.role ?? 'operator') : null;
-    if (!derivedRole && nextOrgId && (profile as any)?.organizationId === nextOrgId) {
-      const pr = String((profile as any)?.role ?? '').trim();
-      if (pr && pr !== 'pending') derivedRole = pr;
-    }
+    // If memberships index is missing, synthesize an active membership from profile to unlock UI gating.
+    const synthesizedMembership: Membership | null =
+      !nextMembership && nextOrgId && profileOrgId === nextOrgId && profileRoleIsUsable
+        ? ({
+            id: `synthetic_${user.uid}_${nextOrgId}`,
+            organizationId: nextOrgId,
+            organizationName: null,
+            userId: user.uid,
+            role: profileRole,
+            status: 'active',
+            createdAt: null,
+            updatedAt: null,
+            source: 'client_synthesized_from_profile',
+            primary: true,
+          } as any)
+        : null;
+
+    const finalMembership = nextMembership ?? synthesizedMembership;
+    setActiveMembership(finalMembership);
+
+    const derivedRole = finalMembership?.status === 'active' ? (finalMembership.role ?? 'operator') : null;
     setRole(derivedRole);
 
     setLoading(false);

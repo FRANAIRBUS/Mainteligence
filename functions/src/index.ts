@@ -2202,74 +2202,6 @@ export const bootstrapFromInvites = functions.https.onCall(async (_data, context
   return { ok: true, created };
 });
 
-export const bootstrapLegacyMembershipFromProfile = functions.https.onCall(async (_data, context) => {
-  const uid = requireAuth(context);
-
-  const userRef = db.collection('users').doc(uid);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) return { ok: true, mode: 'no_profile' };
-
-  const orgId = sanitizeOrganizationId(String(userSnap.get('organizationId') ?? ''));
-  if (!orgId) return { ok: true, mode: 'no_org' };
-
-  const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
-  const membershipSnap = await membershipRef.get();
-  if (membershipSnap.exists) return { ok: true, mode: 'exists', organizationId: orgId };
-
-  // Security: only bootstrap if a member snapshot already exists for this user+org.
-  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(uid);
-  const memberSnap = await memberRef.get();
-  if (!memberSnap.exists) return { ok: true, mode: 'missing_member', organizationId: orgId };
-
-  const role = normalizeRole(memberSnap.get('role') ?? userSnap.get('role') ?? 'operator');
-  const now = admin.firestore.FieldValue.serverTimestamp();
-
-  const orgSnap = await db.collection('organizations').doc(orgId).get();
-  const organizationName = String(orgSnap.get('name') ?? orgId);
-
-  const batch = db.batch();
-  batch.set(
-    membershipRef,
-    {
-      userId: uid,
-      organizationId: orgId,
-      organizationName,
-      role,
-      status: 'active',
-      primary: true,
-      createdAt: now,
-      updatedAt: now,
-      source: 'bootstrapLegacyMembershipFromProfile_v1',
-    },
-    { merge: true },
-  );
-
-  batch.set(
-    memberRef,
-    {
-      uid,
-      orgId,
-      role,
-      active: true,
-      updatedAt: now,
-      source: 'bootstrapLegacyMembershipFromProfile_v1',
-    },
-    { merge: true },
-  );
-
-  await batch.commit();
-
-  await auditLog({
-    action: 'bootstrapLegacyMembershipFromProfile',
-    actorUid: uid,
-    actorEmail: (context.auth?.token as any)?.email ?? null,
-    orgId,
-    after: { organizationId: orgId, role, status: 'active' },
-  });
-
-  return { ok: true, mode: 'created', organizationId: orgId, role };
-});
-
 export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   const uid = requireAuth(context);
 
@@ -2771,6 +2703,140 @@ export const setActiveOrganization = functions.https.onCall(async (data, context
   );
 
   return { ok: true, organizationId: orgId };
+});
+
+// Self-healing: ensure the caller has membership + org member docs for their active organization.
+// Conservative by design: it will only act on users/{uid}.organizationId to avoid self-escalation.
+export const ensureSelfOrgMembership = functions.https.onCall(async (data, context) => {
+  const uid = requireAuth(context);
+
+  const userRef = db.collection('users').doc(uid);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    return { ok: true, repaired: false, reason: 'missing_user_profile' };
+  }
+
+  const profileOrgId = sanitizeOrganizationId(String(userSnap.get('organizationId') ?? ''));
+  const requestedOrgId = sanitizeOrganizationId(String((data as any)?.organizationId ?? ''));
+  const orgId = requestedOrgId || profileOrgId;
+
+  if (!orgId) {
+    return { ok: true, repaired: false, reason: 'missing_organization_id' };
+  }
+
+  // Prevent arbitrary self-attachment to other organizations.
+  if (requestedOrgId && profileOrgId && requestedOrgId !== profileOrgId) {
+    throw httpsError('permission-denied', 'No puedes autoasignarte a otra organización.');
+  }
+
+  const roleRaw = String(userSnap.get('role') ?? '').trim();
+  if (!roleRaw || roleRaw === 'pending') {
+    return { ok: true, repaired: false, organizationId: orgId, reason: 'profile_not_active' };
+  }
+
+  const isActiveProfile = userSnap.get('active') === true;
+  if (!isActiveProfile) {
+    return { ok: true, repaired: false, organizationId: orgId, reason: 'profile_inactive' };
+  }
+
+  const role: Role = normalizeRole(roleRaw);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const orgSnap = await orgRef.get();
+  if (!orgSnap.exists) {
+    throw httpsError('not-found', 'Organización no encontrada.');
+  }
+
+  const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+  const memberRef = orgRef.collection('members').doc(uid);
+
+  const [membershipSnap, memberSnap] = await Promise.all([membershipRef.get(), memberRef.get()]);
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const batch = db.batch();
+  let changed = false;
+
+  const orgName = String(orgSnap.get('name') ?? orgId);
+
+  if (!membershipSnap.exists) {
+    batch.set(
+      membershipRef,
+      {
+        userId: uid,
+        organizationId: orgId,
+        organizationName: orgName,
+        role,
+        status: 'active',
+        primary: profileOrgId === orgId,
+        createdAt: now,
+        updatedAt: now,
+        source: 'ensureSelfOrgMembership_v1',
+      },
+      { merge: true },
+    );
+    changed = true;
+  } else {
+    const updates: Record<string, unknown> = {};
+    if (membershipSnap.get('userId') !== uid) updates.userId = uid;
+    if (!membershipSnap.get('organizationId')) updates.organizationId = orgId;
+    if (!membershipSnap.get('organizationName')) updates.organizationName = orgName;
+    if (!membershipSnap.get('role')) updates.role = role;
+
+    const status =
+      String(membershipSnap.get('status') ?? '') ||
+      (membershipSnap.get('active') === true ? 'active' : 'pending');
+    if (!membershipSnap.get('status') && status === 'active') updates.status = 'active';
+
+    if (Object.keys(updates).length) {
+      updates.updatedAt = now;
+      updates.source = 'ensureSelfOrgMembership_v1';
+      batch.set(membershipRef, updates, { merge: true });
+      changed = true;
+    }
+  }
+
+  const authUser = await admin.auth().getUser(uid).catch(() => null);
+  const email = (authUser?.email ?? (userSnap.get('email') as string | null) ?? null) as string | null;
+  const displayName =
+    (authUser?.displayName ?? (userSnap.get('displayName') as string | null) ?? null) as string | null;
+
+  if (!memberSnap.exists) {
+    batch.set(
+      memberRef,
+      {
+        uid,
+        orgId,
+        email,
+        displayName,
+        role,
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+        source: 'ensureSelfOrgMembership_v1',
+      },
+      { merge: true },
+    );
+    changed = true;
+  } else {
+    const updates: Record<string, unknown> = {};
+    if (!memberSnap.get('role')) updates.role = role;
+    if (memberSnap.get('active') !== true) updates.active = true;
+    if (!memberSnap.get('email') && email) updates.email = email;
+    if (!memberSnap.get('displayName') && displayName) updates.displayName = displayName;
+
+    if (Object.keys(updates).length) {
+      updates.updatedAt = now;
+      updates.source = 'ensureSelfOrgMembership_v1';
+      batch.set(memberRef, updates, { merge: true });
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await batch.commit();
+  }
+
+  return { ok: true, repaired: changed, organizationId: orgId };
 });
 
 /* ------------------------------
