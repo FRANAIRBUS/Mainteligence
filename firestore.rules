@@ -54,6 +54,9 @@ service cloud.firestore {
     }
 
     function hasScope(orgId, uid, locationId) {
+      // Admin-like roles are not scope-limited.
+      if (isAdminInOrg(orgId, uid)) return true;
+
       let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
       return locationId == null
         || locationId == ""
@@ -140,7 +143,10 @@ service cloud.firestore {
       // Needed by v13 UI (tasks/incidents assignment, name maps, etc.)
       // Allow reading user docs within the caller's active organization.
       // Note: client queries are always scoped with where('organizationId'=='<activeOrgId>').
-      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId
+        || (resource.data.organizationId is string && isMaintenanceInOrg(resource.data.organizationId, request.auth.uid))
+      );
 
       allow create: if isSignedIn()
         && request.auth.uid == userId
@@ -232,16 +238,14 @@ service cloud.firestore {
           && isActiveMember(orgId, request.auth.uid)
           && resourceOrganizationIdMatchesPath(orgId);
         allow create: if isSignedIn()
-          && isMaintenanceInOrg(orgId, request.auth.uid)
-          && organizationIdMatchesPath(orgId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+          && isActiveMember(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId);
         allow update: if isSignedIn()
           && isMaintenanceInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+          && hasScope(orgId, request.auth.uid, ('siteId' in request.resource.data) ? request.resource.data.siteId : null)
+          && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data) ? request.resource.data.departmentId : null);
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
@@ -252,14 +256,14 @@ service cloud.firestore {
         allow create: if isSignedIn()
           && isMaintenanceInOrg(orgId, request.auth.uid)
           && organizationIdMatchesPath(orgId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+          && hasScope(orgId, request.auth.uid, ('siteId' in request.resource.data) ? request.resource.data.siteId : null)
+          && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data) ? request.resource.data.departmentId : null);
         allow update: if isSignedIn()
           && isMaintenanceInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+          && hasScope(orgId, request.auth.uid, ('siteId' in request.resource.data) ? request.resource.data.siteId : null)
+          && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data) ? request.resource.data.departmentId : null);
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 

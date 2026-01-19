@@ -54,6 +54,9 @@ export default function SettingsPage() {
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
 
+
+  const resolvedOrganizationId =
+    organizationId ?? profile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
   const { data: settings, loading: settingsLoading } = useDoc<AppSettings>(
     resolvedOrganizationId ? orgDocPath(resolvedOrganizationId, 'settings', 'app') : null
   );
@@ -69,10 +72,6 @@ export default function SettingsPage() {
   const uploadUnsubscribe = useRef<(() => void) | null>(null);
   const uploadTaskRef = useRef<UploadTask | null>(null);
   const uploadStallTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const resolvedOrganizationId =
-    organizationId ?? profile?.organizationId ?? DEFAULT_ORGANIZATION_ID;
-
   const clearStallTimer = () => {
     if (uploadStallTimer.current) {
       clearTimeout(uploadStallTimer.current);
