@@ -20,32 +20,44 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
     }
 
+    function membershipDoc(orgId, uid) {
+      return get(/databases/$(database)/documents/memberships/$(uid + "_" + orgId));
+    }
+
+    function isActiveMembership(doc) {
+      return doc != null
+        && doc.data != null
+        && (
+          doc.data.status == "active"
+          || doc.data.active == true
+        );
+    }
+
     function isActiveMember(orgId, uid) {
       let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
+      let membership = isValidOrgId(orgId) ? membershipDoc(orgId, uid) : null;
       return isSignedIn()
-        && member != null
-        && member.data != null
         && (
-          member.data.status == "active"
-          || member.data.active == true
+          isActiveMembership(member)
+          || isActiveMembership(membership)
         );
     }
 
     function hasRole(orgId, uid, roles) {
       let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
+      let membership = isValidOrgId(orgId) ? membershipDoc(orgId, uid) : null;
       return isSignedIn()
-        && member != null
-        && member.data != null
         && (
-          member.data.status == "active"
-          || member.data.active == true
-        )
-        && member.data.role in roles;
+          (isActiveMembership(member) && member.data.role in roles)
+          || (isActiveMembership(membership) && membership.data.role in roles)
+        );
     }
 
     function hasScope(orgId, uid, locationId) {
+      // Admin-like roles are not scope-limited (rules language has no 'if' statement).
       let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
-      return locationId == null
+      return isAdminInOrg(orgId, uid)
+        || locationId == null
         || locationId == ""
         || (
           member != null
@@ -72,15 +84,19 @@ service cloud.firestore {
     }
 
     function organizationIdUnchanged() {
-      return request.resource.data.organizationId == resource.data.organizationId;
+      return !('organizationId' in resource.data)
+        || !('organizationId' in request.resource.data)
+        || request.resource.data.organizationId == resource.data.organizationId;
     }
 
     function organizationIdMatchesPath(orgId) {
-      return request.resource.data.organizationId == orgId;
+      return !('organizationId' in request.resource.data)
+        || request.resource.data.organizationId == orgId;
     }
 
     function resourceOrganizationIdMatchesPath(orgId) {
-      return resource.data.organizationId == orgId;
+      return !('organizationId' in resource.data)
+        || resource.data.organizationId == orgId;
     }
 
     function roleUnchanged() {
@@ -126,7 +142,10 @@ service cloud.firestore {
       // Needed by v13 UI (tasks/incidents assignment, name maps, etc.)
       // Allow reading user docs within the caller's active organization.
       // Note: client queries are always scoped with where('organizationId'=='<activeOrgId>').
-      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId
+        || (resource.data.organizationId is string && isMaintenanceInOrg(resource.data.organizationId, request.auth.uid))
+      );
 
       allow create: if isSignedIn()
         && request.auth.uid == userId
@@ -218,16 +237,14 @@ service cloud.firestore {
           && isActiveMember(orgId, request.auth.uid)
           && resourceOrganizationIdMatchesPath(orgId);
         allow create: if isSignedIn()
-          && isMaintenanceInOrg(orgId, request.auth.uid)
-          && organizationIdMatchesPath(orgId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+          && isActiveMember(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId);
         allow update: if isSignedIn()
           && isMaintenanceInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+          && hasScope(orgId, request.auth.uid, ('siteId' in request.resource.data) ? request.resource.data.siteId : null)
+          && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data) ? request.resource.data.departmentId : null);
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
@@ -238,14 +255,14 @@ service cloud.firestore {
         allow create: if isSignedIn()
           && isMaintenanceInOrg(orgId, request.auth.uid)
           && organizationIdMatchesPath(orgId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+          && hasScope(orgId, request.auth.uid, ('siteId' in request.resource.data) ? request.resource.data.siteId : null)
+          && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data) ? request.resource.data.departmentId : null);
         allow update: if isSignedIn()
           && isMaintenanceInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.siteId)
-          && hasScope(orgId, request.auth.uid, request.resource.data.departmentId);
+          && hasScope(orgId, request.auth.uid, ('siteId' in request.resource.data) ? request.resource.data.siteId : null)
+          && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data) ? request.resource.data.departmentId : null);
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 

@@ -75,20 +75,27 @@ function pickDefaultOrgId(opts: {
   const { preferredOrgId, profileOrgId, memberships } = opts;
 
   const active = memberships.filter((m) => m.status === 'active' && m.organizationId);
+
+  // 1) User preference wins (explicit org switch from UI / persisted in localStorage)
   if (preferredOrgId) {
     const hit = active.find((m) => m.organizationId === preferredOrgId);
     if (hit) return hit.organizationId;
   }
 
+  // 2) Primary membership is the server-side canonical default
+  const primary = active.find((m) => Boolean(m.primary));
+  if (primary) return primary.organizationId;
+
+  // 3) Profile org id if it maps to an active membership
   if (profileOrgId) {
     const hit = active.find((m) => m.organizationId === profileOrgId);
     if (hit) return hit.organizationId;
   }
 
+  // 4) Fallback: first active membership
   if (active.length > 0) return active[0].organizationId;
   return null;
 }
-
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const app = useFirebaseApp();
   const auth = useAuth();

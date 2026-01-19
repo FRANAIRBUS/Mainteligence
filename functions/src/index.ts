@@ -2693,17 +2693,83 @@ export const setActiveOrganization = functions.https.onCall(async (data, context
     (mSnap.get('active') === true ? 'active' : 'pending');
   if (status !== 'active') throw httpsError('failed-precondition', 'La membresía no está activa.');
 
-  await db.collection('users').doc(uid).set(
+  const role = normalizeRole(mSnap.get('role'));
+  const email = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const displayName =
+    (((context.auth?.token as any)?.name ?? null) as string | null) ?? email;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  // 1) Persist active org on the user
+  // 2) Make selected membership primary
+  // 3) Ensure org-scoped member doc exists (used by UI list + rules)
+  const batch = db.batch();
+  batch.set(
+    db.collection('users').doc(uid),
     {
       organizationId: orgId,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      source: 'setActiveOrganization_v1',
+      updatedAt: now,
+      source: 'setActiveOrganization_v2',
     },
     { merge: true },
   );
 
+  batch.set(
+    membershipRef,
+    {
+      primary: true,
+      updatedAt: now,
+      source: 'setActiveOrganization_v2',
+    },
+    { merge: true },
+  );
+
+  batch.set(
+    db.collection('organizations').doc(orgId).collection('members').doc(uid),
+    {
+      uid,
+      orgId,
+      active: true,
+      role,
+      email,
+      displayName,
+      updatedAt: now,
+      source: 'setActiveOrganization_v2',
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
+
+  // Best-effort: unset primary on other memberships for this user.
+  // Not critical for correctness; avoids UI drift where an old org stays primary.
+  try {
+    const others = await db.collection('memberships').where('userId', '==', uid).get();
+    const batch2 = db.batch();
+    let writes = 0;
+    for (const d of others.docs) {
+      if (d.id !== `${uid}_${orgId}` && d.get('primary') === true) {
+        batch2.set(
+          d.ref,
+          {
+            primary: false,
+            updatedAt: now,
+            source: 'setActiveOrganization_v2',
+          },
+          { merge: true },
+        );
+        writes += 1;
+      }
+    }
+    if (writes > 0) {
+      await batch2.commit();
+    }
+  } catch {
+    // ignore
+  }
+
   return { ok: true, organizationId: orgId };
 });
+
 
 /* ------------------------------
    ENTITLEMENT-LIMITED CREATION
