@@ -21,7 +21,9 @@ service cloud.firestore {
     }
 
     function membershipDoc(orgId, uid) {
-      return get(/databases/$(database)/documents/memberships/$(uid)_$(orgId));
+      // NOTE: Firestore rules do not allow composing a single path segment via multiple $(...) bindings.
+      // Use a single binding with string concatenation to build the document id.
+      return get(/databases/$(database)/documents/memberships/$(uid + "_" + orgId));
     }
 
     function isActiveMembership(doc) {
@@ -54,18 +56,18 @@ service cloud.firestore {
     }
 
     function hasScope(orgId, uid, locationId) {
-      // Scope restrictions apply only to department-head roles.
-      if (locationId == null || locationId == "") return true;
-      if (!hasRole(orgId, uid, ["dept_head_multi", "dept_head_single"])) return true;
-
       let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
-      return member != null
-        && member.data != null
-        && (
-          member.data.siteId == locationId
-          || member.data.departmentId == locationId
-          || locationId in (member.data.siteIds != null ? member.data.siteIds : [])
-          || locationId in (member.data.departmentIds != null ? member.data.departmentIds : [])
+      return locationId == null
+        || locationId == ""
+        || (
+          member != null
+          && member.data != null
+          && (
+            member.data.siteId == locationId
+            || member.data.departmentId == locationId
+            || locationId in (member.data.siteIds != null ? member.data.siteIds : [])
+            || locationId in (member.data.departmentIds != null ? member.data.departmentIds : [])
+          )
         );
     }
 
@@ -82,18 +84,15 @@ service cloud.firestore {
     }
 
     function organizationIdUnchanged() {
-      return !('organizationId' in request.resource.data)
-        || request.resource.data.organizationId == resource.data.organizationId;
+      return request.resource.data.organizationId == resource.data.organizationId;
     }
 
     function organizationIdMatchesPath(orgId) {
-      return !('organizationId' in request.resource.data)
-        || request.resource.data.organizationId == orgId;
+      return request.resource.data.organizationId == orgId;
     }
 
     function resourceOrganizationIdMatchesPath(orgId) {
-      return !('organizationId' in resource.data)
-        || resource.data.organizationId == orgId;
+      return resource.data.organizationId == orgId;
     }
 
     function roleUnchanged() {
@@ -139,13 +138,7 @@ service cloud.firestore {
       // Needed by v13 UI (tasks/incidents assignment, name maps, etc.)
       // Allow reading user docs within the caller's active organization.
       // Note: client queries are always scoped with where('organizationId'=='<activeOrgId>').
-      allow read: if isSignedIn() && (
-        request.auth.uid == userId
-        || (
-          ('organizationId' in resource.data)
-          && isAdminInOrg(resource.data.organizationId, request.auth.uid)
-        )
-      );
+      allow read: if isSignedIn() && request.auth.uid == userId;
 
       allow create: if isSignedIn()
         && request.auth.uid == userId
