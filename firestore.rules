@@ -54,11 +54,10 @@ service cloud.firestore {
     }
 
     function hasScope(orgId, uid, locationId) {
-      // Admin-like roles are not scope-limited.
-      if (isAdminInOrg(orgId, uid)) return true;
-
+      // Admin-like roles are not scope-limited (rules language has no 'if' statement).
       let member = isValidOrgId(orgId) ? memberDoc(orgId, uid) : null;
-      return locationId == null
+      return isAdminInOrg(orgId, uid)
+        || locationId == null
         || locationId == ""
         || (
           member != null
