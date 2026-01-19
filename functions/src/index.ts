@@ -2684,8 +2684,10 @@ export const setActiveOrganization = functions.https.onCall(async (data, context
   const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
 
+  const userRef = db.collection('users').doc(uid);
   const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
-  const mSnap = await membershipRef.get();
+
+  const [userSnap, mSnap] = await Promise.all([userRef.get(), membershipRef.get()]);
   if (!mSnap.exists) throw httpsError('permission-denied', 'No perteneces a esa organización.');
 
   const status =
@@ -2693,14 +2695,82 @@ export const setActiveOrganization = functions.https.onCall(async (data, context
     (mSnap.get('active') === true ? 'active' : 'pending');
   if (status !== 'active') throw httpsError('failed-precondition', 'La membresía no está activa.');
 
-  await db.collection('users').doc(uid).set(
+  const roleRaw = String(mSnap.get('role') ?? userSnap.get('role') ?? '').trim();
+  const role: Role = normalizeRole(roleRaw || 'operator');
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const batch = db.batch();
+
+  // 1) Persist active org on the user profile.
+  batch.set(
+    userRef,
     {
       organizationId: orgId,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      source: 'setActiveOrganization_v1',
+      updatedAt: now,
+      source: 'setActiveOrganization_v2',
     },
     { merge: true },
   );
+
+  // 2) Ensure membership doc is normalized and mark it as primary.
+  batch.set(
+    membershipRef,
+    {
+      userId: uid,
+      organizationId: orgId,
+      role,
+      status: 'active',
+      primary: true,
+      updatedAt: now,
+      source: 'setActiveOrganization_v2',
+    },
+    { merge: true },
+  );
+
+  // 3) Demote other memberships for this user (best-effort; keeps UI + server consistent).
+  const membershipsSnap = await db.collection('memberships').where('userId', '==', uid).get();
+  membershipsSnap.forEach((docSnap) => {
+    if (docSnap.id === `${uid}_${orgId}`) return;
+    batch.set(
+      docSnap.ref,
+      {
+        primary: false,
+        updatedAt: now,
+        source: 'setActiveOrganization_v2',
+      },
+      { merge: true },
+    );
+  });
+
+  // 4) Ensure org member snapshot exists (used by client listings + RBAC).
+  const orgRef = db.collection('organizations').doc(orgId);
+  const memberRef = orgRef.collection('members').doc(uid);
+
+  const authUser = await admin.auth().getUser(uid).catch(() => null);
+  const email = (authUser?.email ?? (userSnap.exists ? (userSnap.get('email') as string | null) : null) ?? null) as
+    | string
+    | null;
+  const displayName =
+    (authUser?.displayName ?? (userSnap.exists ? (userSnap.get('displayName') as string | null) : null) ?? null) as
+      | string
+      | null;
+
+  batch.set(
+    memberRef,
+    {
+      uid,
+      orgId,
+      email,
+      displayName,
+      role,
+      active: true,
+      updatedAt: now,
+      source: 'setActiveOrganization_v2',
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
 
   return { ok: true, organizationId: orgId };
 });

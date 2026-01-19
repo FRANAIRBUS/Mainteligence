@@ -75,11 +75,18 @@ function pickDefaultOrgId(opts: {
   const { preferredOrgId, profileOrgId, memberships } = opts;
 
   const active = memberships.filter((m) => m.status === 'active' && m.organizationId);
+
+  // 1) Respect an explicit user selection (stored client-side) if it's still valid.
   if (preferredOrgId) {
     const hit = active.find((m) => m.organizationId === preferredOrgId);
     if (hit) return hit.organizationId;
   }
 
+  // 2) Prefer the server-designated primary membership.
+  const primary = active.find((m) => m.primary === true);
+  if (primary) return primary.organizationId;
+
+  // 3) Fallback to profileOrgId only if it maps to an active membership.
   if (profileOrgId) {
     const hit = active.find((m) => m.organizationId === profileOrgId);
     if (hit) return hit.organizationId;
