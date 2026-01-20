@@ -40,6 +40,7 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { ticketStatusLabel } from '@/lib/status';
 import { doc, getDoc, where } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { isFeatureEnabled } from '@/lib/entitlements';
@@ -100,7 +101,7 @@ function PreventiveTable({
               <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0,6)}</TableCell>
               <TableCell>{ticket.title}</TableCell>
                <TableCell>
-                <Badge variant="outline">{ticket.status}</Badge>
+                <Badge variant="outline">{ticketStatusLabel(ticket.status)}</Badge>
               </TableCell>
                <TableCell>
                 <Badge variant="secondary">{ticket.priority}</Badge>

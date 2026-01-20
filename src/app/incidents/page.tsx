@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 import Link from 'next/link';
 import { orgCollectionPath } from '@/lib/organization';
 import { useToast } from '@/hooks/use-toast';
@@ -79,7 +80,7 @@ export default function IncidentsPage() {
 
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
-  const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
+  const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'mantenimiento';
 
   // Phase 3: Construct the tickets query only when user and userProfile are ready.
   const ticketsConstraints = useMemo(() => {
@@ -138,7 +139,7 @@ export default function IncidentsPage() {
   const { data: departments = [], loading: deptsLoading } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );
-  // Only fetch users if the current user is an admin or maintenance staff.
+  // Only fetch users if the current user is an admin or mantenimiento staff.
   const { data: users = [], loading: usersLoading } = useCollection<OrganizationMember>(
     isMantenimiento && organizationId ? orgCollectionPath(organizationId, 'members') : null
   );
@@ -148,7 +149,7 @@ export default function IncidentsPage() {
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
 
   const sortedTickets = useMemo(() => {
-    const openTickets = tickets.filter((ticket) => ticket.status !== 'Cerrada');
+  const openTickets = tickets.filter((ticket) => normalizeTicketStatus(ticket.status) !== 'resolved');
     const effectiveDateFilter = dateFilter === 'all' ? 'recientes' : dateFilter || 'recientes';
 
     return [...openTickets].sort((a, b) => {
@@ -172,10 +173,13 @@ export default function IncidentsPage() {
   const filteredTickets = useMemo(() => {
     return sortedTickets.filter((ticket) => {
       const matchesStatus =
-        statusFilter === 'all' || statusFilter === 'todas' || ticket.status === statusFilter;
+        statusFilter === 'all' ||
+        statusFilter === 'todas' ||
+        normalizeTicketStatus(ticket.status) === statusFilter;
       const matchesPriority =
         priorityFilter === 'all' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
-      const matchesLocation = locationFilter === 'all' || ticket.siteId === locationFilter;
+      const ticketLocationId = ticket.locationId ?? ticket.siteId;
+      const matchesLocation = locationFilter === 'all' || ticketLocationId === locationFilter;
       const query = searchQuery.toLowerCase();
       const matchesQuery =
         !query ||
@@ -248,11 +252,10 @@ export default function IncidentsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Sin Filtro</SelectItem>
-                    <SelectItem value="Abierta">Abiertas</SelectItem>
-                    <SelectItem value="En curso">En curso</SelectItem>
-                    <SelectItem value="En espera">En espera</SelectItem>
-                    <SelectItem value="Resuelta">Resueltas</SelectItem>
-                    <SelectItem value="Cierre solicitado">Cierre solicitado</SelectItem>
+                    <SelectItem value="new">Nuevas</SelectItem>
+                    <SelectItem value="in_progress">En progreso</SelectItem>
+                    <SelectItem value="resolved">Resueltas</SelectItem>
+                    <SelectItem value="canceled">Canceladas</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={priorityFilter} onValueChange={setPriorityFilter}>
@@ -334,7 +337,8 @@ export default function IncidentsPage() {
                   const createdAtLabel = ticket.createdAt?.toDate
                     ? ticket.createdAt.toDate().toLocaleDateString()
                     : 'N/A';
-                  const siteLabel = sitesMap[ticket.siteId] || 'N/A';
+                  const ticketLocationId = ticket.locationId ?? ticket.siteId;
+                  const siteLabel = (ticketLocationId && sitesMap[ticketLocationId]) || 'N/A';
                   const departmentLabel = departmentsMap[ticket.departmentId] || 'N/A';
                   return (
                     <div
@@ -354,7 +358,7 @@ export default function IncidentsPage() {
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-base font-semibold text-foreground">{ticket.title}</p>
-                            <Badge variant="outline">{ticket.status}</Badge>
+                            <Badge variant="outline">{ticketStatusLabel(ticket.status)}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground line-clamp-2">
                             {ticket.description || 'Sin descripción'}

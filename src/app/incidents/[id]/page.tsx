@@ -16,6 +16,7 @@ import { MainNav } from '@/components/main-nav';
 import { UserNav } from '@/components/user-nav';
 import { Icons } from '@/components/icons';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 import {
   Card,
   CardContent,
@@ -83,7 +84,7 @@ export default function IncidentDetailPage() {
   const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
   const isMantenimiento =
-    isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
+    isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'mantenimiento';
 
   // Member roster is only needed for privileged screens (assignment dropdown, audit, etc.)
   const { data: members = [], loading: membersLoading } = useCollection<OrganizationMember>(
@@ -120,7 +121,7 @@ export default function IncidentDetailPage() {
       return dateB.getTime() - dateA.getTime();
     });
   }, [ticket?.reports]);
-  const isClosed = ticket?.status === 'Cerrada';
+  const isClosed = normalizeTicketStatus(ticket?.status) === 'resolved';
 
   const currentMember = useMemo(
     () => members.find((m) => m.id === user?.uid) ?? null,
@@ -174,7 +175,10 @@ export default function IncidentDetailPage() {
   }, [assignedToMember, createdByMember, members, user, userProfile]);
 
   // Memoize derived data
-  const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
+  const siteName = useMemo(() => {
+    const locationId = ticket?.locationId ?? ticket?.siteId;
+    return sites?.find((s) => s.id === locationId)?.name || 'N/A';
+  }, [sites, ticket]);
   const departmentName = useMemo(() => departments?.find(d => d.id === ticket?.departmentId)?.name || 'N/A', [departments, ticket]);
   const assetName = useMemo(() => assets?.find(a => a.id === ticket?.assetId)?.name || 'N/A', [assets, ticket]);
 
@@ -326,7 +330,7 @@ export default function IncidentDetailPage() {
     try {
       const ticketRef = doc(firestore, orgDocPath(targetOrganizationId, 'tickets', ticket.id));
       await updateDoc(ticketRef, {
-        status: 'Cerrada',
+        status: 'resolved',
         closedAt: serverTimestamp(),
         closedBy: user.uid,
         closedReason: reason,
@@ -472,7 +476,7 @@ export default function IncidentDetailPage() {
                             <h1 className="font-headline text-2xl font-bold tracking-tight md:text-3xl">
                                 {ticket.title}
                             </h1>
-                            <Badge variant="outline">{ticket.status}</Badge>
+                            <Badge variant="outline">{ticketStatusLabel(ticket.status)}</Badge>
                             <Badge variant="secondary">{ticket.priority}</Badge>
                         </div>
                     </div>

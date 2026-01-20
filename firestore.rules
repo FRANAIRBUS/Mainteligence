@@ -63,8 +63,10 @@ service cloud.firestore {
           member != null
           && member.data != null
           && (
-            member.data.siteId == locationId
+            member.data.locationId == locationId
+            || member.data.siteId == locationId
             || member.data.departmentId == locationId
+            || locationId in (member.data.locationIds != null ? member.data.locationIds : [])
             || locationId in (member.data.siteIds != null ? member.data.siteIds : [])
             || locationId in (member.data.departmentIds != null ? member.data.departmentIds : [])
           )
@@ -156,18 +158,36 @@ service cloud.firestore {
     }
 
     function taskSiteScopeId(data) {
-      return ('siteId' in data) ? data.siteId : null;
+      return ('locationId' in data) ? data.locationId : (('siteId' in data) ? data.siteId : null);
+    }
+
+    function taskTypeFrom(data) {
+      return ('taskType' in data) ? data.taskType : null;
+    }
+
+    function locationIdFrom(data) {
+      return ('locationId' in data) ? data.locationId : (('siteId' in data) ? data.siteId : null);
     }
 
     function canOperatorUpdateTicket(orgId, uid) {
       return isOperatorInOrg(orgId, uid)
-        && (resource.data.createdBy == uid || resource.data.assignedTo == uid || hasScope(orgId, uid, resource.data.departmentId) || hasScope(orgId, uid, resource.data.siteId))
+        && (resource.data.createdBy == uid
+          || resource.data.assignedTo == uid
+          || hasScope(orgId, uid, resource.data.departmentId)
+          || hasScope(orgId, uid, locationIdFrom(resource.data)))
         && changedKeys().hasOnly(operatorTicketUpdateAllowedKeys());
     }
 
     function canOperatorUpdateTask(orgId, uid) {
       return isOperatorInOrg(orgId, uid)
-        && (resource.data.createdBy == uid || resource.data.assignedTo == uid)
+        && (
+          resource.data.createdBy == uid
+          || resource.data.assignedTo == uid
+          || (
+            taskTypeFrom(resource.data) == "ops"
+            && hasScope(orgId, uid, taskDepartmentScopeId(resource.data))
+          )
+        )
         && changedKeys().hasOnly(operatorTaskUpdateAllowedKeys());
     }
 
@@ -268,7 +288,7 @@ service cloud.firestore {
     --------------------------------- */
     match /organizations/{orgId} {
       allow list: if false;
-      allow get: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+      allow get: if isSignedIn() && isActiveMember(orgId, request.auth.uid);
       allow create, update, delete: if false;
 
       // Organization-scoped settings
@@ -330,8 +350,10 @@ service cloud.firestore {
           && resourceOrganizationIdMatchesPath(orgId);
         allow create: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
+          && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdMatchesPath(orgId);
         allow update: if isSignedIn()
+          && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
           && (
@@ -340,7 +362,7 @@ service cloud.firestore {
             || (
               // Scoped operators (maintenance + heads)
               (isMaintenanceOnlyInOrg(orgId, request.auth.uid) || isDepartmentHeadInOrg(orgId, request.auth.uid) || isLocationHeadInOrg(orgId, request.auth.uid))
-              && hasScope(orgId, request.auth.uid, ('siteId' in request.resource.data) ? request.resource.data.siteId : (('siteId' in resource.data) ? resource.data.siteId : null))
+              && hasScope(orgId, request.auth.uid, locationIdFrom(request.resource.data))
               && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data) ? request.resource.data.departmentId : (('departmentId' in resource.data) ? resource.data.departmentId : null))
             )
             || (
@@ -350,7 +372,7 @@ service cloud.firestore {
               && (
                 resource.data.createdBy == request.auth.uid
                 || resource.data.assignedTo == request.auth.uid
-                || hasScope(orgId, request.auth.uid, ('siteId' in resource.data) ? resource.data.siteId : null)
+                || hasScope(orgId, request.auth.uid, locationIdFrom(resource.data))
                 || hasScope(orgId, request.auth.uid, ('departmentId' in resource.data) ? resource.data.departmentId : null)
               )
               && changedKeys().hasOnly(operatorTicketUpdateAllowedKeys())
@@ -365,6 +387,7 @@ service cloud.firestore {
           && resourceOrganizationIdMatchesPath(orgId);
         allow create: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
+          && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdMatchesPath(orgId)
           && (
             // Admin can create any task
@@ -382,6 +405,7 @@ service cloud.firestore {
             )
           );
         allow update: if isSignedIn()
+          && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
           && (
@@ -421,7 +445,8 @@ service cloud.firestore {
       }
 
       match /auditLogs/{logId} {
-        allow read: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+        allow read: if isSignedIn()
+          && (isAdminInOrg(orgId, request.auth.uid) || isAuditorInOrg(orgId, request.auth.uid));
         allow create: if isSignedIn()
           && isAdminInOrg(orgId, request.auth.uid)
           && organizationIdMatchesPath(orgId);
@@ -437,6 +462,7 @@ service cloud.firestore {
           || isMaintenanceOnlyInOrg(orgId, request.auth.uid)
           || isDepartmentHeadInOrg(orgId, request.auth.uid)
           || isLocationHeadInOrg(orgId, request.auth.uid)
+          || isAuditorInOrg(orgId, request.auth.uid)
         );
         allow create, update, delete: if false;
       }

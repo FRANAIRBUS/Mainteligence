@@ -113,10 +113,11 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
       const docData = {
         ...data,
+        locationId: data.siteId,
         type: 'correctivo' as const,
-        status: 'Abierta' as const,
+        status: 'new' as const,
         createdBy: user.uid,
-        assignedRole: 'maintenance',
+        assignedRole: 'mantenimiento',
         assignedTo: null,
         organizationId,
         createdAt: serverTimestamp(),
