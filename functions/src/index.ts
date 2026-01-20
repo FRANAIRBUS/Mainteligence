@@ -939,7 +939,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_task_1`,
       title: 'Revisión mensual de calderas',
       description: 'Verificar presión, válvulas de seguridad y registros de mantenimiento.',
-      status: 'pendiente',
+      status: 'open',
       priority: 'alta',
       dueDate: makeTimestamp(3),
       location: departments[0]?.id,
@@ -948,7 +948,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_task_2`,
       title: 'Inspección de línea de producción',
       description: 'Comprobar sensores y lubricación en la línea 2.',
-      status: 'en_progreso',
+      status: 'in_progress',
       priority: 'media',
       dueDate: makeTimestamp(7),
       location: departments[1]?.id,
@@ -957,7 +957,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_task_3`,
       title: 'Actualizar checklist de seguridad',
       description: 'Revisar procedimientos y registrar cambios en el plan de seguridad.',
-      status: 'completada',
+      status: 'done',
       priority: 'baja',
       dueDate: makeTimestamp(-2),
       location: departments[2]?.id,
@@ -973,7 +973,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_ticket_1`,
       displayId: `INC-${year}-1001`,
       type: 'correctivo',
-      status: 'Abierta',
+      status: 'new',
       priority: 'Alta',
       siteId: sites[0]?.id,
       departmentId: departments[0]?.id,
@@ -984,7 +984,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_ticket_2`,
       displayId: `INC-${year}-1002`,
       type: 'correctivo',
-      status: 'En curso',
+      status: 'in_progress',
       priority: 'Media',
       siteId: sites[1]?.id,
       departmentId: departments[1]?.id,
@@ -995,7 +995,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_ticket_3`,
       displayId: `INC-${year}-1003`,
       type: 'correctivo',
-      status: 'Cerrada',
+      status: 'resolved',
       priority: 'Baja',
       siteId: sites[2]?.id,
       departmentId: departments[2]?.id,
@@ -1332,10 +1332,10 @@ async function pausePreventiveTicketsForOrg(orgId: string, now: admin.firestore.
       const data = docSnap.data() as any;
       if (data?.preventivePausedByEntitlement === true) return;
       const status = String(data?.status ?? '');
-      if (status === 'Cerrada' || status === 'Resuelta') return;
+      if (status === 'resolved' || status === 'Resuelta' || status === 'Cerrada') return;
 
       batch.update(docSnap.ref, {
-        status: 'En espera',
+        status: 'in_progress',
         preventivePausedByEntitlement: true,
         preventivePausedAt: now,
         updatedAt: now,
@@ -3162,7 +3162,7 @@ export const createPreventive = functions.https.onCall(async (data, context) => 
       siteId,
       departmentId,
       assetId: assetId || null,
-      status: String(payload.status ?? 'Abierta'),
+      status: String(payload.status ?? 'new'),
       type: 'preventivo',
       organizationId: orgId,
       createdBy: actorUid,
@@ -3437,7 +3437,7 @@ export const generatePreventiveTickets = functions.pubsub
           const ticketPayload = {
             organizationId: orgId,
             type: 'preventivo',
-            status: 'Abierta',
+            status: 'new',
             priority: freshTemplate.priority ?? 'Media',
             siteId: freshTemplate.siteId,
             departmentId: freshTemplate.departmentId,

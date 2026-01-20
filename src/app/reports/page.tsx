@@ -86,6 +86,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { isFeatureEnabled } from '@/lib/entitlements';
 import { orgCollectionPath } from '@/lib/organization';
+import { normalizeTicketStatus } from '@/lib/status';
 
 export default function ReportsPage() {
   const { user, loading, organizationId } = useUser();
@@ -266,7 +267,7 @@ export default function ReportsPage() {
 
   const recentClosures = useMemo(() => {
     return filteredTickets
-      .filter((ticket) => ticket.status === 'Cerrada' || ticket.closedAt)
+      .filter((ticket) => normalizeTicketStatus(ticket.status) === 'resolved' || ticket.closedAt)
       .map((ticket) => ({
         ticket,
         closedAt: toDate(ticket.closedAt ?? ticket.updatedAt ?? ticket.createdAt),

@@ -43,9 +43,9 @@ Referencia implementable para el control de acceso por rol y ámbito de departam
 
 ## Reglas específicas de operario
 - Puede asignarse a sí mismo o a una "cola" (departamento destino), pero no elegir cualquier usuario.
-- Puede pedir cierre marcando `status = "Cierre solicitado"`, `closureRequestedBy` y `closureRequestedAt`.
-- No puede cerrar; un rol superior confirma cambiando a `Cerrada`.
-- Si una tarea está asignada a él, puede marcar `status = "completada"`; un jefe puede reabrir/reasignar.
+- Puede pedir cierre marcando `status = "in_progress"` con metadata de solicitud (`closureRequestedBy`, `closureRequestedAt`).
+- No puede cerrar; un rol superior confirma cambiando a `resolved`.
+- Si una tarea está asignada a él, puede marcar `status = "done"`; un jefe puede reabrir/reasignar.
 
 ## Ámbito de jefes de departamento
 Un jefe de departamento puede actuar cuando el ticket pertenece a su ámbito:

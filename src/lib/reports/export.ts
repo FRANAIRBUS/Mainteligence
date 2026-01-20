@@ -1,5 +1,11 @@
 import type { Timestamp } from 'firebase/firestore';
 import type { Department, Site, Ticket, OrganizationMember } from '@/lib/firebase/models';
+import {
+  normalizeTaskStatus,
+  normalizeTicketStatus,
+  taskStatusLabel,
+  ticketStatusLabel,
+} from '@/lib/status';
 import type { MaintenanceTask } from '@/types/maintenance-task';
 
 export type ExportSortOrder = 'asc' | 'desc';
@@ -171,7 +177,7 @@ export const buildReportExportRows = ({
       displayId: ticket.displayId ?? '',
       title: ticket.title ?? '',
       description: ticket.description ?? '',
-      status: ticket.status ?? '',
+      status: ticketStatusLabel(normalizeTicketStatus(ticket.status)),
       priority: ticket.priority ?? '',
       department,
       location,
@@ -213,7 +219,7 @@ export const buildReportExportRows = ({
       displayId: '',
       title: task.title ?? '',
       description: task.description ?? '',
-      status: task.status ?? '',
+      status: taskStatusLabel(normalizeTaskStatus(task.status)),
       priority: task.priority ?? '',
       department,
       location,

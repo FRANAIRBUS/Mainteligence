@@ -67,19 +67,20 @@ Desarrollar una aplicación tipo **GMAO simple y profesional** para:
 - Admin: ve todo.
 
 ### 2.3 Estados oficiales (decisión cerrada)
-1) **Abierta**  
-2) **En curso**  
-3) **En espera**  
-4) **Resuelta**  
-5) **Cerrada**  
+1) **new**  
+2) **in_progress**  
+3) **resolved**  
+4) **canceled**  
+
+Estados reservados (no visibles en UI básica): `assigned`, `closed`, `waiting_parts`, `waiting_external`, `reopened`.
 
 **Reglas:**
 - El usuario estándar **no** puede cambiar estado.
-- Si `status = En espera` → motivo y detalle obligatorios (ETA recomendada).
-- `Resuelta` se permite como paso intermedio, pero no es obligatorio para cerrar.
+- Si se usa un estado de espera (`waiting_parts`/`waiting_external`) → motivo y detalle obligatorios (ETA recomendada).
+- `resolved` es cierre práctico en modo básico.
 
 ### 2.4 Requisitos obligatorios al cerrar (decisión cerrada)
-Para pasar a **Cerrada**:
+Para pasar a **resolved**:
 - ✅ **Comentario de cierre** (resumen técnico y resultado).
 - ✅ **Horas imputadas** (al menos un parte; se permite 0.0 pero registrado).
 - ✅ Si es preventivo: **checklist 100% completado**.
@@ -148,7 +149,7 @@ Menú:
 - Nota para mantenimiento
 
 **Resultado**
-- Estado: Abierta
+- Estado: new
 - Destino: assignedRole=mantenimiento, assignedTo=null
 - Notificación a equipo mantenimiento
 
@@ -156,7 +157,7 @@ Menú:
 Secciones:
 - Resumen (solo lectura)
 - Estado (selector) + “Tomar incidencia”
-- En espera (motivo/detalle/ETA) si aplica
+- Espera (motivo/detalle/ETA) si aplica con `waiting_parts`/`waiting_external`
 - Checklist (si preventivo)
 - Partes de horas (obligatorio al cerrar)
 - Repuestos (si aplica)
@@ -218,7 +219,7 @@ Campos mínimos:
 Campos comunes:
 - `displayId` (ej. `INC-2026-0007`, `PREV-OBR-CF1-2026-003`)
 - `type`: `correctivo | preventivo`
-- `status`: Abierta/En curso/En espera/Resuelta/Cerrada
+- `status`: new/in_progress/resolved/canceled (+ reservados)
 - `priority`: Baja/Media/Alta/Crítica
 - `siteId`, `departmentId`, `assetId?`
 - `title`, `description`
@@ -311,11 +312,11 @@ Incluye la mayoría operativa: estado, prioridad, localización, depto, equipo, 
 
 ### 7.4 Vistas guardadas
 - Críticas/Altas (no cerradas)
-- En espera
+- En espera (reservado)
 - Vencidas
 - Preventivos de esta semana
 - Sin asignar
-- Cerradas hoy/semana
+- Resueltas hoy/semana
 
 ---
 
@@ -341,7 +342,7 @@ Mientras una orden generada no se cierre, el sistema no crea una nueva (evita sp
 ### 9.1 Eventos que notifican
 - Ticket correctivo creado → notificar a **todos** los usuarios rol mantenimiento.
 - Orden preventiva generada → notificar a **todos** los usuarios rol mantenimiento.
-- (Opcional) Cambio a En espera → notificar al creador (informativo).
+- (Opcional) Cambio a waiting_* → notificar al creador (informativo).
 - (Opcional) Cierre → notificar al creador (además de email).
 
 ### 9.2 Gestión de tokens
@@ -434,7 +435,7 @@ Este documento debe guardarse como `docs/SPEC_GMAO.md`.
 
 ### ÉPICA 4 — Correctivos (Incidencias)
 **H4.1** Crear incidencia (Flutter)  
-- CA: crea ticket correcto; `assignedRole=mantenimiento`, `status=Abierta`; notifica mantenimiento.
+- CA: crea ticket correcto; `assignedRole=mantenimiento`, `status=new`; notifica mantenimiento.
 
 **H4.2** Mis incidencias (Flutter)  
 - CA: lista solo creadas por el usuario; filtros básicos; orden por defecto.
@@ -449,7 +450,7 @@ Este documento debe guardarse como `docs/SPEC_GMAO.md`.
 **H5.2** Tomar incidencia y cambios de estado  
 - CA: técnico toma (assignedTo=uid), cambia estado; eventos registrados.
 
-**H5.3** En espera (motivo/detalle/ETA)  
+**H5.3** En espera (motivo/detalle/ETA, reservado)
 - CA: obligatorio en espera; visible para todos; evento `waiting_set`.
 
 ### ÉPICA 6 — Documentación técnica

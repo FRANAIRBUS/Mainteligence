@@ -209,6 +209,15 @@ export interface Ticket extends BaseEntity {
   displayId: string;
   type: "correctivo" | "preventivo";
   status:
+    | "new"
+    | "in_progress"
+    | "resolved"
+    | "canceled"
+    | "assigned"
+    | "closed"
+    | "waiting_parts"
+    | "waiting_external"
+    | "reopened"
     | "Abierta"
     | "En curso"
     | "En espera"

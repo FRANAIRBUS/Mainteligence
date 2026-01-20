@@ -115,7 +115,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         ...data,
         locationId: data.siteId,
         type: 'correctivo' as const,
-        status: 'Abierta' as const,
+        status: 'new' as const,
         createdBy: user.uid,
         assignedRole: 'mantenimiento',
         assignedTo: null,

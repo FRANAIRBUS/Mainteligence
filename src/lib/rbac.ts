@@ -1,4 +1,5 @@
 import type { Ticket, User, UserRole } from '@/lib/firebase/models';
+import { normalizeTicketStatus } from '@/lib/status';
 
 export const normalizeRole = (role?: UserRole | string | null) => {
   if (!role) return undefined;
@@ -173,8 +174,10 @@ const buildGuards = (ticket: Ticket, user: User | null, userId: string | null): 
   };
 };
 
-const isClosed = (ticket: Ticket) => ticket.status === 'Cerrada';
-const isOpen = (ticket: Ticket) => ticket.status === 'Abierta';
+import { normalizeTicketStatus } from '@/lib/status';
+
+const isClosed = (ticket: Ticket) => normalizeTicketStatus(ticket.status) === 'resolved';
+const isOpen = (ticket: Ticket) => normalizeTicketStatus(ticket.status) === 'new';
 
 export function getTicketPermissions(ticket: Ticket, user: User | null, userId: string | null): TicketPermission {
   const role = normalizeRole(user?.role);

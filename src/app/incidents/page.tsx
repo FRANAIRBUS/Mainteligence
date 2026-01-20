@@ -34,6 +34,7 @@ import { Badge } from '@/components/ui/badge';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { where, or } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 import Link from 'next/link';
 import { orgCollectionPath } from '@/lib/organization';
 import { useToast } from '@/hooks/use-toast';
@@ -148,7 +149,7 @@ export default function IncidentsPage() {
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
 
   const sortedTickets = useMemo(() => {
-    const openTickets = tickets.filter((ticket) => ticket.status !== 'Cerrada');
+  const openTickets = tickets.filter((ticket) => normalizeTicketStatus(ticket.status) !== 'resolved');
     const effectiveDateFilter = dateFilter === 'all' ? 'recientes' : dateFilter || 'recientes';
 
     return [...openTickets].sort((a, b) => {
@@ -172,7 +173,9 @@ export default function IncidentsPage() {
   const filteredTickets = useMemo(() => {
     return sortedTickets.filter((ticket) => {
       const matchesStatus =
-        statusFilter === 'all' || statusFilter === 'todas' || ticket.status === statusFilter;
+        statusFilter === 'all' ||
+        statusFilter === 'todas' ||
+        normalizeTicketStatus(ticket.status) === statusFilter;
       const matchesPriority =
         priorityFilter === 'all' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
       const ticketLocationId = ticket.locationId ?? ticket.siteId;
@@ -249,11 +252,10 @@ export default function IncidentsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Sin Filtro</SelectItem>
-                    <SelectItem value="Abierta">Abiertas</SelectItem>
-                    <SelectItem value="En curso">En curso</SelectItem>
-                    <SelectItem value="En espera">En espera</SelectItem>
-                    <SelectItem value="Resuelta">Resueltas</SelectItem>
-                    <SelectItem value="Cierre solicitado">Cierre solicitado</SelectItem>
+                    <SelectItem value="new">Nuevas</SelectItem>
+                    <SelectItem value="in_progress">En progreso</SelectItem>
+                    <SelectItem value="resolved">Resueltas</SelectItem>
+                    <SelectItem value="canceled">Canceladas</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={priorityFilter} onValueChange={setPriorityFilter}>
@@ -356,7 +358,7 @@ export default function IncidentsPage() {
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-base font-semibold text-foreground">{ticket.title}</p>
-                            <Badge variant="outline">{ticket.status}</Badge>
+                            <Badge variant="outline">{ticketStatusLabel(ticket.status)}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground line-clamp-2">
                             {ticket.description || 'Sin descripción'}

@@ -1,7 +1,7 @@
 # Plan de mejora frente a la especificación premium GMAO
 
 ## Observaciones del estado actual
-- **Registro básico de incidencias**: el diálogo actual permite crear tickets con título, descripción, ubicación, departamento, activo opcional, prioridad y fotos. Asigna `status="Abierta"`, `assignedRole="mantenimiento"` y genera un `displayId` temporal, pero no gestiona checklist, validaciones de cierre ni contadores transaccionales.【F:src/app/add-incident-dialog.tsx†L44-L219】
+- **Registro básico de incidencias**: el diálogo actual permite crear tickets con título, descripción, ubicación, departamento, activo opcional, prioridad y fotos. Asigna `status="new"`, `assignedRole="mantenimiento"` y genera un `displayId` temporal, pero no gestiona checklist, validaciones de cierre ni contadores transaccionales.【F:src/app/add-incident-dialog.tsx†L44-L219】
 - **Visibilidad y filtros limitados**: la vista de incidencias usa una única tabla sin filtros avanzados y permite a operarios ver tickets por departamento y asignados, además de los creados por ellos. Esta visibilidad ampliada se mantendrá de forma controlada según lo solicitado.【F:src/app/incidents/page.tsx†L48-L270】
 - **Ausencia de flujos preventivos y auditoría**: no existen pantallas ni modelos para plantillas preventivas, generación automática, timeline de eventos, partes de horas, repuestos, checklist instanciados, PDF/email de cierre o notificaciones push.
 
@@ -19,7 +19,7 @@
    - Reemplazar el `displayId` temporal por contadores anuales transaccionales (`INC-{YYYY}-{NNNN}` / `PREV-{SITE}-{ASSET}-{YYYY}-{NNN}`) mediante Cloud Functions o transacciones en `counters/{orgId}/years/{YYYY}`.【F:src/app/add-incident-dialog.tsx†L104-L129】【F:docs/SPEC_GMAO.md†L276-L282】【F:docs/SPEC_GMAO.md†L506-L510】
 
 3. **Ciclo de vida y cierre con validaciones**
-   - Implementar los estados oficiales (Abierta → En curso → En espera → Resuelta → Cerrada) y exigir motivo/detalle/ETA en “En espera”.【F:docs/SPEC_GMAO.md†L69-L80】
+   - Implementar los estados oficiales (`new` → `in_progress` → `resolved` → `canceled`) y exigir motivo/detalle/ETA en “En espera” si se activa un estado avanzado.【F:docs/SPEC_GMAO.md†L69-L80】
    - Bloquear el cierre sin comentario técnico, partes de horas y checklist completo en preventivos; registrar eventos `status_changed`, `time_entry_added`, `part_added`, `closed` y `report_generated` para timeline y PDF.【F:docs/SPEC_GMAO.md†L81-L90】【F:docs/SPEC_GMAO.md†L250-L260】【F:docs/SPEC_GMAO.md†L452-L470】
 
 4. **Preventivos y checklists**

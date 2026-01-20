@@ -17,7 +17,7 @@ const emptyValues: TaskFormValues = {
   title: "",
   description: "",
   priority: "media",
-  status: "pendiente",
+  status: "open",
   dueDate: "",
   assignedTo: "",
   location: "",

@@ -34,13 +34,13 @@ import { useToast } from "@/hooks/use-toast";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { format } from "date-fns";
 import { normalizeRole } from "@/lib/rbac";
+import { normalizeTicketStatus, ticketStatusLabel } from "@/lib/status";
 
-const statusLabels: Record<Ticket["status"], string> = {
-  Abierta: "Abierta",
-  "En curso": "En curso",
-  "En espera": "En espera",
-  Resuelta: "Resuelta",
-  Cerrada: "Cerrada",
+const statusLabels: Record<string, string> = {
+  new: ticketStatusLabel("new"),
+  in_progress: ticketStatusLabel("in_progress"),
+  resolved: ticketStatusLabel("resolved"),
+  canceled: ticketStatusLabel("canceled"),
 };
 
 type DateFilter = "todas" | "hoy" | "semana" | "mes";
@@ -62,7 +62,7 @@ export default function ClosedIncidentsPage() {
   const ticketsConstraints = useMemo(() => {
     if (userLoading || !user || !userProfile) return null;
     // Cargamos el histórico de la organización y filtramos por permisos en el cliente.
-    return [where("status", "==", "Cerrada")];
+    return [where("status", "in", ["resolved", "Resuelta", "Cerrada"])];
   }, [user, userLoading, userProfile]);
 
   const { data: tickets, loading } = useCollectionQuery<Ticket>(
@@ -160,7 +160,7 @@ export default function ClosedIncidentsPage() {
 
     try {
       await updateDoc(doc(firestore, orgDocPath(organizationId, "tickets", ticket.id)), {
-        status: "Abierta",
+        status: "new",
         reopened: true,
         reopenedBy: user.uid,
         reopenedAt: Timestamp.now(),
@@ -194,7 +194,7 @@ export default function ClosedIncidentsPage() {
       await addDoc(collection(firestore, orgCollectionPath(organizationId, "tickets")), {
         title: ticket.title,
         description: ticket.description,
-        status: "Abierta",
+        status: "new",
         priority: ticket.priority,
         siteId: ticket.locationId ?? ticket.siteId,
         departmentId: ticket.departmentId,
@@ -325,7 +325,9 @@ export default function ClosedIncidentsPage() {
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-base font-semibold text-foreground">{ticket.title}</p>
-                        <Badge variant="outline">{statusLabels[ticket.status]}</Badge>
+                        <Badge variant="outline">
+                          {statusLabels[normalizeTicketStatus(ticket.status)]}
+                        </Badge>
                         {ticket.reopened && (
                           <Badge variant="outline" className="text-xs">Reabierta</Badge>
                         )}

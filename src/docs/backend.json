@@ -133,7 +133,17 @@
         },
         "status": {
           "type": "string",
-          "enum": ["Abierta", "En curso", "En espera", "Resuelta", "Cerrada"]
+          "enum": [
+            "new",
+            "in_progress",
+            "resolved",
+            "canceled",
+            "assigned",
+            "closed",
+            "waiting_parts",
+            "waiting_external",
+            "reopened"
+          ]
         },
         "priority": {
           "type": "string",

@@ -16,6 +16,7 @@ import { MainNav } from '@/components/main-nav';
 import { UserNav } from '@/components/user-nav';
 import { Icons } from '@/components/icons';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 import {
   Card,
   CardContent,
@@ -120,7 +121,7 @@ export default function IncidentDetailPage() {
       return dateB.getTime() - dateA.getTime();
     });
   }, [ticket?.reports]);
-  const isClosed = ticket?.status === 'Cerrada';
+  const isClosed = normalizeTicketStatus(ticket?.status) === 'resolved';
 
   const currentMember = useMemo(
     () => members.find((m) => m.id === user?.uid) ?? null,
@@ -329,7 +330,7 @@ export default function IncidentDetailPage() {
     try {
       const ticketRef = doc(firestore, orgDocPath(targetOrganizationId, 'tickets', ticket.id));
       await updateDoc(ticketRef, {
-        status: 'Cerrada',
+        status: 'resolved',
         closedAt: serverTimestamp(),
         closedBy: user.uid,
         closedReason: reason,
@@ -475,7 +476,7 @@ export default function IncidentDetailPage() {
                             <h1 className="font-headline text-2xl font-bold tracking-tight md:text-3xl">
                                 {ticket.title}
                             </h1>
-                            <Badge variant="outline">{ticket.status}</Badge>
+                            <Badge variant="outline">{ticketStatusLabel(ticket.status)}</Badge>
                             <Badge variant="secondary">{ticket.priority}</Badge>
                         </div>
                     </div>
