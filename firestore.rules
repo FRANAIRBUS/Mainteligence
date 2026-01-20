@@ -261,6 +261,20 @@ service cloud.firestore {
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
+      match /preventiveTemplates/{templateId} {
+        allow read: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow create: if isSignedIn()
+          && isMaintenanceInOrg(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId);
+        allow update: if isSignedIn()
+          && isMaintenanceInOrg(orgId, request.auth.uid)
+          && organizationIdUnchanged()
+          && resourceOrganizationIdMatchesPath(orgId);
+        allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+      }
+
       match /auditLogs/{logId} {
         allow read: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
         allow create: if isSignedIn()

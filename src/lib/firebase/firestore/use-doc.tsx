@@ -6,6 +6,24 @@ import { useUser } from '..';
 import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 
+const getOrgIdFromPath = (path: string) => {
+  const match = path.match(/^organizations\/([^/]+)\//);
+  return match?.[1] ?? null;
+};
+
+const isOrgMismatch = (path: string, organizationId: string, docData: DocumentData) => {
+  const pathOrgId = getOrgIdFromPath(path);
+  const docOrgId = typeof docData?.organizationId === 'string' ? docData.organizationId : null;
+
+  if (pathOrgId) {
+    if (pathOrgId !== organizationId) return true;
+    if (docOrgId && docOrgId !== organizationId) return true;
+    return false;
+  }
+
+  return docOrgId !== organizationId;
+};
+
 export function useDoc<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,7 +79,7 @@ export function useDoc<T>(path: string | null) {
             if (docSnap.exists()) {
               const docData = docSnap.data() as DocumentData & { organizationId?: string };
 
-              if (docData.organizationId !== organizationId) {
+              if (isOrgMismatch(docRef.path, organizationId, docData)) {
                 const organizationError = new Error(
                   docData.organizationId
                     ? 'Critical: Organization mismatch in transaction'
@@ -150,7 +168,7 @@ export function useDocRef<T>(docRef: DocumentReference | null) {
             if (docSnap.exists()) {
               const docData = docSnap.data() as DocumentData & { organizationId?: string };
 
-              if (docData.organizationId !== organizationId) {
+              if (isOrgMismatch(docRef.path, organizationId, docData)) {
                 const organizationError = new Error(
                   docData.organizationId
                     ? 'Critical: Organization mismatch in transaction'
