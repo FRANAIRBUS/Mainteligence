@@ -79,7 +79,7 @@ export default function IncidentsPage() {
 
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
-  const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
+  const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'mantenimiento';
 
   // Phase 3: Construct the tickets query only when user and userProfile are ready.
   const ticketsConstraints = useMemo(() => {
@@ -138,7 +138,7 @@ export default function IncidentsPage() {
   const { data: departments = [], loading: deptsLoading } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );
-  // Only fetch users if the current user is an admin or maintenance staff.
+  // Only fetch users if the current user is an admin or mantenimiento staff.
   const { data: users = [], loading: usersLoading } = useCollection<OrganizationMember>(
     isMantenimiento && organizationId ? orgCollectionPath(organizationId, 'members') : null
   );

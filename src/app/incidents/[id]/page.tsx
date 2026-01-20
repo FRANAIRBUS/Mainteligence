@@ -83,7 +83,7 @@ export default function IncidentDetailPage() {
   const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
   const isMantenimiento =
-    isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
+    isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'mantenimiento';
 
   // Member roster is only needed for privileged screens (assignment dropdown, audit, etc.)
   const { data: members = [], loading: membersLoading } = useCollection<OrganizationMember>(

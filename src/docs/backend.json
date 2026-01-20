@@ -16,7 +16,15 @@
         },
         "role": {
           "type": "string",
-          "enum": ["operario", "mantenimiento", "admin"],
+          "enum": [
+            "super_admin",
+            "admin",
+            "mantenimiento",
+            "jefe_departamento",
+            "jefe_ubicacion",
+            "operario",
+            "auditor"
+          ],
           "description": "The user's role."
         },
         "isMaintenanceLead": {
