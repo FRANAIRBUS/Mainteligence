@@ -21,7 +21,8 @@ const taskSchema = z.object({
   status: z.enum(["open", "in_progress", "done", "canceled"]),
   dueDate: z.string().optional().default(""),
   assignedTo: z.string().optional().default(""),
-  location: z.string().optional().default(""),
+  location: z.string().min(1, "Debe seleccionar un departamento"),
+  locationId: z.string().min(1, "Debe seleccionar una ubicación"),
   category: z.string().optional().default(""),
 })
 
@@ -34,6 +35,7 @@ type TaskFormProps = {
   errorMessage?: string | null
   users?: { id: string; displayName?: string; email?: string }[]
   departments?: { id: string; name?: string }[]
+  locations?: { id: string; name?: string }[]
   submitLabel?: string
   onSuccess?: () => void
   disabled?: boolean
@@ -46,6 +48,7 @@ export function TaskForm({
   errorMessage,
   users = [],
   departments = [],
+  locations = [],
   submitLabel = "Guardar",
   onSuccess,
   disabled = false,
@@ -225,17 +228,42 @@ export function TaskForm({
             name="location"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Departamento / ubicación</FormLabel>
+                <FormLabel>Departamento</FormLabel>
                 <Select onValueChange={field.onChange} value={field.value} disabled={disabled}>
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
+                      <SelectValue placeholder="Seleccionar departamento" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
                     {departments.map((department) => (
                       <SelectItem key={department.id} value={department.id}>
                         {department.name || department.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="locationId"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Ubicación</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value} disabled={disabled}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar ubicación" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {locations.map((location) => (
+                      <SelectItem key={location.id} value={location.id}>
+                        {location.name || location.id}
                       </SelectItem>
                     ))}
                   </SelectContent>
