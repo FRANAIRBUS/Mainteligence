@@ -1,5 +1,5 @@
 import type { Timestamp } from 'firebase/firestore';
-import type { Department, Site, Ticket, User } from '@/lib/firebase/models';
+import type { Department, Site, Ticket, OrganizationMember } from '@/lib/firebase/models';
 import type { MaintenanceTask } from '@/types/maintenance-task';
 
 export type ExportSortOrder = 'asc' | 'desc';
@@ -70,7 +70,7 @@ const formatTimestamp = (value?: Timestamp | Date | null) => {
   return date ? date.toISOString() : '';
 };
 
-const resolveUserLabel = (usersById: Map<string, User>, userId?: string | null) => {
+const resolveUserLabel = (usersById: Map<string, OrganizationMember>, userId?: string | null) => {
   if (!userId) return '';
   const user = usersById.get(userId);
   return user?.displayName ?? user?.email ?? userId;
@@ -93,7 +93,7 @@ const resolveSiteLabel = (sitesById: Map<string, Site>, siteId?: string | null) 
 
 const formatReports = (
   reports: { description?: string; createdBy?: string; createdAt?: Timestamp | Date | null }[] | undefined,
-  usersById: Map<string, User>
+  usersById: Map<string, OrganizationMember>
 ) => {
   if (!reports?.length) return { details: '', lastReportAt: '' };
 
@@ -133,7 +133,7 @@ const isWithinRange = (value: Date | null, filters: ReportExportFilters) => {
 export type BuildReportExportInput = {
   tickets: Ticket[];
   tasks: MaintenanceTask[];
-  usersById: Map<string, User>;
+  usersById: Map<string, OrganizationMember>;
   departmentsById: Map<string, Department>;
   sitesById: Map<string, Site>;
   filters: ReportExportFilters;

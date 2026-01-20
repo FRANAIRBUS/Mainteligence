@@ -52,6 +52,14 @@ type Role = 'super_admin' | 'admin' | 'maintenance' | 'operator';
 type OrgMemberRow = {
   id: string; // uid
   role?: Role;
+  /**
+   * Canonical membership flag stored in organizations/{orgId}/members/{uid}.
+   * After the migration, many docs do NOT have `status`, only `active`.
+   */
+  active?: boolean;
+  /**
+   * Legacy/status display. Keep for backward compatibility but derive from `active`.
+   */
   status?: 'active' | 'pending' | 'revoked';
   email?: string | null;
   displayName?: string | null;
@@ -133,6 +141,9 @@ export default function UsersPage() {
   }, [userLoading, user, organizationId, isRoot, router]);
 
   // Subscribe: members (organizations/{orgId}/members)
+  // IMPORTANT:
+  // - Avoid multi-field orderBy without composite indexes (it will silently break listing in prod).
+  // - Prefer createdAt ordering, which is already present and single-field indexed.
   useEffect(() => {
     if (userLoading) return;
     if (!user || !organizationId) {
@@ -148,17 +159,25 @@ export default function UsersPage() {
 
     setMembersLoading(true);
     const colRef = collection(db, 'organizations', organizationId, 'members');
-    const baseQuery = query(colRef, orderBy('displayName', 'asc'), orderBy('email', 'asc'), limit(membersPageSize));
+    const baseQuery = query(colRef, orderBy('createdAt', 'desc'), limit(membersPageSize));
 
     const unsub = onSnapshot(
       baseQuery,
       (snap) => {
         const rows = snap.docs.map((d) => {
           const data = d.data() as DocumentData;
+
+          // Migration reality:
+          // - New schema uses `active: boolean`.
+          // - Some older docs may still carry `status`.
+          const active = typeof data?.active === 'boolean' ? Boolean(data.active) : true;
+          const status = (String(data?.status ?? (active ? 'active' : 'revoked')) as any) as OrgMemberRow['status'];
+
           return {
             id: d.id,
             role: normalizeRole(data?.role),
-            status: String(data?.status ?? 'active') as any,
+            active,
+            status,
             email: (data?.email ?? null) as any,
             displayName: (data?.displayName ?? null) as any,
             createdAt: data?.createdAt,
@@ -190,18 +209,22 @@ export default function UsersPage() {
       const colRef = collection(db, 'organizations', organizationId, 'members');
       const nextQuery = query(
         colRef,
-        orderBy('displayName', 'asc'),
-        orderBy('email', 'asc'),
+        orderBy('createdAt', 'desc'),
         startAfter(membersCursor),
         limit(membersPageSize)
       );
       const snap = await getDocs(nextQuery);
       const nextRows = snap.docs.map((d) => {
         const data = d.data() as DocumentData;
+
+        const active = typeof data?.active === 'boolean' ? Boolean(data.active) : true;
+        const status = (String(data?.status ?? (active ? 'active' : 'revoked')) as any) as OrgMemberRow['status'];
+
         return {
           id: d.id,
           role: normalizeRole(data?.role),
-          status: String(data?.status ?? 'active') as any,
+          active,
+          status,
           email: (data?.email ?? null) as any,
           displayName: (data?.displayName ?? null) as any,
           createdAt: data?.createdAt,
@@ -343,10 +366,7 @@ export default function UsersPage() {
     [joinRequests]
   );
 
-  const activeMembers = useMemo(
-    () => members.filter((m) => (m.status ?? 'active') === 'active'),
-    [members]
-  );
+  const activeMembers = useMemo(() => members.filter((m) => m.active !== false), [members]);
   const usersById = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
   const departmentsById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments]);
 

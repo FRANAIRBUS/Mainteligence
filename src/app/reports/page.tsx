@@ -3,7 +3,7 @@
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
 import { useCollection, useDoc, useFirestore, useUser } from '@/lib/firebase';
-import type { Ticket, Department, Site, User, Organization } from '@/lib/firebase/models';
+import type { Ticket, Department, Site, Organization, OrganizationMember } from '@/lib/firebase/models';
 import type { MaintenanceTask } from '@/types/maintenance-task';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -153,8 +153,9 @@ export default function ReportsPage() {
   const { data: sites = [], loading: sitesLoading } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );
-  const { data: users = [], loading: usersLoading } =
-    useCollection<User>('users');
+  const { data: members = [], loading: membersLoading } = useCollection<OrganizationMember>(
+    organizationId ? orgCollectionPath(organizationId, 'members') : null
+  );
 
   if (loading || !user) {
     return (
@@ -226,11 +227,11 @@ export default function ReportsPage() {
   );
 
   const usersById = useMemo(() => {
-    return users.reduce((acc, u) => {
-      acc.set(u.id, u);
+    return members.reduce((acc, m) => {
+      acc.set(m.id, m);
       return acc;
-    }, new Map<string, User>());
-  }, [users]);
+    }, new Map<string, OrganizationMember>());
+  }, [members]);
 
   const toDate = (value?: Timestamp | Date | null) => {
     if (!value) return null;
@@ -304,7 +305,7 @@ export default function ReportsPage() {
     tasksLoading ||
     departmentsLoading ||
     sitesLoading ||
-    usersLoading;
+    membersLoading;
 
   const operatorRows = operatorPerformance.map((entry) => {
     const u = usersById.get(entry.userId);

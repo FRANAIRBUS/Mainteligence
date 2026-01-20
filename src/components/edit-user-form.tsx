@@ -38,10 +38,14 @@ const roleValues = [
   'admin',
   'maintenance',
   'dept_head_multi',
-  'dept_head_single',
+  'jefe_departamento',
+  'jefe_ubicacion',
   'operator',
+  'auditor',
   'mantenimiento',
   'operario',
+  // Legacy
+  'dept_head_single',
 ] as const;
 
 const roleOptions = [
@@ -49,10 +53,13 @@ const roleOptions = [
   { value: roleValues[1], label: 'Administrador' },
   { value: roleValues[2], label: 'Mantenimiento' },
   { value: roleValues[3], label: 'Jefe de Departamento (múltiples)' },
-  { value: roleValues[4], label: 'Jefe de Departamento (único)' },
-  { value: roleValues[5], label: 'Operario' },
-  { value: roleValues[6], label: 'Mantenimiento (legacy)' },
-  { value: roleValues[7], label: 'Operario (legacy)' },
+  { value: roleValues[4], label: 'Jefe de Departamento' },
+  { value: roleValues[5], label: 'Jefe de Ubicación' },
+  { value: roleValues[6], label: 'Operario' },
+  { value: roleValues[7], label: 'Auditor' },
+  { value: roleValues[8], label: 'Mantenimiento (legacy)' },
+  { value: roleValues[9], label: 'Operario (legacy)' },
+  { value: roleValues[10], label: 'Jefe de Departamento (legacy)' },
 ] as const;
 
 const formSchema = z.object({

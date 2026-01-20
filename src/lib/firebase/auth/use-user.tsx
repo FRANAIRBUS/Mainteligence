@@ -76,26 +76,26 @@ function pickDefaultOrgId(opts: {
 
   const active = memberships.filter((m) => m.status === 'active' && m.organizationId);
 
-  // 1) Respect an explicit user selection (stored client-side) if it's still valid.
+  // 1) User preference wins (explicit org switch from UI / persisted in localStorage)
   if (preferredOrgId) {
     const hit = active.find((m) => m.organizationId === preferredOrgId);
     if (hit) return hit.organizationId;
   }
 
-  // 2) Prefer the server-designated primary membership.
-  const primary = active.find((m) => m.primary === true);
+  // 2) Primary membership is the server-side canonical default
+  const primary = active.find((m) => Boolean(m.primary));
   if (primary) return primary.organizationId;
 
-  // 3) Fallback to profileOrgId only if it maps to an active membership.
+  // 3) Profile org id if it maps to an active membership
   if (profileOrgId) {
     const hit = active.find((m) => m.organizationId === profileOrgId);
     if (hit) return hit.organizationId;
   }
 
+  // 4) Fallback: first active membership
   if (active.length > 0) return active[0].organizationId;
   return null;
 }
-
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const app = useFirebaseApp();
   const auth = useAuth();
@@ -114,7 +114,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [profileReady, setProfileReady] = useState(false);
   const [membershipsReady, setMembershipsReady] = useState(false);
   const bootstrapAttemptedRef = useRef(false);
-  const selfRepairAttemptedRef = useRef(false);
 
   const refreshProfile = async () => {
     if (!user || !firestore) return;
@@ -134,7 +133,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setProfileReady(false);
       setMembershipsReady(false);
       bootstrapAttemptedRef.current = false;
-      selfRepairAttemptedRef.current = false;
       if (u) {
         u.getIdTokenResult()
           .then((r) => setIsRoot(Boolean((r?.claims as any)?.root) || (r?.claims as any)?.role === 'root'))
@@ -224,38 +222,6 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [app, user, profile, memberships, profileReady, membershipsReady]);
 
-
-  // Self-heal legacy accounts where memberships/members docs were not created during previous migrations.
-  // This is non-blocking and only targets the user's own users/{uid}.organizationId.
-  useEffect(() => {
-    if (!app || !user) return;
-    if (selfRepairAttemptedRef.current) return;
-    if (!profileReady || !membershipsReady) return;
-
-    const profileOrgId = String((profile as any)?.organizationId ?? '').trim();
-    const profileRole = String((profile as any)?.role ?? '').trim();
-    const profileActive = Boolean((profile as any)?.active === true);
-
-    // Only attempt repair for active profiles with a concrete orgId but missing memberships/role.
-    if (!profileOrgId) return;
-    if (!profileActive) return;
-    if (!profileRole || profileRole === 'pending') return;
-    if (memberships.length > 0 && memberships.some((m) => m.status === 'active')) return;
-
-    selfRepairAttemptedRef.current = true;
-
-    (async () => {
-      try {
-        const fn = httpsCallable(getFunctions(app, 'us-central1'), 'ensureSelfOrgMembership');
-        await fn({});
-      } catch (err) {
-        // Non-blocking.
-        console.warn('[ensureSelfOrgMembership] failed', err);
-      }
-    })();
-  }, [app, user, profile, memberships, profileReady, membershipsReady]);
-
-
   // Derive active org / active membership / role
   useEffect(() => {
     if (!user) return;
@@ -264,54 +230,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const preferredOrgId =
       typeof window !== 'undefined' ? window.localStorage.getItem('preferredOrganizationId') : null;
 
-    const profileOrgId = String((profile as any)?.organizationId ?? '').trim() || null;
-    const profileRole = String((profile as any)?.role ?? '').trim();
-    const profileActive = Boolean((profile as any)?.active === true);
-    const profileRoleIsUsable =
-      profileActive &&
-      (profileRole === 'super_admin' ||
-        profileRole === 'admin' ||
-        profileRole === 'maintenance' ||
-        profileRole === 'operator' ||
-        profileRole === 'dept_head_multi' ||
-        profileRole === 'dept_head_single');
-
-    let nextOrgId = pickDefaultOrgId({
+    const nextOrgId = pickDefaultOrgId({
       preferredOrgId,
-      profileOrgId,
+      profileOrgId: (profile as any)?.organizationId ?? null,
       memberships,
     });
 
-    // Fallback for legacy accounts where memberships index is missing but users/{uid}.organizationId exists.
-    if (!nextOrgId && profileOrgId && profileRoleIsUsable) {
-      nextOrgId = profileOrgId;
-    }
-
     setOrganizationId((prev) => (prev === nextOrgId ? prev : nextOrgId));
 
-    const nextMembership = nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
+    const nextMembership =
+      nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
+    setActiveMembership(nextMembership);
 
-    // If memberships index is missing, synthesize an active membership from profile to unlock UI gating.
-    const synthesizedMembership: Membership | null =
-      !nextMembership && nextOrgId && profileOrgId === nextOrgId && profileRoleIsUsable
-        ? ({
-            id: `synthetic_${user.uid}_${nextOrgId}`,
-            organizationId: nextOrgId,
-            organizationName: null,
-            userId: user.uid,
-            role: profileRole,
-            status: 'active',
-            createdAt: null,
-            updatedAt: null,
-            source: 'client_synthesized_from_profile',
-            primary: true,
-          } as any)
-        : null;
-
-    const finalMembership = nextMembership ?? synthesizedMembership;
-    setActiveMembership(finalMembership);
-
-    const derivedRole = finalMembership?.status === 'active' ? (finalMembership.role ?? 'operator') : null;
+    const derivedRole = nextMembership?.status === 'active' ? (nextMembership.role ?? 'operator') : null;
     setRole(derivedRole);
 
     setLoading(false);

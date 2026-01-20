@@ -20,12 +20,11 @@ import {
   useAuth,
   useCollection,
   useCollectionQuery,
-  useDoc,
   useFirestore,
   useUser,
 } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
-import type { Department, OrganizationMember, User } from "@/lib/firebase/models";
+import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
@@ -52,11 +51,10 @@ export default function ClosedTasksPage() {
   const router = useRouter();
   const firestore = useFirestore();
   const auth = useAuth();
-  const { user, loading: userLoading, organizationId } = useUser();
-  const { data: userProfile, loading: profileLoading } = useDoc<User>(user ? `users/${user.uid}` : null);
+  const { user, profile, role, loading: userLoading, organizationId } = useUser();
   const { toast } = useToast();
 
-  const normalizedRole = normalizeRole(userProfile?.role);
+  const normalizedRole = normalizeRole(role ?? profile?.role);
   const isSuperAdmin = normalizedRole === "super_admin";
   const canViewAll =
     normalizedRole === "admin" ||
@@ -65,10 +63,10 @@ export default function ClosedTasksPage() {
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
   const tasksConstraints = useMemo(() => {
-    if (!user || !userProfile) return null;
+    if (!user) return null;
     // Cargamos todas las tareas completadas de la organización y filtramos por permisos en el cliente.
     return [where("status", "==", "completada")];
-  }, [user, userProfile]);
+  }, [user]);
 
   const { data: tasks, loading } = useCollectionQuery<TaskWithId>(
     tasksConstraints && organizationId ? orgCollectionPath(organizationId, "tasks") : null,
@@ -80,6 +78,11 @@ export default function ClosedTasksPage() {
   const { data: users } = useCollection<OrganizationMember>(
     organizationId ? orgCollectionPath(organizationId, "members") : null
   );
+
+  const currentMember = useMemo(() => {
+    if (!user) return null;
+    return (users ?? []).find((m) => m.id === user.uid) ?? null;
+  }, [users, user]);
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("todas");
   const [departmentFilter, setDepartmentFilter] = useState("todas");
@@ -103,9 +106,10 @@ export default function ClosedTasksPage() {
 
     const scopeDepartments = Array.from(
       new Set(
-        [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
-          (id): id is string => Boolean(id)
-        )
+        [
+          currentMember?.departmentId ?? profile?.departmentId,
+          ...((currentMember?.departmentIds ?? profile?.departmentIds ?? []) as string[]),
+        ].filter((id): id is string => Boolean(id))
       )
     );
 
@@ -144,7 +148,7 @@ export default function ClosedTasksPage() {
         const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
         return bCreatedAt - aCreatedAt;
       });
-  }, [canViewAll, dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, userProfile?.departmentId, userProfile?.departmentIds]);
+  }, [canViewAll, dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, currentMember, profile]);
 
   const handleReopen = async (task: TaskWithId) => {
     if (!firestore || !auth || !user || !isAdmin) return;
@@ -198,7 +202,7 @@ export default function ClosedTasksPage() {
     }
   };
 
-  const isLoading = loading || userLoading || profileLoading;
+  const isLoading = loading || userLoading;
   return (
     <AppShell
       title="Tareas cerradas"
