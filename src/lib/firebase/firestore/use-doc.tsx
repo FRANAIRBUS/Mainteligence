@@ -7,24 +7,11 @@ import { errorEmitter } from '../error-emitter';
 import { FirestorePermissionError } from '../errors';
 
 const getOrgIdFromPath = (path: string) => {
-  const match = path.match(/^organizations\/([^/]+)(?:\/|$)/);
+  const match = path.match(/^organizations\/([^/]+)\//);
   return match?.[1] ?? null;
 };
 
-const GLOBAL_DOC_PREFIXES = [
-  'users/',
-  'memberships/',
-  'organizationsPublic/',
-  'planCatalog/',
-];
-
-const isGlobalDocPath = (path: string) => GLOBAL_DOC_PREFIXES.some((prefix) => path.startsWith(prefix));
-
 const isOrgMismatch = (path: string, organizationId: string, docData: DocumentData) => {
-  // Global documents (profiles, memberships, public org info, plan catalog) must not be blocked
-  // by an organization mismatch check.
-  if (isGlobalDocPath(path)) return false;
-
   const pathOrgId = getOrgIdFromPath(path);
   const docOrgId = typeof docData?.organizationId === 'string' ? docData.organizationId : null;
 
@@ -34,8 +21,6 @@ const isOrgMismatch = (path: string, organizationId: string, docData: DocumentDa
     return false;
   }
 
-  // For legacy/root-scoped tenant docs (should be rare post-migration), enforce organizationId only if present.
-  if (!docOrgId) return false;
   return docOrgId !== organizationId;
 };
 
