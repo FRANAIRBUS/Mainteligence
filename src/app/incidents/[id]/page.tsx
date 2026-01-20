@@ -83,7 +83,7 @@ export default function IncidentDetailPage() {
   const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
   const isMantenimiento =
-    isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
+    isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'mantenimiento';
 
   // Member roster is only needed for privileged screens (assignment dropdown, audit, etc.)
   const { data: members = [], loading: membersLoading } = useCollection<OrganizationMember>(
@@ -174,7 +174,10 @@ export default function IncidentDetailPage() {
   }, [assignedToMember, createdByMember, members, user, userProfile]);
 
   // Memoize derived data
-  const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
+  const siteName = useMemo(() => {
+    const locationId = ticket?.locationId ?? ticket?.siteId;
+    return sites?.find((s) => s.id === locationId)?.name || 'N/A';
+  }, [sites, ticket]);
   const departmentName = useMemo(() => departments?.find(d => d.id === ticket?.departmentId)?.name || 'N/A', [departments, ticket]);
   const assetName = useMemo(() => assets?.find(a => a.id === ticket?.assetId)?.name || 'N/A', [assets, ticket]);
 

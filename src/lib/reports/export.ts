@@ -153,7 +153,7 @@ export const buildReportExportRows = ({
 
   tickets.forEach((ticket) => {
     const createdAt = toDate(ticket.createdAt);
-    const location = resolveSiteLabel(sitesById, ticket.siteId);
+    const location = resolveSiteLabel(sitesById, ticket.locationId ?? ticket.siteId);
     const department = resolveDepartmentLabel(departmentsById, ticket.departmentId);
     const locationMatch = !filters.location || location === filters.location;
     const departmentMatch =

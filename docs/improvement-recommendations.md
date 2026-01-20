@@ -1,7 +1,7 @@
 # Plan de mejora frente a la especificación premium GMAO
 
 ## Observaciones del estado actual
-- **Registro básico de incidencias**: el diálogo actual permite crear tickets con título, descripción, ubicación, departamento, activo opcional, prioridad y fotos. Asigna `status="Abierta"`, `assignedRole="maintenance"` y genera un `displayId` temporal, pero no gestiona checklist, validaciones de cierre ni contadores transaccionales.【F:src/app/add-incident-dialog.tsx†L44-L219】
+- **Registro básico de incidencias**: el diálogo actual permite crear tickets con título, descripción, ubicación, departamento, activo opcional, prioridad y fotos. Asigna `status="Abierta"`, `assignedRole="mantenimiento"` y genera un `displayId` temporal, pero no gestiona checklist, validaciones de cierre ni contadores transaccionales.【F:src/app/add-incident-dialog.tsx†L44-L219】
 - **Visibilidad y filtros limitados**: la vista de incidencias usa una única tabla sin filtros avanzados y permite a operarios ver tickets por departamento y asignados, además de los creados por ellos. Esta visibilidad ampliada se mantendrá de forma controlada según lo solicitado.【F:src/app/incidents/page.tsx†L48-L270】
 - **Ausencia de flujos preventivos y auditoría**: no existen pantallas ni modelos para plantillas preventivas, generación automática, timeline de eventos, partes de horas, repuestos, checklist instanciados, PDF/email de cierre o notificaciones push.
 

@@ -115,7 +115,7 @@ export default function TaskDetailPage() {
   const isTaskClosed = task?.status === "completada";
   const normalizedRole = normalizeRole(userProfile?.role);
   const isPrivileged =
-    normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "maintenance";
+    normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "mantenimiento";
 
   const scopeDepartments = useMemo(
     () =>

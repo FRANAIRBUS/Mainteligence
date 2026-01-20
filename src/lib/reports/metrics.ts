@@ -106,7 +106,8 @@ export const filterTickets = (
 ) => {
   return tickets.filter((ticket) => {
     const locationMatch =
-      !filters.location || siteNameById[ticket.siteId] === filters.location;
+      !filters.location ||
+      siteNameById[ticket.locationId ?? ticket.siteId ?? ''] === filters.location;
     const departmentMatch =
       !filters.departmentId || ticket.departmentId === filters.departmentId;
     const dateMatch = isWithinRange(
@@ -353,7 +354,7 @@ export const buildTrendData = (
 
 export const buildIncidentGrouping = (
   tickets: Ticket[],
-  groupingKey: "departmentId" | "siteId",
+  groupingKey: "departmentId" | "siteId" | "locationId",
   labelById: Record<string, string>
 ): IncidentGrouping[] => {
   const summary = new Map<
@@ -362,7 +363,10 @@ export const buildIncidentGrouping = (
   >();
 
   tickets.forEach((ticket) => {
-    const id = ticket[groupingKey];
+    const id =
+      groupingKey === "locationId"
+        ? ticket.locationId ?? ticket.siteId
+        : ticket[groupingKey];
     if (!id) return;
     const label = labelById[id] ?? id;
     const current = summary.get(id) ?? {

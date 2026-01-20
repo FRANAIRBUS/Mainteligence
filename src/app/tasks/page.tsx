@@ -53,7 +53,7 @@ export default function TasksPage() {
   const canViewAllTasks =
     normalizedRole === "super_admin" ||
     normalizedRole === "admin" ||
-    normalizedRole === "maintenance";
+    normalizedRole === "mantenimiento";
 
   const { data: tasks, loading } = useCollection<MaintenanceTask>(
     organizationId ? orgCollectionPath(organizationId, "tasks") : null
