@@ -60,6 +60,7 @@ export default function ClosedTasksPage() {
 
   const normalizedRole = normalizeRole(role ?? profile?.role);
   const isSuperAdmin = normalizedRole === "super_admin";
+  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
   const canViewAll =
     normalizedRole === "admin" ||
     normalizedRole === "mantenimiento" ||
@@ -116,6 +117,15 @@ export default function ClosedTasksPage() {
         ].filter((id): id is string => Boolean(id))
       )
     );
+    const scopeLocations = Array.from(
+      new Set(
+        [
+          currentMember?.locationId ?? profile?.locationId ?? currentMember?.siteId ?? profile?.siteId,
+          ...((currentMember?.locationIds ?? profile?.locationIds ?? []) as string[]),
+          ...((currentMember?.siteIds ?? profile?.siteIds ?? []) as string[]),
+        ].filter((id): id is string => Boolean(id))
+      )
+    );
 
     const visibleTasks = canViewAll
       ? tasks
@@ -124,6 +134,9 @@ export default function ClosedTasksPage() {
           if (task.assignedTo === user?.uid) return true;
           if (scopeDepartments.length > 0 && task.location) {
             return scopeDepartments.includes(task.location);
+          }
+          if (roleIsLocationHead && scopeLocations.length > 0 && task.locationId) {
+            return scopeLocations.includes(task.locationId);
           }
           return false;
         });
@@ -152,7 +165,7 @@ export default function ClosedTasksPage() {
         const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
         return bCreatedAt - aCreatedAt;
       });
-  }, [canViewAll, dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, currentMember, profile]);
+  }, [canViewAll, dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, currentMember, profile, roleIsLocationHead]);
 
   const handleReopen = async (task: TaskWithId) => {
     if (!firestore || !auth || !user || !isAdmin) return;

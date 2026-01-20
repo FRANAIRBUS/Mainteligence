@@ -123,6 +123,7 @@ export default function TaskDetailPage() {
   const normalizedRole = normalizeRole(userProfile?.role);
   const isPrivileged =
     normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "mantenimiento";
+  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
 
   const scopeDepartments = useMemo(
     () =>
@@ -134,6 +135,19 @@ export default function TaskDetailPage() {
         )
       ),
     [userProfile?.departmentId, userProfile?.departmentIds]
+  );
+  const scopeLocations = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            userProfile?.locationId ?? userProfile?.siteId,
+            ...(userProfile?.locationIds ?? []),
+            ...(userProfile?.siteIds ?? []),
+          ].filter((id): id is string => Boolean(id))
+        )
+      ),
+    [userProfile?.locationId, userProfile?.locationIds, userProfile?.siteId, userProfile?.siteIds]
   );
 
   // Content editing: only privileged roles, or the creator while the task is open.
@@ -163,7 +177,10 @@ export default function TaskDetailPage() {
         isPrivileged ||
         task.createdBy === user.uid ||
         task.assignedTo === user.uid ||
-        (Boolean(task.location) && scopeDepartments.includes(task.location));
+        (Boolean(task.location) && scopeDepartments.includes(task.location)) ||
+        (roleIsLocationHead &&
+          Boolean(task.locationId) &&
+          scopeLocations.includes(task.locationId));
       if (!canView) {
         router.push("/tasks");
       }
@@ -178,6 +195,8 @@ export default function TaskDetailPage() {
     user,
     userLoading,
     userProfile,
+    roleIsLocationHead,
+    scopeLocations,
   ]);
 
   const defaultValues = useMemo<TaskFormValues>(() => {

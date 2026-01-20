@@ -54,6 +54,7 @@ export default function TasksPage() {
   const router = useRouter();
 
   const normalizedRole = normalizeRole(userProfile?.role);
+  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
   const canViewAllTasks =
     normalizedRole === "super_admin" ||
     normalizedRole === "admin" ||
@@ -104,6 +105,15 @@ export default function TasksPage() {
         )
       )
     );
+    const scopeLocations = Array.from(
+      new Set(
+        [
+          userProfile?.locationId ?? userProfile?.siteId,
+          ...(userProfile?.locationIds ?? []),
+          ...(userProfile?.siteIds ?? []),
+        ].filter((id): id is string => Boolean(id))
+      )
+    );
 
     const visibleTasks = canViewAllTasks
       ? tasks
@@ -112,6 +122,9 @@ export default function TasksPage() {
           if (task.assignedTo === user?.uid) return true;
           if (scopeDepartments.length > 0 && task.location) {
             return scopeDepartments.includes(task.location);
+          }
+          if (roleIsLocationHead && scopeLocations.length > 0 && task.locationId) {
+            return scopeLocations.includes(task.locationId);
           }
           return false;
         });
@@ -151,7 +164,7 @@ export default function TasksPage() {
         "no asignada".includes(searchQuery.toLowerCase());
       return matchesStatus && matchesPriority && matchesLocation && matchesQuery;
     });
-  }, [canViewAllTasks, dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile?.departmentId, userProfile?.departmentIds]);
+  }, [canViewAllTasks, dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile?.departmentId, userProfile?.departmentIds, userProfile?.locationId, userProfile?.locationIds, userProfile?.siteId, userProfile?.siteIds, roleIsLocationHead]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
