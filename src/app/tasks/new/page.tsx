@@ -81,6 +81,10 @@ export default function NewTaskPage() {
       ? departments?.find((dept) => dept.id === values.location.trim())?.name ||
         values.location.trim()
       : "";
+    const assignmentLocationName = values.locationId.trim()
+      ? locations?.find((location) => location.id === values.locationId.trim())?.name ||
+        values.locationId.trim()
+      : "";
 
     const payload: MaintenanceTaskInput & { assignmentEmailSource?: "client" | "server" } = {
       title: values.title.trim(),
@@ -117,6 +121,8 @@ export default function NewTaskPage() {
               departments,
               assignedTo,
               departmentId: values.location.trim() || null,
+              departmentName: assignmentDepartmentName,
+              locationName: assignmentLocationName,
               title: values.title.trim(),
               link: `${baseUrl}/tasks/${id}`,
               type: "tarea",
@@ -125,7 +131,6 @@ export default function NewTaskPage() {
               priority: values.priority,
               status: values.status,
               dueDate: values.dueDate ? new Date(values.dueDate) : null,
-              location: assignmentDepartmentName,
               category: values.category.trim(),
             });
           } catch (error) {

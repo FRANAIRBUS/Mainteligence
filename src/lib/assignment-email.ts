@@ -27,6 +27,8 @@ interface AssignmentEmailInput extends RecipientOptions {
   priority?: string;
   status?: string;
   dueDate?: string | Date | null;
+  departmentName?: string;
+  locationName?: string;
   location?: string;
   category?: string;
 }
@@ -96,6 +98,8 @@ export const sendAssignmentEmail = async ({
   priority,
   status,
   dueDate,
+  departmentName,
+  locationName,
   location,
   category,
 }: AssignmentEmailInput) => {
@@ -128,13 +132,17 @@ export const sendAssignmentEmail = async ({
     }).format(parsedDate);
   };
 
+  const departmentLabel = departmentName || location || "No especificado";
+  const locationLabel = locationName || "No especificada";
+
   const details: { label: string; value: string }[] = [
     { label: "Título", value: title || "(sin título)" },
     { label: "ID", value: identifier || "No especificado" },
     { label: "Estado", value: status || "open" },
     { label: "Prioridad", value: priority || "media" },
     { label: "Fecha límite", value: formatDate(dueDate) },
-    { label: "Ubicación / Departamento", value: location || "No especificado" },
+    { label: "Departamento", value: departmentLabel },
+    { label: "Ubicación", value: locationLabel },
     { label: "Categoría", value: category || "No especificada" },
     { label: "Descripción", value: description || "Sin descripción" },
   ];
@@ -153,7 +161,8 @@ export const sendAssignmentEmail = async ({
     `Estado: ${status || "open"}`,
     `Prioridad: ${priority || "media"}`,
     `Fecha límite: ${formatDate(dueDate)}`,
-    `Ubicación / Departamento: ${location || "No especificado"}`,
+    `Departamento: ${departmentLabel}`,
+    `Ubicación: ${locationLabel}`,
     `Categoría: ${category || "No especificada"}`,
     `Descripción: ${description || "Sin descripción"}`,
     `Ver ${typeLabel}: ${link}`,
