@@ -9,7 +9,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useToast } from '@/hooks/use-toast';
 import { useFirebaseApp } from '@/lib/firebase';
 import { useUser } from '@/lib/firebase/auth/use-user';
-import type { User, Department } from '@/lib/firebase/models';
+import type { Department, Site, User } from '@/lib/firebase/models';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { normalizeRole } from '@/lib/rbac';
@@ -53,27 +53,42 @@ const roleOptions = [
   { value: roleValues[6], label: 'Auditor' },
 ] as const;
 
-const formSchema = z.object({
-  displayName: z
-    .string()
-    .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
-  email: z.string().email({ message: 'Por favor, ingrese un correo electrónico válido.' }),
-  role: z.enum(roleValues),
-  // Radix Select treats empty string as "no selection" and it can be problematic
-  // to round-trip. We use a sentinel value "__none__" in the UI.
-  departmentId: z.string().optional(),
-});
+const formSchema = z
+  .object({
+    displayName: z
+      .string()
+      .min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
+    email: z.string().email({ message: 'Por favor, ingrese un correo electrónico válido.' }),
+    role: z.enum(roleValues),
+    // Radix Select treats empty string as "no selection" and it can be problematic
+    // to round-trip. We use a sentinel value "__none__" in the UI.
+    departmentId: z.string().optional(),
+    locationId: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.role === 'jefe_ubicacion') {
+      const selectedLocation = data.locationId && data.locationId !== '__none__';
+      if (!selectedLocation) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Debe seleccionar una ubicación para el jefe de ubicación.',
+          path: ['locationId'],
+        });
+      }
+    }
+  });
 
 type EditUserFormValues = z.infer<typeof formSchema>;
 
 interface EditUserFormProps {
   user: User;
   departments: Department[];
+  sites: Site[];
   onSuccess?: () => void;
   onSubmitting?: (isSubmitting: boolean) => void;
 }
 
-export function EditUserForm({ user, departments, onSuccess, onSubmitting }: EditUserFormProps) {
+export function EditUserForm({ user, departments, sites, onSuccess, onSubmitting }: EditUserFormProps) {
   const { toast } = useToast();
   const app = useFirebaseApp();
   const { organizationId, user: currentUser } = useUser();
@@ -85,6 +100,7 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
       email: user.email || '',
       role: normalizeRole(user.role) ?? user.role ?? 'operario',
       departmentId: user.departmentId || '__none__',
+      locationId: user.locationId ?? user.siteId ?? '__none__',
     },
   });
 
@@ -94,6 +110,7 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
       email: user.email || '',
       role: normalizeRole(user.role) ?? user.role ?? 'operario',
       departmentId: user.departmentId || '__none__',
+      locationId: user.locationId ?? user.siteId ?? '__none__',
     });
   }, [form, user]);
 
@@ -133,6 +150,8 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
 
     const normalizedDepartmentId =
       data.departmentId && data.departmentId !== '__none__' ? data.departmentId : null;
+    const normalizedLocationId =
+      data.locationId && data.locationId !== '__none__' ? data.locationId : null;
 
     const updateData: Record<string, unknown> = {
       organizationId,
@@ -140,6 +159,7 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
       displayName: data.displayName,
       email: data.email,
       departmentId: normalizedDepartmentId,
+      locationId: normalizedLocationId,
     };
 
     try {
@@ -260,6 +280,35 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
             )}
           />
         </div>
+        <FormField
+          control={form.control}
+          name="locationId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Ubicación</FormLabel>
+              <Select
+                name={field.name}
+                onValueChange={(v) => field.onChange(v === '__none__' ? '' : v)}
+                defaultValue={field.value || '__none__'}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona una ubicación" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="__none__">Sin ubicación</SelectItem>
+                  {sites.map((site) => (
+                    <SelectItem key={site.id} value={site.id}>
+                      {site.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <div className="flex justify-end">
           <Button type="submit" disabled={form.formState.isSubmitting}>
             {form.formState.isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
