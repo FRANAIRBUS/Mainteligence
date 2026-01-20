@@ -119,7 +119,7 @@ export const createTask = async (
   const docRef = await addDoc(tasksCollection(db, payload.organizationId), {
     ...payload,
     createdBy: user.uid,
-    status: payload.status || "pendiente",
+    status: payload.status || "open",
     priority: payload.priority || "media",
   });
 

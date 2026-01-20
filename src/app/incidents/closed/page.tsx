@@ -34,13 +34,13 @@ import { useToast } from "@/hooks/use-toast";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { format } from "date-fns";
 import { normalizeRole } from "@/lib/rbac";
+import { normalizeTicketStatus, ticketStatusLabel } from "@/lib/status";
 
-const statusLabels: Record<Ticket["status"], string> = {
-  Abierta: "Abierta",
-  "En curso": "En curso",
-  "En espera": "En espera",
-  Resuelta: "Resuelta",
-  Cerrada: "Cerrada",
+const statusLabels: Record<string, string> = {
+  new: ticketStatusLabel("new"),
+  in_progress: ticketStatusLabel("in_progress"),
+  resolved: ticketStatusLabel("resolved"),
+  canceled: ticketStatusLabel("canceled"),
 };
 
 type DateFilter = "todas" | "hoy" | "semana" | "mes";
@@ -55,14 +55,14 @@ export default function ClosedIncidentsPage() {
   const isSuperAdmin = normalizedRole === "super_admin";
   const canViewAll =
     normalizedRole === "admin" ||
-    normalizedRole === "maintenance" ||
+    normalizedRole === "mantenimiento" ||
     isSuperAdmin;
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
   const ticketsConstraints = useMemo(() => {
     if (userLoading || !user || !userProfile) return null;
     // Cargamos el histórico de la organización y filtramos por permisos en el cliente.
-    return [where("status", "==", "Cerrada")];
+    return [where("status", "in", ["resolved", "Resuelta", "Cerrada"])];
   }, [user, userLoading, userProfile]);
 
   const { data: tickets, loading } = useCollectionQuery<Ticket>(
@@ -127,7 +127,10 @@ export default function ClosedIncidentsPage() {
         return true;
       })
       .filter((ticket) => (departmentFilter === "todas" ? true : ticket.departmentId === departmentFilter))
-      .filter((ticket) => (siteFilter === "todas" ? true : ticket.siteId === siteFilter))
+      .filter((ticket) => {
+        const ticketLocationId = ticket.locationId ?? ticket.siteId;
+        return siteFilter === "todas" ? true : ticketLocationId === siteFilter;
+      })
       .filter((ticket) => {
         if (userFilter === "todas") return true;
         return ticket.createdBy === userFilter || ticket.assignedTo === userFilter;
@@ -157,7 +160,7 @@ export default function ClosedIncidentsPage() {
 
     try {
       await updateDoc(doc(firestore, orgDocPath(organizationId, "tickets", ticket.id)), {
-        status: "Abierta",
+        status: "new",
         reopened: true,
         reopenedBy: user.uid,
         reopenedAt: Timestamp.now(),
@@ -191,9 +194,9 @@ export default function ClosedIncidentsPage() {
       await addDoc(collection(firestore, orgCollectionPath(organizationId, "tickets")), {
         title: ticket.title,
         description: ticket.description,
-        status: "Abierta",
+        status: "new",
         priority: ticket.priority,
-        siteId: ticket.siteId,
+        siteId: ticket.locationId ?? ticket.siteId,
         departmentId: ticket.departmentId,
         assetId: ticket.assetId ?? null,
         type: ticket.type,
@@ -299,7 +302,8 @@ export default function ClosedIncidentsPage() {
             filteredTickets.map((ticket) => {
               const departmentLabel =
                 departments.find((dept) => dept.id === ticket.departmentId)?.name || "N/A";
-              const siteLabel = sites.find((site) => site.id === ticket.siteId)?.name || "N/A";
+              const ticketLocationId = ticket.locationId ?? ticket.siteId;
+              const siteLabel = sites.find((site) => site.id === ticketLocationId)?.name || "N/A";
               const createdAtLabel = ticket.createdAt?.toDate
                 ? format(ticket.createdAt.toDate(), "dd/MM/yyyy")
                 : "Sin fecha";
@@ -321,7 +325,9 @@ export default function ClosedIncidentsPage() {
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-base font-semibold text-foreground">{ticket.title}</p>
-                        <Badge variant="outline">{statusLabels[ticket.status]}</Badge>
+                        <Badge variant="outline">
+                          {statusLabels[normalizeTicketStatus(ticket.status)]}
+                        </Badge>
                         {ticket.reopened && (
                           <Badge variant="outline" className="text-xs">Reabierta</Badge>
                         )}

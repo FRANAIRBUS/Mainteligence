@@ -16,14 +16,10 @@ const db = admin.firestore();
 type Role =
   | 'super_admin'
   | 'admin'
-  | 'maintenance'
-  | 'dept_head_multi'
-  | 'dept_head_single'
-  | 'operator'
-  | 'operario'
   | 'mantenimiento'
   | 'jefe_departamento'
   | 'jefe_ubicacion'
+  | 'operario'
   | 'auditor';
 
 type AccountPlan = 'free' | 'personal_plus' | 'business_creator' | 'enterprise';
@@ -100,6 +96,8 @@ const DEFAULT_ORG_SETTINGS_MAIN = {
 type MembershipScope = {
   departmentId?: string;
   departmentIds: string[];
+  locationId?: string;
+  locationIds: string[];
   siteId?: string;
   siteIds: string[];
 };
@@ -112,8 +110,8 @@ type ResolvedMembership = {
   userData: FirebaseFirestore.DocumentData | null;
 };
 
-const ADMIN_LIKE_ROLES = new Set<Role>(['super_admin', 'admin', 'maintenance']);
-const SCOPED_HEAD_ROLES = new Set<Role>(['dept_head_multi', 'dept_head_single']);
+const ADMIN_LIKE_ROLES = new Set<Role>(['super_admin', 'admin', 'mantenimiento']);
+const SCOPED_HEAD_ROLES = new Set<Role>(['jefe_departamento']);
 const MASTER_DATA_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
 
 const USAGE_FIELDS: Record<'sites' | 'assets' | 'departments' | 'users' | 'preventives', keyof EntitlementUsage> = {
@@ -941,7 +939,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_task_1`,
       title: 'Revisión mensual de calderas',
       description: 'Verificar presión, válvulas de seguridad y registros de mantenimiento.',
-      status: 'pendiente',
+      status: 'open',
       priority: 'alta',
       dueDate: makeTimestamp(3),
       location: departments[0]?.id,
@@ -950,7 +948,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_task_2`,
       title: 'Inspección de línea de producción',
       description: 'Comprobar sensores y lubricación en la línea 2.',
-      status: 'en_progreso',
+      status: 'in_progress',
       priority: 'media',
       dueDate: makeTimestamp(7),
       location: departments[1]?.id,
@@ -959,7 +957,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_task_3`,
       title: 'Actualizar checklist de seguridad',
       description: 'Revisar procedimientos y registrar cambios en el plan de seguridad.',
-      status: 'completada',
+      status: 'done',
       priority: 'baja',
       dueDate: makeTimestamp(-2),
       location: departments[2]?.id,
@@ -975,7 +973,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_ticket_1`,
       displayId: `INC-${year}-1001`,
       type: 'correctivo',
-      status: 'Abierta',
+      status: 'new',
       priority: 'Alta',
       siteId: sites[0]?.id,
       departmentId: departments[0]?.id,
@@ -986,7 +984,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_ticket_2`,
       displayId: `INC-${year}-1002`,
       type: 'correctivo',
-      status: 'En curso',
+      status: 'in_progress',
       priority: 'Media',
       siteId: sites[1]?.id,
       departmentId: departments[1]?.id,
@@ -997,7 +995,7 @@ async function seedDemoOrganizationData({
       id: `${organizationId}_ticket_3`,
       displayId: `INC-${year}-1003`,
       type: 'correctivo',
-      status: 'Cerrada',
+      status: 'resolved',
       priority: 'Baja',
       siteId: sites[2]?.id,
       departmentId: departments[2]?.id,
@@ -1096,7 +1094,7 @@ async function seedDemoOrganizationData({
         title: ticket.title,
         description: ticket.description,
         createdBy: uid,
-        assignedRole: 'maintenance',
+        assignedRole: 'mantenimiento',
         assignedTo: null,
         createdAt: now,
         updatedAt: now,
@@ -1123,7 +1121,7 @@ function normalizeRoleOrNull(input: any): Role | null {
   if (r === 'super_admin' || r === 'superadmin') return 'super_admin';
   if (r === 'admin' || r === 'administrator') return 'admin';
 
-  if (r === 'maintenance' || r === 'mantenimiento' || r === 'maint' || r === 'maintainer') return 'maintenance';
+  if (r === 'mantenimiento' || r === 'maintenance' || r === 'maint' || r === 'maintainer') return 'mantenimiento';
 
   if (
     r === 'dept_head_multi' ||
@@ -1135,7 +1133,7 @@ function normalizeRoleOrNull(input: any): Role | null {
     r === 'jefe_departamento_multi' ||
     r === 'jefe de departamento multi'
   ) {
-    return 'dept_head_multi';
+    return 'jefe_departamento';
   }
 
   if (
@@ -1150,8 +1148,7 @@ function normalizeRoleOrNull(input: any): Role | null {
     r === 'jefe_departamento' ||
     r === 'jefe de departamento'
   ) {
-    // Keep legacy internal representation.
-    return 'dept_head_single';
+    return 'jefe_departamento';
   }
 
   if (r === 'jefe_ubicacion' || r === 'jefe ubicacion' || r === 'location_head' || r === 'site_head') {
@@ -1160,13 +1157,13 @@ function normalizeRoleOrNull(input: any): Role | null {
 
   if (r === 'auditor' || r === 'audit') return 'auditor';
 
-  if (r === 'operator' || r === 'operario' || r === 'op') return 'operator';
+  if (r === 'operario' || r === 'operator' || r === 'op') return 'operario';
 
   return null;
 }
 
 function normalizeRole(input: any): Role {
-  return normalizeRoleOrNull(input) ?? 'operator';
+  return normalizeRoleOrNull(input) ?? 'operario';
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -1178,10 +1175,13 @@ function normalizeStringArray(value: unknown): string[] {
 
 function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null): MembershipScope {
   const departmentId = String(userData?.departmentId ?? '').trim();
+  const locationId = String(userData?.locationId ?? '').trim();
   const siteId = String(userData?.siteId ?? '').trim();
   return {
     departmentId: departmentId || undefined,
     departmentIds: normalizeStringArray(userData?.departmentIds),
+    locationId: (locationId || siteId) || undefined,
+    locationIds: normalizeStringArray(userData?.locationIds ?? userData?.siteIds),
     siteId: siteId || undefined,
     siteIds: normalizeStringArray(userData?.siteIds),
   };
@@ -1332,10 +1332,10 @@ async function pausePreventiveTicketsForOrg(orgId: string, now: admin.firestore.
       const data = docSnap.data() as any;
       if (data?.preventivePausedByEntitlement === true) return;
       const status = String(data?.status ?? '');
-      if (status === 'Cerrada' || status === 'Resuelta') return;
+      if (status === 'resolved' || status === 'Resuelta' || status === 'Cerrada') return;
 
       batch.update(docSnap.ref, {
-        status: 'En espera',
+        status: 'in_progress',
         preventivePausedByEntitlement: true,
         preventivePausedAt: now,
         updatedAt: now,
@@ -2093,7 +2093,7 @@ if (!membershipSnap.exists) {
   );
 }
 
-const beforeRole = String(membershipSnap.get('role') ?? 'operator');
+const beforeRole = String(membershipSnap.get('role') ?? 'operario');
 const beforeStatus =
   String(membershipSnap.get('status') ?? '') ||
   (membershipSnap.get('active') === true ? 'active' : 'pending');
@@ -2324,7 +2324,7 @@ export const bootstrapFromInvites = functions.https.onCall(async (_data, context
         userId: uid,
         organizationId: orgId,
         organizationName: String(data?.organizationName ?? orgId),
-        role: normalizeRole(data?.requestedRole) ?? 'operator',
+        role: normalizeRole(data?.requestedRole) ?? 'operario',
         status: 'pending',
         createdAt: now,
         updatedAt: now,
@@ -2361,7 +2361,7 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
   if (!organizationId) throw httpsError('invalid-argument', 'organizationId requerido.');
 
   const requestedRoleRaw = data?.requestedRole;
-  const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operator';
+  const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operario';
   if (!requestedRole) throw httpsError('invalid-argument', 'requestedRole inválido.');
 
   const authUser = await admin.auth().getUser(uid).catch(() => null);
@@ -3162,7 +3162,7 @@ export const createPreventive = functions.https.onCall(async (data, context) => 
       siteId,
       departmentId,
       assetId: assetId || null,
-      status: String(payload.status ?? 'Abierta'),
+      status: String(payload.status ?? 'new'),
       type: 'preventivo',
       organizationId: orgId,
       createdBy: actorUid,
@@ -3196,7 +3196,7 @@ export const inviteUserToOrg = functions.https.onCall(async (data, context) => {
   const orgId = resolveOrgIdFromData(data);
   const email = requireStringField(data?.email, 'email').toLowerCase();
   const displayName = String(data?.displayName ?? '').trim();
-  const requestedRole: Role = normalizeRole(data?.role) ?? 'operator';
+  const requestedRole: Role = normalizeRole(data?.role) ?? 'operario';
   const departmentId = String(data?.departmentId ?? '').trim();
 
   await requireCallerSuperAdminInOrg(actorUid, orgId);
@@ -3437,7 +3437,7 @@ export const generatePreventiveTickets = functions.pubsub
           const ticketPayload = {
             organizationId: orgId,
             type: 'preventivo',
-            status: 'Abierta',
+            status: 'new',
             priority: freshTemplate.priority ?? 'Media',
             siteId: freshTemplate.siteId,
             departmentId: freshTemplate.departmentId,
@@ -3445,7 +3445,7 @@ export const generatePreventiveTickets = functions.pubsub
             title: freshTemplate.name,
             description: freshTemplate.description ?? '',
             createdBy: freshTemplate.createdBy ?? 'system',
-            assignedRole: 'maintenance',
+            assignedRole: 'mantenimiento',
             assignedTo: null,
             createdAt: now,
             updatedAt: now,
@@ -3511,7 +3511,7 @@ export const orgInviteUser = functions.https.onRequest(async (req, res) => {
     const orgId = sanitizeOrganizationId(String(req.body?.organizationId ?? ''));
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const displayName = String(req.body?.displayName ?? '').trim();
-    const requestedRole: Role = normalizeRole(req.body?.role) ?? 'operator';
+    const requestedRole: Role = normalizeRole(req.body?.role) ?? 'operario';
     const departmentId = String(req.body?.departmentId ?? '').trim();
 
     if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
@@ -3662,7 +3662,7 @@ export const orgApproveJoinRequest = functions.https.onCall(async (data, context
 
   const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
   const requestId = String(data?.uid ?? data?.requestId ?? '').trim();
-  const role: Role = normalizeRole(data?.role) ?? 'operator';
+  const role: Role = normalizeRole(data?.role) ?? 'operario';
 
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
   if (!requestId) throw httpsError('invalid-argument', 'uid requerido.');

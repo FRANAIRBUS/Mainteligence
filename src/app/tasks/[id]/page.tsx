@@ -34,14 +34,18 @@ import type { Department, OrganizationMember, User } from "@/lib/firebase/models
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRole } from "@/lib/rbac";
+import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
-const statusCopy: Record<MaintenanceTask["status"], string> = {
-  pendiente: "Pendiente",
-  en_progreso: "En progreso",
-  completada: "Completada",
+const statusCopy: Record<string, string> = {
+  open: taskStatusLabel("open"),
+  in_progress: taskStatusLabel("in_progress"),
+  done: taskStatusLabel("done"),
+  canceled: taskStatusLabel("canceled"),
+  validated: taskStatusLabel("validated"),
+  blocked: taskStatusLabel("blocked"),
 };
 
 const priorityCopy: Record<MaintenanceTask["priority"], string> = {
@@ -112,10 +116,10 @@ export default function TaskDetailPage() {
     });
   }, [task?.reports]);
 
-  const isTaskClosed = task?.status === "completada";
+  const isTaskClosed = normalizeTaskStatus(task?.status) === "done";
   const normalizedRole = normalizeRole(userProfile?.role);
   const isPrivileged =
-    normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "maintenance";
+    normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "mantenimiento";
 
   const scopeDepartments = useMemo(
     () =>
@@ -135,9 +139,15 @@ export default function TaskDetailPage() {
     (!!task && task.createdBy === user?.uid && !isTaskClosed);
 
   // Closing/completing: privileged roles, the creator, or the assignee.
+  const canCloseOpsInScope =
+    !!task &&
+    task.taskType === "ops" &&
+    Boolean(task.location) &&
+    scopeDepartments.includes(task.location);
   const canCloseTask =
     isPrivileged ||
-    (!!task && (task.createdBy === user?.uid || task.assignedTo === user?.uid));
+    (!!task && (task.createdBy === user?.uid || task.assignedTo === user?.uid)) ||
+    canCloseOpsInScope;
   const isLoading = userLoading || profileLoading || loading || usersLoading;
 
   useEffect(() => {
@@ -181,7 +191,8 @@ export default function TaskDetailPage() {
       title: task?.title ?? "",
       description: task?.description ?? "",
       priority: task?.priority ?? "media",
-      status: task?.status ?? "pendiente",
+      taskType: task?.taskType ?? "maintenance",
+      status: normalizeTaskStatus(task?.status) ?? "open",
       dueDate,
       assignedTo: isAssigneeValid ? task.assignedTo : "",
       location: task?.location ?? "",
@@ -265,6 +276,7 @@ export default function TaskDetailPage() {
       title: values.title.trim(),
       description: values.description.trim(),
       priority: values.priority,
+      taskType: values.taskType,
       status: values.status,
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
       assignedTo: trimmedAssignedTo,
@@ -487,7 +499,7 @@ export default function TaskDetailPage() {
         return;
       }
       await updateTask(firestore, auth, targetOrgId, task.id, {
-        status: "completada",
+        status: "done",
         closedAt: serverTimestamp(),
         closedBy: user.uid,
         closedReason: reason,
@@ -568,7 +580,7 @@ export default function TaskDetailPage() {
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="font-headline text-2xl font-bold tracking-tight md:text-3xl">{task.title}</h1>
-              <Badge variant="outline">{statusCopy[task.status]}</Badge>
+              <Badge variant="outline">{statusCopy[normalizeTaskStatus(task.status)]}</Badge>
               <Badge variant={task.priority === "alta" ? "destructive" : "secondary"}>
                 {priorityCopy[task.priority]}
               </Badge>
@@ -672,7 +684,7 @@ export default function TaskDetailPage() {
                 <InfoRow
                   icon={ClipboardList}
                   label="Estado"
-                  value={statusCopy[task.status]}
+                  value={statusCopy[normalizeTaskStatus(task.status)]}
                 />
                 <InfoRow
                   icon={Tag}

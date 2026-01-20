@@ -48,7 +48,14 @@ import { useCollection, useFirebaseApp, useFirestore, useUser } from '@/lib/fire
 import type { Department, User } from '@/lib/firebase/models';
 import { orgCollectionPath } from '@/lib/organization';
 
-type Role = 'super_admin' | 'admin' | 'maintenance' | 'operator';
+type Role =
+  | 'super_admin'
+  | 'admin'
+  | 'mantenimiento'
+  | 'jefe_departamento'
+  | 'jefe_ubicacion'
+  | 'operario'
+  | 'auditor';
 type OrgMemberRow = {
   id: string; // uid
   role?: Role;
@@ -79,8 +86,15 @@ type JoinRequestRow = {
 
 function normalizeRole(input: unknown): Role {
   const v = String(input ?? '').trim();
-  if (v === 'super_admin' || v === 'admin' || v === 'maintenance' || v === 'operator') return v;
-  return 'operator';
+  if (v === 'super_admin' || v === 'admin') return v;
+  if (v === 'mantenimiento' || v === 'maintenance' || v === 'manteniendo') return 'mantenimiento';
+  if (v === 'jefe_departamento' || v === 'dept_head_multi' || v === 'dept_head_single' || v === 'dept_head') {
+    return 'jefe_departamento';
+  }
+  if (v === 'jefe_ubicacion' || v === 'location_head' || v === 'site_head') return 'jefe_ubicacion';
+  if (v === 'auditor' || v === 'audit') return 'auditor';
+  if (v === 'operario' || v === 'operator' || v === 'op') return 'operario';
+  return 'operario';
 }
 
 function safeText(v: unknown): string {
@@ -288,11 +302,11 @@ export default function UsersPage() {
         setJoinCursor(snap.docs[snap.docs.length - 1] ?? null);
         setJoinHasMore(snap.size === joinRequestsPageSize);
 
-        // Seed approveRoleByUid with requestedRole (or operator)
+        // Seed approveRoleByUid with requestedRole (or operario)
         setApproveRoleByUid((prev) => {
           const next = { ...prev };
           for (const r of rows) {
-            if (!next[r.id]) next[r.id] = r.requestedRole ?? 'operator';
+            if (!next[r.id]) next[r.id] = r.requestedRole ?? 'operario';
           }
           return next;
         });
@@ -347,7 +361,7 @@ export default function UsersPage() {
       setApproveRoleByUid((prev) => {
         const next = { ...prev };
         for (const r of nextRows) {
-          if (!next[r.id]) next[r.id] = r.requestedRole ?? 'operator';
+          if (!next[r.id]) next[r.id] = r.requestedRole ?? 'operario';
         }
         return next;
       });
@@ -384,7 +398,7 @@ export default function UsersPage() {
   const doApprove = async () => {
     if (!organizationId || !selectedRequest) return;
 
-    const role = approveRoleByUid[selectedRequest.id] ?? (selectedRequest.requestedRole ?? 'operator');
+    const role = approveRoleByUid[selectedRequest.id] ?? (selectedRequest.requestedRole ?? 'operario');
 
     try {
       const fn = httpsCallable(getFunctions(app), 'orgApproveJoinRequest');
@@ -515,7 +529,7 @@ export default function UsersPage() {
                             </div>
                             <div className="space-y-2">
                               <Select
-                                value={approveRoleByUid[r.id] ?? (r.requestedRole ?? 'operator')}
+                                value={approveRoleByUid[r.id] ?? (r.requestedRole ?? 'operario')}
                                 onValueChange={(v) =>
                                   setApproveRoleByUid((prev) => ({ ...prev, [r.id]: normalizeRole(v) }))
                                 }
@@ -524,8 +538,11 @@ export default function UsersPage() {
                                   <SelectValue placeholder="Rol" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="operator">operator</SelectItem>
-                                  <SelectItem value="maintenance">maintenance</SelectItem>
+                                  <SelectItem value="operario">operario</SelectItem>
+                                  <SelectItem value="mantenimiento">mantenimiento</SelectItem>
+                                  <SelectItem value="jefe_departamento">jefe_departamento</SelectItem>
+                                  <SelectItem value="jefe_ubicacion">jefe_ubicacion</SelectItem>
+                                  <SelectItem value="auditor">auditor</SelectItem>
                                   <SelectItem value="admin">admin</SelectItem>
                                   <SelectItem value="super_admin">super_admin</SelectItem>
                                 </SelectContent>
@@ -615,7 +632,9 @@ export default function UsersPage() {
                               </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                              <Badge variant="outline">{usersById.get(m.id)?.role ?? (m.role ?? 'operator')}</Badge>
+                              <Badge variant="outline">
+                                {usersById.get(m.id)?.role ?? (m.role ?? 'operario')}
+                              </Badge>
                               <Badge variant={(m.status ?? 'active') === 'active' ? 'default' : 'secondary'}>
                                 {m.status ?? 'active'}
                               </Badge>
@@ -659,8 +678,8 @@ export default function UsersPage() {
               <Select
                 value={
                   selectedRequest
-                    ? approveRoleByUid[selectedRequest.id] ?? (selectedRequest.requestedRole ?? 'operator')
-                    : 'operator'
+                    ? approveRoleByUid[selectedRequest.id] ?? (selectedRequest.requestedRole ?? 'operario')
+                    : 'operario'
                 }
                 onValueChange={(v) => {
                   if (!selectedRequest) return;
@@ -671,8 +690,11 @@ export default function UsersPage() {
                   <SelectValue placeholder="Rol" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="operator">operator</SelectItem>
-                  <SelectItem value="maintenance">maintenance</SelectItem>
+                  <SelectItem value="operario">operario</SelectItem>
+                  <SelectItem value="mantenimiento">mantenimiento</SelectItem>
+                  <SelectItem value="jefe_departamento">jefe_departamento</SelectItem>
+                  <SelectItem value="jefe_ubicacion">jefe_ubicacion</SelectItem>
+                  <SelectItem value="auditor">auditor</SelectItem>
                   <SelectItem value="admin">admin</SelectItem>
                   <SelectItem value="super_admin">super_admin</SelectItem>
                 </SelectContent>
