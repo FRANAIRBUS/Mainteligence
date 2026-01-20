@@ -70,7 +70,7 @@ export function useAppNavigation() {
             label: "Preventivos",
             icon: CalendarClock,
             active: pathname.startsWith("/preventive"),
-            roles: ["super_admin", "admin", "maintenance"],
+            roles: ["super_admin", "admin", "mantenimiento"],
           },
           {
             href: "/reports",
@@ -80,10 +80,11 @@ export function useAppNavigation() {
             roles: [
               "super_admin",
               "admin",
-              "maintenance",
-              "dept_head_multi",
-              "dept_head_single",
-              "operator",
+              "mantenimiento",
+              "jefe_departamento",
+              "jefe_ubicacion",
+              "operario",
+              "auditor",
             ],
           },
         ],
@@ -107,7 +108,7 @@ export function useAppNavigation() {
       },
       {
         label: "Gestión",
-        roles: ["super_admin", "admin", "maintenance"],
+        roles: ["super_admin", "admin", "mantenimiento"],
         items: [
           {
             href: "/locations",
@@ -169,7 +170,7 @@ export function useAppNavigation() {
 
   const menuItems = useMemo(() => {
     if (!role) return [];
-    const normalizedRole = normalizeRole(role) || "operator";
+    const normalizedRole = normalizeRole(role) || "operario";
     const isSuperAdmin = normalizedRole === "super_admin";
 
     if (isSuperAdmin) return allMenuItems;

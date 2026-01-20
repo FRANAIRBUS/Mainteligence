@@ -1,6 +1,7 @@
 import type { Timestamp } from "firebase/firestore";
 import type { Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
+import { normalizeTaskStatus, normalizeTicketStatus } from "@/lib/status";
 
 export type MetricsFilters = {
   startDate?: Date | null;
@@ -106,7 +107,8 @@ export const filterTickets = (
 ) => {
   return tickets.filter((ticket) => {
     const locationMatch =
-      !filters.location || siteNameById[ticket.siteId] === filters.location;
+      !filters.location ||
+      siteNameById[ticket.locationId ?? ticket.siteId ?? ''] === filters.location;
     const departmentMatch =
       !filters.departmentId || ticket.departmentId === filters.departmentId;
     const dateMatch = isWithinRange(
@@ -132,20 +134,20 @@ export const calculateReportMetrics = (
   tickets: Ticket[],
   tasks: MaintenanceTask[]
 ): ReportMetrics => {
-  const openIncidents = tickets.filter((ticket) => ticket.status !== "Cerrada").length;
-  const closedIncidents = tickets.filter((ticket) => ticket.status === "Cerrada").length;
-  const pendingTasks = tasks.filter((task) => task.status !== "completada").length;
-  const completedTasks = tasks.filter((task) => task.status === "completada").length;
+  const openIncidents = tickets.filter((ticket) => normalizeTicketStatus(ticket.status) !== "resolved").length;
+  const closedIncidents = tickets.filter((ticket) => normalizeTicketStatus(ticket.status) === "resolved").length;
+  const pendingTasks = tasks.filter((task) => normalizeTaskStatus(task.status) !== "done").length;
+  const completedTasks = tasks.filter((task) => normalizeTaskStatus(task.status) === "done").length;
 
   const mttrSamples = [
     ...tickets
-      .filter((ticket) => ticket.status === "Cerrada")
+      .filter((ticket) => normalizeTicketStatus(ticket.status) === "resolved")
       .map((ticket) => ({
         start: toDate(ticket.createdAt),
         end: toDate(ticket.closedAt),
       })),
     ...tasks
-      .filter((task) => task.status === "completada")
+      .filter((task) => normalizeTaskStatus(task.status) === "done")
       .map((task) => ({
         start: toDate(task.createdAt),
         end: toDate(task.closedAt),
@@ -193,14 +195,14 @@ export const buildOperatorPerformance = (
   };
 
   tickets
-    .filter((ticket) => ticket.status === "Cerrada")
+    .filter((ticket) => normalizeTicketStatus(ticket.status) === "resolved")
     .forEach((ticket) => {
       const userId = ticket.assignedTo ?? resolveReportAuthor(ticket.reports);
       register(userId, ticket.createdAt, ticket.closedAt);
     });
 
   tasks
-    .filter((task) => task.status === "completada")
+    .filter((task) => normalizeTaskStatus(task.status) === "done")
     .forEach((task) => {
       const userId = task.assignedTo ?? resolveReportAuthor(task.reports);
       register(userId, task.createdAt, task.closedAt);
@@ -244,7 +246,7 @@ export const calculatePreventiveCompliance = (
   >();
 
   const completedPreventives = tickets.filter(
-    (ticket) => ticket.type === "preventivo" && (ticket.status === "Cerrada" || ticket.closedAt)
+    (ticket) => ticket.type === "preventivo" && (normalizeTicketStatus(ticket.status) === "resolved" || ticket.closedAt)
   );
 
   completedPreventives.forEach((ticket) => {
@@ -327,7 +329,7 @@ export const buildTrendData = (
   }, {});
 
   tickets
-    .filter((ticket) => ticket.status === "Cerrada")
+    .filter((ticket) => normalizeTicketStatus(ticket.status) === "resolved")
     .forEach((ticket) => {
       const closedAt = toDate(ticket.closedAt);
       if (!closedAt) return;
@@ -338,7 +340,7 @@ export const buildTrendData = (
     });
 
   tasks
-    .filter((task) => task.status === "completada")
+    .filter((task) => normalizeTaskStatus(task.status) === "done")
     .forEach((task) => {
       const closedAt = toDate(task.closedAt);
       if (!closedAt) return;
@@ -353,7 +355,7 @@ export const buildTrendData = (
 
 export const buildIncidentGrouping = (
   tickets: Ticket[],
-  groupingKey: "departmentId" | "siteId",
+  groupingKey: "departmentId" | "siteId" | "locationId",
   labelById: Record<string, string>
 ): IncidentGrouping[] => {
   const summary = new Map<
@@ -362,7 +364,10 @@ export const buildIncidentGrouping = (
   >();
 
   tickets.forEach((ticket) => {
-    const id = ticket[groupingKey];
+    const id =
+      groupingKey === "locationId"
+        ? ticket.locationId ?? ticket.siteId
+        : ticket[groupingKey];
     if (!id) return;
     const label = labelById[id] ?? id;
     const current = summary.get(id) ?? {
@@ -370,7 +375,7 @@ export const buildIncidentGrouping = (
       openIncidents: 0,
       closedIncidents: 0,
     };
-    if (ticket.status === "Cerrada") {
+    if (normalizeTicketStatus(ticket.status) === "resolved") {
       current.closedIncidents += 1;
     } else {
       current.openIncidents += 1;

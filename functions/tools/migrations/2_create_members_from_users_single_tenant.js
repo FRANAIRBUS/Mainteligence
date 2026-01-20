@@ -17,18 +17,18 @@ function normalizeRole(roleRaw) {
   if (!roleRaw || typeof roleRaw !== "string") return null;
   const r = roleRaw.trim().toLowerCase();
   const map = {
-    operario: "operator",
-    operador: "operator",
-    operator: "operator",
-    mantenimiento: "maintenance",
-    tecnico: "maintenance",
-    maintenance: "maintenance",
+    operario: "operario",
+    operador: "operario",
+    operator: "operario",
+    mantenimiento: "mantenimiento",
+    tecnico: "mantenimiento",
+    maintenance: "mantenimiento",
     admin: "admin",
     administrador: "admin",
     super_admin: "super_admin",
     owner: "owner",
-    dept_head: "dept_head",
-    dept_head_multi: "dept_head_multi",
+    dept_head: "jefe_departamento",
+    dept_head_multi: "jefe_departamento",
   };
   return map[r] || r;
 }
