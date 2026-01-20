@@ -169,6 +169,35 @@ export interface Asset extends BaseEntity {
   siteId: string;
 }
 
+export type PreventiveScheduleType = "daily" | "weekly" | "monthly" | "date";
+export type PreventiveTemplateStatus = "active" | "paused" | "archived";
+
+export interface PreventiveSchedule {
+  type: PreventiveScheduleType;
+  timezone?: string;
+  timeOfDay?: string;
+  daysOfWeek?: number[];
+  dayOfMonth?: number;
+  date?: Timestamp;
+  nextRunAt?: Timestamp;
+  lastRunAt?: Timestamp;
+}
+
+export interface PreventiveTemplate extends BaseEntity {
+  name: string;
+  description?: string;
+  status: PreventiveTemplateStatus;
+  automatic: boolean;
+  schedule: PreventiveSchedule;
+  priority: Ticket["priority"];
+  siteId?: string;
+  departmentId?: string;
+  assetId?: string;
+  checklist?: unknown[];
+  createdBy: string;
+  updatedBy?: string;
+}
+
 export interface Ticket extends BaseEntity {
   displayId: string;
   type: "correctivo" | "preventivo";
