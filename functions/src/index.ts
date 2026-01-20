@@ -19,7 +19,12 @@ type Role =
   | 'maintenance'
   | 'dept_head_multi'
   | 'dept_head_single'
-  | 'operator';
+  | 'operator'
+  | 'operario'
+  | 'mantenimiento'
+  | 'jefe_departamento'
+  | 'jefe_ubicacion'
+  | 'auditor';
 
 type AccountPlan = 'free' | 'personal_plus' | 'business_creator' | 'enterprise';
 type EntitlementPlanId = 'free' | 'starter' | 'pro' | 'enterprise';
@@ -81,6 +86,15 @@ const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
   usersCount: 0,
   activePreventivesCount: 0,
   attachmentsThisMonthMB: 0,
+};
+
+// Basic rentable org settings (Pro-ready).
+// Stored in organizations/{orgId}/settings/main.
+const DEFAULT_ORG_SETTINGS_MAIN = {
+  allowScopeMembersToViewOpsTasks: true,
+  allowScopeMembersToCompleteOpsTasks: true,
+  validationModeEnabled: false,
+  reopenWindowHours: 48,
 };
 
 type MembershipScope = {
@@ -881,6 +895,19 @@ async function seedDemoOrganizationData({
   const batch = db.batch();
   const orgRef = db.collection('organizations').doc(organizationId);
 
+  // Ensure org settings doc exists for client gating.
+  batch.set(
+    orgRef.collection('settings').doc('main'),
+    {
+      organizationId,
+      ...DEFAULT_ORG_SETTINGS_MAIN,
+      createdAt: now,
+      updatedAt: now,
+      source: 'demo_seed_v1',
+    },
+    { merge: true },
+  );
+
   sites.forEach((site) => {
     const ref = orgRef.collection('sites').doc(site.id);
     batch.set(
@@ -1006,8 +1033,15 @@ function normalizeRoleOrNull(input: any): Role | null {
     r === 'jefe_departamento' ||
     r === 'jefe de departamento'
   ) {
+    // Keep legacy internal representation.
     return 'dept_head_single';
   }
+
+  if (r === 'jefe_ubicacion' || r === 'jefe ubicacion' || r === 'location_head' || r === 'site_head') {
+    return 'jefe_ubicacion';
+  }
+
+  if (r === 'auditor' || r === 'audit') return 'auditor';
 
   if (r === 'operator' || r === 'operario' || r === 'op') return 'operator';
 
@@ -1279,16 +1313,11 @@ async function auditLog(params: {
   after?: any;
   meta?: any;
 }) {
-  const orgId = params.orgId ?? null;
-  if (!orgId) {
-    console.warn('[auditLog] Missing orgId. Skipping audit log write.', { action: params.action, actorUid: params.actorUid });
-    return;
-  }
-
-  const collectionRef = db.collection('organizations').doc(orgId).collection('auditLogs');
+  const collectionRef = params.orgId
+    ? db.collection('organizations').doc(params.orgId).collection('auditLogs')
+    : db.collection('auditLogs');
   await collectionRef.add({
     ...params,
-    orgId,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 }
@@ -2333,6 +2362,19 @@ export const bootstrapSignup = functions.https.onCall(async (data, context) => {
         updatedAt: now,
         source: 'bootstrapSignup_v1',
       });
+
+      // Create/update the org settings document (basic rentable defaults).
+      tx.set(
+        orgRef.collection('settings').doc('main'),
+        {
+          organizationId,
+          ...DEFAULT_ORG_SETTINGS_MAIN,
+          createdAt: now,
+          updatedAt: now,
+          source: 'bootstrapSignup_v1',
+        },
+        { merge: true },
+      );
 
       tx.create(orgPublicRef, {
         organizationId,

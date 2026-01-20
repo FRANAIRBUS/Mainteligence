@@ -129,9 +129,15 @@ export default function TaskDetailPage() {
     [userProfile?.departmentId, userProfile?.departmentIds]
   );
 
-  const canEdit =
+  // Content editing: only privileged roles, or the creator while the task is open.
+  const canEditContent =
     isPrivileged ||
     (!!task && task.createdBy === user?.uid && !isTaskClosed);
+
+  // Closing/completing: privileged roles, the creator, or the assignee.
+  const canCloseTask =
+    isPrivileged ||
+    (!!task && (task.createdBy === user?.uid || task.assignedTo === user?.uid));
   const isLoading = userLoading || profileLoading || loading || usersLoading;
 
   useEffect(() => {
@@ -230,7 +236,7 @@ export default function TaskDetailPage() {
       return;
     }
 
-    if (!canEdit) {
+    if (!canEditContent) {
       setErrorMessage("No tienes permiso para editar esta tarea.");
       return;
     }
@@ -330,7 +336,7 @@ export default function TaskDetailPage() {
       !task.assignedTo ||
       usersLoading ||
       assignmentChecked ||
-      !canEdit
+      !canEditContent
     ) {
       return;
     }
@@ -359,7 +365,7 @@ export default function TaskDetailPage() {
     usersLoading,
     assignmentChecked,
     auth,
-    canEdit,
+    canEditContent,
     firestore,
     task,
     users,
@@ -449,7 +455,7 @@ export default function TaskDetailPage() {
       return;
     }
 
-    if (!canEdit) {
+    if (!canCloseTask) {
       toast({
         title: "Permisos insuficientes",
         description: "No tienes permisos para cerrar esta tarea.",
@@ -507,7 +513,7 @@ export default function TaskDetailPage() {
   };
 
   const handleRequestClose = () => {
-    if (!canEdit || isTaskClosed) {
+    if (!canCloseTask || isTaskClosed) {
       return;
     }
     setCloseReason("");
@@ -637,7 +643,7 @@ export default function TaskDetailPage() {
                     <Button
                       variant="destructive"
                       onClick={handleRequestClose}
-                      disabled={!canEdit || isTaskClosed || closeSubmitting}
+                      disabled={!canCloseTask || isTaskClosed || closeSubmitting}
                     >
                       {closeSubmitting && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
                       Cerrar tarea
@@ -654,7 +660,7 @@ export default function TaskDetailPage() {
                 <CardTitle>Detalles</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
-                {canEdit && !isTaskClosed && (
+                {canEditContent && !isTaskClosed && (
                   <Button
                     onClick={() => setIsEditDialogOpen(true)}
                     className="w-full"
@@ -727,7 +733,7 @@ export default function TaskDetailPage() {
             departments={departments}
             submitLabel="Guardar cambios"
             onSuccess={() => setIsEditDialogOpen(false)}
-            disabled={!canEdit || isTaskClosed}
+            disabled={!canEditContent || isTaskClosed}
           />
         </DialogContent>
       </Dialog>
