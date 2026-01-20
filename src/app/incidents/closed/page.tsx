@@ -55,7 +55,7 @@ export default function ClosedIncidentsPage() {
   const isSuperAdmin = normalizedRole === "super_admin";
   const canViewAll =
     normalizedRole === "admin" ||
-    normalizedRole === "maintenance" ||
+    normalizedRole === "mantenimiento" ||
     isSuperAdmin;
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 

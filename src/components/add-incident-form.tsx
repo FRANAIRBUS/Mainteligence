@@ -116,7 +116,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         type: 'correctivo' as const,
         status: 'Abierta' as const,
         createdBy: user.uid,
-        assignedRole: 'maintenance',
+        assignedRole: 'mantenimiento',
         assignedTo: null,
         organizationId,
         createdAt: serverTimestamp(),

@@ -94,15 +94,15 @@ export interface ReportEntry extends BaseEntity {
 export type UserRole =
   | 'super_admin'
   | 'admin'
-  | 'maintenance'
   | 'mantenimiento'
-  | 'dept_head_multi'
-  | 'dept_head_single'
   | 'jefe_departamento'
   | 'jefe_ubicacion'
-  | 'operator'
   | 'operario'
-  | 'auditor';
+  | 'auditor'
+  | 'maintenance'
+  | 'dept_head_multi'
+  | 'dept_head_single'
+  | 'operator';
 
 export interface User extends BaseEntity {
   displayName: string;

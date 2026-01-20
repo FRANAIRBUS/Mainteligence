@@ -149,7 +149,7 @@ Menú:
 
 **Resultado**
 - Estado: Abierta
-- Destino: assignedRole=maintenance, assignedTo=null
+- Destino: assignedRole=mantenimiento, assignedTo=null
 - Notificación a equipo mantenimiento
 
 ### 4.2 Cerrar incidencia/orden (Mantenimiento)
@@ -223,7 +223,7 @@ Campos comunes:
 - `siteId`, `departmentId`, `assetId?`
 - `title`, `description`
 - `createdBy`, `createdAt`, `updatedAt`
-- `assignedRole = "maintenance"`
+- `assignedRole = "mantenimiento"`
 - `assignedTo?` (uid o null)
 - `waiting?` (solo si en espera): `{reason, detail, eta}`
 - `photoUrls[]`
@@ -379,7 +379,7 @@ Cuerpo: (ver plantilla aprobada en memoria; configurable desde admin).
 
 ### 11.2 Reglas clave (resumen)
 - Usuario estándar: read/write solo tickets `createdBy == uid`, sin tocar `status`/`assignedTo`.
-- Mantenimiento: read tickets asignados a maintenance o a su uid; write para status/hours/parts/checklist.
+- Mantenimiento: read tickets asignados a mantenimiento o a su uid; write para status/hours/parts/checklist.
 - Admin: acceso total + configuración.
 - Storage: permitir subir imágenes solo si el usuario tiene acceso al ticket.
 
@@ -434,7 +434,7 @@ Este documento debe guardarse como `docs/SPEC_GMAO.md`.
 
 ### ÉPICA 4 — Correctivos (Incidencias)
 **H4.1** Crear incidencia (Flutter)  
-- CA: crea ticket correcto; `assignedRole=maintenance`, `status=Abierta`; notifica mantenimiento.
+- CA: crea ticket correcto; `assignedRole=mantenimiento`, `status=Abierta`; notifica mantenimiento.
 
 **H4.2** Mis incidencias (Flutter)  
 - CA: lista solo creadas por el usuario; filtros básicos; orden por defecto.

@@ -206,8 +206,8 @@ function normalizeRoleOrNull(input) {
         return 'super_admin';
     if (r === 'admin' || r === 'administrator')
         return 'admin';
-    if (r === 'maintenance' || r === 'mantenimiento' || r === 'maint' || r === 'maintainer')
-        return 'maintenance';
+    if (r === 'mantenimiento' || r === 'maintenance' || r === 'maint' || r === 'maintainer')
+        return 'mantenimiento';
     if (r === 'dept_head_multi' ||
         r === 'deptheadmulti' ||
         r === 'dept-head-multi' ||
@@ -216,7 +216,7 @@ function normalizeRoleOrNull(input) {
         r === 'departmentheadmulti' ||
         r === 'jefe_departamento_multi' ||
         r === 'jefe de departamento multi') {
-        return 'dept_head_multi';
+        return 'jefe_departamento';
     }
     if (r === 'dept_head_single' ||
         r === 'deptheadsingle' ||
@@ -228,15 +228,15 @@ function normalizeRoleOrNull(input) {
         r === 'departmentheadsingle' ||
         r === 'jefe_departamento' ||
         r === 'jefe de departamento') {
-        return 'dept_head_single';
+        return 'jefe_departamento';
     }
-    if (r === 'operator' || r === 'operario' || r === 'op')
-        return 'operator';
+    if (r === 'operario' || r === 'operator' || r === 'op')
+        return 'operario';
     return null;
 }
 function normalizeRole(input) {
     var _a;
-    return (_a = normalizeRoleOrNull(input)) !== null && _a !== void 0 ? _a : 'operator';
+    return (_a = normalizeRoleOrNull(input)) !== null && _a !== void 0 ? _a : 'operario';
 }
 async function ensureDefaultOrganizationExists() {
     const ref = db.collection('organizations').doc('default');
@@ -809,7 +809,7 @@ async function setRoleWithinOrgImpl(params) {
     if (!membershipSnap.exists) {
         throw httpsError('failed-precondition', 'El usuario objetivo no tiene membresía en esa organización. Debe registrarse y solicitar acceso primero.');
     }
-    const beforeRole = String((_a = membershipSnap.get('role')) !== null && _a !== void 0 ? _a : 'operator');
+    const beforeRole = String((_a = membershipSnap.get('role')) !== null && _a !== void 0 ? _a : 'operario');
     const beforeStatus = String((_b = membershipSnap.get('status')) !== null && _b !== void 0 ? _b : '') ||
         (membershipSnap.get('active') === true ? 'active' : 'pending');
     if (beforeStatus !== 'active') {
@@ -961,7 +961,7 @@ exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
     if (!organizationId)
         throw httpsError('invalid-argument', 'organizationId requerido.');
     const requestedRoleRaw = data === null || data === void 0 ? void 0 : data.requestedRole;
-    const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operator';
+    const requestedRole = requestedRoleRaw ? normalizeRoleOrNull(requestedRoleRaw) : 'operario';
     if (!requestedRole)
         throw httpsError('invalid-argument', 'requestedRole inválido.');
     const authUser = await admin.auth().getUser(uid).catch(() => null);
@@ -1271,7 +1271,7 @@ exports.orgInviteUser = functions.https.onRequest(async (req, res) => {
         const orgId = sanitizeOrganizationId(String((_c = (_b = req.body) === null || _b === void 0 ? void 0 : _b.organizationId) !== null && _c !== void 0 ? _c : ''));
         const email = String((_e = (_d = req.body) === null || _d === void 0 ? void 0 : _d.email) !== null && _e !== void 0 ? _e : '').trim().toLowerCase();
         const displayName = String((_g = (_f = req.body) === null || _f === void 0 ? void 0 : _f.displayName) !== null && _g !== void 0 ? _g : '').trim();
-        const requestedRole = (_j = normalizeRole((_h = req.body) === null || _h === void 0 ? void 0 : _h.role)) !== null && _j !== void 0 ? _j : 'operator';
+        const requestedRole = (_j = normalizeRole((_h = req.body) === null || _h === void 0 ? void 0 : _h.role)) !== null && _j !== void 0 ? _j : 'operario';
         const departmentId = String((_l = (_k = req.body) === null || _k === void 0 ? void 0 : _k.departmentId) !== null && _l !== void 0 ? _l : '').trim();
         if (!orgId)
             throw httpsError('invalid-argument', 'organizationId requerido.');
@@ -1454,7 +1454,7 @@ exports.orgApproveJoinRequest = functions.https.onCall(async (data, context) => 
     const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
     const orgId = sanitizeOrganizationId(String((_d = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _d !== void 0 ? _d : ''));
     const requestId = String((_f = (_e = data === null || data === void 0 ? void 0 : data.uid) !== null && _e !== void 0 ? _e : data === null || data === void 0 ? void 0 : data.requestId) !== null && _f !== void 0 ? _f : '').trim();
-    const role = (_g = normalizeRole(data === null || data === void 0 ? void 0 : data.role)) !== null && _g !== void 0 ? _g : 'operator';
+    const role = (_g = normalizeRole(data === null || data === void 0 ? void 0 : data.role)) !== null && _g !== void 0 ? _g : 'operario';
     if (!orgId)
         throw httpsError('invalid-argument', 'organizationId requerido.');
     if (!requestId)
