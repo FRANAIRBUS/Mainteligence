@@ -42,17 +42,30 @@ export const normalizeRole = (role?: UserRole | string | null) => {
     normalized === 'jefe_departamento' ||
     normalized === 'jefe de departamento'
   ) {
-    return 'dept_head_single';
+    // Canonical role name (equivalent to legacy dept_head_single)
+    return 'jefe_departamento';
+  }
+
+  if (
+    normalized === 'jefe_ubicacion' ||
+    normalized === 'jefe ubicacion' ||
+    normalized === 'location_head' ||
+    normalized === 'site_head'
+  ) {
+    return 'jefe_ubicacion';
   }
 
   if (normalized === 'operator' || normalized === 'operario' || normalized === 'op') return 'operator';
+
+  if (normalized === 'auditor' || normalized === 'audit') return 'auditor';
 
   return normalized as UserRole;
 };
 
 const ADMIN_LIKE_ROLES = ['super_admin', 'admin', 'maintenance'] as const;
-const SCOPED_HEAD_ROLES = ['dept_head_multi', 'dept_head_single'] as const;
-const MASTER_DATA_ROLES = [...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES] as const;
+const DEPARTMENT_HEAD_ROLES = ['dept_head_multi', 'dept_head_single', 'jefe_departamento'] as const;
+const LOCATION_HEAD_ROLES = ['jefe_ubicacion'] as const;
+const MASTER_DATA_ROLES = [...ADMIN_LIKE_ROLES, ...DEPARTMENT_HEAD_ROLES, ...LOCATION_HEAD_ROLES] as const;
 
 export const isAdminLikeRole = (role?: UserRole | string | null) => {
   const normalized = normalizeRole(role);
@@ -61,7 +74,7 @@ export const isAdminLikeRole = (role?: UserRole | string | null) => {
 
 export const isScopedDepartmentHead = (role?: UserRole | string | null) => {
   const normalized = normalizeRole(role);
-  return SCOPED_HEAD_ROLES.includes((normalized ?? '') as (typeof SCOPED_HEAD_ROLES)[number]);
+  return DEPARTMENT_HEAD_ROLES.includes((normalized ?? '') as (typeof DEPARTMENT_HEAD_ROLES)[number]);
 };
 
 export const canManageMasterData = (role?: UserRole | string | null) => {
@@ -71,9 +84,13 @@ export const canManageMasterData = (role?: UserRole | string | null) => {
 
 type DepartmentScope = { departmentId?: string; departmentIds?: string[] };
 
+type LocationScope = { siteId?: string; siteIds?: string[] };
+
 type TicketRoleGuards = {
   isCreator: boolean;
   isAssignee: boolean;
+  inDepartmentScope: boolean;
+  inLocationScope: boolean;
   inScope: boolean;
   matchesOrg: boolean;
 };
@@ -102,7 +119,7 @@ export type TicketPermission = {
 const getTicketOrigin = (ticket: Ticket) => ticket.originDepartmentId ?? ticket.departmentId;
 const getTicketTarget = (ticket: Ticket) => ticket.targetDepartmentId ?? ticket.departmentId;
 
-const isInScope = (ticket: Ticket, scope: DepartmentScope) => {
+const isInDepartmentScope = (ticket: Ticket, scope: DepartmentScope) => {
   const origin = getTicketOrigin(ticket);
   const target = getTicketTarget(ticket);
   const list = scope.departmentIds ?? [];
@@ -112,16 +129,35 @@ const isInScope = (ticket: Ticket, scope: DepartmentScope) => {
   );
 };
 
+const isInLocationScope = (ticket: Ticket, scope: LocationScope) => {
+  const site = ticket.siteId;
+  const list = scope.siteIds ?? [];
+  return (
+    (!!scope.siteId && site === scope.siteId) ||
+    (list.length > 0 && list.includes(site ?? ''))
+  );
+};
+
 const buildGuards = (ticket: Ticket, user: User | null, userId: string | null): TicketRoleGuards => {
-  const baseScope: DepartmentScope = {
+  const deptScope: DepartmentScope = {
     departmentId: user?.departmentId,
     departmentIds: user?.departmentIds,
   };
 
+  const locationScope: LocationScope = {
+    siteId: user?.siteId,
+    siteIds: user?.siteIds,
+  };
+
+  const inDepartmentScope = isInDepartmentScope(ticket, deptScope);
+  const inLocationScope = isInLocationScope(ticket, locationScope);
+
   return {
     isCreator: !!userId && ticket.createdBy === userId,
     isAssignee: !!userId && ticket.assignedTo === userId,
-    inScope: isInScope(ticket, baseScope),
+    inDepartmentScope,
+    inLocationScope,
+    inScope: inDepartmentScope || inLocationScope,
     matchesOrg: !user?.organizationId || ticket.organizationId === user.organizationId,
   };
 };
@@ -156,31 +192,69 @@ export function getTicketPermissions(ticket: Ticket, user: User | null, userId: 
   }
 
   const guards = buildGuards(ticket, user, userId);
-  const roleIsScopedHead = role === 'dept_head_multi' || role === 'dept_head_single';
-  const managerOrAbove = role === 'super_admin' || role === 'admin' || role === 'maintenance' || roleIsScopedHead;
+  const roleIsDeptHead = role === 'dept_head_multi' || role === 'dept_head_single' || role === 'jefe_departamento';
+  const roleIsLocationHead = role === 'jefe_ubicacion';
+  const isAuditor = role === 'auditor';
+  const managerOrAbove =
+    role === 'super_admin' ||
+    role === 'admin' ||
+    role === 'maintenance' ||
+    roleIsDeptHead ||
+    roleIsLocationHead;
 
   const visibility = (() => {
     if (role === 'super_admin') return true;
     if (!guards.matchesOrg) return false;
     if (role === 'admin' || role === 'maintenance') return true;
-    if (roleIsScopedHead) return guards.inScope || guards.isCreator || guards.isAssignee;
-    if (role === 'operator')
-      return (
-        guards.isCreator ||
-        guards.isAssignee ||
-        getTicketOrigin(ticket) === user?.departmentId ||
-        getTicketTarget(ticket) === user?.departmentId
-      );
+    if (isAuditor) return true;
+    if (roleIsDeptHead) return guards.inDepartmentScope || guards.isCreator || guards.isAssignee;
+    if (roleIsLocationHead) return guards.inLocationScope || guards.isCreator || guards.isAssignee;
+    if (role === 'operator') return guards.isCreator || guards.isAssignee || guards.inScope;
     return false;
   })();
 
-  const managerInScope = managerOrAbove && (role === 'super_admin' || (guards.matchesOrg && (!roleIsScopedHead || guards.inScope)));
+  if (isAuditor) {
+    // Auditor is strictly read-only + reporting.
+    return {
+      canView: visibility,
+      canComment: false,
+      canEditContent: false,
+      canAssignAnyUser: false,
+      canAssignToSelf: false,
+      canAssignToDepartmentBucket: false,
+      canChangeDepartment: false,
+      canChangePriority: false,
+      canEscalateToCritical: false,
+      canChangeStatus: false,
+      canMarkTaskComplete: false,
+      canMarkIncidentResolved: false,
+      canRequestClosure: false,
+      canClose: false,
+      canReopen: false,
+      canReassign: false,
+      canUnassignSelf: false,
+      canViewAuditTrail: true,
+    };
+  }
+
+  const managerInScope =
+    managerOrAbove &&
+    (role === 'super_admin' ||
+      (guards.matchesOrg &&
+        (
+          roleIsDeptHead
+            ? guards.inDepartmentScope
+            : roleIsLocationHead
+              ? guards.inLocationScope
+              : true
+        )));
 
   const canAssignAnyUser =
     role === 'super_admin' ||
     role === 'admin' ||
     role === 'maintenance' ||
-    (roleIsScopedHead && guards.matchesOrg && guards.inScope);
+    ((roleIsDeptHead && guards.matchesOrg && guards.inDepartmentScope) ||
+      (roleIsLocationHead && guards.matchesOrg && guards.inLocationScope));
 
   const canAssignToSelf = role === 'operator' ? visibility : canAssignAnyUser;
 
@@ -220,15 +294,15 @@ export function getTicketPermissions(ticket: Ticket, user: User | null, userId: 
     (guards.matchesOrg &&
       (role === 'admin' ||
         role === 'maintenance' ||
-        (roleIsScopedHead && guards.inScope) ||
+        ((roleIsDeptHead && guards.inDepartmentScope) || (roleIsLocationHead && guards.inLocationScope)) ||
         (role === 'operator' && (guards.isCreator || guards.isAssignee))));
 
   const canEditContent =
     role === 'super_admin' ||
-    (guards.matchesOrg &&
+      (guards.matchesOrg &&
       (role === 'admin' ||
         role === 'maintenance' ||
-        (roleIsScopedHead && guards.inScope) ||
+        ((roleIsDeptHead && guards.inDepartmentScope) || (roleIsLocationHead && guards.inLocationScope)) ||
         (role === 'operator' && (guards.isCreator || guards.isAssignee))));
 
   const canComment = visibility;
@@ -268,7 +342,8 @@ export function canCreateTicket(user: User | null) {
       role === 'admin' ||
       role === 'maintenance' ||
       role === 'dept_head_multi' ||
-      role === 'dept_head_single' ||
+      role === 'jefe_departamento' ||
+      role === 'jefe_ubicacion' ||
       role === 'operator'
     )
   );

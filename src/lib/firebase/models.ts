@@ -95,11 +95,14 @@ export type UserRole =
   | 'super_admin'
   | 'admin'
   | 'maintenance'
+  | 'mantenimiento'
   | 'dept_head_multi'
   | 'dept_head_single'
+  | 'jefe_departamento'
+  | 'jefe_ubicacion'
   | 'operator'
   | 'operario'
-  | 'mantenimiento';
+  | 'auditor';
 
 export interface User extends BaseEntity {
   displayName: string;
