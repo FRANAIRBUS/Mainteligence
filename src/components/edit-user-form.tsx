@@ -36,23 +36,21 @@ import { Loader2 } from 'lucide-react';
 const roleValues = [
   'super_admin',
   'admin',
-  'maintenance',
-  'dept_head_multi',
-  'dept_head_single',
-  'operator',
   'mantenimiento',
+  'jefe_departamento',
+  'jefe_ubicacion',
   'operario',
+  'auditor',
 ] as const;
 
 const roleOptions = [
   { value: roleValues[0], label: 'Super Admin' },
   { value: roleValues[1], label: 'Administrador' },
   { value: roleValues[2], label: 'Mantenimiento' },
-  { value: roleValues[3], label: 'Jefe de Departamento (múltiples)' },
-  { value: roleValues[4], label: 'Jefe de Departamento (único)' },
+  { value: roleValues[3], label: 'Jefe de Departamento' },
+  { value: roleValues[4], label: 'Jefe de Ubicación' },
   { value: roleValues[5], label: 'Operario' },
-  { value: roleValues[6], label: 'Mantenimiento (legacy)' },
-  { value: roleValues[7], label: 'Operario (legacy)' },
+  { value: roleValues[6], label: 'Auditor' },
 ] as const;
 
 const formSchema = z.object({
@@ -85,7 +83,7 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
     defaultValues: {
       displayName: user.displayName || '',
       email: user.email || '',
-      role: normalizeRole(user.role) ?? user.role ?? 'operator',
+      role: normalizeRole(user.role) ?? user.role ?? 'operario',
       departmentId: user.departmentId || '__none__',
     },
   });
@@ -94,7 +92,7 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
     form.reset({
       displayName: user.displayName || '',
       email: user.email || '',
-      role: normalizeRole(user.role) ?? user.role ?? 'operator',
+      role: normalizeRole(user.role) ?? user.role ?? 'operario',
       departmentId: user.departmentId || '__none__',
     });
   }, [form, user]);
@@ -130,7 +128,7 @@ export function EditUserForm({ user, departments, onSuccess, onSubmitting }: Edi
     onSubmitting?.(true);
 
     const normalizedRole = normalizeRole(data.role) ?? data.role;
-    const currentRole = normalizeRole(user.role) ?? user.role ?? 'operator';
+    const currentRole = normalizeRole(user.role) ?? user.role ?? 'operario';
     const roleChanged = normalizedRole !== currentRole;
 
     const normalizedDepartmentId =

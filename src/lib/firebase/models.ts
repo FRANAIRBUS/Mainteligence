@@ -94,12 +94,15 @@ export interface ReportEntry extends BaseEntity {
 export type UserRole =
   | 'super_admin'
   | 'admin'
+  | 'mantenimiento'
+  | 'jefe_departamento'
+  | 'jefe_ubicacion'
+  | 'operario'
+  | 'auditor'
   | 'maintenance'
   | 'dept_head_multi'
   | 'dept_head_single'
-  | 'operator'
-  | 'operario'
-  | 'mantenimiento';
+  | 'operator';
 
 export interface User extends BaseEntity {
   displayName: string;
@@ -108,6 +111,8 @@ export interface User extends BaseEntity {
   avatarUrl?: string;
   departmentId?: string;
   departmentIds?: string[];
+  locationId?: string;
+  locationIds?: string[];
   siteId?: string;
   isMaintenanceLead: boolean;
   active: boolean;
@@ -136,6 +141,8 @@ export interface OrganizationMember {
   role?: UserRole | null;
   departmentId?: string | null;
   departmentIds?: string[] | null;
+  locationId?: string | null;
+  locationIds?: string[] | null;
   siteId?: string | null;
   siteIds?: string[] | null;
   isMaintenanceLead?: boolean;
@@ -169,10 +176,48 @@ export interface Asset extends BaseEntity {
   siteId: string;
 }
 
+export type PreventiveScheduleType = "daily" | "weekly" | "monthly" | "date";
+export type PreventiveTemplateStatus = "active" | "paused" | "archived";
+
+export interface PreventiveSchedule {
+  type: PreventiveScheduleType;
+  timezone?: string;
+  timeOfDay?: string;
+  daysOfWeek?: number[];
+  dayOfMonth?: number;
+  date?: Timestamp;
+  nextRunAt?: Timestamp;
+  lastRunAt?: Timestamp;
+}
+
+export interface PreventiveTemplate extends BaseEntity {
+  name: string;
+  description?: string;
+  status: PreventiveTemplateStatus;
+  automatic: boolean;
+  schedule: PreventiveSchedule;
+  priority: Ticket["priority"];
+  siteId?: string;
+  departmentId?: string;
+  assetId?: string;
+  checklist?: unknown[];
+  createdBy: string;
+  updatedBy?: string;
+}
+
 export interface Ticket extends BaseEntity {
   displayId: string;
   type: "correctivo" | "preventivo";
   status:
+    | "new"
+    | "in_progress"
+    | "resolved"
+    | "canceled"
+    | "assigned"
+    | "closed"
+    | "waiting_parts"
+    | "waiting_external"
+    | "reopened"
     | "Abierta"
     | "En curso"
     | "En espera"
@@ -181,6 +226,7 @@ export interface Ticket extends BaseEntity {
     | "Cerrada";
   priority: "Baja" | "Media" | "Alta" | "Crítica";
   siteId: string;
+  locationId?: string;
   departmentId: string;
   originDepartmentId?: string;
   targetDepartmentId?: string;

@@ -43,23 +43,21 @@ import { Loader2 } from 'lucide-react';
 const roleValues = [
   'super_admin',
   'admin',
-  'maintenance',
-  'dept_head_multi',
-  'dept_head_single',
-  'operator',
   'mantenimiento',
+  'jefe_departamento',
+  'jefe_ubicacion',
   'operario',
+  'auditor',
 ] as const;
 
 const roleOptions = [
   { value: roleValues[0], label: 'Super Admin' },
   { value: roleValues[1], label: 'Administrador' },
   { value: roleValues[2], label: 'Mantenimiento' },
-  { value: roleValues[3], label: 'Jefe de Departamento (múltiples)' },
-  { value: roleValues[4], label: 'Jefe de Departamento (único)' },
+  { value: roleValues[3], label: 'Jefe de Departamento' },
+  { value: roleValues[4], label: 'Jefe de Ubicación' },
   { value: roleValues[5], label: 'Operario' },
-  { value: roleValues[6], label: 'Mantenimiento (legacy)' },
-  { value: roleValues[7], label: 'Operario (legacy)' },
+  { value: roleValues[6], label: 'Auditor' },
 ] as const;
 
 const formSchema = z.object({
@@ -106,7 +104,7 @@ export function AddUserDialog({ open, onOpenChange, departments }: AddUserDialog
     defaultValues: {
       displayName: '',
       email: '',
-      role: 'operator',
+      role: 'operario',
       departmentId: departmentNoneValue,
     },
   });

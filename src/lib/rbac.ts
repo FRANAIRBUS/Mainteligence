@@ -1,4 +1,5 @@
 import type { Ticket, User, UserRole } from '@/lib/firebase/models';
+import { normalizeTicketStatus } from '@/lib/status';
 
 export const normalizeRole = (role?: UserRole | string | null) => {
   if (!role) return undefined;
@@ -8,13 +9,13 @@ export const normalizeRole = (role?: UserRole | string | null) => {
   if (normalized === 'admin' || normalized === 'administrator') return 'admin';
 
   if (
-    normalized === 'maintenance' ||
     normalized === 'mantenimiento' ||
+    normalized === 'maintenance' ||
     normalized === 'manteniendo' ||
     normalized === 'maint' ||
     normalized === 'maintainer'
   ) {
-    return 'maintenance';
+    return 'mantenimiento';
   }
 
   if (
@@ -27,7 +28,7 @@ export const normalizeRole = (role?: UserRole | string | null) => {
     normalized === 'jefe_departamento_multi' ||
     normalized === 'jefe de departamento multi'
   ) {
-    return 'dept_head_multi';
+    return 'jefe_departamento';
   }
 
   if (
@@ -42,17 +43,29 @@ export const normalizeRole = (role?: UserRole | string | null) => {
     normalized === 'jefe_departamento' ||
     normalized === 'jefe de departamento'
   ) {
-    return 'dept_head_single';
+    return 'jefe_departamento';
   }
 
-  if (normalized === 'operator' || normalized === 'operario' || normalized === 'op') return 'operator';
+  if (
+    normalized === 'jefe_ubicacion' ||
+    normalized === 'jefe ubicacion' ||
+    normalized === 'location_head' ||
+    normalized === 'site_head'
+  ) {
+    return 'jefe_ubicacion';
+  }
+
+  if (normalized === 'operario' || normalized === 'operator' || normalized === 'op') return 'operario';
+
+  if (normalized === 'auditor' || normalized === 'audit') return 'auditor';
 
   return normalized as UserRole;
 };
 
-const ADMIN_LIKE_ROLES = ['super_admin', 'admin', 'maintenance'] as const;
-const SCOPED_HEAD_ROLES = ['dept_head_multi', 'dept_head_single'] as const;
-const MASTER_DATA_ROLES = [...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES] as const;
+const ADMIN_LIKE_ROLES = ['super_admin', 'admin', 'mantenimiento'] as const;
+const DEPARTMENT_HEAD_ROLES = ['jefe_departamento'] as const;
+const LOCATION_HEAD_ROLES = ['jefe_ubicacion'] as const;
+const MASTER_DATA_ROLES = [...ADMIN_LIKE_ROLES, ...DEPARTMENT_HEAD_ROLES, ...LOCATION_HEAD_ROLES] as const;
 
 export const isAdminLikeRole = (role?: UserRole | string | null) => {
   const normalized = normalizeRole(role);
@@ -61,7 +74,7 @@ export const isAdminLikeRole = (role?: UserRole | string | null) => {
 
 export const isScopedDepartmentHead = (role?: UserRole | string | null) => {
   const normalized = normalizeRole(role);
-  return SCOPED_HEAD_ROLES.includes((normalized ?? '') as (typeof SCOPED_HEAD_ROLES)[number]);
+  return DEPARTMENT_HEAD_ROLES.includes((normalized ?? '') as (typeof DEPARTMENT_HEAD_ROLES)[number]);
 };
 
 export const canManageMasterData = (role?: UserRole | string | null) => {
@@ -71,9 +84,20 @@ export const canManageMasterData = (role?: UserRole | string | null) => {
 
 type DepartmentScope = { departmentId?: string; departmentIds?: string[] };
 
+type LocationScope = {
+  locationId?: string;
+  locationIds?: string[];
+  siteId?: string;
+  siteIds?: string[];
+};
+
+const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? ticket.siteId ?? null;
+
 type TicketRoleGuards = {
   isCreator: boolean;
   isAssignee: boolean;
+  inDepartmentScope: boolean;
+  inLocationScope: boolean;
   inScope: boolean;
   matchesOrg: boolean;
 };
@@ -102,7 +126,7 @@ export type TicketPermission = {
 const getTicketOrigin = (ticket: Ticket) => ticket.originDepartmentId ?? ticket.departmentId;
 const getTicketTarget = (ticket: Ticket) => ticket.targetDepartmentId ?? ticket.departmentId;
 
-const isInScope = (ticket: Ticket, scope: DepartmentScope) => {
+const isInDepartmentScope = (ticket: Ticket, scope: DepartmentScope) => {
   const origin = getTicketOrigin(ticket);
   const target = getTicketTarget(ticket);
   const list = scope.departmentIds ?? [];
@@ -112,22 +136,47 @@ const isInScope = (ticket: Ticket, scope: DepartmentScope) => {
   );
 };
 
+const isInLocationScope = (ticket: Ticket, scope: LocationScope) => {
+  const site = getTicketLocationId(ticket);
+  const locationIds = scope.locationIds ?? [];
+  const siteIds = scope.siteIds ?? [];
+  return (
+    (!!scope.locationId && site === scope.locationId) ||
+    (!!scope.siteId && site === scope.siteId) ||
+    (locationIds.length > 0 && locationIds.includes(site ?? '')) ||
+    (siteIds.length > 0 && siteIds.includes(site ?? ''))
+  );
+};
+
 const buildGuards = (ticket: Ticket, user: User | null, userId: string | null): TicketRoleGuards => {
-  const baseScope: DepartmentScope = {
+  const deptScope: DepartmentScope = {
     departmentId: user?.departmentId,
     departmentIds: user?.departmentIds,
   };
 
+  const locationScope: LocationScope = {
+    locationId: user?.locationId ?? user?.siteId,
+    locationIds: user?.locationIds ?? user?.siteIds,
+    siteId: user?.siteId,
+    siteIds: user?.siteIds,
+  };
+
+  const inDepartmentScope = isInDepartmentScope(ticket, deptScope);
+  const inLocationScope = isInLocationScope(ticket, locationScope);
+
   return {
     isCreator: !!userId && ticket.createdBy === userId,
     isAssignee: !!userId && ticket.assignedTo === userId,
-    inScope: isInScope(ticket, baseScope),
+    inDepartmentScope,
+    inLocationScope,
+    inScope: inDepartmentScope || inLocationScope,
     matchesOrg: !user?.organizationId || ticket.organizationId === user.organizationId,
   };
 };
 
-const isClosed = (ticket: Ticket) => ticket.status === 'Cerrada';
-const isOpen = (ticket: Ticket) => ticket.status === 'Abierta';
+
+const isClosed = (ticket: Ticket) => normalizeTicketStatus(ticket.status) === 'resolved';
+const isOpen = (ticket: Ticket) => normalizeTicketStatus(ticket.status) === 'new';
 
 export function getTicketPermissions(ticket: Ticket, user: User | null, userId: string | null): TicketPermission {
   const role = normalizeRole(user?.role);
@@ -156,80 +205,118 @@ export function getTicketPermissions(ticket: Ticket, user: User | null, userId: 
   }
 
   const guards = buildGuards(ticket, user, userId);
-  const roleIsScopedHead = role === 'dept_head_multi' || role === 'dept_head_single';
-  const managerOrAbove = role === 'super_admin' || role === 'admin' || role === 'maintenance' || roleIsScopedHead;
+  const roleIsDeptHead = role === 'jefe_departamento';
+  const roleIsLocationHead = role === 'jefe_ubicacion';
+  const isAuditor = role === 'auditor';
+  const managerOrAbove =
+    role === 'super_admin' ||
+    role === 'admin' ||
+    role === 'mantenimiento' ||
+    roleIsDeptHead ||
+    roleIsLocationHead;
 
   const visibility = (() => {
     if (role === 'super_admin') return true;
     if (!guards.matchesOrg) return false;
-    if (role === 'admin' || role === 'maintenance') return true;
-    if (roleIsScopedHead) return guards.inScope || guards.isCreator || guards.isAssignee;
-    if (role === 'operator')
-      return (
-        guards.isCreator ||
-        guards.isAssignee ||
-        getTicketOrigin(ticket) === user?.departmentId ||
-        getTicketTarget(ticket) === user?.departmentId
-      );
+    if (role === 'admin' || role === 'mantenimiento') return true;
+    if (isAuditor) return true;
+    if (roleIsDeptHead) return guards.inDepartmentScope || guards.isCreator || guards.isAssignee;
+    if (roleIsLocationHead) return guards.inLocationScope || guards.isCreator || guards.isAssignee;
+    if (role === 'operario') return guards.isCreator || guards.isAssignee || guards.inScope;
     return false;
   })();
 
-  const managerInScope = managerOrAbove && (role === 'super_admin' || (guards.matchesOrg && (!roleIsScopedHead || guards.inScope)));
+  if (isAuditor) {
+    // Auditor is strictly read-only + reporting.
+    return {
+      canView: visibility,
+      canComment: false,
+      canEditContent: false,
+      canAssignAnyUser: false,
+      canAssignToSelf: false,
+      canAssignToDepartmentBucket: false,
+      canChangeDepartment: false,
+      canChangePriority: false,
+      canEscalateToCritical: false,
+      canChangeStatus: false,
+      canMarkTaskComplete: false,
+      canMarkIncidentResolved: false,
+      canRequestClosure: false,
+      canClose: false,
+      canReopen: false,
+      canReassign: false,
+      canUnassignSelf: false,
+      canViewAuditTrail: true,
+    };
+  }
+
+  const managerInScope =
+    managerOrAbove &&
+    (role === 'super_admin' ||
+      (guards.matchesOrg &&
+        (
+          roleIsDeptHead
+            ? guards.inDepartmentScope
+            : roleIsLocationHead
+              ? guards.inLocationScope
+              : true
+        )));
 
   const canAssignAnyUser =
     role === 'super_admin' ||
     role === 'admin' ||
-    role === 'maintenance' ||
-    (roleIsScopedHead && guards.matchesOrg && guards.inScope);
+    role === 'mantenimiento' ||
+    ((roleIsDeptHead && guards.matchesOrg && guards.inDepartmentScope) ||
+      (roleIsLocationHead && guards.matchesOrg && guards.inLocationScope));
 
-  const canAssignToSelf = role === 'operator' ? visibility : canAssignAnyUser;
+  const canAssignToSelf = role === 'operario' ? visibility : canAssignAnyUser;
 
   const canAssignToDepartmentBucket =
-    role === 'operator'
+    role === 'operario'
       ? visibility && !isClosed(ticket)
       : canAssignAnyUser && guards.matchesOrg && !isClosed(ticket);
 
   const canChangeDepartment =
-    role === 'operator'
+    role === 'operario'
       ? visibility && isOpen(ticket)
       : managerInScope;
 
-  const canChangePriority = managerInScope || (role === 'operator' && visibility && (guards.isCreator || guards.isAssignee));
+  const canChangePriority = managerInScope || (role === 'operario' && visibility && (guards.isCreator || guards.isAssignee));
 
   const canEscalateToCritical = managerInScope && !isClosed(ticket);
 
   const canChangeStatus =
-    managerInScope || (role === 'operator' && visibility && (guards.isCreator || guards.isAssignee));
+    managerInScope || (role === 'operario' && visibility && (guards.isCreator || guards.isAssignee));
 
   const canMarkTaskComplete =
-    role === 'operator' ? visibility && guards.isAssignee : managerInScope && !isClosed(ticket);
+    role === 'operario' ? visibility && guards.isAssignee : managerInScope && !isClosed(ticket);
 
   const canMarkIncidentResolved =
-    role === 'operator' ? visibility && guards.isAssignee : managerInScope && !isClosed(ticket);
+    role === 'operario' ? visibility && guards.isAssignee : managerInScope && !isClosed(ticket);
 
   const canRequestClosure =
-    (role === 'operator' && visibility && (guards.isCreator || guards.isAssignee) && !isClosed(ticket)) ||
+    (role === 'operario' && visibility && (guards.isCreator || guards.isAssignee) && !isClosed(ticket)) ||
     (managerInScope && !isClosed(ticket));
 
-  const canClose = managerInScope && role !== 'operator' && !isClosed(ticket);
-  const canReopen = managerInScope && role !== 'operator';
+  const canClose = managerInScope && role !== 'operario' && !isClosed(ticket);
+  const canReopen = managerInScope && role !== 'operario';
   const canReassign = managerInScope && !isClosed(ticket);
-  const canUnassignSelf = role === 'operator' && guards.isAssignee;
+  const canUnassignSelf = role === 'operario' && guards.isAssignee;
   const canViewAuditTrail =
     role === 'super_admin' ||
     (guards.matchesOrg &&
       (role === 'admin' ||
-        role === 'maintenance' ||
-        (roleIsScopedHead && guards.inScope) ||
-        (role === 'operator' && (guards.isCreator || guards.isAssignee))));
+        role === 'mantenimiento' ||
+        ((roleIsDeptHead && guards.inDepartmentScope) || (roleIsLocationHead && guards.inLocationScope)) ||
+        (role === 'operario' && (guards.isCreator || guards.isAssignee))));
 
   const canEditContent =
     role === 'super_admin' ||
-    (guards.matchesOrg &&
+      (guards.matchesOrg &&
       (role === 'admin' ||
-        role === 'maintenance' ||
-        (roleIsScopedHead && guards.inScope) ||
-        (role === 'operator' && (guards.isCreator || guards.isAssignee))));
+        role === 'mantenimiento' ||
+        ((roleIsDeptHead && guards.inDepartmentScope) || (roleIsLocationHead && guards.inLocationScope)) ||
+        (role === 'operario' && (guards.isCreator || guards.isAssignee))));
 
   const canComment = visibility;
 
@@ -266,10 +353,10 @@ export function canCreateTicket(user: User | null) {
     (
       role === 'super_admin' ||
       role === 'admin' ||
-      role === 'maintenance' ||
-      role === 'dept_head_multi' ||
-      role === 'dept_head_single' ||
-      role === 'operator'
+      role === 'mantenimiento' ||
+      role === 'jefe_departamento' ||
+      role === 'jefe_ubicacion' ||
+      role === 'operario'
     )
   );
 }

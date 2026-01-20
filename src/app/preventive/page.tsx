@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Icons } from '@/components/icons';
 import { useCollectionQuery, useDoc, useFirestore, useUser } from '@/lib/firebase';
-import type { Organization, Ticket } from '@/lib/firebase/models';
+import type { Organization, PreventiveTemplate, Ticket } from '@/lib/firebase/models';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
@@ -40,10 +40,30 @@ import {
   CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { ticketStatusLabel } from '@/lib/status';
 import { doc, getDoc, where } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { isFeatureEnabled } from '@/lib/entitlements';
-import { orgCollectionPath } from '@/lib/organization';
+import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organization';
+
+const formatSchedule = (template: PreventiveTemplate) => {
+  const schedule = template.schedule;
+  if (!schedule) return 'Sin programación';
+  switch (schedule.type) {
+    case 'daily':
+      return 'Diaria';
+    case 'weekly': {
+      const days = schedule.daysOfWeek?.length ? schedule.daysOfWeek.join(', ') : '—';
+      return `Semanal (${days})`;
+    }
+    case 'monthly':
+      return schedule.dayOfMonth ? `Mensual (día ${schedule.dayOfMonth})` : 'Mensual';
+    case 'date':
+      return schedule.date?.toDate ? schedule.date.toDate().toLocaleDateString() : 'Fecha específica';
+    default:
+      return 'Sin programación';
+  }
+};
 
 function PreventiveTable({
   tickets,
@@ -81,7 +101,7 @@ function PreventiveTable({
               <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0,6)}</TableCell>
               <TableCell>{ticket.title}</TableCell>
                <TableCell>
-                <Badge variant="outline">{ticket.status}</Badge>
+                <Badge variant="outline">{ticketStatusLabel(ticket.status)}</Badge>
               </TableCell>
                <TableCell>
                 <Badge variant="secondary">{ticket.priority}</Badge>
@@ -114,6 +134,83 @@ function PreventiveTable({
           <TableRow>
             <TableCell colSpan={6} className="h-24 text-center">
               No se encontraron órdenes de mantenimiento preventivo.
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </Table>
+  );
+}
+
+function PreventiveTemplatesTable({
+  templates,
+  loading,
+}: {
+  templates: PreventiveTemplate[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="flex h-64 w-full items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Nombre</TableHead>
+          <TableHead>Estado</TableHead>
+          <TableHead>Programación</TableHead>
+          <TableHead>Automático</TableHead>
+          <TableHead>Próxima ejecución</TableHead>
+          <TableHead>
+            <span className="sr-only">Acciones</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {templates.length > 0 ? (
+          templates.map((template) => (
+            <TableRow key={template.id}>
+              <TableCell className="font-medium">{template.name}</TableCell>
+              <TableCell>
+                <Badge variant="outline">{template.status}</Badge>
+              </TableCell>
+              <TableCell>{formatSchedule(template)}</TableCell>
+              <TableCell>
+                <Badge variant={template.automatic ? 'secondary' : 'outline'}>
+                  {template.automatic ? 'Sí' : 'No'}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                {template.schedule?.nextRunAt?.toDate
+                  ? template.schedule.nextRunAt.toDate().toLocaleDateString()
+                  : 'N/A'}
+              </TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-haspopup="true" size="icon" variant="ghost">
+                      <MoreHorizontal className="h-4 w-4" />
+                      <span className="sr-only">Menú de acciones</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                    <DropdownMenuItem>Editar</DropdownMenuItem>
+                    <DropdownMenuItem>Duplicar</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            </TableRow>
+          ))
+        ) : (
+          <TableRow>
+            <TableCell colSpan={6} className="h-24 text-center">
+              No se encontraron plantillas preventivas.
             </TableCell>
           </TableRow>
         )}
@@ -174,6 +271,10 @@ export default function PreventivePage() {
     where('type', '==', 'preventivo')
   );
 
+  const { data: templates, loading: templatesLoading } = useCollectionQuery<PreventiveTemplate>(
+    organizationId ? orgPreventiveTemplatesPath(organizationId) : null
+  );
+
   if (userLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
@@ -207,13 +308,13 @@ export default function PreventivePage() {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 md:p-8">
-           <Card>
+          <Card className="mb-6">
             <CardHeader>
-               <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <CardTitle>Mantenimiento Preventivo</CardTitle>
+                  <CardTitle>Plantillas Preventivas</CardTitle>
                   <CardDescription className="mt-2">
-                    Visualiza y gestiona todas las órdenes de mantenimiento preventivo.
+                    Define la programación y alcance de las órdenes preventivas.
                   </CardDescription>
                   {preventivesBlocked ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-200">
@@ -231,7 +332,27 @@ export default function PreventivePage() {
                     </p>
                   ) : null}
                 </div>
-                <Button disabled={preventivesBlocked || preventivesPaused}>Crear Plantilla</Button>
+                <Button
+                  disabled={preventivesBlocked || preventivesPaused}
+                  onClick={() => router.push('/preventive/new')}
+                >
+                  Crear Plantilla
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <PreventiveTemplatesTable templates={templates} loading={templatesLoading} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle>Mantenimiento Preventivo</CardTitle>
+                  <CardDescription className="mt-2">
+                    Visualiza y gestiona todas las órdenes de mantenimiento preventivo.
+                  </CardDescription>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
