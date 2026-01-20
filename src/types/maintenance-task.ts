@@ -16,6 +16,7 @@ export interface MaintenanceTask {
   dueDate: Timestamp | null;
   assignedTo?: string;
   location?: string;
+  locationId?: string;
   category?: string;
   createdBy?: string;
   createdAt?: Timestamp;
