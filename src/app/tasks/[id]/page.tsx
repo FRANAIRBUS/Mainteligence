@@ -139,9 +139,15 @@ export default function TaskDetailPage() {
     (!!task && task.createdBy === user?.uid && !isTaskClosed);
 
   // Closing/completing: privileged roles, the creator, or the assignee.
+  const canCloseOpsInScope =
+    !!task &&
+    task.taskType === "ops" &&
+    Boolean(task.location) &&
+    scopeDepartments.includes(task.location);
   const canCloseTask =
     isPrivileged ||
-    (!!task && (task.createdBy === user?.uid || task.assignedTo === user?.uid));
+    (!!task && (task.createdBy === user?.uid || task.assignedTo === user?.uid)) ||
+    canCloseOpsInScope;
   const isLoading = userLoading || profileLoading || loading || usersLoading;
 
   useEffect(() => {
@@ -185,6 +191,7 @@ export default function TaskDetailPage() {
       title: task?.title ?? "",
       description: task?.description ?? "",
       priority: task?.priority ?? "media",
+      taskType: task?.taskType ?? "maintenance",
       status: normalizeTaskStatus(task?.status) ?? "open",
       dueDate,
       assignedTo: isAssigneeValid ? task.assignedTo : "",
@@ -269,6 +276,7 @@ export default function TaskDetailPage() {
       title: values.title.trim(),
       description: values.description.trim(),
       priority: values.priority,
+      taskType: values.taskType,
       status: values.status,
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
       assignedTo: trimmedAssignedTo,
