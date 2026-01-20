@@ -13,6 +13,7 @@ import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { getTicketPermissions } from '@/lib/rbac';
 import { sendAssignmentEmail } from '@/lib/assignment-email';
 import { orgDocPath } from '@/lib/organization';
+import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -41,7 +42,7 @@ import {
 import { Loader2 } from 'lucide-react';
 
 const formSchema = z.object({
-  status: z.enum(['Abierta', 'En curso', 'En espera', 'Resuelta', 'Cerrada']),
+  status: z.enum(['new', 'in_progress', 'resolved', 'canceled']),
   priority: z.enum(['Baja', 'Media', 'Alta', 'Crítica']),
   assignedTo: z.string().optional().nullable(),
   departmentId: z.string().optional(),
@@ -68,7 +69,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
   const form = useForm<EditIncidentFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      status: ticket.status,
+      status: normalizeTicketStatus(ticket.status) as EditIncidentFormValues['status'],
       priority: ticket.priority,
       assignedTo: ticket.assignedTo || null,
       departmentId: ticket.departmentId || '',
@@ -77,7 +78,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
 
   useEffect(() => {
     form.reset({
-      status: ticket.status,
+      status: normalizeTicketStatus(ticket.status) as EditIncidentFormValues['status'],
       priority: ticket.priority,
       assignedTo: ticket.assignedTo || null,
       departmentId: ticket.departmentId || '',
@@ -119,7 +120,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       updateData.status = data.status;
 
       // When closing, stamp closure metadata for reporting.
-      if (data.status === 'Cerrada') {
+      if (data.status === 'resolved') {
         updateData.closedAt = serverTimestamp();
         updateData.closedBy = currentUser.uid;
       }
@@ -264,11 +265,10 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="Abierta">Abierta</SelectItem>
-                      <SelectItem value="En curso">En curso</SelectItem>
-                      <SelectItem value="En espera">En espera</SelectItem>
-                      <SelectItem value="Resuelta">Resuelta</SelectItem>
-                      <SelectItem value="Cerrada">Cerrada</SelectItem>
+                      <SelectItem value="new">{ticketStatusLabel("new")}</SelectItem>
+                      <SelectItem value="in_progress">{ticketStatusLabel("in_progress")}</SelectItem>
+                      <SelectItem value="resolved">{ticketStatusLabel("resolved")}</SelectItem>
+                      <SelectItem value="canceled">{ticketStatusLabel("canceled")}</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

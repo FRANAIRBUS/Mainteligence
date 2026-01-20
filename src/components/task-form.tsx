@@ -11,12 +11,14 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useUser } from "@/lib/firebase/auth/use-user"
+import { taskStatusLabel } from "@/lib/status"
 
 const taskSchema = z.object({
   title: z.string().min(2, "El título debe tener al menos 2 caracteres"),
   description: z.string().optional().default(""),
   priority: z.enum(["alta", "media", "baja"]),
-  status: z.enum(["pendiente", "en_progreso", "completada"]),
+  taskType: z.enum(["ops", "maintenance"]),
+  status: z.enum(["open", "in_progress", "done", "canceled"]),
   dueDate: z.string().optional().default(""),
   assignedTo: z.string().optional().default(""),
   location: z.string().optional().default(""),
@@ -100,7 +102,7 @@ export function TaskForm({
           )}
         />
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <FormField
             control={form.control}
             name="priority"
@@ -137,9 +139,32 @@ export function TaskForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="pendiente">Pendiente</SelectItem>
-                    <SelectItem value="en_progreso">En progreso</SelectItem>
-                    <SelectItem value="completada">Completada</SelectItem>
+                    <SelectItem value="open">{taskStatusLabel("open")}</SelectItem>
+                    <SelectItem value="in_progress">{taskStatusLabel("in_progress")}</SelectItem>
+                    <SelectItem value="done">{taskStatusLabel("done")}</SelectItem>
+                    <SelectItem value="canceled">{taskStatusLabel("canceled")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="taskType"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Tipo</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value} disabled={disabled}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="ops">Operativa</SelectItem>
+                    <SelectItem value="maintenance">Mantenimiento</SelectItem>
                   </SelectContent>
                 </Select>
                 <FormMessage />

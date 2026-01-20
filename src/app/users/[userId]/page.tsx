@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useCollection, useDoc, useFirebaseApp, useUser } from '@/lib/firebase';
-import type { Department, User } from '@/lib/firebase/models';
+import type { Department, Site, User } from '@/lib/firebase/models';
 import { orgCollectionPath } from '@/lib/organization';
 
 function normalizeParam(input: string | string[] | undefined): string {
@@ -42,6 +42,9 @@ export default function UserProfilePage() {
   const { data: userProfile, loading: profileLoading } = useDoc<User>(userId ? `users/${userId}` : null);
   const { data: departments = [], loading: departmentsLoading } = useCollection<Department>(
     canManage && organizationId ? orgCollectionPath(organizationId, 'departments') : null
+  );
+  const { data: sites = [], loading: sitesLoading } = useCollection<Site>(
+    canManage && organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -107,7 +110,7 @@ export default function UserProfilePage() {
     }
   };
 
-  if (userLoading || profileLoading || departmentsLoading) {
+  if (userLoading || profileLoading || departmentsLoading || sitesLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-sm text-muted-foreground">Cargando…</div>
@@ -166,7 +169,7 @@ export default function UserProfilePage() {
             <CardContent>
               {userProfile ? (
                 <div className="space-y-6">
-                  <EditUserForm user={userProfile} departments={departments} />
+                  <EditUserForm user={userProfile} departments={departments} sites={sites} />
                   {canRemoveUser && (
                     <div className="flex justify-end">
                       <Button
