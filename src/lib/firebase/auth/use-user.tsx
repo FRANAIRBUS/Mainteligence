@@ -16,6 +16,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 
 import { useAuth, useFirestore, useFirebaseApp } from '@/lib/firebase/provider';
 import { Membership, UserProfile } from '@/lib/firebase/models';
+import { normalizeRole } from '@/lib/rbac';
 
 type UserContextType = {
   user: FirebaseUser | null;
@@ -58,7 +59,7 @@ function mapMembership(snap: QueryDocumentSnapshot<DocumentData>): Membership {
     organizationId: String(d.organizationId ?? ''),
     organizationName: d.organizationName ?? null,
     userId: String(d.userId ?? ''),
-    role: String(d.role ?? 'operator'),
+    role: String(d.role ?? 'operario'),
     status: String(d.status ?? (d.active === true ? 'active' : 'pending')),
     createdAt: d.createdAt ?? null,
     updatedAt: d.updatedAt ?? null,
@@ -242,8 +243,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
     setActiveMembership(nextMembership);
 
-    const derivedRole = nextMembership?.status === 'active' ? (nextMembership.role ?? 'operator') : null;
-    setRole(derivedRole);
+    const derivedRole =
+      nextMembership?.status === 'active' ? normalizeRole(nextMembership.role ?? 'operario') : null;
+    setRole(derivedRole ?? null);
 
     setLoading(false);
   }, [user, profile, memberships, profileReady, membershipsReady]);
@@ -256,7 +258,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     if (!targetMembership || targetMembership.status !== 'active') return;
 
     const nextActive = memberships.find((membership) => membership.organizationId === next) ?? null;
-    const derivedRole = nextActive?.status === 'active' ? (nextActive.role ?? 'operator') : null;
+    const derivedRole =
+      nextActive?.status === 'active' ? normalizeRole(nextActive.role ?? 'operario') : null;
 
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('preferredOrganizationId', next);
@@ -264,7 +267,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     setOrganizationId(next);
     setActiveMembership(nextActive);
-    setRole(derivedRole);
+    setRole(derivedRole ?? null);
 
     // Persist server-side (optional, but useful across devices)
     try {
@@ -287,7 +290,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       isRoot,
       isSuperAdmin: !isRoot && role === 'super_admin',
       isAdmin: !isRoot && (role === 'admin' || role === 'super_admin'),
-      isMaintenance: !isRoot && role === 'maintenance',
+      isMaintenance: !isRoot && role === 'mantenimiento',
       loading,
       error,
       setActiveOrganizationId,

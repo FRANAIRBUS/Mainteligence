@@ -23,13 +23,17 @@ import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { normalizeRole } from "@/lib/rbac";
+import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
 import { orgCollectionPath } from "@/lib/organization";
 
-const statusCopy: Record<MaintenanceTask["status"], string> = {
-  pendiente: "Pendiente",
-  en_progreso: "En progreso",
-  completada: "Completada",
+const statusCopy: Record<string, string> = {
+  open: taskStatusLabel("open"),
+  in_progress: taskStatusLabel("in_progress"),
+  done: taskStatusLabel("done"),
+  canceled: taskStatusLabel("canceled"),
+  validated: taskStatusLabel("validated"),
+  blocked: taskStatusLabel("blocked"),
 };
 
 const priorityCopy: Record<MaintenanceTask["priority"], string> = {
@@ -53,7 +57,7 @@ export default function TasksPage() {
   const canViewAllTasks =
     normalizedRole === "super_admin" ||
     normalizedRole === "admin" ||
-    normalizedRole === "maintenance";
+    normalizedRole === "mantenimiento";
 
   const { data: tasks, loading } = useCollection<MaintenanceTask>(
     organizationId ? orgCollectionPath(organizationId, "tasks") : null
@@ -112,7 +116,7 @@ export default function TasksPage() {
           return false;
         });
 
-    const openTasks = visibleTasks.filter((task) => task.status !== "completada");
+    const openTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) !== "done");
 
     const sortedTasks = [...openTasks].sort((a, b) => {
       const aCreatedAt = a.createdAt?.toMillis?.()
@@ -131,7 +135,7 @@ export default function TasksPage() {
 
     return sortedTasks.filter((task) => {
       const matchesStatus =
-        statusFilter === "todas" || task.status === statusFilter;
+        statusFilter === "todas" || normalizeTaskStatus(task.status) === statusFilter;
       const matchesPriority =
         priorityFilter === "todas" || task.priority === priorityFilter;
       const matchesLocation =
@@ -210,8 +214,10 @@ export default function TasksPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todas">Todos los estados</SelectItem>
-                <SelectItem value="pendiente">Pendientes</SelectItem>
-                <SelectItem value="en_progreso">En progreso</SelectItem>
+                <SelectItem value="open">{taskStatusLabel("open")}</SelectItem>
+                <SelectItem value="in_progress">{taskStatusLabel("in_progress")}</SelectItem>
+                <SelectItem value="done">{taskStatusLabel("done")}</SelectItem>
+                <SelectItem value="canceled">{taskStatusLabel("canceled")}</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -314,7 +320,7 @@ export default function TasksPage() {
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-base font-semibold text-foreground">{task.title}</p>
-                        <Badge variant="outline">{statusCopy[task.status]}</Badge>
+                        <Badge variant="outline">{statusCopy[normalizeTaskStatus(task.status)]}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-2">
                         {task.description || task.category || "Sin descripción"}

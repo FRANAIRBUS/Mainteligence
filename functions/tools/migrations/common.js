@@ -52,25 +52,25 @@ function normalizeRole(roleRaw) {
 
   // Mapa (ajusta si tu app usa otros strings)
   const map = {
-    operario: "operator",
-    operador: "operator",
-    operator: "operator",
+    operario: "operario",
+    operador: "operario",
+    operator: "operario",
 
-    mantenimiento: "maintenance",
-    tecnico: "maintenance",
-    maintenance: "maintenance",
+    mantenimiento: "mantenimiento",
+    tecnico: "mantenimiento",
+    maintenance: "mantenimiento",
 
     admin: "admin",
     administrador: "admin",
     administrator: "admin",
 
-    dept_head: "dept_head",
-    jefe_departamento: "dept_head",
-    "jefe de departamento": "dept_head",
+    dept_head: "jefe_departamento",
+    jefe_departamento: "jefe_departamento",
+    "jefe de departamento": "jefe_departamento",
 
-    dept_head_multi: "dept_head_multi",
-    jefe_departamento_multi: "dept_head_multi",
-    "jefe de departamento multi": "dept_head_multi",
+    dept_head_multi: "jefe_departamento",
+    jefe_departamento_multi: "jefe_departamento",
+    "jefe de departamento multi": "jefe_departamento",
 
     super_admin: "super_admin",
     owner: "owner",
@@ -80,4 +80,3 @@ function normalizeRole(roleRaw) {
 }
 
 module.exports = { initAdmin, parseArgs, commitBatches, normalizeRole };
-

@@ -301,7 +301,7 @@ export default function OnboardingPage() {
       }
 
       const fn = httpsCallable(getFunctions(app), 'bootstrapSignup');
-      const requestedRole = requestAdminRole ? 'admin' : 'operator';
+      const requestedRole = requestAdminRole ? 'admin' : 'operario';
 
       const payload: any = {
         organizationId: orgId,
