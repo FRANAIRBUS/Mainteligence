@@ -84,6 +84,7 @@ export function useAppNavigation() {
               "jefe_departamento",
               "jefe_ubicacion",
               "operario",
+              "auditor",
             ],
           },
         ],

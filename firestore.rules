@@ -288,7 +288,7 @@ service cloud.firestore {
     --------------------------------- */
     match /organizations/{orgId} {
       allow list: if false;
-      allow get: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+      allow get: if isSignedIn() && isActiveMember(orgId, request.auth.uid);
       allow create, update, delete: if false;
 
       // Organization-scoped settings
@@ -350,8 +350,10 @@ service cloud.firestore {
           && resourceOrganizationIdMatchesPath(orgId);
         allow create: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
+          && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdMatchesPath(orgId);
         allow update: if isSignedIn()
+          && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
           && (
@@ -385,6 +387,7 @@ service cloud.firestore {
           && resourceOrganizationIdMatchesPath(orgId);
         allow create: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
+          && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdMatchesPath(orgId)
           && (
             // Admin can create any task
@@ -402,6 +405,7 @@ service cloud.firestore {
             )
           );
         allow update: if isSignedIn()
+          && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
           && (
@@ -441,7 +445,8 @@ service cloud.firestore {
       }
 
       match /auditLogs/{logId} {
-        allow read: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+        allow read: if isSignedIn()
+          && (isAdminInOrg(orgId, request.auth.uid) || isAuditorInOrg(orgId, request.auth.uid));
         allow create: if isSignedIn()
           && isAdminInOrg(orgId, request.auth.uid)
           && organizationIdMatchesPath(orgId);
@@ -457,6 +462,7 @@ service cloud.firestore {
           || isMaintenanceOnlyInOrg(orgId, request.auth.uid)
           || isDepartmentHeadInOrg(orgId, request.auth.uid)
           || isLocationHeadInOrg(orgId, request.auth.uid)
+          || isAuditorInOrg(orgId, request.auth.uid)
         );
         allow create, update, delete: if false;
       }

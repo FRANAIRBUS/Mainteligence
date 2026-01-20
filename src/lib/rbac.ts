@@ -174,7 +174,6 @@ const buildGuards = (ticket: Ticket, user: User | null, userId: string | null): 
   };
 };
 
-import { normalizeTicketStatus } from '@/lib/status';
 
 const isClosed = (ticket: Ticket) => normalizeTicketStatus(ticket.status) === 'resolved';
 const isOpen = (ticket: Ticket) => normalizeTicketStatus(ticket.status) === 'new';
