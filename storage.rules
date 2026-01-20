@@ -17,40 +17,29 @@ service firebase.storage {
     }
 
     function isActiveMember(orgId, uid) {
-      if (!isValidOrgId(orgId)) {
-        return false;
-      }
       let member = memberDoc(orgId, uid);
       return isSignedIn()
+        && isValidOrgId(orgId)
         && member.data != null
         && (
-          member.data.status == "active"
-          || member.data.active == true
+          member.data.active == true
+          || member.data.status == "active"
         );
     }
 
-    function ticketBelongsToOrg(orgId, ticketId) {
-      if (!isValidOrgId(orgId)) {
-        return false;
-      }
-      let orgPath = /databases/$(database)/documents/organizations/$(orgId)/tickets/$(ticketId);
-      return exists(orgPath) && get(orgPath).data.organizationId == orgId;
+    function ticketBelongsToOrg(orgId, id) {
+      return isValidOrgId(orgId)
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/tickets/$(id));
     }
 
-    function taskBelongsToOrg(orgId, taskId) {
-      if (!isValidOrgId(orgId)) {
-        return false;
-      }
-      let orgPath = /databases/$(database)/documents/organizations/$(orgId)/tasks/$(taskId);
-      return exists(orgPath) && get(orgPath).data.organizationId == orgId;
+    function taskBelongsToOrg(orgId, id) {
+      return isValidOrgId(orgId)
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/tasks/$(id));
     }
 
-    function assetBelongsToOrg(orgId, assetId) {
-      if (!isValidOrgId(orgId)) {
-        return false;
-      }
-      let orgPath = /databases/$(database)/documents/organizations/$(orgId)/assets/$(assetId);
-      return exists(orgPath) && get(orgPath).data.organizationId == orgId;
+    function assetBelongsToOrg(orgId, id) {
+      return isValidOrgId(orgId)
+        && exists(/databases/$(database)/documents/organizations/$(orgId)/assets/$(id));
     }
 
     // --- REGLAS DE CARPETAS ---

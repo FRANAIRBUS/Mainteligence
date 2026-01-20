@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useDoc, useUser, useCollection, useFirestore } from '@/lib/firebase';
-import type { Ticket, User, Site, Department, Asset } from '@/lib/firebase/models';
+import type { Ticket, Site, Department, Asset, OrganizationMember } from '@/lib/firebase/models';
 import {
   Sidebar,
   SidebarContent,
@@ -64,18 +64,12 @@ export default function IncidentDetailPage() {
   const ticketId = Array.isArray(id) ? id[0] : id;
   const firestore = useFirestore();
 
-  const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
+  const { user, profile: userProfile, role, organizationId, loading: userLoading } = useUser();
   const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(
     ticketId && organizationId ? orgDocPath(organizationId, 'tickets', ticketId) : null
   );
   
-  // Fetch all collections needed for display unconditionally
-  const canReadLegacyUser = (targetUserId?: string | null) =>
-    Boolean(targetUserId && (ticket?.organizationId || targetUserId === user?.uid));
-  const createdByUserPath = canReadLegacyUser(ticket?.createdBy) ? `users/${ticket?.createdBy}` : null;
-  const assignedToUserPath = canReadLegacyUser(ticket?.assignedTo) ? `users/${ticket?.assignedTo}` : null;
-  const { data: createdByUser, loading: createdByLoading } = useDoc<User>(createdByUserPath);
-  const { data: assignedToUser, loading: assignedToLoading } = useDoc<User>(assignedToUserPath);
+  // Fetch org-scoped reference data
   const { data: sites, loading: sitesLoading } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );
@@ -85,11 +79,29 @@ export default function IncidentDetailPage() {
   const { data: assets, loading: assetsLoading } = useCollection<Asset>(
     organizationId ? orgCollectionPath(organizationId, 'assets') : null
   );
-  // Fetch users for report attribution and assignment display.
-  const normalizedRole = normalizeRole(userProfile?.role);
+
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const isSuperAdmin = normalizedRole === 'super_admin';
-  const isMantenimiento = isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
-  const { data: users, loading: usersLoading } = useCollection<User>('users');
+  const isMantenimiento =
+    isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'maintenance';
+
+  // Member roster is only needed for privileged screens (assignment dropdown, audit, etc.)
+  const { data: members = [], loading: membersLoading } = useCollection<OrganizationMember>(
+    isMantenimiento && organizationId ? orgCollectionPath(organizationId, 'members') : null
+  );
+
+  // Resolve ticket actors from org members (best-effort)
+  const createdByMemberPath =
+    ticket?.createdBy && organizationId
+      ? orgDocPath(organizationId, 'members', ticket.createdBy)
+      : null;
+  const assignedToMemberPath =
+    ticket?.assignedTo && organizationId
+      ? orgDocPath(organizationId, 'members', ticket.assignedTo)
+      : null;
+
+  const { data: createdByMember } = useDoc<OrganizationMember>(createdByMemberPath);
+  const { data: assignedToMember } = useDoc<OrganizationMember>(assignedToMemberPath);
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
@@ -109,30 +121,57 @@ export default function IncidentDetailPage() {
     });
   }, [ticket?.reports]);
   const isClosed = ticket?.status === 'Cerrada';
-  const permissions = ticket && userProfile ? getTicketPermissions(ticket, userProfile, user?.uid ?? null) : null;
+
+  const currentMember = useMemo(
+    () => members.find((m) => m.id === user?.uid) ?? null,
+    [members, user?.uid]
+  );
+
+  const permissionUser = useMemo(
+    () =>
+      ({
+        id: user?.uid ?? '',
+        role: normalizedRole ?? undefined,
+        organizationId: organizationId ?? undefined,
+        departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
+        departmentIds: currentMember?.departmentIds ?? userProfile?.departmentIds ?? undefined,
+      } as any),
+    [
+      user?.uid,
+      normalizedRole,
+      organizationId,
+      currentMember?.departmentId,
+      currentMember?.departmentIds,
+      userProfile?.departmentId,
+      userProfile?.departmentIds,
+    ]
+  );
+
+  const permissions = ticket && user ? getTicketPermissions(ticket, permissionUser, user.uid) : null;
+
   const userNameMap = useMemo(() => {
     const map: Record<string, string> = {};
 
-    users.forEach((item) => {
+    members.forEach((item) => {
       map[item.id] = item.displayName || item.email || item.id;
     });
 
-    if (user && userProfile) {
-      map[user.uid] = userProfile.displayName || user.email || user.uid;
+    if (user) {
+      map[user.uid] = userProfile?.displayName || user.email || user.uid;
     }
 
-    if (createdByUser) {
-      map[createdByUser.id] =
-        createdByUser.displayName || createdByUser.email || createdByUser.id;
+    if (createdByMember) {
+      map[createdByMember.id] =
+        createdByMember.displayName || createdByMember.email || createdByMember.id;
     }
 
-    if (assignedToUser) {
-      map[assignedToUser.id] =
-        assignedToUser.displayName || assignedToUser.email || assignedToUser.id;
+    if (assignedToMember) {
+      map[assignedToMember.id] =
+        assignedToMember.displayName || assignedToMember.email || assignedToMember.id;
     }
 
     return map;
-  }, [assignedToUser, createdByUser, user, userProfile, users]);
+  }, [assignedToMember, createdByMember, members, user, userProfile]);
 
   // Memoize derived data
   const siteName = useMemo(() => sites?.find(s => s.id === ticket?.siteId)?.name || 'N/A', [sites, ticket]);
@@ -342,14 +381,12 @@ export default function IncidentDetailPage() {
   const isLoading =
     userLoading ||
     ticketLoading ||
-    createdByLoading ||
     sitesLoading ||
     deptsLoading ||
     assetsLoading ||
-    usersLoading ||
-    assignedToLoading;
+    (isMantenimiento && membersLoading);
 
-  if (isLoading || !userProfile) { // Also check for userProfile, since it's needed for auth
+  if (isLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -528,15 +565,15 @@ export default function IncidentDetailPage() {
                                 <InfoCard 
                                     icon={UserIcon}
                                     label="Creado por"
-                                    value={createdByUser?.displayName || 'N/A'}
+                                    value={createdByMember?.displayName || (ticket.createdBy ? (userNameMap[ticket.createdBy] || ticket.createdBy) : 'N/A')}
                                 />
-                                {assignedToUser && (
-                                  <InfoCard 
-                                      icon={UserIcon}
-                                      label="Asignado a"
-                                      value={assignedToUser?.displayName || 'N/A'}
+                                {ticket.assignedTo ? (
+                                  <InfoCard
+                                    icon={UserIcon}
+                                    label="Asignado a"
+                                    value={assignedToMember?.displayName || (ticket.assignedTo ? (userNameMap[ticket.assignedTo] || ticket.assignedTo) : 'N/A')}
                                   />
-                                )}
+                                ) : null}
                                 <InfoCard 
                                     icon={Building}
                                     label="Ubicación"
@@ -566,7 +603,7 @@ export default function IncidentDetailPage() {
             open={isEditDialogOpen}
             onOpenChange={setIsEditDialogOpen}
             ticket={ticket}
-            users={users}
+            users={members}
             departments={departments}
         />
       )}

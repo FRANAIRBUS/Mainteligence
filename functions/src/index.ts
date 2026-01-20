@@ -1279,11 +1279,16 @@ async function auditLog(params: {
   after?: any;
   meta?: any;
 }) {
-  const collectionRef = params.orgId
-    ? db.collection('organizations').doc(params.orgId).collection('auditLogs')
-    : db.collection('auditLogs');
+  const orgId = params.orgId ?? null;
+  if (!orgId) {
+    console.warn('[auditLog] Missing orgId. Skipping audit log write.', { action: params.action, actorUid: params.actorUid });
+    return;
+  }
+
+  const collectionRef = db.collection('organizations').doc(orgId).collection('auditLogs');
   await collectionRef.add({
     ...params,
+    orgId,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 }
