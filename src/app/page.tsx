@@ -7,6 +7,12 @@ import { format, isBefore, addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { AlertTriangle, CalendarDays, CheckCircle2, Inbox, ListChecks } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  normalizeTaskStatus,
+  normalizeTicketStatus,
+  taskStatusLabel,
+  ticketStatusLabel,
+} from "@/lib/status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
@@ -23,9 +29,12 @@ const priorityLabel: Record<string, string> = {
 };
 
 const statusLabel: Record<string, string> = {
-  pendiente: "Pendiente",
-  en_progreso: "En progreso",
-  completada: "Completada",
+  open: taskStatusLabel("open"),
+  in_progress: taskStatusLabel("in_progress"),
+  done: taskStatusLabel("done"),
+  canceled: taskStatusLabel("canceled"),
+  validated: taskStatusLabel("validated"),
+  blocked: taskStatusLabel("blocked"),
 };
 
 const incidentPriorityOrder: Record<Ticket["priority"], number> = {
@@ -60,18 +69,18 @@ export default function Home() {
     organizationId ??
     "Organización";
 
-  const pendingTasks = tasks.filter((task) => task.status === "pendiente");
-  const completedTasks = tasks.filter((task) => task.status === "completada");
+  const pendingTasks = tasks.filter((task) => normalizeTaskStatus(task.status) === "open");
+  const completedTasks = tasks.filter((task) => normalizeTaskStatus(task.status) === "done");
   const dueSoonTasks = tasks.filter((task) => {
     if (!task.dueDate) return false;
     const date = task.dueDate.toDate();
     const now = new Date();
-    return isBefore(date, addDays(now, 7)) && date >= now && task.status !== "completada";
+    return isBefore(date, addDays(now, 7)) && date >= now && normalizeTaskStatus(task.status) !== "done";
   });
 
   const overdueTasks = tasks.filter((task) => {
     if (!task.dueDate) return false;
-    return isBefore(task.dueDate.toDate(), new Date()) && task.status !== "completada";
+    return isBefore(task.dueDate.toDate(), new Date()) && normalizeTaskStatus(task.status) !== "done";
   });
 
   const nextInspections = tasks
@@ -82,7 +91,7 @@ export default function Home() {
     })
     .slice(0, 5);
 
-  const openTickets = tickets.filter((ticket) => ticket.status !== "Cerrada");
+  const openTickets = tickets.filter((ticket) => normalizeTicketStatus(ticket.status) !== "resolved");
   const criticalTickets = openTickets.filter((ticket) => ticket.priority === "Crítica");
   const pendingIncidents = [...openTickets].sort((a, b) => {
     if (incidentPriorityOrder[b.priority] !== incidentPriorityOrder[a.priority]) {
@@ -180,7 +189,7 @@ export default function Home() {
                         )}
                       </div>
                     </div>
-                    <Badge>{statusLabel[task.status]}</Badge>
+                    <Badge>{statusLabel[normalizeTaskStatus(task.status)]}</Badge>
                   </div>
                 </Link>
               ))}
@@ -219,7 +228,7 @@ export default function Home() {
                       </p>
                       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                         <Badge variant="outline" className="border-destructive text-destructive">
-                          {ticket.status}
+                          {ticketStatusLabel(ticket.status)}
                         </Badge>
                         {ticket.createdAt && (
                           <span>

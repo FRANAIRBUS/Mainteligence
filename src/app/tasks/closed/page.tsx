@@ -29,12 +29,16 @@ import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRole } from "@/lib/rbac";
+import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { orgCollectionPath } from "@/lib/organization";
 
-const statusCopy: Record<MaintenanceTask["status"], string> = {
-  pendiente: "Pendiente",
-  en_progreso: "En progreso",
-  completada: "Completada",
+const statusCopy: Record<string, string> = {
+  open: taskStatusLabel("open"),
+  in_progress: taskStatusLabel("in_progress"),
+  done: taskStatusLabel("done"),
+  canceled: taskStatusLabel("canceled"),
+  validated: taskStatusLabel("validated"),
+  blocked: taskStatusLabel("blocked"),
 };
 
 const priorityCopy: Record<MaintenanceTask["priority"], string> = {
@@ -58,14 +62,14 @@ export default function ClosedTasksPage() {
   const isSuperAdmin = normalizedRole === "super_admin";
   const canViewAll =
     normalizedRole === "admin" ||
-    normalizedRole === "maintenance" ||
+    normalizedRole === "mantenimiento" ||
     isSuperAdmin;
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
   const tasksConstraints = useMemo(() => {
     if (!user) return null;
     // Cargamos todas las tareas completadas de la organización y filtramos por permisos en el cliente.
-    return [where("status", "==", "completada")];
+    return [where("status", "in", ["done", "completada"])];
   }, [user]);
 
   const { data: tasks, loading } = useCollectionQuery<TaskWithId>(
@@ -157,12 +161,12 @@ export default function ClosedTasksPage() {
       const targetOrgId = organizationId ?? task.organizationId;
       if (!targetOrgId) return;
       await updateTask(firestore, auth, targetOrgId, task.id, {
-        status: "pendiente",
+        status: "open",
         reopened: true,
         reopenedBy: user.uid,
         reopenedAt: Timestamp.now(),
       });
-      toast({ title: "Tarea reabierta", description: "Se movió la tarea a pendientes." });
+      toast({ title: "Tarea reabierta", description: "Se movió la tarea a abiertas." });
     } catch (error) {
       console.error("No se pudo reabrir la tarea", error);
       toast({
@@ -182,7 +186,7 @@ export default function ClosedTasksPage() {
       await createTask(firestore, auth, {
         title: task.title,
         description: task.description,
-        status: "pendiente",
+        status: "open",
         priority: task.priority,
         dueDate: task.dueDate ?? null,
         assignedTo: task.assignedTo ?? "",
@@ -293,7 +297,7 @@ export default function ClosedTasksPage() {
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-base font-semibold text-foreground">{task.title}</p>
-                        <Badge variant="outline">{statusCopy[task.status]}</Badge>
+                        <Badge variant="outline">{statusCopy[normalizeTaskStatus(task.status)]}</Badge>
                         {task.reopened && (
                           <Badge variant="outline" className="text-xs">
                             Reabierta

@@ -1,7 +1,6 @@
 import type { Timestamp } from "firebase/firestore";
 import type { ReportEntry } from "./report-entry";
-
-export type TaskStatus = "pendiente" | "en_progreso" | "completada";
+import type { TaskStatus } from "@/lib/status";
 export type TaskPriority = "alta" | "media" | "baja";
 
 export interface MaintenanceTask {
