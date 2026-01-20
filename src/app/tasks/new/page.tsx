@@ -9,7 +9,7 @@ import { TaskForm, type TaskFormValues } from "@/components/task-form";
 import { useAuth, useCollection, useFirestore, useUser } from "@/lib/firebase";
 import { createTask } from "@/lib/firestore-tasks";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
-import type { Department, OrganizationMember } from "@/lib/firebase/models";
+import type { Department, OrganizationMember, Site } from "@/lib/firebase/models";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { orgCollectionPath } from "@/lib/organization";
 
@@ -22,6 +22,7 @@ const emptyValues: TaskFormValues = {
   dueDate: "",
   assignedTo: "",
   location: "",
+  locationId: "",
   category: "",
 };
 
@@ -34,6 +35,9 @@ export default function NewTaskPage() {
   );
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
+  );
+  const { data: locations } = useCollection<Site>(
+    organizationId ? orgCollectionPath(organizationId, "sites") : null
   );
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -87,6 +91,7 @@ export default function NewTaskPage() {
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
       assignedTo,
       location: values.location.trim(),
+      locationId: values.locationId.trim(),
       category: values.category.trim(),
       createdBy: user.uid,
       organizationId,
@@ -164,6 +169,7 @@ export default function NewTaskPage() {
           errorMessage={errorMessage}
           users={users}
           departments={departments}
+          locations={locations}
           submitLabel="Crear tarea"
         />
       </div>
