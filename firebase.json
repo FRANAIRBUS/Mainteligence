@@ -36,6 +36,7 @@
       ]
     }
   ],
-  "storage": [
-    { "target": "rules", "rules": "storage.rules" }
-  ]
+  "storage": {
+    "rules": "storage.rules"
+  }
+}
