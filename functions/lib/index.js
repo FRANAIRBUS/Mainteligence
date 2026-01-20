@@ -82,7 +82,7 @@ async function requireAuthFromRequest(req) {
         throw httpsError('unauthenticated', 'Debes iniciar sesión.');
     return admin.auth().verifyIdToken(match[1]);
 }
-async function updateOrganizationUserProfile({ actorUid, actorEmail, isRoot, orgId, targetUid, displayName, email, departmentId, }) {
+async function updateOrganizationUserProfile({ actorUid, actorEmail, isRoot, orgId, targetUid, displayName, email, departmentId, locationId, siteId, }) {
     var _a, _b, _c, _d;
     if (!orgId)
         throw httpsError('invalid-argument', 'organizationId requerido.');
@@ -134,10 +134,14 @@ async function updateOrganizationUserProfile({ actorUid, actorEmail, isRoot, org
             throw httpsError('internal', 'No se pudo actualizar el correo electrónico en Auth.');
         }
     }
+    const normalizedLocationId = locationId || siteId || null;
+    const normalizedSiteId = siteId || locationId || null;
     const userPayload = {
         displayName: displayName || null,
         email: normalizedEmail || null,
         departmentId: departmentId || null,
+        locationId: normalizedLocationId,
+        siteId: normalizedSiteId,
         updatedAt: now,
         source: 'orgUpdateUserProfile_v1',
     };
@@ -145,6 +149,8 @@ async function updateOrganizationUserProfile({ actorUid, actorEmail, isRoot, org
         displayName: displayName || null,
         email: normalizedEmail || null,
         departmentId: departmentId || null,
+        locationId: normalizedLocationId,
+        siteId: normalizedSiteId,
         updatedAt: now,
         source: 'orgUpdateUserProfile_v1',
     };
@@ -163,6 +169,8 @@ async function updateOrganizationUserProfile({ actorUid, actorEmail, isRoot, org
             displayName: displayName || null,
             email: normalizedEmail || null,
             departmentId: departmentId || null,
+            locationId: normalizedLocationId,
+            siteId: normalizedSiteId,
         },
     });
 }
@@ -611,7 +619,7 @@ exports.rootListUsersByOrg = functions.https.onCall(async (data, context) => {
     };
 });
 exports.rootUpsertUserToOrganization = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
     const actorUid = requireRoot(context);
     const email = String((_a = data === null || data === void 0 ? void 0 : data.email) !== null && _a !== void 0 ? _a : '').trim().toLowerCase();
     const orgId = String((_b = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _b !== void 0 ? _b : '').trim();
@@ -1273,6 +1281,8 @@ exports.orgInviteUser = functions.https.onRequest(async (req, res) => {
         const displayName = String((_g = (_f = req.body) === null || _f === void 0 ? void 0 : _f.displayName) !== null && _g !== void 0 ? _g : '').trim();
         const requestedRole = (_j = normalizeRole((_h = req.body) === null || _h === void 0 ? void 0 : _h.role)) !== null && _j !== void 0 ? _j : 'operario';
         const departmentId = String((_l = (_k = req.body) === null || _k === void 0 ? void 0 : _k.departmentId) !== null && _l !== void 0 ? _l : '').trim();
+        const locationId = String((_o = (_m = req.body) === null || _m === void 0 ? void 0 : _m.locationId) !== null && _o !== void 0 ? _o : '').trim();
+        const siteId = String((_q = (_p = req.body) === null || _p === void 0 ? void 0 : _p.siteId) !== null && _q !== void 0 ? _q : '').trim();
         if (!orgId)
             throw httpsError('invalid-argument', 'organizationId requerido.');
         if (!email)
@@ -1346,7 +1356,7 @@ exports.orgInviteUser = functions.https.onRequest(async (req, res) => {
     }
 });
 exports.orgUpdateUserProfile = functions.https.onRequest(async (req, res) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
     if (applyCors(req, res))
         return;
     if (req.method !== 'POST') {
@@ -1363,6 +1373,8 @@ exports.orgUpdateUserProfile = functions.https.onRequest(async (req, res) => {
         const displayName = String((_g = (_f = req.body) === null || _f === void 0 ? void 0 : _f.displayName) !== null && _g !== void 0 ? _g : '').trim();
         const email = String((_j = (_h = req.body) === null || _h === void 0 ? void 0 : _h.email) !== null && _j !== void 0 ? _j : '').trim().toLowerCase();
         const departmentId = String((_l = (_k = req.body) === null || _k === void 0 ? void 0 : _k.departmentId) !== null && _l !== void 0 ? _l : '').trim();
+        const locationId = String((_o = (_m = req.body) === null || _m === void 0 ? void 0 : _m.locationId) !== null && _o !== void 0 ? _o : '').trim();
+        const siteId = String((_q = (_p = req.body) === null || _p === void 0 ? void 0 : _p.siteId) !== null && _q !== void 0 ? _q : '').trim();
         await updateOrganizationUserProfile({
             actorUid,
             actorEmail,
@@ -1372,6 +1384,8 @@ exports.orgUpdateUserProfile = functions.https.onRequest(async (req, res) => {
             displayName,
             email,
             departmentId,
+            locationId,
+            siteId,
         });
         res.status(200).json({ ok: true, organizationId: orgId, uid: targetUid });
     }
@@ -1380,7 +1394,7 @@ exports.orgUpdateUserProfile = functions.https.onRequest(async (req, res) => {
     }
 });
 exports.orgUpdateUserProfileCallable = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const actorUid = requireAuth(context);
     const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
     const isRoot = isRootClaim(context);
@@ -1389,6 +1403,8 @@ exports.orgUpdateUserProfileCallable = functions.https.onCall(async (data, conte
     const displayName = String((_f = data === null || data === void 0 ? void 0 : data.displayName) !== null && _f !== void 0 ? _f : '').trim();
     const email = String((_g = data === null || data === void 0 ? void 0 : data.email) !== null && _g !== void 0 ? _g : '').trim().toLowerCase();
     const departmentId = String((_h = data === null || data === void 0 ? void 0 : data.departmentId) !== null && _h !== void 0 ? _h : '').trim();
+    const locationId = String((_j = data === null || data === void 0 ? void 0 : data.locationId) !== null && _j !== void 0 ? _j : '').trim();
+    const siteId = String((_k = data === null || data === void 0 ? void 0 : data.siteId) !== null && _k !== void 0 ? _k : '').trim();
     await updateOrganizationUserProfile({
         actorUid,
         actorEmail,
@@ -1398,6 +1414,8 @@ exports.orgUpdateUserProfileCallable = functions.https.onCall(async (data, conte
         displayName,
         email,
         departmentId,
+        locationId,
+        siteId,
     });
     return { ok: true, organizationId: orgId, uid: targetUid };
 });

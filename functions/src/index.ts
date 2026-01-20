@@ -664,6 +664,8 @@ async function updateOrganizationUserProfile({
   displayName,
   email,
   departmentId,
+  locationId,
+  siteId,
 }: {
   actorUid: string;
   actorEmail: string | null;
@@ -673,6 +675,8 @@ async function updateOrganizationUserProfile({
   displayName: string;
   email: string;
   departmentId: string;
+  locationId: string;
+  siteId: string;
 }) {
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
   if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
@@ -729,10 +733,15 @@ async function updateOrganizationUserProfile({
     }
   }
 
+  const normalizedLocationId = locationId || siteId || null;
+  const normalizedSiteId = siteId || locationId || null;
+
   const userPayload = {
     displayName: displayName || null,
     email: normalizedEmail || null,
     departmentId: departmentId || null,
+    locationId: normalizedLocationId,
+    siteId: normalizedSiteId,
     updatedAt: now,
     source: 'orgUpdateUserProfile_v1',
   };
@@ -741,6 +750,8 @@ async function updateOrganizationUserProfile({
     displayName: displayName || null,
     email: normalizedEmail || null,
     departmentId: departmentId || null,
+    locationId: normalizedLocationId,
+    siteId: normalizedSiteId,
     updatedAt: now,
     source: 'orgUpdateUserProfile_v1',
   };
@@ -761,6 +772,8 @@ async function updateOrganizationUserProfile({
       displayName: displayName || null,
       email: normalizedEmail || null,
       departmentId: departmentId || null,
+      locationId: normalizedLocationId,
+      siteId: normalizedSiteId,
     },
   });
 }
@@ -3612,8 +3625,9 @@ export const orgUpdateUserProfile = functions.https.onRequest(async (req, res) =
     const targetUid = String(req.body?.uid ?? '').trim();
     const displayName = String(req.body?.displayName ?? '').trim();
     const email = String(req.body?.email ?? '').trim().toLowerCase();
-    const departmentId =
-      typeof req.body?.departmentId === 'string' ? req.body.departmentId.trim() : '';
+    const departmentId = String(req.body?.departmentId ?? '').trim();
+    const locationId = String(req.body?.locationId ?? '').trim();
+    const siteId = String(req.body?.siteId ?? '').trim();
 
     await updateOrganizationUserProfile({
       actorUid,
@@ -3624,6 +3638,8 @@ export const orgUpdateUserProfile = functions.https.onRequest(async (req, res) =
       displayName,
       email,
       departmentId,
+      locationId,
+      siteId,
     });
 
     res.status(200).json({ ok: true, organizationId: orgId, uid: targetUid });
@@ -3641,8 +3657,9 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
   const targetUid = String(data?.uid ?? '').trim();
   const displayName = String(data?.displayName ?? '').trim();
   const email = String(data?.email ?? '').trim().toLowerCase();
-  const departmentId =
-    typeof data?.departmentId === 'string' ? data.departmentId.trim() : '';
+  const departmentId = String(data?.departmentId ?? '').trim();
+  const locationId = String(data?.locationId ?? '').trim();
+  const siteId = String(data?.siteId ?? '').trim();
 
   await updateOrganizationUserProfile({
     actorUid,
@@ -3653,6 +3670,8 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
     displayName,
     email,
     departmentId,
+    locationId,
+    siteId,
   });
 
   return { ok: true, organizationId: orgId, uid: targetUid };
