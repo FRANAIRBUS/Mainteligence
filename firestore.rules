@@ -73,6 +73,7 @@ service cloud.firestore {
         );
     }
 
+
     function isSuperAdminInOrg(orgId, uid) {
       return hasRole(orgId, uid, ["super_admin"]);
     }
@@ -167,6 +168,12 @@ service cloud.firestore {
 
     function locationIdFrom(data) {
       return ('locationId' in data) ? data.locationId : (('siteId' in data) ? data.siteId : null);
+    }
+
+    function scopedReadAllowed(orgId, uid, data) {
+      return (!isLocationHeadInOrg(orgId, uid) && !isDepartmentHeadInOrg(orgId, uid))
+        || hasScope(orgId, uid, locationIdFrom(data))
+        || hasScope(orgId, uid, ('departmentId' in data) ? data.departmentId : null);
     }
 
     function canOperatorUpdateTicket(orgId, uid) {
@@ -347,7 +354,8 @@ service cloud.firestore {
       match /tickets/{ticketId} {
         allow read: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
-          && resourceOrganizationIdMatchesPath(orgId);
+          && resourceOrganizationIdMatchesPath(orgId)
+          && scopedReadAllowed(orgId, request.auth.uid, resource.data);
         allow create: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
           && !isAuditorInOrg(orgId, request.auth.uid)
@@ -384,7 +392,8 @@ service cloud.firestore {
       match /tasks/{taskId} {
         allow read: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
-          && resourceOrganizationIdMatchesPath(orgId);
+          && resourceOrganizationIdMatchesPath(orgId)
+          && scopedReadAllowed(orgId, request.auth.uid, resource.data);
         allow create: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
           && !isAuditorInOrg(orgId, request.auth.uid)
