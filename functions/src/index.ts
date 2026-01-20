@@ -132,6 +132,35 @@ const LIMIT_MESSAGES: Record<keyof typeof USAGE_FIELDS, string> = {
   preventives: 'Has alcanzado el límite de preventivos activos de tu plan. Contacta para ampliarlo.',
 };
 
+type PreventiveScheduleType = 'daily' | 'weekly' | 'monthly' | 'date';
+type PreventiveTemplateStatus = 'active' | 'paused' | 'archived';
+
+type PreventiveSchedule = {
+  type: PreventiveScheduleType;
+  timezone?: string;
+  timeOfDay?: string;
+  daysOfWeek?: number[];
+  dayOfMonth?: number;
+  date?: admin.firestore.Timestamp;
+  nextRunAt?: admin.firestore.Timestamp;
+  lastRunAt?: admin.firestore.Timestamp;
+};
+
+type PreventiveTemplate = {
+  name: string;
+  description?: string;
+  status: PreventiveTemplateStatus;
+  automatic: boolean;
+  schedule: PreventiveSchedule;
+  priority?: string;
+  siteId?: string;
+  departmentId?: string;
+  assetId?: string;
+  checklist?: unknown[];
+  createdBy?: string;
+  organizationId?: string;
+};
+
 function buildEntitlementPayload({
   planId,
   status,
@@ -173,6 +202,94 @@ function buildEntitlementPayload({
 
 function httpsError(code: functions.https.FunctionsErrorCode, message: string) {
   return new functions.https.HttpsError(code, message);
+}
+
+function resolveTemplateOrgId(docRef: FirebaseFirestore.DocumentReference, data?: PreventiveTemplate) {
+  const dataOrgId = String(data?.organizationId ?? '').trim();
+  if (dataOrgId) return dataOrgId;
+  const match = docRef.path.match(/^organizations\/([^/]+)\//);
+  return match?.[1] ?? '';
+}
+
+function resolveZonedDate(timeZone?: string) {
+  if (!timeZone) return new Date();
+  return new Date(new Date().toLocaleString('en-US', { timeZone }));
+}
+
+function parseTimeOfDay(timeOfDay?: string) {
+  if (!timeOfDay) return { hours: 8, minutes: 0 };
+  const [rawHours, rawMinutes] = timeOfDay.split(':');
+  const hours = Number(rawHours);
+  const minutes = Number(rawMinutes);
+  return {
+    hours: Number.isFinite(hours) ? hours : 8,
+    minutes: Number.isFinite(minutes) ? minutes : 0,
+  };
+}
+
+function computeNextRunAt(schedule: PreventiveSchedule, now: Date) {
+  const { hours, minutes } = parseTimeOfDay(schedule.timeOfDay);
+  const base = new Date(now);
+
+  switch (schedule.type) {
+    case 'daily': {
+      const candidate = new Date(base);
+      candidate.setHours(hours, minutes, 0, 0);
+      if (candidate <= now) {
+        candidate.setDate(candidate.getDate() + 1);
+      }
+      return candidate;
+    }
+    case 'weekly': {
+      const days = schedule.daysOfWeek?.length ? schedule.daysOfWeek : [base.getDay() || 7];
+      const normalizedDays = days
+        .map((day) => (day === 7 ? 7 : day))
+        .filter((day) => day >= 1 && day <= 7);
+      for (let offset = 0; offset <= 7; offset += 1) {
+        const candidate = new Date(base);
+        candidate.setDate(candidate.getDate() + offset);
+        candidate.setHours(hours, minutes, 0, 0);
+        const weekday = candidate.getDay() === 0 ? 7 : candidate.getDay();
+        if (normalizedDays.includes(weekday) && candidate > now) {
+          return candidate;
+        }
+      }
+      const fallback = new Date(base);
+      fallback.setDate(fallback.getDate() + 7);
+      fallback.setHours(hours, minutes, 0, 0);
+      return fallback;
+    }
+    case 'monthly': {
+      const day = schedule.dayOfMonth ?? base.getDate();
+      const candidate = new Date(base);
+      candidate.setDate(day);
+      candidate.setHours(hours, minutes, 0, 0);
+      if (candidate <= now) {
+        candidate.setMonth(candidate.getMonth() + 1);
+        candidate.setDate(day);
+      }
+      return candidate;
+    }
+    case 'date': {
+      if (!schedule.date) return null;
+      return schedule.date.toDate();
+    }
+    default:
+      return null;
+  }
+}
+
+function resolveFrequencyDays(schedule: PreventiveSchedule) {
+  switch (schedule.type) {
+    case 'daily':
+      return 1;
+    case 'weekly':
+      return 7;
+    case 'monthly':
+      return 30;
+    default:
+      return 0;
+  }
 }
 
 const ALLOWED_CORS_ORIGINS = new Set([
@@ -3230,6 +3347,149 @@ export const pausePreventivesWithoutEntitlement = functions.pubsub
 
       for (const orgDoc of orgsSnap.docs) {
         await pausePreventiveTicketsForOrg(orgDoc.id, now);
+      }
+    }
+
+    return null;
+  });
+
+export const generatePreventiveTickets = functions.pubsub
+  .schedule('every 60 minutes')
+  .timeZone('UTC')
+  .onRun(async () => {
+    const templatesSnap = await db
+      .collectionGroup('preventiveTemplates')
+      .where('status', '==', 'active')
+      .where('automatic', '==', true)
+      .get();
+
+    if (templatesSnap.empty) return null;
+
+    for (const templateDoc of templatesSnap.docs) {
+      const template = templateDoc.data() as PreventiveTemplate;
+      const orgId = resolveTemplateOrgId(templateDoc.ref, template);
+      if (!orgId) continue;
+
+      if (!template.schedule?.type) continue;
+      if (!template.siteId || !template.departmentId) continue;
+
+      const orgRef = db.collection('organizations').doc(orgId);
+      const templateRef = templateDoc.ref;
+
+      let createdTicketId: string | null = null;
+
+      await db.runTransaction(async (tx) => {
+        const [orgSnap, templateSnap] = await Promise.all([tx.get(orgRef), tx.get(templateRef)]);
+        if (!orgSnap.exists || !templateSnap.exists) return;
+
+        const orgData = orgSnap.data() as any;
+        if (orgData?.preventivesPausedByEntitlement === true) return;
+
+        const entitlement = orgData?.entitlement as Entitlement | undefined;
+        if (!entitlement) return;
+
+        const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+        if (!isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) return;
+
+        const freshTemplate = templateSnap.data() as PreventiveTemplate;
+        if (!freshTemplate.automatic || freshTemplate.status !== 'active') return;
+        if (!freshTemplate.siteId || !freshTemplate.departmentId) return;
+
+        const schedule = freshTemplate.schedule;
+        if (!schedule?.type) return;
+        if (schedule.type === 'date' && schedule.lastRunAt) return;
+
+        const nowZoned = resolveZonedDate(schedule.timezone);
+        const nextRunDate =
+          schedule.nextRunAt?.toDate() ?? computeNextRunAt(schedule, nowZoned);
+
+        if (!nextRunDate) {
+          tx.update(templateRef, {
+            'schedule.nextRunAt': null,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return;
+        }
+
+        if (nextRunDate > nowZoned) {
+          if (!schedule.nextRunAt) {
+            tx.update(templateRef, {
+              'schedule.nextRunAt': admin.firestore.Timestamp.fromDate(nextRunDate),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          return;
+        }
+
+        const runAtTimestamp = admin.firestore.Timestamp.fromDate(nextRunDate);
+        const ticketId = `prev_${templateRef.id}_${runAtTimestamp.toMillis()}`;
+        const ticketRef = orgRef.collection('tickets').doc(ticketId);
+        const existingTicket = await tx.get(ticketRef);
+
+        const nextBase = new Date(nextRunDate.getTime() + 60 * 1000);
+        const followingRunDate =
+          schedule.type === 'date' ? null : computeNextRunAt(schedule, nextBase);
+
+        const frequencyDays = resolveFrequencyDays(schedule);
+
+        if (!existingTicket.exists) {
+          const now = admin.firestore.FieldValue.serverTimestamp();
+          const ticketPayload = {
+            organizationId: orgId,
+            type: 'preventivo',
+            status: 'Abierta',
+            priority: freshTemplate.priority ?? 'Media',
+            siteId: freshTemplate.siteId,
+            departmentId: freshTemplate.departmentId,
+            assetId: freshTemplate.assetId ?? null,
+            title: freshTemplate.name,
+            description: freshTemplate.description ?? '',
+            createdBy: freshTemplate.createdBy ?? 'system',
+            assignedRole: 'maintenance',
+            assignedTo: null,
+            createdAt: now,
+            updatedAt: now,
+            preventiveTemplateId: templateRef.id,
+            templateSnapshot: {
+              name: freshTemplate.name,
+              frequencyDays,
+            },
+            preventive: {
+              frequencyDays,
+              scheduledFor: runAtTimestamp,
+              checklist: freshTemplate.checklist ?? [],
+            },
+            source: 'generatePreventiveTickets_v1',
+          };
+
+          tx.create(ticketRef, ticketPayload);
+          ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+          tx.update(orgRef, {
+            [`entitlement.usage.${USAGE_FIELDS.preventives}`]: admin.firestore.FieldValue.increment(1),
+            'entitlement.updatedAt': now,
+          });
+          createdTicketId = ticketRef.id;
+        }
+
+        tx.update(templateRef, {
+          'schedule.lastRunAt': runAtTimestamp,
+          'schedule.nextRunAt': followingRunDate
+            ? admin.firestore.Timestamp.fromDate(followingRunDate)
+            : null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+
+      if (createdTicketId) {
+        await auditLog({
+          action: 'generatePreventiveTicket',
+          actorUid: 'system',
+          orgId,
+          after: {
+            templateId: templateDoc.id,
+            ticketId: createdTicketId,
+          },
+        });
       }
     }
 
