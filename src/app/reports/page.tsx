@@ -286,7 +286,7 @@ export default function ReportsPage() {
   );
 
   const siteIncidents = useMemo(
-    () => buildIncidentGrouping(filteredTickets, 'siteId', siteNameById),
+    () => buildIncidentGrouping(filteredTickets, 'locationId', siteNameById),
     [filteredTickets, siteNameById]
   );
 

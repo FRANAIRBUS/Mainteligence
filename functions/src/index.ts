@@ -96,6 +96,8 @@ const DEFAULT_ORG_SETTINGS_MAIN = {
 type MembershipScope = {
   departmentId?: string;
   departmentIds: string[];
+  locationId?: string;
+  locationIds: string[];
   siteId?: string;
   siteIds: string[];
 };
@@ -1173,10 +1175,13 @@ function normalizeStringArray(value: unknown): string[] {
 
 function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null): MembershipScope {
   const departmentId = String(userData?.departmentId ?? '').trim();
+  const locationId = String(userData?.locationId ?? '').trim();
   const siteId = String(userData?.siteId ?? '').trim();
   return {
     departmentId: departmentId || undefined,
     departmentIds: normalizeStringArray(userData?.departmentIds),
+    locationId: (locationId || siteId) || undefined,
+    locationIds: normalizeStringArray(userData?.locationIds ?? userData?.siteIds),
     siteId: siteId || undefined,
     siteIds: normalizeStringArray(userData?.siteIds),
   };

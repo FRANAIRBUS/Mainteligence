@@ -7,15 +7,15 @@ Referencia implementable para el control de acceso por rol y ámbito de departam
 - `organizationId`: siempre presente.
 - `departmentId`: requerido para `jefe_departamento` y `operario`.
 - `departmentIds[]`: reservado para multi-pertenencia futura.
-- `siteId` (opcional) si se usan sedes.
-- `siteIds[]`: reservado para multi-pertenencia futura.
+- `locationId` (opcional) si se usan sedes (legacy: `siteId`).
+- `locationIds[]`: reservado para multi-pertenencia futura (legacy: `siteIds[]`).
 
 ## Visibilidad de incidencias/tickets
 - **super_admin**: todos los tickets (todas las organizaciones si aplica multi‑org).
 - **admin / mantenimiento**: todos los tickets dentro de su `organizationId`.
 - **jefe_departamento**: tickets donde `originDepartmentId` o `targetDepartmentId` estén en su `departmentId`, o si es `createdBy` / `assignedTo`.
-- **jefe_ubicacion**: tickets en su `siteId`, o si es `createdBy` / `assignedTo`.
-- **operario**: tickets creados por él, asignados a él, o asociados a su `departmentId`/`siteId`.
+- **jefe_ubicacion**: tickets en su `locationId`, o si es `createdBy` / `assignedTo`.
+- **operario**: tickets creados por él, asignados a él, o asociados a su `departmentId`/`locationId`.
 - **auditor**: lectura global.
 
 > Base de compatibilidad: si un ticket solo tiene `departmentId`, se trata como `originDepartmentId/targetDepartmentId`.

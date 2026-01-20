@@ -127,7 +127,10 @@ export default function ClosedIncidentsPage() {
         return true;
       })
       .filter((ticket) => (departmentFilter === "todas" ? true : ticket.departmentId === departmentFilter))
-      .filter((ticket) => (siteFilter === "todas" ? true : ticket.siteId === siteFilter))
+      .filter((ticket) => {
+        const ticketLocationId = ticket.locationId ?? ticket.siteId;
+        return siteFilter === "todas" ? true : ticketLocationId === siteFilter;
+      })
       .filter((ticket) => {
         if (userFilter === "todas") return true;
         return ticket.createdBy === userFilter || ticket.assignedTo === userFilter;
@@ -193,7 +196,7 @@ export default function ClosedIncidentsPage() {
         description: ticket.description,
         status: "Abierta",
         priority: ticket.priority,
-        siteId: ticket.siteId,
+        siteId: ticket.locationId ?? ticket.siteId,
         departmentId: ticket.departmentId,
         assetId: ticket.assetId ?? null,
         type: ticket.type,
@@ -299,7 +302,8 @@ export default function ClosedIncidentsPage() {
             filteredTickets.map((ticket) => {
               const departmentLabel =
                 departments.find((dept) => dept.id === ticket.departmentId)?.name || "N/A";
-              const siteLabel = sites.find((site) => site.id === ticket.siteId)?.name || "N/A";
+              const ticketLocationId = ticket.locationId ?? ticket.siteId;
+              const siteLabel = sites.find((site) => site.id === ticketLocationId)?.name || "N/A";
               const createdAtLabel = ticket.createdAt?.toDate
                 ? format(ticket.createdAt.toDate(), "dd/MM/yyyy")
                 : "Sin fecha";

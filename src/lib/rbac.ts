@@ -83,7 +83,14 @@ export const canManageMasterData = (role?: UserRole | string | null) => {
 
 type DepartmentScope = { departmentId?: string; departmentIds?: string[] };
 
-type LocationScope = { siteId?: string; siteIds?: string[] };
+type LocationScope = {
+  locationId?: string;
+  locationIds?: string[];
+  siteId?: string;
+  siteIds?: string[];
+};
+
+const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? ticket.siteId ?? null;
 
 type TicketRoleGuards = {
   isCreator: boolean;
@@ -129,11 +136,14 @@ const isInDepartmentScope = (ticket: Ticket, scope: DepartmentScope) => {
 };
 
 const isInLocationScope = (ticket: Ticket, scope: LocationScope) => {
-  const site = ticket.siteId;
-  const list = scope.siteIds ?? [];
+  const site = getTicketLocationId(ticket);
+  const locationIds = scope.locationIds ?? [];
+  const siteIds = scope.siteIds ?? [];
   return (
+    (!!scope.locationId && site === scope.locationId) ||
     (!!scope.siteId && site === scope.siteId) ||
-    (list.length > 0 && list.includes(site ?? ''))
+    (locationIds.length > 0 && locationIds.includes(site ?? '')) ||
+    (siteIds.length > 0 && siteIds.includes(site ?? ''))
   );
 };
 
@@ -144,6 +154,8 @@ const buildGuards = (ticket: Ticket, user: User | null, userId: string | null): 
   };
 
   const locationScope: LocationScope = {
+    locationId: user?.locationId ?? user?.siteId,
+    locationIds: user?.locationIds ?? user?.siteIds,
     siteId: user?.siteId,
     siteIds: user?.siteIds,
   };

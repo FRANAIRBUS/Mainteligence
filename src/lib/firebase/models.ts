@@ -111,6 +111,8 @@ export interface User extends BaseEntity {
   avatarUrl?: string;
   departmentId?: string;
   departmentIds?: string[];
+  locationId?: string;
+  locationIds?: string[];
   siteId?: string;
   isMaintenanceLead: boolean;
   active: boolean;
@@ -139,6 +141,8 @@ export interface OrganizationMember {
   role?: UserRole | null;
   departmentId?: string | null;
   departmentIds?: string[] | null;
+  locationId?: string | null;
+  locationIds?: string[] | null;
   siteId?: string | null;
   siteIds?: string[] | null;
   isMaintenanceLead?: boolean;
@@ -213,6 +217,7 @@ export interface Ticket extends BaseEntity {
     | "Cerrada";
   priority: "Baja" | "Media" | "Alta" | "Crítica";
   siteId: string;
+  locationId?: string;
   departmentId: string;
   originDepartmentId?: string;
   targetDepartmentId?: string;

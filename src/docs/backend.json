@@ -27,6 +27,17 @@
           ],
           "description": "The user's role."
         },
+        "locationId": {
+          "type": "string",
+          "description": "Canonical location identifier (legacy: siteId)."
+        },
+        "locationIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional list of location IDs the user is associated with."
+        },
         "isMaintenanceLead": {
           "type": "boolean",
           "description": "Whether the user is a maintenance lead."
@@ -130,6 +141,10 @@
         },
         "siteId": {
           "type": "string"
+        },
+        "locationId": {
+          "type": "string",
+          "description": "Canonical location identifier (legacy: siteId)."
         },
         "departmentId": {
           "type": "string"
