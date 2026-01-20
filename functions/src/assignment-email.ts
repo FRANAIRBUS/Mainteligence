@@ -124,7 +124,7 @@ const buildEmailContent = ({
   const details: { label: string; value: string }[] = [
     { label: 'Título', value: title || '(sin título)' },
     { label: 'ID', value: identifier || 'No especificado' },
-    { label: 'Estado', value: status || 'pendiente' },
+    { label: 'Estado', value: status || 'open' },
     { label: 'Prioridad', value: priority || 'media' },
     { label: 'Fecha límite', value: formatDate(dueDate) },
     { label: 'Ubicación / Departamento', value: location || 'No especificado' },
@@ -143,7 +143,7 @@ const buildEmailContent = ({
     introLine,
     `Título: ${title || '(sin título)'}`,
     `ID: ${identifier || 'No especificado'}`,
-    `Estado: ${status || 'pendiente'}`,
+    `Estado: ${status || 'open'}`,
     `Prioridad: ${priority || 'media'}`,
     `Fecha límite: ${formatDate(dueDate)}`,
     `Ubicación / Departamento: ${location || 'No especificado'}`,

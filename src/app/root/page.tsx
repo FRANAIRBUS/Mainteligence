@@ -41,7 +41,15 @@ type MemberRow = {
   departmentId?: string | null;
 };
 
-const ROLE_OPTIONS = ['super_admin', 'admin', 'maintenance', 'operator'] as const;
+const ROLE_OPTIONS = [
+  'super_admin',
+  'admin',
+  'mantenimiento',
+  'jefe_departamento',
+  'jefe_ubicacion',
+  'operario',
+  'auditor',
+] as const;
 
 export default function RootPage() {
   const router = useRouter();
