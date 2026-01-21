@@ -82,16 +82,13 @@ export const canManageMasterData = (role?: UserRole | string | null) => {
   return MASTER_DATA_ROLES.includes((normalized ?? '') as (typeof MASTER_DATA_ROLES)[number]);
 };
 
-type DepartmentScope = { departmentId?: string; departmentIds?: string[] };
+type DepartmentScope = { departmentId?: string };
 
 type LocationScope = {
   locationId?: string;
-  locationIds?: string[];
-  siteId?: string;
-  siteIds?: string[];
 };
 
-const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? ticket.siteId ?? null;
+const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? null;
 
 type TicketRoleGuards = {
   isCreator: boolean;
@@ -123,42 +120,31 @@ export type TicketPermission = {
   canViewAuditTrail: boolean;
 };
 
-const getTicketOrigin = (ticket: Ticket) => ticket.originDepartmentId ?? ticket.departmentId;
-const getTicketTarget = (ticket: Ticket) => ticket.targetDepartmentId ?? ticket.departmentId;
+const getTicketOrigin = (ticket: Ticket) => ticket.originDepartmentId ?? null;
+const getTicketTarget = (ticket: Ticket) => ticket.targetDepartmentId ?? null;
 
 const isInDepartmentScope = (ticket: Ticket, scope: DepartmentScope) => {
   const origin = getTicketOrigin(ticket);
   const target = getTicketTarget(ticket);
-  const list = scope.departmentIds ?? [];
   return (
-    (!!scope.departmentId && (origin === scope.departmentId || target === scope.departmentId)) ||
-    (list.length > 0 && (list.includes(origin ?? '') || list.includes(target ?? '')))
+    !!scope.departmentId && (origin === scope.departmentId || target === scope.departmentId)
   );
 };
 
 const isInLocationScope = (ticket: Ticket, scope: LocationScope) => {
   const site = getTicketLocationId(ticket);
-  const locationIds = scope.locationIds ?? [];
-  const siteIds = scope.siteIds ?? [];
   return (
-    (!!scope.locationId && site === scope.locationId) ||
-    (!!scope.siteId && site === scope.siteId) ||
-    (locationIds.length > 0 && locationIds.includes(site ?? '')) ||
-    (siteIds.length > 0 && siteIds.includes(site ?? ''))
+    !!scope.locationId && site === scope.locationId
   );
 };
 
 const buildGuards = (ticket: Ticket, user: User | null, userId: string | null): TicketRoleGuards => {
   const deptScope: DepartmentScope = {
     departmentId: user?.departmentId,
-    departmentIds: user?.departmentIds,
   };
 
   const locationScope: LocationScope = {
-    locationId: user?.locationId ?? user?.siteId,
-    locationIds: user?.locationIds ?? user?.siteIds,
-    siteId: user?.siteId,
-    siteIds: user?.siteIds,
+    locationId: user?.locationId,
   };
 
   const inDepartmentScope = isInDepartmentScope(ticket, deptScope);
@@ -170,7 +156,7 @@ const buildGuards = (ticket: Ticket, user: User | null, userId: string | null): 
     inDepartmentScope,
     inLocationScope,
     inScope: inDepartmentScope || inLocationScope,
-    matchesOrg: !user?.organizationId || ticket.organizationId === user.organizationId,
+    matchesOrg: !!user?.organizationId && ticket.organizationId === user.organizationId,
   };
 };
 
@@ -222,7 +208,7 @@ export function getTicketPermissions(ticket: Ticket, user: User | null, userId: 
     if (isAuditor) return true;
     if (roleIsDeptHead) return guards.inDepartmentScope || guards.isCreator || guards.isAssignee;
     if (roleIsLocationHead) return guards.inLocationScope || guards.isCreator || guards.isAssignee;
-    if (role === 'operario') return guards.isCreator || guards.isAssignee || guards.inScope;
+    if (role === 'operario') return guards.isCreator || guards.isAssignee || guards.inDepartmentScope;
     return false;
   })();
 

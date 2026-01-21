@@ -14,11 +14,12 @@ export interface MaintenanceTask {
   taskType: TaskType;
   priority: TaskPriority;
   dueDate: Timestamp | null;
-  assignedTo?: string;
-  location?: string;
-  locationId?: string;
+  assignedTo?: string | null;
+  locationId?: string | null;
+  originDepartmentId: string;
+  targetDepartmentId: string;
   category?: string;
-  createdBy?: string;
+  createdBy: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   closedAt?: Timestamp;

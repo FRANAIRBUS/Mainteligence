@@ -198,7 +198,8 @@ export default function ReportsPage() {
     const locationSet = new Set<string>();
     sites.forEach((site) => locationSet.add(site.name));
     tasks.forEach((task) => {
-      if (task.location) locationSet.add(task.location);
+      const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId;
+      if (taskDepartmentId) locationSet.add(taskDepartmentId);
     });
     return Array.from(locationSet).sort((a, b) => a.localeCompare(b));
   }, [sites, tasks]);

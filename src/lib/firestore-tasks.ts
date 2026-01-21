@@ -25,7 +25,7 @@ import type { Auth } from "firebase/auth";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import type { User, Department } from "@/lib/firebase/models";
 
-type MaintenanceTaskWrite = MaintenanceTaskInput & {
+type MaintenanceTaskCreateInput = Omit<MaintenanceTaskInput, "createdBy"> & {
   assignmentEmailSource?: "client" | "server";
 };
 
@@ -107,7 +107,7 @@ export const getTask = async (db: Firestore, organizationId: string, id: string)
 export const createTask = async (
   db: Firestore,
   auth: Auth,
-  payload: MaintenanceTaskWrite,
+  payload: MaintenanceTaskCreateInput,
   options?: { users: User[]; departments: Department[] }
 ): Promise<string> => {
   if (!payload.organizationId) {
@@ -146,7 +146,7 @@ export const updateTask = async (
   auth: Auth,
   organizationId: string,
   id: string,
-  updates: Partial<MaintenanceTaskWrite>,
+  updates: Partial<MaintenanceTaskInput>,
   options?: { users: User[]; departments: Department[] }
 ) => {
   await ensureAuthenticatedUser(auth);
