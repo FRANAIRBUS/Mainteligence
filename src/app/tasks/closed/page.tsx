@@ -28,7 +28,7 @@ import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
-import { normalizeRole } from "@/lib/rbac";
+import { getTaskPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { orgCollectionPath } from "@/lib/organization";
 
@@ -60,11 +60,6 @@ export default function ClosedTasksPage() {
 
   const normalizedRole = normalizeRole(role ?? profile?.role);
   const isSuperAdmin = normalizedRole === "super_admin";
-  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
-  const canViewAll =
-    normalizedRole === "admin" ||
-    normalizedRole === "mantenimiento" ||
-    isSuperAdmin;
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
   const tasksConstraints = useMemo(() => {
@@ -109,37 +104,9 @@ export default function ClosedTasksPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    const scopeDepartments = Array.from(
-      new Set(
-        [
-          currentMember?.departmentId ?? profile?.departmentId,
-          ...((currentMember?.departmentIds ?? profile?.departmentIds ?? []) as string[]),
-        ].filter((id): id is string => Boolean(id))
-      )
+    const visibleTasks = tasks.filter((task) =>
+      getTaskPermissions(task, profile ?? null, user?.uid ?? null).canView
     );
-    const scopeLocations = Array.from(
-      new Set(
-        [
-          currentMember?.locationId ?? profile?.locationId ?? currentMember?.siteId ?? profile?.siteId,
-          ...((currentMember?.locationIds ?? profile?.locationIds ?? []) as string[]),
-          ...((currentMember?.siteIds ?? profile?.siteIds ?? []) as string[]),
-        ].filter((id): id is string => Boolean(id))
-      )
-    );
-
-    const visibleTasks = canViewAll
-      ? tasks
-      : tasks.filter((task) => {
-          if (task.createdBy === user?.uid) return true;
-          if (task.assignedTo === user?.uid) return true;
-          if (scopeDepartments.length > 0 && task.location) {
-            return scopeDepartments.includes(task.location);
-          }
-          if (roleIsLocationHead && scopeLocations.length > 0 && task.locationId) {
-            return scopeLocations.includes(task.locationId);
-          }
-          return false;
-        });
 
     return [...visibleTasks]
       .filter((task) => {
@@ -149,8 +116,10 @@ export default function ClosedTasksPage() {
         }
         return true;
       })
-      .filter((task) =>
-        departmentFilter === "todas" || task.location === departmentFilter
+      .filter(
+        (task) =>
+          departmentFilter === "todas" ||
+          (task.targetDepartmentId ?? task.originDepartmentId) === departmentFilter
       )
       .filter((task) => {
         if (userFilter === "todas") return true;
@@ -165,7 +134,7 @@ export default function ClosedTasksPage() {
         const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
         return bCreatedAt - aCreatedAt;
       });
-  }, [canViewAll, dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, currentMember, profile, roleIsLocationHead]);
+  }, [dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, profile]);
 
   const handleReopen = async (task: TaskWithId) => {
     if (!firestore || !auth || !user || !isAdmin) return;
@@ -203,7 +172,9 @@ export default function ClosedTasksPage() {
         priority: task.priority,
         dueDate: task.dueDate ?? null,
         assignedTo: task.assignedTo ?? "",
-        location: task.location ?? "",
+        originDepartmentId: task.originDepartmentId,
+        targetDepartmentId: task.targetDepartmentId,
+        locationId: task.locationId ?? null,
         category: task.category ?? "",
         reopened: false,
         organizationId: targetOrgId,
@@ -288,7 +259,9 @@ export default function ClosedTasksPage() {
           {!isLoading &&
             filteredTasks.map((task) => {
               const departmentLabel =
-                departments.find((dept) => dept.id === task.location)?.name || "Sin departamento";
+                departments.find(
+                  (dept) => dept.id === (task.targetDepartmentId ?? task.originDepartmentId ?? "")
+                )?.name || "Sin departamento";
               const createdAtLabel = task.createdAt?.toDate
                 ? format(task.createdAt.toDate(), "dd/MM/yyyy", { locale: es })
                 : "Sin fecha";
