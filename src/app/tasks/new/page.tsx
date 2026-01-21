@@ -21,7 +21,7 @@ const emptyValues: TaskFormValues = {
   status: "open",
   dueDate: "",
   assignedTo: "",
-  location: "",
+  departmentId: "",
   locationId: "",
   category: "",
 };
@@ -77,9 +77,9 @@ export default function NewTaskPage() {
     setErrorMessage(null);
 
     const assignedTo = values.assignedTo.trim();
-    const assignmentDepartmentName = values.location.trim()
-      ? departments?.find((dept) => dept.id === values.location.trim())?.name ||
-        values.location.trim()
+    const assignmentDepartmentName = values.departmentId.trim()
+      ? departments?.find((dept) => dept.id === values.departmentId.trim())?.name ||
+        values.departmentId.trim()
       : "";
     const assignmentLocationName = values.locationId.trim()
       ? locations?.find((location) => location.id === values.locationId.trim())?.name ||
@@ -94,8 +94,9 @@ export default function NewTaskPage() {
       status: values.status,
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
       assignedTo,
-      location: values.location.trim(),
-      locationId: values.locationId.trim(),
+      originDepartmentId: values.departmentId.trim(),
+      targetDepartmentId: values.departmentId.trim(),
+      locationId: values.locationId.trim() || null,
       category: values.category.trim(),
       createdBy: user.uid,
       organizationId,
@@ -120,7 +121,7 @@ export default function NewTaskPage() {
               users,
               departments,
               assignedTo,
-              departmentId: values.location.trim() || null,
+              departmentId: values.departmentId.trim() || null,
               departmentName: assignmentDepartmentName,
               locationName: assignmentLocationName,
               title: values.title.trim(),

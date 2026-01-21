@@ -109,22 +109,11 @@ export default function ClosedTasksPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    const scopeDepartments = Array.from(
-      new Set(
-        [
-          currentMember?.departmentId ?? profile?.departmentId,
-          ...((currentMember?.departmentIds ?? profile?.departmentIds ?? []) as string[]),
-        ].filter((id): id is string => Boolean(id))
-      )
+    const scopeDepartments = [currentMember?.departmentId ?? profile?.departmentId].filter(
+      (id): id is string => Boolean(id)
     );
-    const scopeLocations = Array.from(
-      new Set(
-        [
-          currentMember?.locationId ?? profile?.locationId ?? currentMember?.siteId ?? profile?.siteId,
-          ...((currentMember?.locationIds ?? profile?.locationIds ?? []) as string[]),
-          ...((currentMember?.siteIds ?? profile?.siteIds ?? []) as string[]),
-        ].filter((id): id is string => Boolean(id))
-      )
+    const scopeLocations = [currentMember?.locationId ?? profile?.locationId].filter(
+      (id): id is string => Boolean(id)
     );
 
     const visibleTasks = canViewAll
@@ -132,8 +121,9 @@ export default function ClosedTasksPage() {
       : tasks.filter((task) => {
           if (task.createdBy === user?.uid) return true;
           if (task.assignedTo === user?.uid) return true;
-          if (scopeDepartments.length > 0 && task.location) {
-            return scopeDepartments.includes(task.location);
+          const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId ?? "";
+          if (scopeDepartments.length > 0 && taskDepartmentId) {
+            return scopeDepartments.includes(taskDepartmentId);
           }
           if (roleIsLocationHead && scopeLocations.length > 0 && task.locationId) {
             return scopeLocations.includes(task.locationId);
@@ -149,8 +139,10 @@ export default function ClosedTasksPage() {
         }
         return true;
       })
-      .filter((task) =>
-        departmentFilter === "todas" || task.location === departmentFilter
+      .filter(
+        (task) =>
+          departmentFilter === "todas" ||
+          (task.targetDepartmentId ?? task.originDepartmentId) === departmentFilter
       )
       .filter((task) => {
         if (userFilter === "todas") return true;
@@ -203,7 +195,9 @@ export default function ClosedTasksPage() {
         priority: task.priority,
         dueDate: task.dueDate ?? null,
         assignedTo: task.assignedTo ?? "",
-        location: task.location ?? "",
+        originDepartmentId: task.originDepartmentId,
+        targetDepartmentId: task.targetDepartmentId,
+        locationId: task.locationId ?? null,
         category: task.category ?? "",
         reopened: false,
         organizationId: targetOrgId,
@@ -288,7 +282,9 @@ export default function ClosedTasksPage() {
           {!isLoading &&
             filteredTasks.map((task) => {
               const departmentLabel =
-                departments.find((dept) => dept.id === task.location)?.name || "Sin departamento";
+                departments.find(
+                  (dept) => dept.id === (task.targetDepartmentId ?? task.originDepartmentId ?? "")
+                )?.name || "Sin departamento";
               const createdAtLabel = task.createdAt?.toDate
                 ? format(task.createdAt.toDate(), "dd/MM/yyyy", { locale: es })
                 : "Sin fecha";
