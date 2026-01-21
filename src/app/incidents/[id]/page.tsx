@@ -136,6 +136,14 @@ export default function IncidentDetailPage() {
         organizationId: organizationId ?? undefined,
         departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
         departmentIds: currentMember?.departmentIds ?? userProfile?.departmentIds ?? undefined,
+        locationId: currentMember?.locationId ?? userProfile?.locationId ?? userProfile?.siteId ?? undefined,
+        locationIds:
+          currentMember?.locationIds ??
+          userProfile?.locationIds ??
+          userProfile?.siteIds ??
+          undefined,
+        siteId: currentMember?.siteId ?? userProfile?.siteId ?? undefined,
+        siteIds: currentMember?.siteIds ?? userProfile?.siteIds ?? undefined,
       } as any),
     [
       user?.uid,
@@ -143,8 +151,16 @@ export default function IncidentDetailPage() {
       organizationId,
       currentMember?.departmentId,
       currentMember?.departmentIds,
+      currentMember?.locationId,
+      currentMember?.locationIds,
+      currentMember?.siteId,
+      currentMember?.siteIds,
       userProfile?.departmentId,
       userProfile?.departmentIds,
+      userProfile?.locationId,
+      userProfile?.locationIds,
+      userProfile?.siteId,
+      userProfile?.siteIds,
     ]
   );
 
