@@ -147,6 +147,10 @@ export default function IncidentsPage() {
       ...locationFilters,
     ];
 
+    if (baseFilters.length === 0) {
+      return [where('organizationId', '==', organizationId as string)];
+    }
+
     return [where('organizationId', '==', organizationId as string), or(...baseFilters)];
   }, [user, userProfile, organizationId, normalizedRole, isMantenimiento, isSuperAdmin]);
 
