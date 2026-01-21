@@ -155,6 +155,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
         const departmentName = data.departmentId
           ? departments.find((dept) => dept.id === data.departmentId)?.name || data.departmentId
           : '';
+        const locationName = ticket.locationId || ticket.siteId || '';
 
         void (async () => {
           try {
@@ -163,6 +164,8 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
               departments,
               assignedTo: newAssignee,
               departmentId: data.departmentId || null,
+              departmentName,
+              locationName,
               title: ticket.title,
               link: `${baseUrl}/incidents/${ticket.id}`,
               type: 'incidencia',
@@ -170,7 +173,6 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
               description: ticket.description ?? '',
               priority: data.priority,
               status: data.status,
-              location: departmentName,
             });
           } catch (error) {
             console.error('No se pudo enviar el email de asignación de incidencia', error);

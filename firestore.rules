@@ -73,6 +73,7 @@ service cloud.firestore {
         );
     }
 
+
     function isSuperAdminInOrg(orgId, uid) {
       return hasRole(orgId, uid, ["super_admin"]);
     }
@@ -167,6 +168,12 @@ service cloud.firestore {
 
     function locationIdFrom(data) {
       return ('locationId' in data) ? data.locationId : (('siteId' in data) ? data.siteId : null);
+    }
+
+    function scopedReadAllowed(orgId, uid, data) {
+      return (!isLocationHeadInOrg(orgId, uid) && !isDepartmentHeadInOrg(orgId, uid))
+        || hasScope(orgId, uid, locationIdFrom(data))
+        || hasScope(orgId, uid, ('departmentId' in data) ? data.departmentId : null);
     }
 
     function canOperatorUpdateTicket(orgId, uid) {
@@ -347,7 +354,8 @@ service cloud.firestore {
       match /tickets/{ticketId} {
         allow read: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
-          && resourceOrganizationIdMatchesPath(orgId);
+          && resourceOrganizationIdMatchesPath(orgId)
+          && scopedReadAllowed(orgId, request.auth.uid, resource.data);
         allow create: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
           && !isAuditorInOrg(orgId, request.auth.uid)
@@ -361,9 +369,19 @@ service cloud.firestore {
             isAdminInOrg(orgId, request.auth.uid)
             || (
               // Scoped operators (maintenance + heads)
-              (isMaintenanceOnlyInOrg(orgId, request.auth.uid) || isDepartmentHeadInOrg(orgId, request.auth.uid) || isLocationHeadInOrg(orgId, request.auth.uid))
-              && hasScope(orgId, request.auth.uid, locationIdFrom(request.resource.data))
-              && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data) ? request.resource.data.departmentId : (('departmentId' in resource.data) ? resource.data.departmentId : null))
+              (
+                (isMaintenanceOnlyInOrg(orgId, request.auth.uid)
+                  && hasScope(orgId, request.auth.uid, locationIdFrom(request.resource.data))
+                  && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data)
+                    ? request.resource.data.departmentId
+                    : (('departmentId' in resource.data) ? resource.data.departmentId : null)))
+                || (isDepartmentHeadInOrg(orgId, request.auth.uid)
+                  && hasScope(orgId, request.auth.uid, ('departmentId' in request.resource.data)
+                    ? request.resource.data.departmentId
+                    : (('departmentId' in resource.data) ? resource.data.departmentId : null)))
+                || (isLocationHeadInOrg(orgId, request.auth.uid)
+                  && hasScope(orgId, request.auth.uid, locationIdFrom(request.resource.data)))
+              )
             )
             || (
               // Operario: updates limitados (comentarios/evidencias/estado) en asignadas/creadas o en su alcance
@@ -384,7 +402,8 @@ service cloud.firestore {
       match /tasks/{taskId} {
         allow read: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
-          && resourceOrganizationIdMatchesPath(orgId);
+          && resourceOrganizationIdMatchesPath(orgId)
+          && scopedReadAllowed(orgId, request.auth.uid, resource.data);
         allow create: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
           && !isAuditorInOrg(orgId, request.auth.uid)
@@ -394,9 +413,15 @@ service cloud.firestore {
             isAdminInOrg(orgId, request.auth.uid)
             || (
               // Maintenance / heads can create in-scope
-              (isMaintenanceOnlyInOrg(orgId, request.auth.uid) || isDepartmentHeadInOrg(orgId, request.auth.uid) || isLocationHeadInOrg(orgId, request.auth.uid))
-              && hasScope(orgId, request.auth.uid, taskSiteScopeId(request.resource.data))
-              && hasScope(orgId, request.auth.uid, taskDepartmentScopeId(request.resource.data))
+              (
+                (isMaintenanceOnlyInOrg(orgId, request.auth.uid)
+                  && hasScope(orgId, request.auth.uid, taskSiteScopeId(request.resource.data))
+                  && hasScope(orgId, request.auth.uid, taskDepartmentScopeId(request.resource.data)))
+                || (isDepartmentHeadInOrg(orgId, request.auth.uid)
+                  && hasScope(orgId, request.auth.uid, taskDepartmentScopeId(request.resource.data)))
+                || (isLocationHeadInOrg(orgId, request.auth.uid)
+                  && hasScope(orgId, request.auth.uid, taskSiteScopeId(request.resource.data)))
+              )
             )
             || (
               // Operario can create tasks but must be the creator.
@@ -413,9 +438,15 @@ service cloud.firestore {
             isAdminInOrg(orgId, request.auth.uid)
             || (
               // Maintenance / heads can update in-scope
-              (isMaintenanceOnlyInOrg(orgId, request.auth.uid) || isDepartmentHeadInOrg(orgId, request.auth.uid) || isLocationHeadInOrg(orgId, request.auth.uid))
-              && hasScope(orgId, request.auth.uid, taskSiteScopeId(request.resource.data))
-              && hasScope(orgId, request.auth.uid, taskDepartmentScopeId(request.resource.data))
+              (
+                (isMaintenanceOnlyInOrg(orgId, request.auth.uid)
+                  && hasScope(orgId, request.auth.uid, taskSiteScopeId(request.resource.data))
+                  && hasScope(orgId, request.auth.uid, taskDepartmentScopeId(request.resource.data)))
+                || (isDepartmentHeadInOrg(orgId, request.auth.uid)
+                  && hasScope(orgId, request.auth.uid, taskDepartmentScopeId(request.resource.data)))
+                || (isLocationHeadInOrg(orgId, request.auth.uid)
+                  && hasScope(orgId, request.auth.uid, taskSiteScopeId(request.resource.data)))
+              )
             )
             || (
               // Operario: updates limitados (seguimiento + cierre) en creadas o asignadas

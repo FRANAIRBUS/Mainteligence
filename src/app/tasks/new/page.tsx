@@ -9,7 +9,7 @@ import { TaskForm, type TaskFormValues } from "@/components/task-form";
 import { useAuth, useCollection, useFirestore, useUser } from "@/lib/firebase";
 import { createTask } from "@/lib/firestore-tasks";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
-import type { Department, OrganizationMember } from "@/lib/firebase/models";
+import type { Department, OrganizationMember, Site } from "@/lib/firebase/models";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { orgCollectionPath } from "@/lib/organization";
 
@@ -22,6 +22,7 @@ const emptyValues: TaskFormValues = {
   dueDate: "",
   assignedTo: "",
   location: "",
+  locationId: "",
   category: "",
 };
 
@@ -34,6 +35,9 @@ export default function NewTaskPage() {
   );
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
+  );
+  const { data: locations } = useCollection<Site>(
+    organizationId ? orgCollectionPath(organizationId, "sites") : null
   );
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -77,6 +81,10 @@ export default function NewTaskPage() {
       ? departments?.find((dept) => dept.id === values.location.trim())?.name ||
         values.location.trim()
       : "";
+    const assignmentLocationName = values.locationId.trim()
+      ? locations?.find((location) => location.id === values.locationId.trim())?.name ||
+        values.locationId.trim()
+      : "";
 
     const payload: MaintenanceTaskInput & { assignmentEmailSource?: "client" | "server" } = {
       title: values.title.trim(),
@@ -87,6 +95,7 @@ export default function NewTaskPage() {
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
       assignedTo,
       location: values.location.trim(),
+      locationId: values.locationId.trim(),
       category: values.category.trim(),
       createdBy: user.uid,
       organizationId,
@@ -112,6 +121,8 @@ export default function NewTaskPage() {
               departments,
               assignedTo,
               departmentId: values.location.trim() || null,
+              departmentName: assignmentDepartmentName,
+              locationName: assignmentLocationName,
               title: values.title.trim(),
               link: `${baseUrl}/tasks/${id}`,
               type: "tarea",
@@ -120,7 +131,6 @@ export default function NewTaskPage() {
               priority: values.priority,
               status: values.status,
               dueDate: values.dueDate ? new Date(values.dueDate) : null,
-              location: assignmentDepartmentName,
               category: values.category.trim(),
             });
           } catch (error) {
@@ -164,6 +174,7 @@ export default function NewTaskPage() {
           errorMessage={errorMessage}
           users={users}
           departments={departments}
+          locations={locations}
           submitLabel="Crear tarea"
         />
       </div>

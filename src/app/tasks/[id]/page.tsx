@@ -30,7 +30,7 @@ import { TaskForm, type TaskFormValues } from "@/components/task-form";
 import { Icons } from "@/components/icons";
 import { useAuth, useCollection, useDoc, useFirestore, useUser } from "@/lib/firebase";
 import { addTaskReport, updateTask } from "@/lib/firestore-tasks";
-import type { Department, OrganizationMember, User } from "@/lib/firebase/models";
+import type { Department, OrganizationMember, Site, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRole } from "@/lib/rbac";
@@ -81,6 +81,9 @@ export default function TaskDetailPage() {
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
   );
+  const { data: locations } = useCollection<Site>(
+    organizationId ? orgCollectionPath(organizationId, "sites") : null
+  );
   const { data: userProfile, loading: profileLoading } = useDoc<User>(
     user ? `users/${user.uid}` : null
   );
@@ -120,6 +123,7 @@ export default function TaskDetailPage() {
   const normalizedRole = normalizeRole(userProfile?.role);
   const isPrivileged =
     normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "mantenimiento";
+  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
 
   const scopeDepartments = useMemo(
     () =>
@@ -132,10 +136,27 @@ export default function TaskDetailPage() {
       ),
     [userProfile?.departmentId, userProfile?.departmentIds]
   );
+  const scopeLocations = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            userProfile?.locationId ?? userProfile?.siteId,
+            ...(userProfile?.locationIds ?? []),
+            ...(userProfile?.siteIds ?? []),
+          ].filter((id): id is string => Boolean(id))
+        )
+      ),
+    [userProfile?.locationId, userProfile?.locationIds, userProfile?.siteId, userProfile?.siteIds]
+  );
 
-  // Content editing: only privileged roles, or the creator while the task is open.
+  const isLocationScopedTask =
+    roleIsLocationHead && Boolean(task?.locationId) && scopeLocations.includes(task.locationId);
+
+  // Content editing: privileged roles, location head in-scope, or the creator while the task is open.
   const canEditContent =
     isPrivileged ||
+    isLocationScopedTask ||
     (!!task && task.createdBy === user?.uid && !isTaskClosed);
 
   // Closing/completing: privileged roles, the creator, or the assignee.
@@ -146,6 +167,7 @@ export default function TaskDetailPage() {
     scopeDepartments.includes(task.location);
   const canCloseTask =
     isPrivileged ||
+    isLocationScopedTask ||
     (!!task && (task.createdBy === user?.uid || task.assignedTo === user?.uid)) ||
     canCloseOpsInScope;
   const isLoading = userLoading || profileLoading || loading || usersLoading;
@@ -160,7 +182,10 @@ export default function TaskDetailPage() {
         isPrivileged ||
         task.createdBy === user.uid ||
         task.assignedTo === user.uid ||
-        (Boolean(task.location) && scopeDepartments.includes(task.location));
+        (Boolean(task.location) && scopeDepartments.includes(task.location)) ||
+        (roleIsLocationHead &&
+          Boolean(task.locationId) &&
+          scopeLocations.includes(task.locationId));
       if (!canView) {
         router.push("/tasks");
       }
@@ -175,6 +200,8 @@ export default function TaskDetailPage() {
     user,
     userLoading,
     userProfile,
+    roleIsLocationHead,
+    scopeLocations,
   ]);
 
   const defaultValues = useMemo<TaskFormValues>(() => {
@@ -196,6 +223,7 @@ export default function TaskDetailPage() {
       dueDate,
       assignedTo: isAssigneeValid ? task.assignedTo : "",
       location: task?.location ?? "",
+      locationId: task?.locationId ?? "",
       category: task?.category ?? "",
     };
   }, [task, users]);
@@ -271,6 +299,10 @@ export default function TaskDetailPage() {
       ? departments.find((dept) => dept.id === values.location.trim())?.name ||
         values.location.trim()
       : "";
+    const assignmentLocationName = values.locationId.trim()
+      ? locations?.find((location) => location.id === values.locationId.trim())?.name ||
+        values.locationId.trim()
+      : "";
 
     const updates: MaintenanceTaskInput & { assignmentEmailSource?: "client" | "server" } = {
       title: values.title.trim(),
@@ -281,6 +313,7 @@ export default function TaskDetailPage() {
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
       assignedTo: trimmedAssignedTo,
       location: values.location.trim(),
+      locationId: values.locationId.trim(),
       category: values.category.trim(),
     };
 
@@ -310,6 +343,8 @@ export default function TaskDetailPage() {
               departments,
               assignedTo: trimmedAssignedTo,
               departmentId: values.location.trim() || null,
+              departmentName: assignmentDepartmentName,
+              locationName: assignmentLocationName,
               title: values.title.trim(),
               link: `${baseUrl}/tasks/${task.id}`,
               type: "tarea",
@@ -318,7 +353,6 @@ export default function TaskDetailPage() {
               priority: values.priority,
               status: values.status,
               dueDate: values.dueDate ? new Date(values.dueDate) : null,
-              location: assignmentDepartmentName,
               category: values.category.trim(),
             });
           } catch (error) {
@@ -743,6 +777,7 @@ export default function TaskDetailPage() {
             errorMessage={errorMessage}
             users={users}
             departments={departments}
+            locations={locations}
             submitLabel="Guardar cambios"
             onSuccess={() => setIsEditDialogOpen(false)}
             disabled={!canEditContent || isTaskClosed}

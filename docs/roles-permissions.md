@@ -7,7 +7,7 @@ Referencia implementable para el control de acceso por rol y ámbito de departam
 - `organizationId`: siempre presente.
 - `departmentId`: requerido para `jefe_departamento` y `operario`.
 - `departmentIds[]`: reservado para multi-pertenencia futura.
-- `locationId` (opcional) si se usan sedes (legacy: `siteId`).
+- `locationId`: requerido para `jefe_ubicacion` (legacy: `siteId`).
 - `locationIds[]`: reservado para multi-pertenencia futura (legacy: `siteIds[]`).
 
 ## Visibilidad de incidencias/tickets
