@@ -102,6 +102,12 @@ export default function IncidentsPage() {
         ? [userProfile.departmentId]
         : [];
 
+    const scopeLocations = (userProfile.locationIds ?? []).length
+      ? userProfile.locationIds ?? []
+      : userProfile.locationId || userProfile.siteId
+        ? [userProfile.locationId ?? userProfile.siteId].filter(Boolean)
+        : [];
+
     const departmentFilters: any[] = [];
     if (scopeDepartments.length === 1) {
       const deptId = scopeDepartments[0];
@@ -119,10 +125,26 @@ export default function IncidentsPage() {
       );
     }
 
+    const locationFilters: any[] = [];
+    if (scopeLocations.length === 1) {
+      const locationId = scopeLocations[0];
+      locationFilters.push(
+        where('locationId', '==', locationId),
+        where('siteId', '==', locationId),
+      );
+    } else if (scopeLocations.length > 1) {
+      const scoped = scopeLocations.slice(0, 10);
+      locationFilters.push(
+        where('locationId', 'in', scoped),
+        where('siteId', 'in', scoped),
+      );
+    }
+
     const baseFilters = [
       where('createdBy', '==', user.uid),
       where('assignedTo', '==', user.uid),
       ...departmentFilters,
+      ...locationFilters,
     ];
 
     return [where('organizationId', '==', organizationId as string), or(...baseFilters)];

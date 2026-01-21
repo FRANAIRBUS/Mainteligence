@@ -107,6 +107,15 @@ export default function ClosedIncidentsPage() {
         )
       )
     );
+    const scopeLocations = Array.from(
+      new Set(
+        [
+          userProfile?.locationId ?? userProfile?.siteId,
+          ...(userProfile?.locationIds ?? []),
+          ...(userProfile?.siteIds ?? []),
+        ].filter((id): id is string => Boolean(id))
+      )
+    );
 
     const visibleTickets = canViewAll
       ? tickets
@@ -115,6 +124,10 @@ export default function ClosedIncidentsPage() {
           if (ticket.assignedTo === user?.uid) return true;
           if (scopeDepartments.length > 0 && ticket.departmentId) {
             return scopeDepartments.includes(ticket.departmentId);
+          }
+          const ticketLocationId = ticket.locationId ?? ticket.siteId;
+          if (scopeLocations.length > 0 && ticketLocationId) {
+            return scopeLocations.includes(ticketLocationId);
           }
           return false;
         });
@@ -144,7 +157,22 @@ export default function ClosedIncidentsPage() {
         const bDate = b.createdAt?.toMillis?.() ?? 0;
         return bDate - aDate;
       });
-  }, [canViewAll, dateFilter, departmentFilter, searchQuery, siteFilter, tickets, user, userFilter, userProfile?.departmentId, userProfile?.departmentIds]);
+  }, [
+    canViewAll,
+    dateFilter,
+    departmentFilter,
+    searchQuery,
+    siteFilter,
+    tickets,
+    user,
+    userFilter,
+    userProfile?.departmentId,
+    userProfile?.departmentIds,
+    userProfile?.locationId,
+    userProfile?.locationIds,
+    userProfile?.siteId,
+    userProfile?.siteIds,
+  ]);
 
   const handleReopen = async (ticket: Ticket) => {
     if (!firestore || !isAdmin || !user || !organizationId) return;
