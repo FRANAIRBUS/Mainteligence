@@ -98,21 +98,11 @@ export default function TasksPage() {
   }, [user, userProfile?.displayName, users]);
 
   const filteredTasks = useMemo(() => {
-    const scopeDepartments = Array.from(
-      new Set(
-        [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
-          (id): id is string => Boolean(id)
-        )
-      )
+    const scopeDepartments = [userProfile?.departmentId].filter(
+      (id): id is string => Boolean(id)
     );
-    const scopeLocations = Array.from(
-      new Set(
-        [
-          userProfile?.locationId ?? userProfile?.siteId,
-          ...(userProfile?.locationIds ?? []),
-          ...(userProfile?.siteIds ?? []),
-        ].filter((id): id is string => Boolean(id))
-      )
+    const scopeLocations = [userProfile?.locationId].filter(
+      (id): id is string => Boolean(id)
     );
 
     const visibleTasks = canViewAllTasks
@@ -120,8 +110,9 @@ export default function TasksPage() {
       : tasks.filter((task) => {
           if (task.createdBy === user?.uid) return true;
           if (task.assignedTo === user?.uid) return true;
-          if (scopeDepartments.length > 0 && task.location) {
-            return scopeDepartments.includes(task.location);
+          const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId ?? "";
+          if (scopeDepartments.length > 0 && taskDepartmentId) {
+            return scopeDepartments.includes(taskDepartmentId);
           }
           if (roleIsLocationHead && scopeLocations.length > 0 && task.locationId) {
             return scopeLocations.includes(task.locationId);
@@ -151,8 +142,9 @@ export default function TasksPage() {
         statusFilter === "todas" || normalizeTaskStatus(task.status) === statusFilter;
       const matchesPriority =
         priorityFilter === "todas" || task.priority === priorityFilter;
+      const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId ?? "";
       const matchesLocation =
-        locationFilter === "todas" || task.location === locationFilter;
+        locationFilter === "todas" || taskDepartmentId === locationFilter;
       const assignedName =
         task.assignedTo && userNameMap[task.assignedTo]
           ? userNameMap[task.assignedTo]
@@ -164,7 +156,7 @@ export default function TasksPage() {
         "no asignada".includes(searchQuery.toLowerCase());
       return matchesStatus && matchesPriority && matchesLocation && matchesQuery;
     });
-  }, [canViewAllTasks, dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile?.departmentId, userProfile?.departmentIds, userProfile?.locationId, userProfile?.locationIds, userProfile?.siteId, userProfile?.siteIds, roleIsLocationHead]);
+  }, [canViewAllTasks, dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile?.departmentId, userProfile?.locationId, roleIsLocationHead]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
