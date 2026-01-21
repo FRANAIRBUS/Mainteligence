@@ -150,9 +150,13 @@ export default function TaskDetailPage() {
     [userProfile?.locationId, userProfile?.locationIds, userProfile?.siteId, userProfile?.siteIds]
   );
 
-  // Content editing: only privileged roles, or the creator while the task is open.
+  const isLocationScopedTask =
+    roleIsLocationHead && Boolean(task?.locationId) && scopeLocations.includes(task.locationId);
+
+  // Content editing: privileged roles, location head in-scope, or the creator while the task is open.
   const canEditContent =
     isPrivileged ||
+    isLocationScopedTask ||
     (!!task && task.createdBy === user?.uid && !isTaskClosed);
 
   // Closing/completing: privileged roles, the creator, or the assignee.
@@ -163,6 +167,7 @@ export default function TaskDetailPage() {
     scopeDepartments.includes(task.location);
   const canCloseTask =
     isPrivileged ||
+    isLocationScopedTask ||
     (!!task && (task.createdBy === user?.uid || task.assignedTo === user?.uid)) ||
     canCloseOpsInScope;
   const isLoading = userLoading || profileLoading || loading || usersLoading;
