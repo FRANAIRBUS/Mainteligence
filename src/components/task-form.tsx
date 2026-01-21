@@ -21,7 +21,7 @@ const taskSchema = z.object({
   status: z.enum(["open", "in_progress", "done", "canceled"]),
   dueDate: z.string().optional().default(""),
   assignedTo: z.string().optional().default(""),
-  location: z.string().min(1, "Debe seleccionar un departamento"),
+  departmentId: z.string().min(1, "Debe seleccionar un departamento"),
   locationId: z.string().min(1, "Debe seleccionar una ubicación"),
   category: z.string().optional().default(""),
 })
@@ -225,7 +225,7 @@ export function TaskForm({
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField
             control={form.control}
-            name="location"
+            name="departmentId"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Departamento</FormLabel>
