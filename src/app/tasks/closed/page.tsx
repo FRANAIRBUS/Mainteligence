@@ -28,7 +28,7 @@ import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
-import { normalizeRole } from "@/lib/rbac";
+import { getTaskPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { orgCollectionPath } from "@/lib/organization";
 
@@ -60,11 +60,6 @@ export default function ClosedTasksPage() {
 
   const normalizedRole = normalizeRole(role ?? profile?.role);
   const isSuperAdmin = normalizedRole === "super_admin";
-  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
-  const canViewAll =
-    normalizedRole === "admin" ||
-    normalizedRole === "mantenimiento" ||
-    isSuperAdmin;
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
   const tasksConstraints = useMemo(() => {
@@ -109,27 +104,9 @@ export default function ClosedTasksPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    const scopeDepartments = [currentMember?.departmentId ?? profile?.departmentId].filter(
-      (id): id is string => Boolean(id)
+    const visibleTasks = tasks.filter((task) =>
+      getTaskPermissions(task, profile ?? null, user?.uid ?? null).canView
     );
-    const scopeLocations = [currentMember?.locationId ?? profile?.locationId].filter(
-      (id): id is string => Boolean(id)
-    );
-
-    const visibleTasks = canViewAll
-      ? tasks
-      : tasks.filter((task) => {
-          if (task.createdBy === user?.uid) return true;
-          if (task.assignedTo === user?.uid) return true;
-          const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId ?? "";
-          if (scopeDepartments.length > 0 && taskDepartmentId) {
-            return scopeDepartments.includes(taskDepartmentId);
-          }
-          if (roleIsLocationHead && scopeLocations.length > 0 && task.locationId) {
-            return scopeLocations.includes(task.locationId);
-          }
-          return false;
-        });
 
     return [...visibleTasks]
       .filter((task) => {
@@ -157,7 +134,7 @@ export default function ClosedTasksPage() {
         const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
         return bCreatedAt - aCreatedAt;
       });
-  }, [canViewAll, dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, currentMember, profile, roleIsLocationHead]);
+  }, [dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, profile]);
 
   const handleReopen = async (task: TaskWithId) => {
     if (!firestore || !auth || !user || !isAdmin) return;

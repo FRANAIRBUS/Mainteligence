@@ -1,4 +1,5 @@
 import type { Ticket, User, UserRole } from '@/lib/firebase/models';
+import type { MaintenanceTask } from '@/types/maintenance-task';
 import { normalizeTicketStatus } from '@/lib/status';
 
 export const normalizeRole = (role?: UserRole | string | null) => {
@@ -118,6 +119,12 @@ export type TicketPermission = {
   canReassign: boolean;
   canUnassignSelf: boolean;
   canViewAuditTrail: boolean;
+};
+
+export type TaskPermission = {
+  canView: boolean;
+  canEditContent: boolean;
+  canMarkTaskComplete: boolean;
 };
 
 const getTicketOrigin = (ticket: Ticket) => ticket.originDepartmentId ?? null;
@@ -325,6 +332,91 @@ export function getTicketPermissions(ticket: Ticket, user: User | null, userId: 
     canReassign,
     canUnassignSelf,
     canViewAuditTrail,
+  };
+}
+
+type TaskRoleGuards = {
+  isCreator: boolean;
+  isAssignee: boolean;
+  inDepartmentScope: boolean;
+  inLocationScope: boolean;
+  matchesOrg: boolean;
+};
+
+const buildTaskGuards = (task: MaintenanceTask, user: User | null, userId: string | null): TaskRoleGuards => {
+  const deptId = task.targetDepartmentId ?? task.originDepartmentId ?? null;
+  const inDepartmentScope = !!user?.departmentId && !!deptId && deptId === user.departmentId;
+  const inLocationScope = !!user?.locationId && !!task.locationId && task.locationId === user.locationId;
+
+  return {
+    isCreator: !!userId && task.createdBy === userId,
+    isAssignee: !!userId && task.assignedTo === userId,
+    inDepartmentScope,
+    inLocationScope,
+    matchesOrg: !!user?.organizationId && task.organizationId === user.organizationId,
+  };
+};
+
+export function getTaskPermissions(task: MaintenanceTask, user: User | null, userId: string | null): TaskPermission {
+  const role = normalizeRole(user?.role);
+
+  if (!userId || !role) {
+    return {
+      canView: false,
+      canEditContent: false,
+      canMarkTaskComplete: false,
+    };
+  }
+
+  const guards = buildTaskGuards(task, user, userId);
+  const roleIsDeptHead = role === 'jefe_departamento';
+  const roleIsLocationHead = role === 'jefe_ubicacion';
+
+  if (!guards.matchesOrg) {
+    return {
+      canView: false,
+      canEditContent: false,
+      canMarkTaskComplete: false,
+    };
+  }
+
+  const canView =
+    role === 'super_admin' ||
+    role === 'admin' ||
+    role === 'mantenimiento' ||
+    role === 'auditor' ||
+    (roleIsDeptHead && (guards.inDepartmentScope || guards.isCreator || guards.isAssignee)) ||
+    (roleIsLocationHead && (guards.inLocationScope || guards.isCreator || guards.isAssignee)) ||
+    (role === 'operario' && (guards.isCreator || guards.isAssignee || guards.inDepartmentScope));
+
+  if (!canView) {
+    return {
+      canView: false,
+      canEditContent: false,
+      canMarkTaskComplete: false,
+    };
+  }
+
+  const canEditContent =
+    role === 'super_admin' ||
+    role === 'admin' ||
+    role === 'mantenimiento' ||
+    (roleIsDeptHead && guards.inDepartmentScope) ||
+    (roleIsLocationHead && guards.inLocationScope) ||
+    (role === 'operario' && (guards.isCreator || guards.isAssignee));
+
+  const canMarkTaskComplete =
+    role === 'super_admin' ||
+    role === 'admin' ||
+    role === 'mantenimiento' ||
+    (roleIsDeptHead && guards.inDepartmentScope) ||
+    (roleIsLocationHead && guards.inLocationScope) ||
+    (role === 'operario' && guards.isAssignee);
+
+  return {
+    canView,
+    canEditContent,
+    canMarkTaskComplete,
   };
 }
 

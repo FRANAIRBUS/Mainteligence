@@ -22,7 +22,7 @@ import { useCollection } from "@/lib/firebase";
 import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, OrganizationMember } from "@/lib/firebase/models";
-import { normalizeRole } from "@/lib/rbac";
+import { getTaskPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
 import { orgCollectionPath } from "@/lib/organization";
@@ -54,11 +54,6 @@ export default function TasksPage() {
   const router = useRouter();
 
   const normalizedRole = normalizeRole(userProfile?.role);
-  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
-  const canViewAllTasks =
-    normalizedRole === "super_admin" ||
-    normalizedRole === "admin" ||
-    normalizedRole === "mantenimiento";
 
   const { data: tasks, loading } = useCollection<MaintenanceTask>(
     organizationId ? orgCollectionPath(organizationId, "tasks") : null
@@ -98,27 +93,9 @@ export default function TasksPage() {
   }, [user, userProfile?.displayName, users]);
 
   const filteredTasks = useMemo(() => {
-    const scopeDepartments = [userProfile?.departmentId].filter(
-      (id): id is string => Boolean(id)
+    const visibleTasks = tasks.filter((task) =>
+      getTaskPermissions(task, userProfile ?? null, user?.uid ?? null).canView
     );
-    const scopeLocations = [userProfile?.locationId].filter(
-      (id): id is string => Boolean(id)
-    );
-
-    const visibleTasks = canViewAllTasks
-      ? tasks
-      : tasks.filter((task) => {
-          if (task.createdBy === user?.uid) return true;
-          if (task.assignedTo === user?.uid) return true;
-          const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId ?? "";
-          if (scopeDepartments.length > 0 && taskDepartmentId) {
-            return scopeDepartments.includes(taskDepartmentId);
-          }
-          if (roleIsLocationHead && scopeLocations.length > 0 && task.locationId) {
-            return scopeLocations.includes(task.locationId);
-          }
-          return false;
-        });
 
     const openTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) !== "done");
 
@@ -156,7 +133,7 @@ export default function TasksPage() {
         "no asignada".includes(searchQuery.toLowerCase());
       return matchesStatus && matchesPriority && matchesLocation && matchesQuery;
     });
-  }, [canViewAllTasks, dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile?.departmentId, userProfile?.locationId, roleIsLocationHead]);
+  }, [dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);

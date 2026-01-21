@@ -33,7 +33,7 @@ import { addTaskReport, updateTask } from "@/lib/firestore-tasks";
 import type { Department, OrganizationMember, Site, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { useToast } from "@/hooks/use-toast";
-import { normalizeRole } from "@/lib/rbac";
+import { getTaskPermissions } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
@@ -120,42 +120,10 @@ export default function TaskDetailPage() {
   }, [task?.reports]);
 
   const isTaskClosed = normalizeTaskStatus(task?.status) === "done";
-  const normalizedRole = normalizeRole(userProfile?.role);
-  const isPrivileged =
-    normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "mantenimiento";
-  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
-
-  const scopeDepartments = useMemo(
-    () => [userProfile?.departmentId].filter((id): id is string => Boolean(id)),
-    [userProfile?.departmentId]
-  );
-  const scopeLocations = useMemo(
-    () => [userProfile?.locationId].filter((id): id is string => Boolean(id)),
-    [userProfile?.locationId]
-  );
-
   const taskDepartmentId = task?.targetDepartmentId ?? task?.originDepartmentId ?? "";
-  const isLocationScopedTask =
-    roleIsLocationHead && Boolean(task?.locationId) && scopeLocations.includes(task.locationId);
-  const isDepartmentScopedTask = Boolean(taskDepartmentId) && scopeDepartments.includes(taskDepartmentId);
-
-  // Content editing: privileged roles, location head in-scope, or the creator while the task is open.
-  const canEditContent =
-    isPrivileged ||
-    isLocationScopedTask ||
-    (!!task && task.createdBy === user?.uid && !isTaskClosed);
-
-  // Closing/completing: privileged roles, the creator, or the assignee.
-  const canCloseOpsInScope =
-    !!task &&
-    task.taskType === "ops" &&
-    Boolean(taskDepartmentId) &&
-    scopeDepartments.includes(taskDepartmentId);
-  const canCloseTask =
-    isPrivileged ||
-    isLocationScopedTask ||
-    (!!task && (task.createdBy === user?.uid || task.assignedTo === user?.uid)) ||
-    canCloseOpsInScope;
+  const taskPermissions = task && userProfile ? getTaskPermissions(task, userProfile, user?.uid ?? null) : null;
+  const canEditContent = !!taskPermissions?.canEditContent && !isTaskClosed;
+  const canCloseTask = !!taskPermissions?.canMarkTaskComplete && !isTaskClosed;
   const isLoading = userLoading || profileLoading || loading || usersLoading;
 
   useEffect(() => {
@@ -164,21 +132,12 @@ export default function TaskDetailPage() {
     }
 
     if (!loading && !userLoading && !profileLoading && task && user && userProfile) {
-      const canView =
-        isPrivileged ||
-        task.createdBy === user.uid ||
-        task.assignedTo === user.uid ||
-        isDepartmentScopedTask ||
-        (roleIsLocationHead &&
-          Boolean(task.locationId) &&
-          scopeLocations.includes(task.locationId));
+      const canView = getTaskPermissions(task, userProfile, user.uid).canView;
       if (!canView) {
         router.push("/tasks");
       }
     }
   }, [
-    isPrivileged,
-    scopeDepartments,
     loading,
     profileLoading,
     router,
@@ -186,8 +145,6 @@ export default function TaskDetailPage() {
     user,
     userLoading,
     userProfile,
-    roleIsLocationHead,
-    scopeLocations,
   ]);
 
   const defaultValues = useMemo<TaskFormValues>(() => {
