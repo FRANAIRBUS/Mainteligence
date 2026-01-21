@@ -10,7 +10,7 @@ import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department, OrganizationMember } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
-import { getTicketPermissions } from '@/lib/rbac';
+import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import { sendAssignmentEmail } from '@/lib/assignment-email';
 import { orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
@@ -216,6 +216,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
   }
 
   const permissions = getTicketPermissions(ticket, userProfile ?? null, currentUser?.uid ?? null);
+  const normalizedRole = normalizeRole(userProfile?.role);
   const canAssignAnyUser = permissions.canAssignAnyUser;
   const canAssignToSelf = permissions.canAssignToSelf;
   const canEditAssignment = canAssignAnyUser || canAssignToSelf;
@@ -227,9 +228,18 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     ticket.assignedTo && users ? users.find((userOption) => userOption.id === ticket.assignedTo) : null;
 
   const selectableUsers = (() => {
-    if (canAssignAnyUser) return users;
-    if (canAssignToSelf && currentUser) return users.filter((userOption) => userOption.id === currentUser.uid);
-    return [];
+    if (!users) return [];
+    if (canAssignToSelf && currentUser) {
+      return users.filter((userOption) => userOption.id === currentUser.uid);
+    }
+    if (!canAssignAnyUser) return [];
+    if (normalizedRole === 'jefe_departamento' && userProfile?.departmentId) {
+      return users.filter((userOption) => userOption.departmentId === userProfile.departmentId);
+    }
+    if (normalizedRole === 'jefe_ubicacion' && userProfile?.locationId) {
+      return users.filter((userOption) => userOption.locationId === userProfile.locationId);
+    }
+    return users;
   })();
 
   const assignmentOptions =
