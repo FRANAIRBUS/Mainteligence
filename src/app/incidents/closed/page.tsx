@@ -17,6 +17,7 @@ import { AppShell } from "@/components/app-shell";
 import {
   useCollection,
   useCollectionQuery,
+  useDoc,
   useFirestore,
   useUser,
 } from "@/lib/firebase";
@@ -54,13 +55,20 @@ export default function ClosedIncidentsPage() {
   const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const isSuperAdmin = normalizedRole === "super_admin";
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
+  );
   const rbacUser: RBACUser | null =
     normalizedRole && organizationId
       ? {
           role: normalizedRole,
           organizationId,
-          departmentId: userProfile?.departmentId ?? undefined,
-          locationId: userProfile?.locationId ?? userProfile?.siteId ?? undefined,
+          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
+          locationId:
+            currentMember?.locationId ??
+            userProfile?.locationId ??
+            userProfile?.siteId ??
+            undefined,
         }
       : null;
 
@@ -80,8 +88,13 @@ export default function ClosedIncidentsPage() {
   const { data: sites } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, "sites") : null
   );
+  const canReadMembers =
+    normalizedRole &&
+    ["super_admin", "admin", "mantenimiento", "jefe_departamento", "jefe_ubicacion", "auditor"].includes(
+      normalizedRole
+    );
   const { data: users } = useCollection<OrganizationMember>(
-    organizationId ? orgCollectionPath(organizationId, "members") : null
+    canReadMembers && organizationId ? orgCollectionPath(organizationId, "members") : null
   );
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -305,10 +318,14 @@ export default function ClosedIncidentsPage() {
           )}
           {!isLoading &&
             filteredTickets.map((ticket) => {
-              const ticketDepartmentId = ticket.targetDepartmentId ?? ticket.originDepartmentId ?? null;
+              const ticketDepartmentId =
+                ticket.targetDepartmentId ??
+                ticket.originDepartmentId ??
+                ticket.departmentId ??
+                null;
               const departmentLabel =
                 (ticketDepartmentId && departments.find((dept) => dept.id === ticketDepartmentId)?.name) || "N/A";
-              const ticketLocationId = ticket.locationId ?? null;
+              const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
               const siteLabel = sites.find((site) => site.id === ticketLocationId)?.name || "N/A";
               const createdAtLabel = ticket.createdAt?.toDate
                 ? format(ticket.createdAt.toDate(), "dd/MM/yyyy")

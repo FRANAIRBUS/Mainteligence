@@ -2,7 +2,7 @@
 
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
+import { useUser, useCollection, useCollectionQuery, useDoc } from '@/lib/firebase';
 import type { Ticket, Site, Department, OrganizationMember } from '@/lib/firebase/models';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
@@ -36,7 +36,7 @@ import { where } from 'firebase/firestore';
 import { getTicketPermissions, normalizeRole, type RBACUser } from '@/lib/rbac';
 import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 import Link from 'next/link';
-import { orgCollectionPath } from '@/lib/organization';
+import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 import { useToast } from '@/hooks/use-toast';
 
 const incidentPriorityOrder: Record<Ticket['priority'], number> = {
@@ -80,13 +80,20 @@ export default function IncidentsPage() {
 
   const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const isMantenimiento = normalizedRole === 'super_admin' || normalizedRole === 'admin' || normalizedRole === 'mantenimiento';
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, 'members', user.uid) : null
+  );
   const rbacUser: RBACUser | null =
     normalizedRole && organizationId
       ? {
           role: normalizedRole,
           organizationId,
-          departmentId: userProfile?.departmentId ?? undefined,
-          locationId: userProfile?.locationId ?? userProfile?.siteId ?? undefined,
+          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
+          locationId:
+            currentMember?.locationId ??
+            userProfile?.locationId ??
+            userProfile?.siteId ??
+            undefined,
         }
       : null;
 
@@ -305,13 +312,17 @@ export default function IncidentsPage() {
               )}
               {!tableDataIsLoading &&
                 filteredTickets.map((ticket) => {
-                  const permissions = getTicketPermissions(ticket, userProfile ?? null, user?.uid ?? null);
+                  const permissions = getTicketPermissions(ticket, rbacUser, user?.uid ?? null);
                   const createdAtLabel = ticket.createdAt?.toDate
                     ? ticket.createdAt.toDate().toLocaleDateString()
                     : 'N/A';
-                  const ticketLocationId = ticket.locationId ?? null;
+                  const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
                   const siteLabel = (ticketLocationId && sitesMap[ticketLocationId]) || 'N/A';
-                  const departmentId = ticket.targetDepartmentId ?? ticket.originDepartmentId ?? null;
+                  const departmentId =
+                    ticket.targetDepartmentId ??
+                    ticket.originDepartmentId ??
+                    ticket.departmentId ??
+                    null;
                   const departmentLabel = (departmentId && departmentsMap[departmentId]) || 'N/A';
                   return (
                     <div

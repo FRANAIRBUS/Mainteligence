@@ -17,10 +17,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
 import { AppShell } from "@/components/app-shell";
-import { useCollection, useUser } from "@/lib/firebase";
-import type { Ticket } from "@/lib/firebase/models";
+import { useCollection, useDoc, useUser } from "@/lib/firebase";
+import type { OrganizationMember, Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
-import { orgCollectionPath } from "@/lib/organization";
+import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { getTaskPermissions, getTicketPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
 
 const priorityLabel: Record<string, string> = {
@@ -71,6 +71,9 @@ export default function Home() {
   const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
     organizationId ? orgCollectionPath(organizationId, "tickets") : null
   );
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
+  );
 
   const organizationLabel =
     activeMembership?.organizationName ??
@@ -84,8 +87,12 @@ export default function Home() {
       ? {
           role: normalizedRole,
           organizationId,
-          departmentId: userProfile?.departmentId ?? undefined,
-          locationId: userProfile?.locationId ?? userProfile?.siteId ?? undefined,
+          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
+          locationId:
+            currentMember?.locationId ??
+            userProfile?.locationId ??
+            userProfile?.siteId ??
+            undefined,
         }
       : null;
 

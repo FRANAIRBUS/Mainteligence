@@ -410,6 +410,7 @@ service cloud.firestore {
           || isDepartmentHeadInOrg(orgId, request.auth.uid)
           || isLocationHeadInOrg(orgId, request.auth.uid)
           || isAuditorInOrg(orgId, request.auth.uid)
+          || (request.auth.uid == memberUid && isActiveMember(orgId, request.auth.uid))
         );
         allow create, update, delete: if false;
       }

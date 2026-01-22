@@ -20,6 +20,7 @@ import {
   useAuth,
   useCollection,
   useCollectionQuery,
+  useDoc,
   useFirestore,
   useUser,
 } from "@/lib/firebase";
@@ -30,7 +31,7 @@ import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
 import { getTaskPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
-import { orgCollectionPath } from "@/lib/organization";
+import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
 const statusCopy: Record<string, string> = {
   open: taskStatusLabel("open"),
@@ -75,21 +76,38 @@ export default function ClosedTasksPage() {
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
   );
+  const canReadMembers =
+    normalizedRole &&
+    ["super_admin", "admin", "mantenimiento", "jefe_departamento", "jefe_ubicacion", "auditor"].includes(
+      normalizedRole
+    );
   const { data: users } = useCollection<OrganizationMember>(
-    organizationId ? orgCollectionPath(organizationId, "members") : null
+    canReadMembers && organizationId ? orgCollectionPath(organizationId, "members") : null
   );
 
-  const currentMember = useMemo(() => {
+  const currentMemberFromList = useMemo(() => {
     if (!user) return null;
     return (users ?? []).find((m) => m.id === user.uid) ?? null;
   }, [users, user]);
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
+  );
   const rbacUser: RBACUser | null =
     normalizedRole && organizationId
       ? {
           role: normalizedRole,
           organizationId,
-          departmentId: currentMember?.departmentId ?? profile?.departmentId ?? undefined,
-          locationId: currentMember?.locationId ?? profile?.locationId ?? profile?.siteId ?? undefined,
+          departmentId:
+            currentMember?.departmentId ??
+            currentMemberFromList?.departmentId ??
+            profile?.departmentId ??
+            undefined,
+          locationId:
+            currentMember?.locationId ??
+            currentMemberFromList?.locationId ??
+            profile?.locationId ??
+            profile?.siteId ??
+            undefined,
         }
       : null;
 
