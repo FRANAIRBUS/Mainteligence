@@ -187,18 +187,33 @@ service cloud.firestore {
       return ('assignedTo' in data) && data.assignedTo == uid;
     }
 
-    function inMemberDepartment(member, data) {
+    function memberHasDepartment(member, deptId) {
       return member != null
+        && deptId != null
         && (
-          docOriginDepartmentId(data) == member.departmentId
-          || docTargetDepartmentId(data) == member.departmentId
+          ('departmentId' in member && member.departmentId == deptId)
+          || ('departmentIds' in member && member.departmentIds.hasAny([deptId]))
         );
     }
 
-    function inMemberLocation(member, data) {
+    function memberHasLocation(member, locationId) {
       return member != null
-        && docLocationId(data) != null
-        && docLocationId(data) == member.locationId;
+        && locationId != null
+        && (
+          ('locationId' in member && member.locationId == locationId)
+          || ('locationIds' in member && member.locationIds.hasAny([locationId]))
+          || ('siteId' in member && member.siteId == locationId)
+          || ('siteIds' in member && member.siteIds.hasAny([locationId]))
+        );
+    }
+
+    function inMemberDepartment(member, data) {
+      return memberHasDepartment(member, docOriginDepartmentId(data))
+        || memberHasDepartment(member, docTargetDepartmentId(data));
+    }
+
+    function inMemberLocation(member, data) {
+      return memberHasLocation(member, docLocationId(data));
     }
 
     function canReadDoc(orgId, uid, data) {
