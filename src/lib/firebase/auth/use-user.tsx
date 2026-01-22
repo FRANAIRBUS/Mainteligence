@@ -95,6 +95,10 @@ function pickDefaultOrgId(opts: {
 
   // 4) Fallback: first active membership
   if (active.length > 0) return active[0].organizationId;
+
+  // 5) Fallback to profile org even if membership reads are unavailable.
+  if (profileOrgId) return profileOrgId;
+
   return null;
 }
 export function UserProvider({ children }: { children: React.ReactNode }) {
@@ -115,6 +119,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [profileReady, setProfileReady] = useState(false);
   const [membershipsReady, setMembershipsReady] = useState(false);
   const bootstrapAttemptedRef = useRef(false);
+  const lastOrgSyncRef = useRef<string | null>(null);
 
   const refreshProfile = async () => {
     if (!user || !firestore) return;
@@ -243,12 +248,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
     setActiveMembership(nextMembership);
 
-    const derivedRole =
-      nextMembership?.status === 'active' ? normalizeRole(nextMembership.role ?? 'operario') : null;
+    if (typeof window !== 'undefined' && nextOrgId && preferredOrgId !== nextOrgId) {
+      window.localStorage.setItem('preferredOrganizationId', nextOrgId);
+    }
+
+    const derivedRole = nextMembership?.status === 'active'
+      ? normalizeRole(nextMembership.role ?? profile?.role ?? 'operario')
+      : normalizeRole(profile?.role ?? null);
     setRole(derivedRole ?? null);
 
+    if (app && nextOrgId && lastOrgSyncRef.current !== nextOrgId) {
+      lastOrgSyncRef.current = nextOrgId;
+      try {
+        const fn = httpsCallable(getFunctions(app, 'us-central1'), 'setActiveOrganization');
+        void fn({ organizationId: nextOrgId });
+      } catch {
+        // Non-blocking: local selection already set.
+      }
+    }
+
     setLoading(false);
-  }, [user, profile, memberships, profileReady, membershipsReady]);
+  }, [app, user, profile, memberships, profileReady, membershipsReady]);
 
   const setActiveOrganizationId = async (orgId: string) => {
     const next = String(orgId ?? '').trim();

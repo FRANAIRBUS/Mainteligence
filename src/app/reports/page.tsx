@@ -85,11 +85,12 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { isFeatureEnabled } from '@/lib/entitlements';
-import { orgCollectionPath } from '@/lib/organization';
+import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus } from '@/lib/status';
+import { buildRbacUser, getTaskPermissions, getTicketPermissions, normalizeRole } from '@/lib/rbac';
 
 export default function ReportsPage() {
-  const { user, loading, organizationId } = useUser();
+  const { user, profile: userProfile, role, loading, organizationId } = useUser();
   const router = useRouter();
   const firestore = useFirestore();
 
@@ -108,6 +109,22 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!loading && !user) router.push('/login');
   }, [user, loading, router]);
+
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, 'members', user.uid) : null
+  );
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
+  const canReadMembers =
+    normalizedRole &&
+    ['super_admin', 'admin', 'mantenimiento', 'jefe_departamento', 'jefe_ubicacion', 'auditor'].includes(
+      normalizedRole
+    );
 
   const { data: organization } = useDoc<Organization>(
     organizationId ? `organizations/${organizationId}` : null
@@ -155,7 +172,7 @@ export default function ReportsPage() {
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );
   const { data: members = [], loading: membersLoading } = useCollection<OrganizationMember>(
-    organizationId ? orgCollectionPath(organizationId, 'members') : null
+    canReadMembers && organizationId ? orgCollectionPath(organizationId, 'members') : null
   );
 
   if (loading || !user) {
@@ -165,6 +182,13 @@ export default function ReportsPage() {
       </div>
     );
   }
+
+  const visibleTickets = rbacUser
+    ? tickets.filter((ticket) => getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView)
+    : tickets;
+  const visibleTasks = rbacUser
+    ? tasks.filter((task) => getTaskPermissions(task, rbacUser, user?.uid ?? null).canView)
+    : tasks;
 
   const siteNameById = useMemo(() => {
     return sites.reduce(
@@ -197,12 +221,8 @@ export default function ReportsPage() {
   const locationOptions = useMemo(() => {
     const locationSet = new Set<string>();
     sites.forEach((site) => locationSet.add(site.name));
-    tasks.forEach((task) => {
-      const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId;
-      if (taskDepartmentId) locationSet.add(taskDepartmentId);
-    });
     return Array.from(locationSet).sort((a, b) => a.localeCompare(b));
-  }, [sites, tasks]);
+  }, [sites]);
 
   const filters: MetricsFilters = {
     startDate: startDate ? new Date(`${startDate}T00:00:00`) : null,
@@ -212,11 +232,14 @@ export default function ReportsPage() {
   };
 
   const filteredTickets = useMemo(
-    () => filterTickets(tickets, filters, siteNameById),
-    [tickets, filters, siteNameById]
+    () => filterTickets(visibleTickets, filters, siteNameById),
+    [visibleTickets, filters, siteNameById]
   );
 
-  const filteredTasks = useMemo(() => filterTasks(tasks, filters), [tasks, filters]);
+  const filteredTasks = useMemo(
+    () => filterTasks(visibleTasks, filters, siteNameById),
+    [visibleTasks, filters, siteNameById]
+  );
 
   const metrics = useMemo(
     () => calculateReportMetrics(filteredTickets, filteredTasks),
@@ -337,8 +360,8 @@ export default function ReportsPage() {
   const exportRows = useMemo(
     () =>
       buildReportExportRows({
-        tickets,
-        tasks,
+        tickets: visibleTickets,
+        tasks: visibleTasks,
         usersById,
         departmentsById,
         sitesById,
@@ -351,8 +374,8 @@ export default function ReportsPage() {
         sortOrder: exportSortOrder,
       }),
     [
-      tickets,
-      tasks,
+      visibleTickets,
+      visibleTasks,
       usersById,
       departmentsById,
       sitesById,

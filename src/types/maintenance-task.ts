@@ -16,8 +16,10 @@ export interface MaintenanceTask {
   dueDate: Timestamp | null;
   assignedTo?: string | null;
   locationId?: string | null;
+  siteId?: string | null;
   originDepartmentId: string;
   targetDepartmentId: string;
+  departmentId?: string | null;
   category?: string;
   createdBy: string;
   createdAt?: Timestamp;
