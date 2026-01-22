@@ -33,7 +33,7 @@ import { addTaskReport, updateTask } from "@/lib/firestore-tasks";
 import type { Department, OrganizationMember, Site, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { useToast } from "@/hooks/use-toast";
-import { getTaskPermissions } from "@/lib/rbac";
+import { buildRbacUser, getTaskPermissions } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
@@ -74,7 +74,7 @@ export default function TaskDetailPage() {
   const router = useRouter();
   const params = useParams();
   const taskId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const { user, loading: userLoading, organizationId } = useUser();
+  const { user, loading: userLoading, organizationId, role } = useUser();
   const { data: users, loading: usersLoading } = useCollection<OrganizationMember>(
     organizationId ? orgCollectionPath(organizationId, "members") : null
   );
@@ -86,6 +86,9 @@ export default function TaskDetailPage() {
   );
   const { data: userProfile, loading: profileLoading } = useDoc<User>(
     user ? `users/${user.uid}` : null
+  );
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
   );
   const { data: task, loading } = useDoc<MaintenanceTask>(
     taskId && organizationId ? orgDocPath(organizationId, "tasks", taskId) : null
@@ -120,8 +123,15 @@ export default function TaskDetailPage() {
   }, [task?.reports]);
 
   const isTaskClosed = normalizeTaskStatus(task?.status) === "done";
-  const taskDepartmentId = task?.targetDepartmentId ?? task?.originDepartmentId ?? "";
-  const taskPermissions = task && userProfile ? getTaskPermissions(task, userProfile, user?.uid ?? null) : null;
+  const taskDepartmentId =
+    task?.targetDepartmentId ?? task?.originDepartmentId ?? task?.departmentId ?? "";
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
+  const taskPermissions = task && rbacUser ? getTaskPermissions(task, rbacUser, user?.uid ?? null) : null;
   const canEditContent = !!taskPermissions?.canEditContent && !isTaskClosed;
   const canCloseTask = !!taskPermissions?.canMarkTaskComplete && !isTaskClosed;
   const isLoading = userLoading || profileLoading || loading || usersLoading;
@@ -131,8 +141,8 @@ export default function TaskDetailPage() {
       router.push("/login");
     }
 
-    if (!loading && !userLoading && !profileLoading && task && user && userProfile) {
-      const canView = getTaskPermissions(task, userProfile, user.uid).canView;
+    if (!loading && !userLoading && !profileLoading && task && user && rbacUser) {
+      const canView = getTaskPermissions(task, rbacUser, user.uid).canView;
       if (!canView) {
         router.push("/tasks");
       }
@@ -144,7 +154,7 @@ export default function TaskDetailPage() {
     task,
     user,
     userLoading,
-    userProfile,
+    rbacUser,
   ]);
 
   const defaultValues = useMemo<TaskFormValues>(() => {
@@ -166,7 +176,7 @@ export default function TaskDetailPage() {
       dueDate,
       assignedTo: isAssigneeValid ? task.assignedTo ?? "" : "",
       departmentId: taskDepartmentId,
-      locationId: task?.locationId ?? "",
+      locationId: task?.locationId ?? task?.siteId ?? "",
       category: task?.category ?? "",
     };
   }, [task, taskDepartmentId, users]);

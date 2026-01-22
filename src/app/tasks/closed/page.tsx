@@ -20,6 +20,7 @@ import {
   useAuth,
   useCollection,
   useCollectionQuery,
+  useDoc,
   useFirestore,
   useUser,
 } from "@/lib/firebase";
@@ -28,9 +29,9 @@ import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
-import { getTaskPermissions, normalizeRole } from "@/lib/rbac";
+import { buildRbacUser, getTaskPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
-import { orgCollectionPath } from "@/lib/organization";
+import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
 const statusCopy: Record<string, string> = {
   open: taskStatusLabel("open"),
@@ -75,14 +76,28 @@ export default function ClosedTasksPage() {
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
   );
+  const canReadMembers =
+    normalizedRole &&
+    ["super_admin", "admin", "mantenimiento", "jefe_departamento", "jefe_ubicacion", "auditor"].includes(
+      normalizedRole
+    );
   const { data: users } = useCollection<OrganizationMember>(
-    organizationId ? orgCollectionPath(organizationId, "members") : null
+    canReadMembers && organizationId ? orgCollectionPath(organizationId, "members") : null
   );
 
-  const currentMember = useMemo(() => {
+  const currentMemberFromList = useMemo(() => {
     if (!user) return null;
     return (users ?? []).find((m) => m.id === user.uid) ?? null;
   }, [users, user]);
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
+  );
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember ?? currentMemberFromList,
+    profile: profile ?? null,
+  });
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("todas");
   const [departmentFilter, setDepartmentFilter] = useState("todas");
@@ -104,9 +119,9 @@ export default function ClosedTasksPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    const visibleTasks = tasks.filter((task) =>
-      getTaskPermissions(task, profile ?? null, user?.uid ?? null).canView
-    );
+    const visibleTasks = rbacUser
+      ? tasks.filter((task) => getTaskPermissions(task, rbacUser, user?.uid ?? null).canView)
+      : tasks;
 
     return [...visibleTasks]
       .filter((task) => {
@@ -119,7 +134,8 @@ export default function ClosedTasksPage() {
       .filter(
         (task) =>
           departmentFilter === "todas" ||
-          (task.targetDepartmentId ?? task.originDepartmentId) === departmentFilter
+          (task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId) ===
+            departmentFilter
       )
       .filter((task) => {
         if (userFilter === "todas") return true;
@@ -134,7 +150,7 @@ export default function ClosedTasksPage() {
         const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
         return bCreatedAt - aCreatedAt;
       });
-  }, [dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, profile]);
+  }, [dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, rbacUser]);
 
   const handleReopen = async (task: TaskWithId) => {
     if (!firestore || !auth || !user || !isAdmin) return;
@@ -172,8 +188,8 @@ export default function ClosedTasksPage() {
         priority: task.priority,
         dueDate: task.dueDate ?? null,
         assignedTo: task.assignedTo ?? "",
-        originDepartmentId: task.originDepartmentId,
-        targetDepartmentId: task.targetDepartmentId,
+        originDepartmentId: task.originDepartmentId ?? task.departmentId,
+        targetDepartmentId: task.targetDepartmentId ?? task.departmentId,
         locationId: task.locationId ?? null,
         category: task.category ?? "",
         reopened: false,
@@ -260,7 +276,9 @@ export default function ClosedTasksPage() {
             filteredTasks.map((task) => {
               const departmentLabel =
                 departments.find(
-                  (dept) => dept.id === (task.targetDepartmentId ?? task.originDepartmentId ?? "")
+                  (dept) =>
+                    dept.id ===
+                    (task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? "")
                 )?.name || "Sin departamento";
               const createdAtLabel = task.createdAt?.toDate
                 ? format(task.createdAt.toDate(), "dd/MM/yyyy", { locale: es })
