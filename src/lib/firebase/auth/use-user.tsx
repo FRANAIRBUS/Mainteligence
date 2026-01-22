@@ -115,6 +115,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [profileReady, setProfileReady] = useState(false);
   const [membershipsReady, setMembershipsReady] = useState(false);
   const bootstrapAttemptedRef = useRef(false);
+  const lastOrgSyncRef = useRef<string | null>(null);
 
   const refreshProfile = async () => {
     if (!user || !firestore) return;
@@ -251,8 +252,18 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       nextMembership?.status === 'active' ? normalizeRole(nextMembership.role ?? 'operario') : null;
     setRole(derivedRole ?? null);
 
+    if (app && nextOrgId && lastOrgSyncRef.current !== nextOrgId) {
+      lastOrgSyncRef.current = nextOrgId;
+      try {
+        const fn = httpsCallable(getFunctions(app, 'us-central1'), 'setActiveOrganization');
+        void fn({ organizationId: nextOrgId });
+      } catch {
+        // Non-blocking: local selection already set.
+      }
+    }
+
     setLoading(false);
-  }, [user, profile, memberships, profileReady, membershipsReady]);
+  }, [app, user, profile, memberships, profileReady, membershipsReady]);
 
   const setActiveOrganizationId = async (orgId: string) => {
     const next = String(orgId ?? '').trim();
