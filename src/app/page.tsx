@@ -17,11 +17,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
 import { AppShell } from "@/components/app-shell";
-import { useCollection, useUser } from "@/lib/firebase";
-import type { Ticket } from "@/lib/firebase/models";
+import { useCollection, useDoc, useUser } from "@/lib/firebase";
+import type { OrganizationMember, Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
-import { orgCollectionPath } from "@/lib/organization";
-import { getTaskPermissions, getTicketPermissions } from "@/lib/rbac";
+import { orgCollectionPath, orgDocPath } from "@/lib/organization";
+import { buildRbacUser, getTaskPermissions, getTicketPermissions } from "@/lib/rbac";
 
 const priorityLabel: Record<string, string> = {
   alta: "Alta",
@@ -46,7 +46,15 @@ const incidentPriorityOrder: Record<Ticket["priority"], number> = {
 };
 
 export default function Home() {
-  const { user, profile: userProfile, activeMembership, organizationId, isRoot, loading: userLoading } = useUser();
+  const {
+    user,
+    profile: userProfile,
+    activeMembership,
+    organizationId,
+    role,
+    isRoot,
+    loading: userLoading,
+  } = useUser();
   const router = useRouter();
 
   useEffect(() => {
@@ -63,6 +71,9 @@ export default function Home() {
   const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
     organizationId ? orgCollectionPath(organizationId, "tickets") : null
   );
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
+  );
 
   const organizationLabel =
     activeMembership?.organizationName ??
@@ -70,11 +81,18 @@ export default function Home() {
     organizationId ??
     "Organización";
 
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
+
   const visibleTasks = tasks.filter((task) =>
-    getTaskPermissions(task, userProfile, user?.uid ?? null).canView
+    getTaskPermissions(task, rbacUser, user?.uid ?? null).canView
   );
   const visibleTickets = tickets.filter((ticket) =>
-    getTicketPermissions(ticket, userProfile, user?.uid ?? null).canView
+    getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView
   );
 
   const pendingTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) === "open");
