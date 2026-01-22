@@ -10,7 +10,7 @@ import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department, OrganizationMember } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
-import { getTicketPermissions, normalizeRole, type RBACUser } from '@/lib/rbac';
+import { buildRbacUser, getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import { sendAssignmentEmail } from '@/lib/assignment-email';
 import { orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
@@ -221,19 +221,12 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
   }
 
   const normalizedRole = normalizeRole(role ?? userProfile?.role);
-  const rbacUser: RBACUser | null =
-    normalizedRole && organizationId
-      ? {
-          role: normalizedRole,
-          organizationId,
-          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
-          locationId:
-            currentMember?.locationId ??
-            userProfile?.locationId ??
-            userProfile?.siteId ??
-            undefined,
-        }
-      : null;
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
   const permissions = getTicketPermissions(ticket, rbacUser, currentUser?.uid ?? null);
   const canAssignAnyUser = permissions.canAssignAnyUser;
   const canAssignToSelf = permissions.canAssignToSelf;

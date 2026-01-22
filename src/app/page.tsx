@@ -21,7 +21,7 @@ import { useCollection, useDoc, useUser } from "@/lib/firebase";
 import type { OrganizationMember, Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
-import { getTaskPermissions, getTicketPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
+import { buildRbacUser, getTaskPermissions, getTicketPermissions } from "@/lib/rbac";
 
 const priorityLabel: Record<string, string> = {
   alta: "Alta",
@@ -81,20 +81,12 @@ export default function Home() {
     organizationId ??
     "Organización";
 
-  const normalizedRole = normalizeRole(role ?? userProfile?.role);
-  const rbacUser: RBACUser | null =
-    normalizedRole && organizationId
-      ? {
-          role: normalizedRole,
-          organizationId,
-          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
-          locationId:
-            currentMember?.locationId ??
-            userProfile?.locationId ??
-            userProfile?.siteId ??
-            undefined,
-        }
-      : null;
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
 
   const visibleTasks = tasks.filter((task) =>
     getTaskPermissions(task, rbacUser, user?.uid ?? null).canView

@@ -22,7 +22,7 @@ import { useCollection, useDoc } from "@/lib/firebase";
 import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, OrganizationMember } from "@/lib/firebase/models";
-import { getTaskPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
+import { buildRbacUser, getTaskPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
@@ -57,19 +57,12 @@ export default function TasksPage() {
   const { data: currentMember } = useDoc<OrganizationMember>(
     user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
   );
-  const rbacUser: RBACUser | null =
-    normalizedRole && organizationId
-      ? {
-          role: normalizedRole,
-          organizationId,
-          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
-          locationId:
-            currentMember?.locationId ??
-            userProfile?.locationId ??
-            userProfile?.siteId ??
-            undefined,
-        }
-      : null;
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
 
   const { data: tasks, loading } = useCollection<MaintenanceTask>(
     organizationId ? orgCollectionPath(organizationId, "tasks") : null

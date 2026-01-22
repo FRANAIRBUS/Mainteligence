@@ -34,7 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { format } from "date-fns";
-import { getTicketPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
+import { buildRbacUser, getTicketPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTicketStatus, ticketStatusLabel } from "@/lib/status";
 
 const statusLabels: Record<string, string> = {
@@ -58,19 +58,12 @@ export default function ClosedIncidentsPage() {
   const { data: currentMember } = useDoc<OrganizationMember>(
     user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
   );
-  const rbacUser: RBACUser | null =
-    normalizedRole && organizationId
-      ? {
-          role: normalizedRole,
-          organizationId,
-          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
-          locationId:
-            currentMember?.locationId ??
-            userProfile?.locationId ??
-            userProfile?.siteId ??
-            undefined,
-        }
-      : null;
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
 
   const ticketsConstraints = useMemo(() => {
     if (userLoading || !user) return null;

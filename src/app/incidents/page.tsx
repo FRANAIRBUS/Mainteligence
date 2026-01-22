@@ -33,7 +33,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { where } from 'firebase/firestore';
-import { getTicketPermissions, normalizeRole, type RBACUser } from '@/lib/rbac';
+import { buildRbacUser, getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 import Link from 'next/link';
 import { orgCollectionPath, orgDocPath } from '@/lib/organization';
@@ -83,19 +83,12 @@ export default function IncidentsPage() {
   const { data: currentMember } = useDoc<OrganizationMember>(
     user && organizationId ? orgDocPath(organizationId, 'members', user.uid) : null
   );
-  const rbacUser: RBACUser | null =
-    normalizedRole && organizationId
-      ? {
-          role: normalizedRole,
-          organizationId,
-          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
-          locationId:
-            currentMember?.locationId ??
-            userProfile?.locationId ??
-            userProfile?.siteId ??
-            undefined,
-        }
-      : null;
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
 
   // Phase 3: Construct the tickets query only when user and userProfile are ready.
   const ticketsConstraints = useMemo(() => {

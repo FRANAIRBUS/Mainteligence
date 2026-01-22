@@ -33,7 +33,7 @@ import { addTaskReport, updateTask } from "@/lib/firestore-tasks";
 import type { Department, OrganizationMember, Site, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { useToast } from "@/hooks/use-toast";
-import { getTaskPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
+import { buildRbacUser, getTaskPermissions } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
@@ -125,20 +125,12 @@ export default function TaskDetailPage() {
   const isTaskClosed = normalizeTaskStatus(task?.status) === "done";
   const taskDepartmentId =
     task?.targetDepartmentId ?? task?.originDepartmentId ?? task?.departmentId ?? "";
-  const normalizedRole = normalizeRole(role ?? userProfile?.role);
-  const rbacUser: RBACUser | null =
-    normalizedRole && organizationId
-      ? {
-          role: normalizedRole,
-          organizationId,
-          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
-          locationId:
-            currentMember?.locationId ??
-            userProfile?.locationId ??
-            userProfile?.siteId ??
-            undefined,
-        }
-      : null;
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
   const taskPermissions = task && rbacUser ? getTaskPermissions(task, rbacUser, user?.uid ?? null) : null;
   const canEditContent = !!taskPermissions?.canEditContent && !isTaskClosed;
   const canCloseTask = !!taskPermissions?.canMarkTaskComplete && !isTaskClosed;

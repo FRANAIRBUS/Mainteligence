@@ -1,4 +1,4 @@
-import type { Ticket, User, UserRole } from '@/lib/firebase/models';
+import type { OrganizationMember, Ticket, User, UserRole } from '@/lib/firebase/models';
 import type { MaintenanceTask } from '@/types/maintenance-task';
 import { normalizeTicketStatus } from '@/lib/status';
 
@@ -128,6 +128,30 @@ export type TaskPermission = {
 };
 
 export type RBACUser = Pick<User, 'role' | 'organizationId' | 'departmentId' | 'locationId'>;
+
+type BuildRbacUserParams = {
+  role?: UserRole | string | null;
+  organizationId?: string | null;
+  member?: OrganizationMember | null;
+  profile?: User | null;
+};
+
+export const buildRbacUser = ({
+  role,
+  organizationId,
+  member,
+  profile,
+}: BuildRbacUserParams): RBACUser | null => {
+  const normalizedRole = normalizeRole(role ?? profile?.role);
+  if (!normalizedRole || !organizationId) return null;
+
+  return {
+    role: normalizedRole,
+    organizationId,
+    departmentId: member?.departmentId ?? profile?.departmentId ?? undefined,
+    locationId: member?.locationId ?? profile?.locationId ?? profile?.siteId ?? undefined,
+  };
+};
 
 const getTicketOrigin = (ticket: Ticket) =>
   ticket.originDepartmentId ?? ticket.departmentId ?? null;

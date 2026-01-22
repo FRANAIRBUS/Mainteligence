@@ -29,7 +29,7 @@ import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
-import { getTaskPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
+import { buildRbacUser, getTaskPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
@@ -92,24 +92,12 @@ export default function ClosedTasksPage() {
   const { data: currentMember } = useDoc<OrganizationMember>(
     user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
   );
-  const rbacUser: RBACUser | null =
-    normalizedRole && organizationId
-      ? {
-          role: normalizedRole,
-          organizationId,
-          departmentId:
-            currentMember?.departmentId ??
-            currentMemberFromList?.departmentId ??
-            profile?.departmentId ??
-            undefined,
-          locationId:
-            currentMember?.locationId ??
-            currentMemberFromList?.locationId ??
-            profile?.locationId ??
-            profile?.siteId ??
-            undefined,
-        }
-      : null;
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember ?? currentMemberFromList,
+    profile: profile ?? null,
+  });
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("todas");
   const [departmentFilter, setDepartmentFilter] = useState("todas");
