@@ -107,9 +107,9 @@ export default function TasksPage() {
   }, [user, userProfile?.displayName, users]);
 
   const filteredTasks = useMemo(() => {
-    const visibleTasks = tasks.filter((task) =>
-      getTaskPermissions(task, rbacUser, user?.uid ?? null).canView
-    );
+    const visibleTasks = rbacUser
+      ? tasks.filter((task) => getTaskPermissions(task, rbacUser, user?.uid ?? null).canView)
+      : tasks;
 
     const openTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) !== "done");
 

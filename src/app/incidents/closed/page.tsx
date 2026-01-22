@@ -111,9 +111,9 @@ export default function ClosedIncidentsPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    const visibleTickets = tickets.filter((ticket) =>
-      getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView
-    );
+    const visibleTickets = rbacUser
+      ? tickets.filter((ticket) => getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView)
+      : tickets;
 
     return [...visibleTickets]
       .filter((ticket) => {

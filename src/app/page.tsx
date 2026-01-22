@@ -88,12 +88,12 @@ export default function Home() {
     profile: userProfile ?? null,
   });
 
-  const visibleTasks = tasks.filter((task) =>
-    getTaskPermissions(task, rbacUser, user?.uid ?? null).canView
-  );
-  const visibleTickets = tickets.filter((ticket) =>
-    getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView
-  );
+  const visibleTasks = rbacUser
+    ? tasks.filter((task) => getTaskPermissions(task, rbacUser, user?.uid ?? null).canView)
+    : tasks;
+  const visibleTickets = rbacUser
+    ? tickets.filter((ticket) => getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView)
+    : tickets;
 
   const pendingTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) === "open");
   const completedTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) === "done");

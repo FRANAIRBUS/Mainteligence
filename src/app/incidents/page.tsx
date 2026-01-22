@@ -118,9 +118,9 @@ export default function IncidentsPage() {
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
 
   const sortedTickets = useMemo(() => {
-    const visibleTickets = tickets.filter((ticket) =>
-      getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView
-    );
+    const visibleTickets = rbacUser
+      ? tickets.filter((ticket) => getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView)
+      : tickets;
     const openTickets = visibleTickets.filter((ticket) => normalizeTicketStatus(ticket.status) !== 'resolved');
     const effectiveDateFilter = dateFilter === 'all' ? 'recientes' : dateFilter || 'recientes';
 

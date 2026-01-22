@@ -119,9 +119,9 @@ export default function ClosedTasksPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    const visibleTasks = tasks.filter((task) =>
-      getTaskPermissions(task, rbacUser, user?.uid ?? null).canView
-    );
+    const visibleTasks = rbacUser
+      ? tasks.filter((task) => getTaskPermissions(task, rbacUser, user?.uid ?? null).canView)
+      : tasks;
 
     return [...visibleTasks]
       .filter((task) => {
