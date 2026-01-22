@@ -18,14 +18,14 @@ import {
 } from "@/components/ui/select";
 import { AppShell } from "@/components/app-shell";
 import { Icons } from "@/components/icons";
-import { useCollection } from "@/lib/firebase";
+import { useCollection, useDoc } from "@/lib/firebase";
 import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, OrganizationMember } from "@/lib/firebase/models";
-import { getTaskPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
+import { buildRbacUser, getTaskPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
-import { orgCollectionPath } from "@/lib/organization";
+import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
 const statusCopy: Record<string, string> = {
   open: taskStatusLabel("open"),
@@ -54,24 +54,26 @@ export default function TasksPage() {
   const router = useRouter();
 
   const normalizedRole = normalizeRole(role ?? userProfile?.role);
-  const rbacUser: RBACUser | null =
-    userProfile ??
-    (normalizedRole &&
-    organizationId &&
-    ["super_admin", "admin", "mantenimiento"].includes(normalizedRole)
-      ? {
-          role: normalizedRole,
-          organizationId,
-          departmentId: undefined,
-          locationId: undefined,
-        }
-      : null);
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
+  );
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
 
   const { data: tasks, loading } = useCollection<MaintenanceTask>(
     organizationId ? orgCollectionPath(organizationId, "tasks") : null
   );
-  const { data: users, loading: usersLoading } = useCollection<OrganizationMember>(
-    organizationId ? orgCollectionPath(organizationId, "members") : null
+  const canReadMembers =
+    normalizedRole &&
+    ["super_admin", "admin", "mantenimiento", "jefe_departamento", "jefe_ubicacion", "auditor"].includes(
+      normalizedRole
+    );
+  const { data: users } = useCollection<OrganizationMember>(
+    canReadMembers && organizationId ? orgCollectionPath(organizationId, "members") : null
   );
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
@@ -131,7 +133,8 @@ export default function TasksPage() {
         statusFilter === "todas" || normalizeTaskStatus(task.status) === statusFilter;
       const matchesPriority =
         priorityFilter === "todas" || task.priority === priorityFilter;
-      const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId ?? "";
+      const taskDepartmentId =
+        task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? "";
       const matchesLocation =
         locationFilter === "todas" || taskDepartmentId === locationFilter;
       const assignedName =
