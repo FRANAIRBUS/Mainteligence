@@ -197,12 +197,8 @@ export default function ReportsPage() {
   const locationOptions = useMemo(() => {
     const locationSet = new Set<string>();
     sites.forEach((site) => locationSet.add(site.name));
-    tasks.forEach((task) => {
-      const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId;
-      if (taskDepartmentId) locationSet.add(taskDepartmentId);
-    });
     return Array.from(locationSet).sort((a, b) => a.localeCompare(b));
-  }, [sites, tasks]);
+  }, [sites]);
 
   const filters: MetricsFilters = {
     startDate: startDate ? new Date(`${startDate}T00:00:00`) : null,
@@ -216,7 +212,10 @@ export default function ReportsPage() {
     [tickets, filters, siteNameById]
   );
 
-  const filteredTasks = useMemo(() => filterTasks(tasks, filters), [tasks, filters]);
+  const filteredTasks = useMemo(
+    () => filterTasks(tasks, filters, siteNameById),
+    [tasks, filters, siteNameById]
+  );
 
   const metrics = useMemo(
     () => calculateReportMetrics(filteredTickets, filteredTasks),
