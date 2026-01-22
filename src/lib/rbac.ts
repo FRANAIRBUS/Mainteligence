@@ -1,4 +1,4 @@
-import type { Ticket, User, UserRole } from '@/lib/firebase/models';
+import type { OrganizationMember, Ticket, User, UserRole } from '@/lib/firebase/models';
 import type { MaintenanceTask } from '@/types/maintenance-task';
 import { normalizeTicketStatus } from '@/lib/status';
 
@@ -89,7 +89,7 @@ type LocationScope = {
   locationId?: string;
 };
 
-const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? null;
+const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? ticket.siteId ?? null;
 
 type TicketRoleGuards = {
   isCreator: boolean;
@@ -129,8 +129,34 @@ export type TaskPermission = {
 
 export type RBACUser = Pick<User, 'role' | 'organizationId' | 'departmentId' | 'locationId'>;
 
-const getTicketOrigin = (ticket: Ticket) => ticket.originDepartmentId ?? null;
-const getTicketTarget = (ticket: Ticket) => ticket.targetDepartmentId ?? null;
+type BuildRbacUserParams = {
+  role?: UserRole | string | null;
+  organizationId?: string | null;
+  member?: OrganizationMember | null;
+  profile?: User | null;
+};
+
+export const buildRbacUser = ({
+  role,
+  organizationId,
+  member,
+  profile,
+}: BuildRbacUserParams): RBACUser | null => {
+  const normalizedRole = normalizeRole(role ?? profile?.role);
+  if (!normalizedRole || !organizationId) return null;
+
+  return {
+    role: normalizedRole,
+    organizationId,
+    departmentId: member?.departmentId ?? profile?.departmentId ?? undefined,
+    locationId: member?.locationId ?? profile?.locationId ?? profile?.siteId ?? undefined,
+  };
+};
+
+const getTicketOrigin = (ticket: Ticket) =>
+  ticket.originDepartmentId ?? ticket.departmentId ?? null;
+const getTicketTarget = (ticket: Ticket) =>
+  ticket.targetDepartmentId ?? ticket.departmentId ?? null;
 
 const isInDepartmentScope = (ticket: Ticket, scope: DepartmentScope) => {
   const origin = getTicketOrigin(ticket);
@@ -165,7 +191,7 @@ const buildGuards = (ticket: Ticket, user: User | RBACUser | null, userId: strin
     inDepartmentScope,
     inLocationScope,
     inScope: inDepartmentScope || inLocationScope,
-    matchesOrg: !!user?.organizationId && ticket.organizationId === user.organizationId,
+    matchesOrg: !!user?.organizationId && (!ticket.organizationId || ticket.organizationId === user.organizationId),
   };
 };
 
@@ -354,16 +380,19 @@ const buildTaskGuards = (
   user: User | RBACUser | null,
   userId: string | null
 ): TaskRoleGuards => {
-  const deptId = task.targetDepartmentId ?? task.originDepartmentId ?? null;
+  const deptId =
+    task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? null;
+  const taskLocationId = task.locationId ?? task.siteId ?? null;
   const inDepartmentScope = !!user?.departmentId && !!deptId && deptId === user.departmentId;
-  const inLocationScope = !!user?.locationId && !!task.locationId && task.locationId === user.locationId;
+  const inLocationScope =
+    !!user?.locationId && !!taskLocationId && taskLocationId === user.locationId;
 
   return {
     isCreator: !!userId && task.createdBy === userId,
     isAssignee: !!userId && task.assignedTo === userId,
     inDepartmentScope,
     inLocationScope,
-    matchesOrg: !!user?.organizationId && task.organizationId === user.organizationId,
+    matchesOrg: !!user?.organizationId && (!task.organizationId || task.organizationId === user.organizationId),
   };
 };
 

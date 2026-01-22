@@ -2,7 +2,7 @@
 
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useCollectionQuery } from '@/lib/firebase';
+import { useUser, useCollection, useCollectionQuery, useDoc } from '@/lib/firebase';
 import type { Ticket, Site, Department, OrganizationMember } from '@/lib/firebase/models';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
@@ -33,10 +33,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { where } from 'firebase/firestore';
-import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import { buildRbacUser, getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 import Link from 'next/link';
-import { orgCollectionPath } from '@/lib/organization';
+import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 import { useToast } from '@/hooks/use-toast';
 
 const incidentPriorityOrder: Record<Ticket['priority'], number> = {
@@ -47,7 +47,7 @@ const incidentPriorityOrder: Record<Ticket['priority'], number> = {
 };
 
 export default function IncidentsPage() {
-  const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
+  const { user, profile: userProfile, role, organizationId, loading: userLoading } = useUser();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -78,15 +78,24 @@ export default function IncidentsPage() {
     router.replace('/incidents');
   }, [router, searchParams, toast]);
 
-  const normalizedRole = normalizeRole(userProfile?.role);
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const isMantenimiento = normalizedRole === 'super_admin' || normalizedRole === 'admin' || normalizedRole === 'mantenimiento';
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, 'members', user.uid) : null
+  );
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
 
   // Phase 3: Construct the tickets query only when user and userProfile are ready.
   const ticketsConstraints = useMemo(() => {
-    if (userLoading || !user || !userProfile || !organizationId || !normalizedRole) return null;
+    if (userLoading || !user || !organizationId || !normalizedRole) return null;
 
     return [where('organizationId', '==', organizationId as string)] as const;
-  }, [user, userLoading, userProfile, organizationId, normalizedRole]);
+  }, [user, userLoading, organizationId, normalizedRole]);
 
   // Phase 4: Execute the query for tickets and load other collections.
   const { data: tickets = [], loading: ticketsLoading } = useCollectionQuery<Ticket>(
@@ -109,9 +118,9 @@ export default function IncidentsPage() {
   const departmentsMap = useMemo(() => departments.reduce((acc, dept) => ({ ...acc, [dept.id]: dept.name }), {} as Record<string, string>), [departments]);
 
   const sortedTickets = useMemo(() => {
-    const visibleTickets = tickets.filter((ticket) =>
-      getTicketPermissions(ticket, userProfile ?? null, user?.uid ?? null).canView
-    );
+    const visibleTickets = rbacUser
+      ? tickets.filter((ticket) => getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView)
+      : tickets;
     const openTickets = visibleTickets.filter((ticket) => normalizeTicketStatus(ticket.status) !== 'resolved');
     const effectiveDateFilter = dateFilter === 'all' ? 'recientes' : dateFilter || 'recientes';
 
@@ -131,7 +140,7 @@ export default function IncidentsPage() {
 
       return incidentPriorityOrder[b.priority] - incidentPriorityOrder[a.priority];
     });
-  }, [dateFilter, tickets, user?.uid, userProfile]);
+  }, [dateFilter, tickets, user?.uid, rbacUser]);
 
   const filteredTickets = useMemo(() => {
     return sortedTickets.filter((ticket) => {
@@ -141,7 +150,7 @@ export default function IncidentsPage() {
         normalizeTicketStatus(ticket.status) === statusFilter;
       const matchesPriority =
         priorityFilter === 'all' || priorityFilter === 'todas' || ticket.priority === priorityFilter;
-      const ticketLocationId = ticket.locationId ?? null;
+      const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
       const matchesLocation = locationFilter === 'all' || ticketLocationId === locationFilter;
       const query = searchQuery.toLowerCase();
       const matchesQuery =
@@ -296,13 +305,17 @@ export default function IncidentsPage() {
               )}
               {!tableDataIsLoading &&
                 filteredTickets.map((ticket) => {
-                  const permissions = getTicketPermissions(ticket, userProfile ?? null, user?.uid ?? null);
+                  const permissions = getTicketPermissions(ticket, rbacUser, user?.uid ?? null);
                   const createdAtLabel = ticket.createdAt?.toDate
                     ? ticket.createdAt.toDate().toLocaleDateString()
                     : 'N/A';
-                  const ticketLocationId = ticket.locationId ?? null;
+                  const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
                   const siteLabel = (ticketLocationId && sitesMap[ticketLocationId]) || 'N/A';
-                  const departmentId = ticket.targetDepartmentId ?? ticket.originDepartmentId ?? null;
+                  const departmentId =
+                    ticket.targetDepartmentId ??
+                    ticket.originDepartmentId ??
+                    ticket.departmentId ??
+                    null;
                   const departmentLabel = (departmentId && departmentsMap[departmentId]) || 'N/A';
                   return (
                     <div
