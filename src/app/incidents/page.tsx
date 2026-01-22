@@ -2,7 +2,7 @@
 
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
-import { useUser, useCollection, useCollectionQuery, useDoc } from '@/lib/firebase';
+import { useUser, useCollection, useDoc } from '@/lib/firebase';
 import type { Ticket, Site, Department, OrganizationMember } from '@/lib/firebase/models';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useMemo } from 'react';
@@ -32,7 +32,6 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
-import { where } from 'firebase/firestore';
 import { buildRbacUser, getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 import Link from 'next/link';
@@ -90,17 +89,8 @@ export default function IncidentsPage() {
     profile: userProfile ?? null,
   });
 
-  // Phase 3: Construct the tickets query only when user and userProfile are ready.
-  const ticketsConstraints = useMemo(() => {
-    if (userLoading || !user || !organizationId || !normalizedRole) return null;
-
-    return [where('organizationId', '==', organizationId as string)] as const;
-  }, [user, userLoading, organizationId, normalizedRole]);
-
-  // Phase 4: Execute the query for tickets and load other collections.
-  const { data: tickets = [], loading: ticketsLoading } = useCollectionQuery<Ticket>(
-    ticketsConstraints && organizationId ? orgCollectionPath(organizationId, 'tickets') : null,
-    ...(ticketsConstraints ?? [])
+  const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
+    organizationId ? orgCollectionPath(organizationId, 'tickets') : null
   );
   const { data: sites = [], loading: sitesLoading } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null

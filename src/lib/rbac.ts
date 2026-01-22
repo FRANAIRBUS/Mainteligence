@@ -143,11 +143,13 @@ export const buildRbacUser = ({
   profile,
 }: BuildRbacUserParams): RBACUser | null => {
   const normalizedRole = normalizeRole(role ?? profile?.role);
-  if (!normalizedRole || !organizationId) return null;
+  const resolvedOrganizationId =
+    organizationId ?? member?.organizationId ?? member?.orgId ?? profile?.organizationId;
+  if (!normalizedRole || !resolvedOrganizationId) return null;
 
   return {
     role: normalizedRole,
-    organizationId,
+    organizationId: resolvedOrganizationId,
     departmentId: member?.departmentId ?? profile?.departmentId ?? undefined,
     locationId: member?.locationId ?? profile?.locationId ?? profile?.siteId ?? undefined,
   };
