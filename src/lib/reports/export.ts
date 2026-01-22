@@ -159,11 +159,14 @@ export const buildReportExportRows = ({
 
   tickets.forEach((ticket) => {
     const createdAt = toDate(ticket.createdAt);
-    const location = resolveSiteLabel(sitesById, ticket.locationId ?? ticket.siteId);
-    const department = resolveDepartmentLabel(departmentsById, ticket.departmentId);
+    const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
+    const ticketDepartmentId =
+      ticket.originDepartmentId ?? ticket.targetDepartmentId ?? ticket.departmentId ?? null;
+    const location = resolveSiteLabel(sitesById, ticketLocationId);
+    const department = resolveDepartmentLabel(departmentsById, ticketDepartmentId);
     const locationMatch = !filters.location || location === filters.location;
     const departmentMatch =
-      !filters.departmentId || ticket.departmentId === filters.departmentId;
+      !filters.departmentId || ticketDepartmentId === filters.departmentId;
 
     if (!locationMatch || !departmentMatch || !isWithinRange(createdAt, filters)) {
       return;
@@ -197,19 +200,20 @@ export const buildReportExportRows = ({
 
   tasks.forEach((task) => {
     const createdAt = toDate(task.createdAt ?? null);
-    const location = task.targetDepartmentId ?? task.originDepartmentId ?? '';
+    const taskLocationId = task.locationId ?? task.siteId ?? null;
+    const taskDepartmentId =
+      task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? null;
+    const location = resolveSiteLabel(sitesById, taskLocationId);
     const locationMatch = !filters.location || location === filters.location;
     const isInRange = isWithinRange(createdAt, filters);
+    const departmentMatch =
+      !filters.departmentId || taskDepartmentId === filters.departmentId;
 
-    if (!locationMatch || !isInRange) {
+    if (!locationMatch || !departmentMatch || !isInRange) {
       return;
     }
 
-    const fallbackUserId = task.assignedTo ?? task.createdBy;
-    const departmentId = fallbackUserId
-      ? usersById.get(fallbackUserId)?.departmentId
-      : undefined;
-    const department = resolveDepartmentLabel(departmentsById, departmentId);
+    const department = resolveDepartmentLabel(departmentsById, taskDepartmentId);
 
     const { details, lastReportAt } = formatReports(task.reports, usersById);
 

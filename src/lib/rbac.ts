@@ -89,7 +89,7 @@ type LocationScope = {
   locationId?: string;
 };
 
-const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? null;
+const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? ticket.siteId ?? null;
 
 type TicketRoleGuards = {
   isCreator: boolean;
@@ -129,8 +129,10 @@ export type TaskPermission = {
 
 export type RBACUser = Pick<User, 'role' | 'organizationId' | 'departmentId' | 'locationId'>;
 
-const getTicketOrigin = (ticket: Ticket) => ticket.originDepartmentId ?? null;
-const getTicketTarget = (ticket: Ticket) => ticket.targetDepartmentId ?? null;
+const getTicketOrigin = (ticket: Ticket) =>
+  ticket.originDepartmentId ?? ticket.departmentId ?? null;
+const getTicketTarget = (ticket: Ticket) =>
+  ticket.targetDepartmentId ?? ticket.departmentId ?? null;
 
 const isInDepartmentScope = (ticket: Ticket, scope: DepartmentScope) => {
   const origin = getTicketOrigin(ticket);
@@ -354,9 +356,12 @@ const buildTaskGuards = (
   user: User | RBACUser | null,
   userId: string | null
 ): TaskRoleGuards => {
-  const deptId = task.targetDepartmentId ?? task.originDepartmentId ?? null;
+  const deptId =
+    task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? null;
+  const taskLocationId = task.locationId ?? task.siteId ?? null;
   const inDepartmentScope = !!user?.departmentId && !!deptId && deptId === user.departmentId;
-  const inLocationScope = !!user?.locationId && !!task.locationId && task.locationId === user.locationId;
+  const inLocationScope =
+    !!user?.locationId && !!taskLocationId && taskLocationId === user.locationId;
 
   return {
     isCreator: !!userId && task.createdBy === userId,

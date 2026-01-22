@@ -17,6 +17,7 @@ import { AppShell } from "@/components/app-shell";
 import {
   useCollection,
   useCollectionQuery,
+  useDoc,
   useFirestore,
   useUser,
 } from "@/lib/firebase";
@@ -33,7 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { format } from "date-fns";
-import { getTicketPermissions, normalizeRole } from "@/lib/rbac";
+import { getTicketPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
 import { normalizeTicketStatus, ticketStatusLabel } from "@/lib/status";
 
 const statusLabels: Record<string, string> = {
@@ -48,18 +49,34 @@ type DateFilter = "todas" | "hoy" | "semana" | "mes";
 export default function ClosedIncidentsPage() {
   const router = useRouter();
   const firestore = useFirestore();
-  const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
+  const { user, profile: userProfile, role, organizationId, loading: userLoading } = useUser();
   const { toast } = useToast();
 
-  const normalizedRole = normalizeRole(userProfile?.role);
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const isSuperAdmin = normalizedRole === "super_admin";
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
+  );
+  const rbacUser: RBACUser | null =
+    normalizedRole && organizationId
+      ? {
+          role: normalizedRole,
+          organizationId,
+          departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
+          locationId:
+            currentMember?.locationId ??
+            userProfile?.locationId ??
+            userProfile?.siteId ??
+            undefined,
+        }
+      : null;
 
   const ticketsConstraints = useMemo(() => {
-    if (userLoading || !user || !userProfile) return null;
+    if (userLoading || !user) return null;
     // Cargamos el histórico de la organización y filtramos por permisos en el cliente.
     return [where("status", "in", ["resolved", "Resuelta", "Cerrada"])];
-  }, [user, userLoading, userProfile]);
+  }, [user, userLoading]);
 
   const { data: tickets, loading } = useCollectionQuery<Ticket>(
     ticketsConstraints && organizationId ? orgCollectionPath(organizationId, "tickets") : null,
@@ -71,8 +88,13 @@ export default function ClosedIncidentsPage() {
   const { data: sites } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, "sites") : null
   );
+  const canReadMembers =
+    normalizedRole &&
+    ["super_admin", "admin", "mantenimiento", "jefe_departamento", "jefe_ubicacion", "auditor"].includes(
+      normalizedRole
+    );
   const { data: users } = useCollection<OrganizationMember>(
-    organizationId ? orgCollectionPath(organizationId, "members") : null
+    canReadMembers && organizationId ? orgCollectionPath(organizationId, "members") : null
   );
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -97,7 +119,7 @@ export default function ClosedIncidentsPage() {
     };
 
     const visibleTickets = tickets.filter((ticket) =>
-      getTicketPermissions(ticket, userProfile ?? null, user?.uid ?? null).canView
+      getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView
     );
 
     return [...visibleTickets]
@@ -109,11 +131,12 @@ export default function ClosedIncidentsPage() {
       })
       .filter((ticket) => {
         if (departmentFilter === "todas") return true;
-        const ticketDepartmentId = ticket.targetDepartmentId ?? ticket.originDepartmentId ?? null;
+        const ticketDepartmentId =
+          ticket.targetDepartmentId ?? ticket.originDepartmentId ?? ticket.departmentId ?? null;
         return ticketDepartmentId === departmentFilter;
       })
       .filter((ticket) => {
-        const ticketLocationId = ticket.locationId ?? null;
+        const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
         return siteFilter === "todas" ? true : ticketLocationId === siteFilter;
       })
       .filter((ticket) => {
@@ -137,7 +160,7 @@ export default function ClosedIncidentsPage() {
     tickets,
     user,
     userFilter,
-    userProfile,
+    rbacUser,
   ]);
 
   const handleReopen = async (ticket: Ticket) => {
@@ -190,9 +213,9 @@ export default function ClosedIncidentsPage() {
         description: ticket.description,
         status: "new",
         priority: ticket.priority,
-        locationId: ticket.locationId ?? null,
-        originDepartmentId: ticket.originDepartmentId ?? null,
-        targetDepartmentId: ticket.targetDepartmentId ?? null,
+        locationId: ticket.locationId ?? ticket.siteId ?? null,
+        originDepartmentId: ticket.originDepartmentId ?? ticket.departmentId ?? null,
+        targetDepartmentId: ticket.targetDepartmentId ?? ticket.departmentId ?? null,
         assetId: ticket.assetId ?? null,
         type: ticket.type,
         assignedRole: ticket.assignedRole ?? null,
@@ -295,10 +318,14 @@ export default function ClosedIncidentsPage() {
           )}
           {!isLoading &&
             filteredTickets.map((ticket) => {
-              const ticketDepartmentId = ticket.targetDepartmentId ?? ticket.originDepartmentId ?? null;
+              const ticketDepartmentId =
+                ticket.targetDepartmentId ??
+                ticket.originDepartmentId ??
+                ticket.departmentId ??
+                null;
               const departmentLabel =
                 (ticketDepartmentId && departments.find((dept) => dept.id === ticketDepartmentId)?.name) || "N/A";
-              const ticketLocationId = ticket.locationId ?? null;
+              const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
               const siteLabel = sites.find((site) => site.id === ticketLocationId)?.name || "N/A";
               const createdAtLabel = ticket.createdAt?.toDate
                 ? format(ticket.createdAt.toDate(), "dd/MM/yyyy")
