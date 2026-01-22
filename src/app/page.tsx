@@ -21,6 +21,7 @@ import { useCollection, useUser } from "@/lib/firebase";
 import type { Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import { orgCollectionPath } from "@/lib/organization";
+import { getTaskPermissions, getTicketPermissions } from "@/lib/rbac";
 
 const priorityLabel: Record<string, string> = {
   alta: "Alta",
@@ -45,7 +46,7 @@ const incidentPriorityOrder: Record<Ticket["priority"], number> = {
 };
 
 export default function Home() {
-  const { user, activeMembership, organizationId, isRoot, loading: userLoading } = useUser();
+  const { user, profile: userProfile, activeMembership, organizationId, isRoot, loading: userLoading } = useUser();
   const router = useRouter();
 
   useEffect(() => {
@@ -69,21 +70,28 @@ export default function Home() {
     organizationId ??
     "Organización";
 
-  const pendingTasks = tasks.filter((task) => normalizeTaskStatus(task.status) === "open");
-  const completedTasks = tasks.filter((task) => normalizeTaskStatus(task.status) === "done");
-  const dueSoonTasks = tasks.filter((task) => {
+  const visibleTasks = tasks.filter((task) =>
+    getTaskPermissions(task, userProfile, user?.uid ?? null).canView
+  );
+  const visibleTickets = tickets.filter((ticket) =>
+    getTicketPermissions(ticket, userProfile, user?.uid ?? null).canView
+  );
+
+  const pendingTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) === "open");
+  const completedTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) === "done");
+  const dueSoonTasks = visibleTasks.filter((task) => {
     if (!task.dueDate) return false;
     const date = task.dueDate.toDate();
     const now = new Date();
     return isBefore(date, addDays(now, 7)) && date >= now && normalizeTaskStatus(task.status) !== "done";
   });
 
-  const overdueTasks = tasks.filter((task) => {
+  const overdueTasks = visibleTasks.filter((task) => {
     if (!task.dueDate) return false;
     return isBefore(task.dueDate.toDate(), new Date()) && normalizeTaskStatus(task.status) !== "done";
   });
 
-  const nextInspections = tasks
+  const nextInspections = visibleTasks
     .filter((task) => task.dueDate)
     .sort((a, b) => {
       if (!a.dueDate || !b.dueDate) return 0;
@@ -91,7 +99,9 @@ export default function Home() {
     })
     .slice(0, 5);
 
-  const openTickets = tickets.filter((ticket) => normalizeTicketStatus(ticket.status) !== "resolved");
+  const openTickets = visibleTickets.filter(
+    (ticket) => normalizeTicketStatus(ticket.status) !== "resolved"
+  );
   const criticalTickets = openTickets.filter((ticket) => ticket.priority === "Crítica");
   const pendingIncidents = [...openTickets].sort((a, b) => {
     if (incidentPriorityOrder[b.priority] !== incidentPriorityOrder[a.priority]) {

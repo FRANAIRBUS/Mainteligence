@@ -197,7 +197,7 @@ export const buildReportExportRows = ({
 
   tasks.forEach((task) => {
     const createdAt = toDate(task.createdAt ?? null);
-    const location = task.location ?? '';
+    const location = task.targetDepartmentId ?? task.originDepartmentId ?? '';
     const locationMatch = !filters.location || location === filters.location;
     const isInRange = isWithinRange(createdAt, filters);
 

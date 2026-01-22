@@ -22,7 +22,7 @@ import { useCollection } from "@/lib/firebase";
 import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, OrganizationMember } from "@/lib/firebase/models";
-import { normalizeRole } from "@/lib/rbac";
+import { getTaskPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
 import { orgCollectionPath } from "@/lib/organization";
@@ -49,16 +49,21 @@ const priorityOrder: Record<MaintenanceTask["priority"], number> = {
 };
 
 export default function TasksPage() {
-  const { user, profile: userProfile, organizationId, loading: userLoading, isLoaded } =
+  const { user, profile: userProfile, role, organizationId, loading: userLoading, isLoaded } =
     useUser();
   const router = useRouter();
 
-  const normalizedRole = normalizeRole(userProfile?.role);
-  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
-  const canViewAllTasks =
-    normalizedRole === "super_admin" ||
-    normalizedRole === "admin" ||
-    normalizedRole === "mantenimiento";
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
+  const rbacUser: RBACUser | null =
+    userProfile ??
+    (normalizedRole && organizationId
+      ? {
+          role: normalizedRole,
+          organizationId,
+          departmentId: undefined,
+          locationId: undefined,
+        }
+      : null);
 
   const { data: tasks, loading } = useCollection<MaintenanceTask>(
     organizationId ? orgCollectionPath(organizationId, "tasks") : null
@@ -98,36 +103,9 @@ export default function TasksPage() {
   }, [user, userProfile?.displayName, users]);
 
   const filteredTasks = useMemo(() => {
-    const scopeDepartments = Array.from(
-      new Set(
-        [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
-          (id): id is string => Boolean(id)
-        )
-      )
+    const visibleTasks = tasks.filter((task) =>
+      getTaskPermissions(task, rbacUser, user?.uid ?? null).canView
     );
-    const scopeLocations = Array.from(
-      new Set(
-        [
-          userProfile?.locationId ?? userProfile?.siteId,
-          ...(userProfile?.locationIds ?? []),
-          ...(userProfile?.siteIds ?? []),
-        ].filter((id): id is string => Boolean(id))
-      )
-    );
-
-    const visibleTasks = canViewAllTasks
-      ? tasks
-      : tasks.filter((task) => {
-          if (task.createdBy === user?.uid) return true;
-          if (task.assignedTo === user?.uid) return true;
-          if (scopeDepartments.length > 0 && task.location) {
-            return scopeDepartments.includes(task.location);
-          }
-          if (roleIsLocationHead && scopeLocations.length > 0 && task.locationId) {
-            return scopeLocations.includes(task.locationId);
-          }
-          return false;
-        });
 
     const openTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) !== "done");
 
@@ -151,8 +129,9 @@ export default function TasksPage() {
         statusFilter === "todas" || normalizeTaskStatus(task.status) === statusFilter;
       const matchesPriority =
         priorityFilter === "todas" || task.priority === priorityFilter;
+      const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId ?? "";
       const matchesLocation =
-        locationFilter === "todas" || task.location === locationFilter;
+        locationFilter === "todas" || taskDepartmentId === locationFilter;
       const assignedName =
         task.assignedTo && userNameMap[task.assignedTo]
           ? userNameMap[task.assignedTo]
@@ -164,11 +143,11 @@ export default function TasksPage() {
         "no asignada".includes(searchQuery.toLowerCase());
       return matchesStatus && matchesPriority && matchesLocation && matchesQuery;
     });
-  }, [canViewAllTasks, dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile?.departmentId, userProfile?.departmentIds, userProfile?.locationId, userProfile?.locationIds, userProfile?.siteId, userProfile?.siteIds, roleIsLocationHead]);
+  }, [dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, rbacUser]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
-  if (!user || userLoading || !userProfile || (!organizationId && normalizedRole !== "super_admin")) {
+  if (!user || userLoading || !rbacUser || (!organizationId && normalizedRole !== "super_admin")) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />

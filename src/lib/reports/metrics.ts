@@ -123,7 +123,8 @@ export const filterTickets = (
 export const filterTasks = (tasks: MaintenanceTask[], filters: MetricsFilters) => {
   return tasks.filter((task) => {
     const locationMatch =
-      !filters.location || task.location === filters.location;
+      !filters.location ||
+      (task.targetDepartmentId ?? task.originDepartmentId) === filters.location;
     const dateMatch = isWithinRange(toDate(task.closedAt ?? task.createdAt), filters);
 
     return locationMatch && dateMatch;
