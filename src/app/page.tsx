@@ -21,7 +21,7 @@ import { useCollection, useUser } from "@/lib/firebase";
 import type { Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import { orgCollectionPath } from "@/lib/organization";
-import { getTaskPermissions, getTicketPermissions } from "@/lib/rbac";
+import { getTaskPermissions, getTicketPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
 
 const priorityLabel: Record<string, string> = {
   alta: "Alta",
@@ -46,7 +46,15 @@ const incidentPriorityOrder: Record<Ticket["priority"], number> = {
 };
 
 export default function Home() {
-  const { user, profile: userProfile, activeMembership, organizationId, isRoot, loading: userLoading } = useUser();
+  const {
+    user,
+    profile: userProfile,
+    activeMembership,
+    organizationId,
+    role,
+    isRoot,
+    loading: userLoading,
+  } = useUser();
   const router = useRouter();
 
   useEffect(() => {
@@ -70,11 +78,22 @@ export default function Home() {
     organizationId ??
     "Organización";
 
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
+  const rbacUser: RBACUser | null =
+    normalizedRole && organizationId
+      ? {
+          role: normalizedRole,
+          organizationId,
+          departmentId: userProfile?.departmentId ?? undefined,
+          locationId: userProfile?.locationId ?? userProfile?.siteId ?? undefined,
+        }
+      : null;
+
   const visibleTasks = tasks.filter((task) =>
-    getTaskPermissions(task, userProfile, user?.uid ?? null).canView
+    getTaskPermissions(task, rbacUser, user?.uid ?? null).canView
   );
   const visibleTickets = tickets.filter((ticket) =>
-    getTicketPermissions(ticket, userProfile, user?.uid ?? null).canView
+    getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView
   );
 
   const pendingTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) === "open");

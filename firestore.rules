@@ -162,15 +162,21 @@ service cloud.firestore {
     }
 
     function docLocationId(data) {
-      return ('locationId' in data) ? data.locationId : null;
+      return ('locationId' in data)
+        ? data.locationId
+        : (('siteId' in data) ? data.siteId : null);
     }
 
     function docOriginDepartmentId(data) {
-      return ('originDepartmentId' in data) ? data.originDepartmentId : null;
+      return ('originDepartmentId' in data)
+        ? data.originDepartmentId
+        : (('departmentId' in data) ? data.departmentId : null);
     }
 
     function docTargetDepartmentId(data) {
-      return ('targetDepartmentId' in data) ? data.targetDepartmentId : null;
+      return ('targetDepartmentId' in data)
+        ? data.targetDepartmentId
+        : (('departmentId' in data) ? data.departmentId : null);
     }
 
     function isCreator(uid, data) {
