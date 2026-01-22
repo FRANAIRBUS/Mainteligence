@@ -162,15 +162,21 @@ service cloud.firestore {
     }
 
     function docLocationId(data) {
-      return ('locationId' in data) ? data.locationId : null;
+      return ('locationId' in data)
+        ? data.locationId
+        : (('siteId' in data) ? data.siteId : null);
     }
 
     function docOriginDepartmentId(data) {
-      return ('originDepartmentId' in data) ? data.originDepartmentId : null;
+      return ('originDepartmentId' in data)
+        ? data.originDepartmentId
+        : (('departmentId' in data) ? data.departmentId : null);
     }
 
     function docTargetDepartmentId(data) {
-      return ('targetDepartmentId' in data) ? data.targetDepartmentId : null;
+      return ('targetDepartmentId' in data)
+        ? data.targetDepartmentId
+        : (('departmentId' in data) ? data.departmentId : null);
     }
 
     function isCreator(uid, data) {
@@ -181,24 +187,39 @@ service cloud.firestore {
       return ('assignedTo' in data) && data.assignedTo == uid;
     }
 
-    function inMemberDepartment(member, data) {
+    function memberHasDepartment(member, deptId) {
       return member != null
+        && deptId != null
         && (
-          docOriginDepartmentId(data) == member.departmentId
-          || docTargetDepartmentId(data) == member.departmentId
+          ('departmentId' in member && member.departmentId == deptId)
+          || ('departmentIds' in member && member.departmentIds.hasAny([deptId]))
         );
     }
 
-    function inMemberLocation(member, data) {
+    function memberHasLocation(member, locationId) {
       return member != null
-        && docLocationId(data) != null
-        && docLocationId(data) == member.locationId;
+        && locationId != null
+        && (
+          ('locationId' in member && member.locationId == locationId)
+          || ('locationIds' in member && member.locationIds.hasAny([locationId]))
+          || ('siteId' in member && member.siteId == locationId)
+          || ('siteIds' in member && member.siteIds.hasAny([locationId]))
+        );
+    }
+
+    function inMemberDepartment(member, data) {
+      return memberHasDepartment(member, docOriginDepartmentId(data))
+        || memberHasDepartment(member, docTargetDepartmentId(data));
+    }
+
+    function inMemberLocation(member, data) {
+      return memberHasLocation(member, docLocationId(data));
     }
 
     function canReadDoc(orgId, uid, data) {
       let member = activeMemberData(orgId, uid);
       return member != null
-        && organizationIdMatchesDoc(orgId, data)
+        && (organizationIdMatchesDoc(orgId, data) || !('organizationId' in data))
         && (
           member.role in ["super_admin", "admin", "mantenimiento", "auditor"]
           || (member.role in ["jefe_departamento"] && (inMemberDepartment(member, data) || isCreator(uid, data) || isAssignee(uid, data)))
@@ -404,6 +425,7 @@ service cloud.firestore {
           || isDepartmentHeadInOrg(orgId, request.auth.uid)
           || isLocationHeadInOrg(orgId, request.auth.uid)
           || isAuditorInOrg(orgId, request.auth.uid)
+          || (request.auth.uid == memberUid && isActiveMember(orgId, request.auth.uid))
         );
         allow create, update, delete: if false;
       }
