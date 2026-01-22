@@ -95,6 +95,10 @@ function pickDefaultOrgId(opts: {
 
   // 4) Fallback: first active membership
   if (active.length > 0) return active[0].organizationId;
+
+  // 5) Fallback to profile org even if membership reads are unavailable.
+  if (profileOrgId) return profileOrgId;
+
   return null;
 }
 export function UserProvider({ children }: { children: React.ReactNode }) {
@@ -248,8 +252,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       window.localStorage.setItem('preferredOrganizationId', nextOrgId);
     }
 
-    const derivedRole =
-      nextMembership?.status === 'active' ? normalizeRole(nextMembership.role ?? 'operario') : null;
+    const derivedRole = nextMembership?.status === 'active'
+      ? normalizeRole(nextMembership.role ?? profile?.role ?? 'operario')
+      : normalizeRole(profile?.role ?? null);
     setRole(derivedRole ?? null);
 
     if (app && nextOrgId && lastOrgSyncRef.current !== nextOrgId) {
