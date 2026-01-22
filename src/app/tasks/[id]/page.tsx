@@ -120,7 +120,8 @@ export default function TaskDetailPage() {
   }, [task?.reports]);
 
   const isTaskClosed = normalizeTaskStatus(task?.status) === "done";
-  const taskDepartmentId = task?.targetDepartmentId ?? task?.originDepartmentId ?? "";
+  const taskDepartmentId =
+    task?.targetDepartmentId ?? task?.originDepartmentId ?? task?.departmentId ?? "";
   const taskPermissions = task && userProfile ? getTaskPermissions(task, userProfile, user?.uid ?? null) : null;
   const canEditContent = !!taskPermissions?.canEditContent && !isTaskClosed;
   const canCloseTask = !!taskPermissions?.canMarkTaskComplete && !isTaskClosed;
@@ -166,7 +167,7 @@ export default function TaskDetailPage() {
       dueDate,
       assignedTo: isAssigneeValid ? task.assignedTo ?? "" : "",
       departmentId: taskDepartmentId,
-      locationId: task?.locationId ?? "",
+      locationId: task?.locationId ?? task?.siteId ?? "",
       category: task?.category ?? "",
     };
   }, [task, taskDepartmentId, users]);
