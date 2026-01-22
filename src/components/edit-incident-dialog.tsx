@@ -10,7 +10,7 @@ import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department, OrganizationMember } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
-import { getTicketPermissions } from '@/lib/rbac';
+import { buildRbacUser, getTicketPermissions, normalizeRole } from '@/lib/rbac';
 import { sendAssignmentEmail } from '@/lib/assignment-email';
 import { orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
@@ -61,8 +61,11 @@ interface EditIncidentDialogProps {
 export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], departments = [] }: EditIncidentDialogProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
-  const { user: currentUser, loading: userLoading, organizationId } = useUser();
+  const { user: currentUser, loading: userLoading, organizationId, role } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(currentUser ? `users/${currentUser.uid}` : null);
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    currentUser && organizationId ? orgDocPath(organizationId, 'members', currentUser.uid) : null
+  );
 
   const [isPending, setIsPending] = useState(false);
 
@@ -72,7 +75,8 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       status: normalizeTicketStatus(ticket.status) as EditIncidentFormValues['status'],
       priority: ticket.priority,
       assignedTo: ticket.assignedTo || null,
-      departmentId: ticket.departmentId || '',
+      departmentId:
+        ticket.targetDepartmentId ?? ticket.originDepartmentId ?? ticket.departmentId ?? '',
     },
   });
 
@@ -81,7 +85,8 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       status: normalizeTicketStatus(ticket.status) as EditIncidentFormValues['status'],
       priority: ticket.priority,
       assignedTo: ticket.assignedTo || null,
-      departmentId: ticket.departmentId || '',
+      departmentId:
+        ticket.targetDepartmentId ?? ticket.originDepartmentId ?? ticket.departmentId ?? '',
     });
   }, [ticket, form]);
 
@@ -215,7 +220,14 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     return null; // or a loader
   }
 
-  const permissions = getTicketPermissions(ticket, userProfile ?? null, currentUser?.uid ?? null);
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
+  const permissions = getTicketPermissions(ticket, rbacUser, currentUser?.uid ?? null);
   const canAssignAnyUser = permissions.canAssignAnyUser;
   const canAssignToSelf = permissions.canAssignToSelf;
   const canEditAssignment = canAssignAnyUser || canAssignToSelf;
@@ -227,9 +239,20 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     ticket.assignedTo && users ? users.find((userOption) => userOption.id === ticket.assignedTo) : null;
 
   const selectableUsers = (() => {
-    if (canAssignAnyUser) return users;
-    if (canAssignToSelf && currentUser) return users.filter((userOption) => userOption.id === currentUser.uid);
-    return [];
+    if (!users) return [];
+    if (canAssignToSelf && currentUser) {
+      return users.filter((userOption) => userOption.id === currentUser.uid);
+    }
+    if (!canAssignAnyUser) return [];
+    const departmentScope = currentMember?.departmentId ?? userProfile?.departmentId ?? null;
+    const locationScope = currentMember?.locationId ?? userProfile?.locationId ?? userProfile?.siteId ?? null;
+    if (normalizedRole === 'jefe_departamento' && departmentScope) {
+      return users.filter((userOption) => userOption.departmentId === departmentScope);
+    }
+    if (normalizedRole === 'jefe_ubicacion' && locationScope) {
+      return users.filter((userOption) => userOption.locationId === locationScope);
+    }
+    return users;
   })();
 
   const assignmentOptions =

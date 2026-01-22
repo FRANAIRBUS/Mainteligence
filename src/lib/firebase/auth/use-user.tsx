@@ -243,6 +243,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       nextOrgId ? memberships.find((m) => m.organizationId === nextOrgId) ?? null : null;
     setActiveMembership(nextMembership);
 
+    if (typeof window !== 'undefined' && nextOrgId && preferredOrgId !== nextOrgId) {
+      window.localStorage.setItem('preferredOrganizationId', nextOrgId);
+    }
+
     const derivedRole =
       nextMembership?.status === 'active' ? normalizeRole(nextMembership.role ?? 'operario') : null;
     setRole(derivedRole ?? null);

@@ -33,7 +33,7 @@ import { addTaskReport, updateTask } from "@/lib/firestore-tasks";
 import type { Department, OrganizationMember, Site, User } from "@/lib/firebase/models";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import { useToast } from "@/hooks/use-toast";
-import { normalizeRole } from "@/lib/rbac";
+import { buildRbacUser, getTaskPermissions } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
@@ -74,7 +74,7 @@ export default function TaskDetailPage() {
   const router = useRouter();
   const params = useParams();
   const taskId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const { user, loading: userLoading, organizationId } = useUser();
+  const { user, loading: userLoading, organizationId, role } = useUser();
   const { data: users, loading: usersLoading } = useCollection<OrganizationMember>(
     organizationId ? orgCollectionPath(organizationId, "members") : null
   );
@@ -86,6 +86,9 @@ export default function TaskDetailPage() {
   );
   const { data: userProfile, loading: profileLoading } = useDoc<User>(
     user ? `users/${user.uid}` : null
+  );
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
   );
   const { data: task, loading } = useDoc<MaintenanceTask>(
     taskId && organizationId ? orgDocPath(organizationId, "tasks", taskId) : null
@@ -120,56 +123,17 @@ export default function TaskDetailPage() {
   }, [task?.reports]);
 
   const isTaskClosed = normalizeTaskStatus(task?.status) === "done";
-  const normalizedRole = normalizeRole(userProfile?.role);
-  const isPrivileged =
-    normalizedRole === "super_admin" || normalizedRole === "admin" || normalizedRole === "mantenimiento";
-  const roleIsLocationHead = normalizedRole === "jefe_ubicacion";
-
-  const scopeDepartments = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
-            (id): id is string => Boolean(id)
-          )
-        )
-      ),
-    [userProfile?.departmentId, userProfile?.departmentIds]
-  );
-  const scopeLocations = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          [
-            userProfile?.locationId ?? userProfile?.siteId,
-            ...(userProfile?.locationIds ?? []),
-            ...(userProfile?.siteIds ?? []),
-          ].filter((id): id is string => Boolean(id))
-        )
-      ),
-    [userProfile?.locationId, userProfile?.locationIds, userProfile?.siteId, userProfile?.siteIds]
-  );
-
-  const isLocationScopedTask =
-    roleIsLocationHead && Boolean(task?.locationId) && scopeLocations.includes(task.locationId);
-
-  // Content editing: privileged roles, location head in-scope, or the creator while the task is open.
-  const canEditContent =
-    isPrivileged ||
-    isLocationScopedTask ||
-    (!!task && task.createdBy === user?.uid && !isTaskClosed);
-
-  // Closing/completing: privileged roles, the creator, or the assignee.
-  const canCloseOpsInScope =
-    !!task &&
-    task.taskType === "ops" &&
-    Boolean(task.location) &&
-    scopeDepartments.includes(task.location);
-  const canCloseTask =
-    isPrivileged ||
-    isLocationScopedTask ||
-    (!!task && (task.createdBy === user?.uid || task.assignedTo === user?.uid)) ||
-    canCloseOpsInScope;
+  const taskDepartmentId =
+    task?.targetDepartmentId ?? task?.originDepartmentId ?? task?.departmentId ?? "";
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
+  const taskPermissions = task && rbacUser ? getTaskPermissions(task, rbacUser, user?.uid ?? null) : null;
+  const canEditContent = !!taskPermissions?.canEditContent && !isTaskClosed;
+  const canCloseTask = !!taskPermissions?.canMarkTaskComplete && !isTaskClosed;
   const isLoading = userLoading || profileLoading || loading || usersLoading;
 
   useEffect(() => {
@@ -177,31 +141,20 @@ export default function TaskDetailPage() {
       router.push("/login");
     }
 
-    if (!loading && !userLoading && !profileLoading && task && user && userProfile) {
-      const canView =
-        isPrivileged ||
-        task.createdBy === user.uid ||
-        task.assignedTo === user.uid ||
-        (Boolean(task.location) && scopeDepartments.includes(task.location)) ||
-        (roleIsLocationHead &&
-          Boolean(task.locationId) &&
-          scopeLocations.includes(task.locationId));
+    if (!loading && !userLoading && !profileLoading && task && user && rbacUser) {
+      const canView = getTaskPermissions(task, rbacUser, user.uid).canView;
       if (!canView) {
         router.push("/tasks");
       }
     }
   }, [
-    isPrivileged,
-    scopeDepartments,
     loading,
     profileLoading,
     router,
     task,
     user,
     userLoading,
-    userProfile,
-    roleIsLocationHead,
-    scopeLocations,
+    rbacUser,
   ]);
 
   const defaultValues = useMemo<TaskFormValues>(() => {
@@ -221,12 +174,12 @@ export default function TaskDetailPage() {
       taskType: task?.taskType ?? "maintenance",
       status: normalizeTaskStatus(task?.status) ?? "open",
       dueDate,
-      assignedTo: isAssigneeValid ? task.assignedTo : "",
-      location: task?.location ?? "",
-      locationId: task?.locationId ?? "",
+      assignedTo: isAssigneeValid ? task.assignedTo ?? "" : "",
+      departmentId: taskDepartmentId,
+      locationId: task?.locationId ?? task?.siteId ?? "",
       category: task?.category ?? "",
     };
-  }, [task, users]);
+  }, [task, taskDepartmentId, users]);
 
   const userNameMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -260,9 +213,9 @@ export default function TaskDetailPage() {
   }, [assignedUser?.displayName, assignedUser?.email, task?.assignedTo, userNameMap]);
 
   const departmentName = useMemo(() => {
-    if (!task?.location) return "Sin departamento";
-    return departments.find((item) => item.id === task.location)?.name || task.location;
-  }, [departments, task?.location]);
+    if (!taskDepartmentId) return "Sin departamento";
+    return departments.find((item) => item.id === taskDepartmentId)?.name || taskDepartmentId;
+  }, [departments, taskDepartmentId]);
 
   const handleSubmit = async (values: TaskFormValues) => {
     if (!firestore || !task?.id) {
@@ -295,9 +248,9 @@ export default function TaskDetailPage() {
 
     const trimmedAssignedTo = values.assignedTo.trim();
     const assignmentChanged = trimmedAssignedTo !== (task?.assignedTo ?? "");
-    const assignmentDepartmentName = values.location.trim()
-      ? departments.find((dept) => dept.id === values.location.trim())?.name ||
-        values.location.trim()
+    const assignmentDepartmentName = values.departmentId.trim()
+      ? departments.find((dept) => dept.id === values.departmentId.trim())?.name ||
+        values.departmentId.trim()
       : "";
     const assignmentLocationName = values.locationId.trim()
       ? locations?.find((location) => location.id === values.locationId.trim())?.name ||
@@ -312,8 +265,9 @@ export default function TaskDetailPage() {
       status: values.status,
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
       assignedTo: trimmedAssignedTo,
-      location: values.location.trim(),
-      locationId: values.locationId.trim(),
+      originDepartmentId: values.departmentId.trim(),
+      targetDepartmentId: values.departmentId.trim(),
+      locationId: values.locationId.trim() || null,
       category: values.category.trim(),
     };
 
@@ -342,7 +296,7 @@ export default function TaskDetailPage() {
               users,
               departments,
               assignedTo: trimmedAssignedTo,
-              departmentId: values.location.trim() || null,
+              departmentId: values.departmentId.trim() || null,
               departmentName: assignmentDepartmentName,
               locationName: assignmentLocationName,
               title: values.title.trim(),

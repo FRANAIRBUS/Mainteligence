@@ -17,6 +17,7 @@ import { AppShell } from "@/components/app-shell";
 import {
   useCollection,
   useCollectionQuery,
+  useDoc,
   useFirestore,
   useUser,
 } from "@/lib/firebase";
@@ -33,7 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { format } from "date-fns";
-import { normalizeRole } from "@/lib/rbac";
+import { buildRbacUser, getTicketPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTicketStatus, ticketStatusLabel } from "@/lib/status";
 
 const statusLabels: Record<string, string> = {
@@ -48,22 +49,27 @@ type DateFilter = "todas" | "hoy" | "semana" | "mes";
 export default function ClosedIncidentsPage() {
   const router = useRouter();
   const firestore = useFirestore();
-  const { user, profile: userProfile, organizationId, loading: userLoading } = useUser();
+  const { user, profile: userProfile, role, organizationId, loading: userLoading } = useUser();
   const { toast } = useToast();
 
-  const normalizedRole = normalizeRole(userProfile?.role);
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const isSuperAdmin = normalizedRole === "super_admin";
-  const canViewAll =
-    normalizedRole === "admin" ||
-    normalizedRole === "mantenimiento" ||
-    isSuperAdmin;
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
+  );
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
 
   const ticketsConstraints = useMemo(() => {
-    if (userLoading || !user || !userProfile) return null;
+    if (userLoading || !user) return null;
     // Cargamos el histórico de la organización y filtramos por permisos en el cliente.
     return [where("status", "in", ["resolved", "Resuelta", "Cerrada"])];
-  }, [user, userLoading, userProfile]);
+  }, [user, userLoading]);
 
   const { data: tickets, loading } = useCollectionQuery<Ticket>(
     ticketsConstraints && organizationId ? orgCollectionPath(organizationId, "tickets") : null,
@@ -75,8 +81,13 @@ export default function ClosedIncidentsPage() {
   const { data: sites } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, "sites") : null
   );
+  const canReadMembers =
+    normalizedRole &&
+    ["super_admin", "admin", "mantenimiento", "jefe_departamento", "jefe_ubicacion", "auditor"].includes(
+      normalizedRole
+    );
   const { data: users } = useCollection<OrganizationMember>(
-    organizationId ? orgCollectionPath(organizationId, "members") : null
+    canReadMembers && organizationId ? orgCollectionPath(organizationId, "members") : null
   );
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -100,37 +111,9 @@ export default function ClosedIncidentsPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    const scopeDepartments = Array.from(
-      new Set(
-        [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
-          (id): id is string => Boolean(id)
-        )
-      )
+    const visibleTickets = tickets.filter((ticket) =>
+      getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView
     );
-    const scopeLocations = Array.from(
-      new Set(
-        [
-          userProfile?.locationId ?? userProfile?.siteId,
-          ...(userProfile?.locationIds ?? []),
-          ...(userProfile?.siteIds ?? []),
-        ].filter((id): id is string => Boolean(id))
-      )
-    );
-
-    const visibleTickets = canViewAll
-      ? tickets
-      : tickets.filter((ticket) => {
-          if (ticket.createdBy === user?.uid) return true;
-          if (ticket.assignedTo === user?.uid) return true;
-          if (scopeDepartments.length > 0 && ticket.departmentId) {
-            return scopeDepartments.includes(ticket.departmentId);
-          }
-          const ticketLocationId = ticket.locationId ?? ticket.siteId;
-          if (scopeLocations.length > 0 && ticketLocationId) {
-            return scopeLocations.includes(ticketLocationId);
-          }
-          return false;
-        });
 
     return [...visibleTickets]
       .filter((ticket) => {
@@ -139,9 +122,14 @@ export default function ClosedIncidentsPage() {
         }
         return true;
       })
-      .filter((ticket) => (departmentFilter === "todas" ? true : ticket.departmentId === departmentFilter))
       .filter((ticket) => {
-        const ticketLocationId = ticket.locationId ?? ticket.siteId;
+        if (departmentFilter === "todas") return true;
+        const ticketDepartmentId =
+          ticket.targetDepartmentId ?? ticket.originDepartmentId ?? ticket.departmentId ?? null;
+        return ticketDepartmentId === departmentFilter;
+      })
+      .filter((ticket) => {
+        const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
         return siteFilter === "todas" ? true : ticketLocationId === siteFilter;
       })
       .filter((ticket) => {
@@ -158,7 +146,6 @@ export default function ClosedIncidentsPage() {
         return bDate - aDate;
       });
   }, [
-    canViewAll,
     dateFilter,
     departmentFilter,
     searchQuery,
@@ -166,12 +153,7 @@ export default function ClosedIncidentsPage() {
     tickets,
     user,
     userFilter,
-    userProfile?.departmentId,
-    userProfile?.departmentIds,
-    userProfile?.locationId,
-    userProfile?.locationIds,
-    userProfile?.siteId,
-    userProfile?.siteIds,
+    rbacUser,
   ]);
 
   const handleReopen = async (ticket: Ticket) => {
@@ -224,8 +206,9 @@ export default function ClosedIncidentsPage() {
         description: ticket.description,
         status: "new",
         priority: ticket.priority,
-        siteId: ticket.locationId ?? ticket.siteId,
-        departmentId: ticket.departmentId,
+        locationId: ticket.locationId ?? ticket.siteId ?? null,
+        originDepartmentId: ticket.originDepartmentId ?? ticket.departmentId ?? null,
+        targetDepartmentId: ticket.targetDepartmentId ?? ticket.departmentId ?? null,
         assetId: ticket.assetId ?? null,
         type: ticket.type,
         assignedRole: ticket.assignedRole ?? null,
@@ -328,9 +311,14 @@ export default function ClosedIncidentsPage() {
           )}
           {!isLoading &&
             filteredTickets.map((ticket) => {
+              const ticketDepartmentId =
+                ticket.targetDepartmentId ??
+                ticket.originDepartmentId ??
+                ticket.departmentId ??
+                null;
               const departmentLabel =
-                departments.find((dept) => dept.id === ticket.departmentId)?.name || "N/A";
-              const ticketLocationId = ticket.locationId ?? ticket.siteId;
+                (ticketDepartmentId && departments.find((dept) => dept.id === ticketDepartmentId)?.name) || "N/A";
+              const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
               const siteLabel = sites.find((site) => site.id === ticketLocationId)?.name || "N/A";
               const createdAtLabel = ticket.createdAt?.toDate
                 ? format(ticket.createdAt.toDate(), "dd/MM/yyyy")

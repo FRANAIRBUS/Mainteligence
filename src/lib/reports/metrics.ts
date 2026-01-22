@@ -106,11 +106,13 @@ export const filterTickets = (
   siteNameById: Record<string, string>
 ) => {
   return tickets.filter((ticket) => {
+    const ticketLocationId = ticket.locationId ?? ticket.siteId ?? '';
+    const ticketDepartmentId =
+      ticket.originDepartmentId ?? ticket.targetDepartmentId ?? ticket.departmentId ?? '';
     const locationMatch =
-      !filters.location ||
-      siteNameById[ticket.locationId ?? ticket.siteId ?? ''] === filters.location;
+      !filters.location || siteNameById[ticketLocationId] === filters.location;
     const departmentMatch =
-      !filters.departmentId || ticket.departmentId === filters.departmentId;
+      !filters.departmentId || ticketDepartmentId === filters.departmentId;
     const dateMatch = isWithinRange(
       toDate(ticket.closedAt ?? ticket.createdAt),
       filters
@@ -120,13 +122,23 @@ export const filterTickets = (
   });
 };
 
-export const filterTasks = (tasks: MaintenanceTask[], filters: MetricsFilters) => {
+export const filterTasks = (
+  tasks: MaintenanceTask[],
+  filters: MetricsFilters,
+  siteNameById: Record<string, string>
+) => {
   return tasks.filter((task) => {
+    const taskLocationId = task.locationId ?? task.siteId ?? '';
+    const taskLocationName = siteNameById[taskLocationId] ?? '';
+    const taskDepartmentId =
+      task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? '';
     const locationMatch =
-      !filters.location || task.location === filters.location;
+      !filters.location || taskLocationName === filters.location;
+    const departmentMatch =
+      !filters.departmentId || taskDepartmentId === filters.departmentId;
     const dateMatch = isWithinRange(toDate(task.closedAt ?? task.createdAt), filters);
 
-    return locationMatch && dateMatch;
+    return locationMatch && departmentMatch && dateMatch;
   });
 };
 
@@ -364,10 +376,15 @@ export const buildIncidentGrouping = (
   >();
 
   tickets.forEach((ticket) => {
-    const id =
-      groupingKey === "locationId"
-        ? ticket.locationId ?? ticket.siteId
-        : ticket[groupingKey];
+    const id = (() => {
+      if (groupingKey === "locationId") {
+        return ticket.locationId ?? ticket.siteId ?? null;
+      }
+      if (groupingKey === "departmentId") {
+        return ticket.originDepartmentId ?? ticket.targetDepartmentId ?? ticket.departmentId ?? null;
+      }
+      return ticket[groupingKey] ?? null;
+    })();
     if (!id) return;
     const label = labelById[id] ?? id;
     const current = summary.get(id) ?? {
