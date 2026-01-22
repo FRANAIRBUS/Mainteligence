@@ -1,53 +1,89 @@
 # Definición de roles y permisos (RBAC)
 
-Referencia implementable para el control de acceso por rol y ámbito de departamento/organización.
+Contrato implementable para control de acceso por rol y ámbito dentro de la **organización activa**.
 
-## Campos obligatorios en el perfil
-- `role`: `super_admin` | `admin` | `mantenimiento` | `jefe_departamento` | `jefe_ubicacion` | `operario` | `auditor`
-- `organizationId`: siempre presente.
-- `departmentId`: requerido para `jefe_departamento` y `operario`.
-- `departmentIds[]`: reservado para multi-pertenencia futura.
-- `locationId`: requerido para `jefe_ubicacion` (legacy: `siteId`).
-- `locationIds[]`: reservado para multi-pertenencia futura (legacy: `siteIds[]`).
+## 0) Aislamiento por organización activa
+- Un usuario puede pertenecer a varias organizaciones, pero **no hay acceso global**.
+- Todas las operaciones están acotadas a la organización activa.
+- Invariante duro: `doc.organizationId` debe ser igual a `activeOrgId`.
 
-## Visibilidad de incidencias/tickets
-- **super_admin**: todos los tickets (todas las organizaciones si aplica multi‑org).
-- **admin / mantenimiento**: todos los tickets dentro de su `organizationId`.
-- **jefe_departamento**: tickets donde `originDepartmentId` o `targetDepartmentId` estén en su `departmentId`, o si es `createdBy` / `assignedTo`.
-- **jefe_ubicacion**: tickets en su `locationId`, o si es `createdBy` / `assignedTo`.
-- **operario**: tickets creados por él, asignados a él, o asociados a su `departmentId`/`locationId`.
-- **auditor**: lectura global.
+## 1) Roles
+- `super_admin`
+- `admin`
+- `mantenimiento`
+- `jefe_departamento`
+- `jefe_ubicacion`
+- `operario`
+- `auditor` (solo lectura)
 
-> Base de compatibilidad: si un ticket solo tiene `departmentId`, se trata como `originDepartmentId/targetDepartmentId`.
+## 2) Campos obligatorios en el perfil (membership)
+- `role`
+- `organizationId`
+- `departmentId` requerido para `jefe_departamento` y `operario`.
+- `locationId` requerido para `jefe_ubicacion`.
+- `departmentIds[]` y `locationIds[]` reservados para multi-pertenencia futura.
 
-## Matriz de acciones
+## 3) Campos mínimos en ticket/task
+Obligatorios para permisos:
+- `organizationId`
+- `createdBy`
+- `assignedTo` (opcional)
+- `locationId` (opcional)
+- `originDepartmentId` (opcional)
+- `targetDepartmentId` (opcional)
+
+## 4) Normalización para permisos
+Antes de evaluar permisos:
+- `docLoc = doc.locationId ?? null`
+- `docOriginDept = doc.originDepartmentId ?? null`
+- `docTargetDept = doc.targetDepartmentId ?? null`
+
+Predicados:
+- `isSameOrg = (doc.organizationId == activeOrgId)`
+- `isCreator = (doc.createdBy == me.uid)`
+- `isAssignee = (doc.assignedTo == me.uid)`
+- `inMyDept = (docOriginDept == me.departmentId) || (docTargetDept == me.departmentId)`
+- `inMyLoc = (docLoc != null) && (docLoc == me.locationId)`
+
+## 5) Visibilidad (lectura)
+Regla 0: si `!isSameOrg` ⇒ **DENY**.
+
+- `super_admin` ⇒ **ALLOW** (todo en la org activa).
+- `admin` ⇒ **ALLOW** (todo en la org activa).
+- `mantenimiento` ⇒ **ALLOW** (todo en la org activa).
+- `auditor` ⇒ **ALLOW** (lectura completa en la org activa).
+- `jefe_departamento` ⇒ **ALLOW** si `inMyDept || isCreator || isAssignee`.
+- `jefe_ubicacion` ⇒ **ALLOW** si `inMyLoc || isCreator || isAssignee`.
+- `operario` ⇒ **ALLOW** si `isCreator || isAssignee || inMyDept`.
+
+## 6) Matriz de acciones (tickets + tareas)
+Todas las acciones presuponen `canReadDoc == true`, salvo crear.
 
 | Acción | super_admin | admin | mantenimiento | jefe_departamento | jefe_ubicacion | operario | auditor |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Crear incidencia/tarea | ✅ | ✅ | ✅ | ✅ (en su ámbito) | ✅ (en su ámbito) | ✅ (en su ámbito) | ❌ |
-| Leer | ✅ | ✅ (org) | ✅ (org) | ✅ (su depto) | ✅ (su sitio) | ✅ (según visibilidad base) | ✅ |
-| Editar contenido | ✅ | ✅ | ✅ | ✅ (su depto) | ✅ (su sitio) | ✅ si `createdBy==me` o `assignedTo==me` | ❌ |
-| Comentar | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (si lo ve) | ❌ |
-| Asignar a usuario | ✅ | ✅ | ✅ | ✅ (solo usuarios de su ámbito) | ✅ (solo usuarios de su ámbito) | ⚠️ Solo a sí mismo o a cola/departamento | ❌ |
-| Trasladar de departamento | ✅ | ✅ | ✅ | ✅ (su depto) | ✅ (su sitio) | ✅ mientras esté abierta y no cerrada | ❌ |
-| Cambiar prioridad | ✅ | ✅ | ✅ | ✅ (su depto) | ✅ (su sitio) | ✅ excepto subir a "Crítica" si se desea limitar | ❌ |
-| Cambiar estado | ✅ | ✅ | ✅ | ✅ (su depto) | ✅ (su sitio) | ✅ solo si es creador/asignado | ❌ |
-| Completar tarea | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (si está asignada) | ❌ |
-| Marcar incidencia resuelta | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (si está asignada) | ❌ |
-| Solicitar cierre | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (creador/asignado marca `Cierre solicitado`) | ❌ |
-| Cerrar definitivamente | ✅ | ✅ | ✅ | ✅ (su depto) | ✅ (su sitio) | ❌ (usa solicitud de cierre) | ❌ |
+| Crear ticket/tarea | ✅ | ✅ | ✅ | ✅ (ámbito) | ✅ (ámbito) | ✅ (ámbito) | ❌ |
+| Leer | ✅ | ✅ | ✅ | ✅ (ámbito + creador/asignado) | ✅ (ámbito + creador/asignado) | ✅ (según canRead) | ✅ |
+| Editar contenido | ✅ | ✅ | ✅ | ✅ (inMyDept) | ✅ (inMyLoc) | ✅ si `isCreator` o `isAssignee` | ❌ |
+| Comentar | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ si lo ve | ❌ |
+| Asignar a usuario | ✅ | ✅ | ✅ | ✅ (solo usuarios de su depto) | ✅ (solo usuarios de su ubicación) | ⚠️ solo a sí mismo | ❌ |
+| Cambiar depto/trasladar | ✅ | ✅ | ✅ | ✅ (ámbito) | ✅ (ámbito) | ✅ solo si abierto | ❌ |
+| Cambiar prioridad | ✅ | ✅ | ✅ | ✅ (ámbito) | ✅ (ámbito) | ✅ si creador/asignado | ❌ |
+| Cambiar estado | ✅ | ✅ | ✅ | ✅ (ámbito) | ✅ (ámbito) | ✅ si creador/asignado | ❌ |
+| Completar tarea (`done`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ si asignado | ❌ |
+| Marcar resuelta (`resolved`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ si asignado | ❌ |
+| Solicitar cierre (`closure_requested`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ si creador/asignado | ❌ |
+| Cerrar definitivamente (`closed`) | ✅ | ✅ | ✅ | ✅ (ámbito) | ✅ (ámbito) | ❌ | ❌ |
 | Reabrir/Reasignar | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ (solo quitarse a sí mismo) | ❌ |
-| Ver auditoría | ✅ | ✅ | ✅ | ✅ (su depto) | ✅ (su sitio) | ✅ solo su ticket | ✅ |
-| Editar ajustes de organización | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Asignar roles / crear admins | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Ver auditoría | ✅ | ✅ | ✅ | ✅ (ámbito) | ✅ (ámbito) | ✅ solo docs visibles | ✅ |
 
-## Reglas específicas de operario
-- Puede asignarse a sí mismo o a una "cola" (departamento destino), pero no elegir cualquier usuario.
-- Puede pedir cierre marcando `status = "in_progress"` con metadata de solicitud (`closureRequestedBy`, `closureRequestedAt`).
-- No puede cerrar; un rol superior confirma cambiando a `resolved`.
-- Si una tarea está asignada a él, puede marcar `status = "done"`; un jefe puede reabrir/reasignar.
+## 7) Asignación de usuarios (validación dura)
+- `super_admin` / `admin` / `mantenimiento`: cualquier usuario de la org activa.
+- `jefe_departamento`: solo usuarios con `departmentId == me.departmentId`.
+- `jefe_ubicacion`: solo usuarios con `locationId == me.locationId`.
+- `operario`: solo auto-asignación.
+- `auditor`: nunca asigna.
 
-## Ámbito de jefes de departamento
-Un jefe de departamento puede actuar cuando el ticket pertenece a su ámbito:
-- `originDepartmentId` está en sus departamentos, o
-- `targetDepartmentId` está en sus departamentos.
+## 8) Workflow de cierre (operario)
+- Operario puede solicitar cierre con `status = "closure_requested"` si es creador/asignado.
+- Debe registrar `closureRequestedBy` y `closureRequestedAt`.
+- Cierre definitivo lo confirma un rol superior.
