@@ -28,7 +28,7 @@ import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { Timestamp, where } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
-import { getTaskPermissions, normalizeRole } from "@/lib/rbac";
+import { getTaskPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { orgCollectionPath } from "@/lib/organization";
 
@@ -83,6 +83,15 @@ export default function ClosedTasksPage() {
     if (!user) return null;
     return (users ?? []).find((m) => m.id === user.uid) ?? null;
   }, [users, user]);
+  const rbacUser: RBACUser | null =
+    normalizedRole && organizationId
+      ? {
+          role: normalizedRole,
+          organizationId,
+          departmentId: currentMember?.departmentId ?? profile?.departmentId ?? undefined,
+          locationId: currentMember?.locationId ?? profile?.locationId ?? profile?.siteId ?? undefined,
+        }
+      : null;
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("todas");
   const [departmentFilter, setDepartmentFilter] = useState("todas");
@@ -105,7 +114,7 @@ export default function ClosedTasksPage() {
     };
 
     const visibleTasks = tasks.filter((task) =>
-      getTaskPermissions(task, profile ?? null, user?.uid ?? null).canView
+      getTaskPermissions(task, rbacUser, user?.uid ?? null).canView
     );
 
     return [...visibleTasks]
@@ -135,7 +144,7 @@ export default function ClosedTasksPage() {
         const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
         return bCreatedAt - aCreatedAt;
       });
-  }, [dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, profile]);
+  }, [dateFilter, departmentFilter, searchQuery, tasks, user, userFilter, rbacUser]);
 
   const handleReopen = async (task: TaskWithId) => {
     if (!firestore || !auth || !user || !isAdmin) return;
