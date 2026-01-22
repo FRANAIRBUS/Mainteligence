@@ -33,7 +33,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { format } from "date-fns";
-import { normalizeRole } from "@/lib/rbac";
+import { getTicketPermissions, normalizeRole } from "@/lib/rbac";
 import { normalizeTicketStatus, ticketStatusLabel } from "@/lib/status";
 
 const statusLabels: Record<string, string> = {
@@ -53,10 +53,6 @@ export default function ClosedIncidentsPage() {
 
   const normalizedRole = normalizeRole(userProfile?.role);
   const isSuperAdmin = normalizedRole === "super_admin";
-  const canViewAll =
-    normalizedRole === "admin" ||
-    normalizedRole === "mantenimiento" ||
-    isSuperAdmin;
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
   const ticketsConstraints = useMemo(() => {
@@ -100,37 +96,9 @@ export default function ClosedIncidentsPage() {
       mes: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
     };
 
-    const scopeDepartments = Array.from(
-      new Set(
-        [userProfile?.departmentId, ...(userProfile?.departmentIds ?? [])].filter(
-          (id): id is string => Boolean(id)
-        )
-      )
+    const visibleTickets = tickets.filter((ticket) =>
+      getTicketPermissions(ticket, userProfile ?? null, user?.uid ?? null).canView
     );
-    const scopeLocations = Array.from(
-      new Set(
-        [
-          userProfile?.locationId ?? userProfile?.siteId,
-          ...(userProfile?.locationIds ?? []),
-          ...(userProfile?.siteIds ?? []),
-        ].filter((id): id is string => Boolean(id))
-      )
-    );
-
-    const visibleTickets = canViewAll
-      ? tickets
-      : tickets.filter((ticket) => {
-          if (ticket.createdBy === user?.uid) return true;
-          if (ticket.assignedTo === user?.uid) return true;
-          if (scopeDepartments.length > 0 && ticket.departmentId) {
-            return scopeDepartments.includes(ticket.departmentId);
-          }
-          const ticketLocationId = ticket.locationId ?? ticket.siteId;
-          if (scopeLocations.length > 0 && ticketLocationId) {
-            return scopeLocations.includes(ticketLocationId);
-          }
-          return false;
-        });
 
     return [...visibleTickets]
       .filter((ticket) => {
@@ -139,9 +107,13 @@ export default function ClosedIncidentsPage() {
         }
         return true;
       })
-      .filter((ticket) => (departmentFilter === "todas" ? true : ticket.departmentId === departmentFilter))
       .filter((ticket) => {
-        const ticketLocationId = ticket.locationId ?? ticket.siteId;
+        if (departmentFilter === "todas") return true;
+        const ticketDepartmentId = ticket.targetDepartmentId ?? ticket.originDepartmentId ?? null;
+        return ticketDepartmentId === departmentFilter;
+      })
+      .filter((ticket) => {
+        const ticketLocationId = ticket.locationId ?? null;
         return siteFilter === "todas" ? true : ticketLocationId === siteFilter;
       })
       .filter((ticket) => {
@@ -158,7 +130,6 @@ export default function ClosedIncidentsPage() {
         return bDate - aDate;
       });
   }, [
-    canViewAll,
     dateFilter,
     departmentFilter,
     searchQuery,
@@ -166,12 +137,7 @@ export default function ClosedIncidentsPage() {
     tickets,
     user,
     userFilter,
-    userProfile?.departmentId,
-    userProfile?.departmentIds,
-    userProfile?.locationId,
-    userProfile?.locationIds,
-    userProfile?.siteId,
-    userProfile?.siteIds,
+    userProfile,
   ]);
 
   const handleReopen = async (ticket: Ticket) => {
@@ -224,8 +190,9 @@ export default function ClosedIncidentsPage() {
         description: ticket.description,
         status: "new",
         priority: ticket.priority,
-        siteId: ticket.locationId ?? ticket.siteId,
-        departmentId: ticket.departmentId,
+        locationId: ticket.locationId ?? null,
+        originDepartmentId: ticket.originDepartmentId ?? null,
+        targetDepartmentId: ticket.targetDepartmentId ?? null,
         assetId: ticket.assetId ?? null,
         type: ticket.type,
         assignedRole: ticket.assignedRole ?? null,
@@ -328,9 +295,10 @@ export default function ClosedIncidentsPage() {
           )}
           {!isLoading &&
             filteredTickets.map((ticket) => {
+              const ticketDepartmentId = ticket.targetDepartmentId ?? ticket.originDepartmentId ?? null;
               const departmentLabel =
-                departments.find((dept) => dept.id === ticket.departmentId)?.name || "N/A";
-              const ticketLocationId = ticket.locationId ?? ticket.siteId;
+                (ticketDepartmentId && departments.find((dept) => dept.id === ticketDepartmentId)?.name) || "N/A";
+              const ticketLocationId = ticket.locationId ?? null;
               const siteLabel = sites.find((site) => site.id === ticketLocationId)?.name || "N/A";
               const createdAtLabel = ticket.createdAt?.toDate
                 ? format(ticket.createdAt.toDate(), "dd/MM/yyyy")
