@@ -191,7 +191,7 @@ const buildGuards = (ticket: Ticket, user: User | RBACUser | null, userId: strin
     inDepartmentScope,
     inLocationScope,
     inScope: inDepartmentScope || inLocationScope,
-    matchesOrg: !!user?.organizationId && ticket.organizationId === user.organizationId,
+    matchesOrg: !!user?.organizationId && (!ticket.organizationId || ticket.organizationId === user.organizationId),
   };
 };
 
@@ -392,7 +392,7 @@ const buildTaskGuards = (
     isAssignee: !!userId && task.assignedTo === userId,
     inDepartmentScope,
     inLocationScope,
-    matchesOrg: !!user?.organizationId && task.organizationId === user.organizationId,
+    matchesOrg: !!user?.organizationId && (!task.organizationId || task.organizationId === user.organizationId),
   };
 };
 
