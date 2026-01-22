@@ -127,6 +127,8 @@ export type TaskPermission = {
   canMarkTaskComplete: boolean;
 };
 
+export type RBACUser = Pick<User, 'role' | 'organizationId' | 'departmentId' | 'locationId'>;
+
 const getTicketOrigin = (ticket: Ticket) => ticket.originDepartmentId ?? null;
 const getTicketTarget = (ticket: Ticket) => ticket.targetDepartmentId ?? null;
 
@@ -145,7 +147,7 @@ const isInLocationScope = (ticket: Ticket, scope: LocationScope) => {
   );
 };
 
-const buildGuards = (ticket: Ticket, user: User | null, userId: string | null): TicketRoleGuards => {
+const buildGuards = (ticket: Ticket, user: User | RBACUser | null, userId: string | null): TicketRoleGuards => {
   const deptScope: DepartmentScope = {
     departmentId: user?.departmentId,
   };
@@ -171,7 +173,11 @@ const buildGuards = (ticket: Ticket, user: User | null, userId: string | null): 
 const isClosed = (ticket: Ticket) => normalizeTicketStatus(ticket.status) === 'resolved';
 const isOpen = (ticket: Ticket) => normalizeTicketStatus(ticket.status) === 'new';
 
-export function getTicketPermissions(ticket: Ticket, user: User | null, userId: string | null): TicketPermission {
+export function getTicketPermissions(
+  ticket: Ticket,
+  user: User | RBACUser | null,
+  userId: string | null
+): TicketPermission {
   const role = normalizeRole(user?.role);
 
   if (!userId || !role) {
@@ -343,7 +349,11 @@ type TaskRoleGuards = {
   matchesOrg: boolean;
 };
 
-const buildTaskGuards = (task: MaintenanceTask, user: User | null, userId: string | null): TaskRoleGuards => {
+const buildTaskGuards = (
+  task: MaintenanceTask,
+  user: User | RBACUser | null,
+  userId: string | null
+): TaskRoleGuards => {
   const deptId = task.targetDepartmentId ?? task.originDepartmentId ?? null;
   const inDepartmentScope = !!user?.departmentId && !!deptId && deptId === user.departmentId;
   const inLocationScope = !!user?.locationId && !!task.locationId && task.locationId === user.locationId;
@@ -357,7 +367,11 @@ const buildTaskGuards = (task: MaintenanceTask, user: User | null, userId: strin
   };
 };
 
-export function getTaskPermissions(task: MaintenanceTask, user: User | null, userId: string | null): TaskPermission {
+export function getTaskPermissions(
+  task: MaintenanceTask,
+  user: User | RBACUser | null,
+  userId: string | null
+): TaskPermission {
   const role = normalizeRole(user?.role);
 
   if (!userId || !role) {

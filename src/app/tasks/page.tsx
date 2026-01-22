@@ -22,7 +22,7 @@ import { useCollection } from "@/lib/firebase";
 import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, OrganizationMember } from "@/lib/firebase/models";
-import { getTaskPermissions, normalizeRole } from "@/lib/rbac";
+import { getTaskPermissions, normalizeRole, type RBACUser } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
 import { orgCollectionPath } from "@/lib/organization";
@@ -49,11 +49,23 @@ const priorityOrder: Record<MaintenanceTask["priority"], number> = {
 };
 
 export default function TasksPage() {
-  const { user, profile: userProfile, organizationId, loading: userLoading, isLoaded } =
+  const { user, profile: userProfile, role, organizationId, loading: userLoading, isLoaded } =
     useUser();
   const router = useRouter();
 
-  const normalizedRole = normalizeRole(userProfile?.role);
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
+  const rbacUser: RBACUser | null =
+    userProfile ??
+    (normalizedRole &&
+    organizationId &&
+    ["super_admin", "admin", "mantenimiento"].includes(normalizedRole)
+      ? {
+          role: normalizedRole,
+          organizationId,
+          departmentId: undefined,
+          locationId: undefined,
+        }
+      : null);
 
   const { data: tasks, loading } = useCollection<MaintenanceTask>(
     organizationId ? orgCollectionPath(organizationId, "tasks") : null
@@ -94,7 +106,7 @@ export default function TasksPage() {
 
   const filteredTasks = useMemo(() => {
     const visibleTasks = tasks.filter((task) =>
-      getTaskPermissions(task, userProfile ?? null, user?.uid ?? null).canView
+      getTaskPermissions(task, rbacUser, user?.uid ?? null).canView
     );
 
     const openTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) !== "done");
@@ -133,11 +145,11 @@ export default function TasksPage() {
         "no asignada".includes(searchQuery.toLowerCase());
       return matchesStatus && matchesPriority && matchesLocation && matchesQuery;
     });
-  }, [dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, userProfile]);
+  }, [dateFilter, locationFilter, priorityFilter, searchQuery, statusFilter, tasks, user, userNameMap, rbacUser]);
 
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / perPage));
   const paginated = filteredTasks.slice((page - 1) * perPage, page * perPage);
-  if (!user || userLoading || !userProfile || (!organizationId && normalizedRole !== "super_admin")) {
+  if (!user || userLoading || !rbacUser || (!organizationId && normalizedRole !== "super_admin")) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
