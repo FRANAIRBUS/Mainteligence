@@ -131,7 +131,8 @@ export default function TasksPage() {
         statusFilter === "todas" || normalizeTaskStatus(task.status) === statusFilter;
       const matchesPriority =
         priorityFilter === "todas" || task.priority === priorityFilter;
-      const taskDepartmentId = task.targetDepartmentId ?? task.originDepartmentId ?? "";
+      const taskDepartmentId =
+        task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? "";
       const matchesLocation =
         locationFilter === "todas" || taskDepartmentId === locationFilter;
       const assignedName =

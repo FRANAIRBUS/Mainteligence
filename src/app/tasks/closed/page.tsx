@@ -119,7 +119,8 @@ export default function ClosedTasksPage() {
       .filter(
         (task) =>
           departmentFilter === "todas" ||
-          (task.targetDepartmentId ?? task.originDepartmentId) === departmentFilter
+          (task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId) ===
+            departmentFilter
       )
       .filter((task) => {
         if (userFilter === "todas") return true;
@@ -172,8 +173,8 @@ export default function ClosedTasksPage() {
         priority: task.priority,
         dueDate: task.dueDate ?? null,
         assignedTo: task.assignedTo ?? "",
-        originDepartmentId: task.originDepartmentId,
-        targetDepartmentId: task.targetDepartmentId,
+        originDepartmentId: task.originDepartmentId ?? task.departmentId,
+        targetDepartmentId: task.targetDepartmentId ?? task.departmentId,
         locationId: task.locationId ?? null,
         category: task.category ?? "",
         reopened: false,
@@ -260,7 +261,9 @@ export default function ClosedTasksPage() {
             filteredTasks.map((task) => {
               const departmentLabel =
                 departments.find(
-                  (dept) => dept.id === (task.targetDepartmentId ?? task.originDepartmentId ?? "")
+                  (dept) =>
+                    dept.id ===
+                    (task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? "")
                 )?.name || "Sin departamento";
               const createdAtLabel = task.createdAt?.toDate
                 ? format(task.createdAt.toDate(), "dd/MM/yyyy", { locale: es })
