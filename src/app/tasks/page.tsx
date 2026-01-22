@@ -56,9 +56,7 @@ export default function TasksPage() {
   const normalizedRole = normalizeRole(role ?? userProfile?.role);
   const rbacUser: RBACUser | null =
     userProfile ??
-    (normalizedRole &&
-    organizationId &&
-    ["super_admin", "admin", "mantenimiento"].includes(normalizedRole)
+    (normalizedRole && organizationId
       ? {
           role: normalizedRole,
           organizationId,
