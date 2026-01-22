@@ -150,8 +150,20 @@ export const buildRbacUser = ({
   return {
     role: normalizedRole,
     organizationId: resolvedOrganizationId,
-    departmentId: member?.departmentId ?? profile?.departmentId ?? undefined,
-    locationId: member?.locationId ?? profile?.locationId ?? profile?.siteId ?? undefined,
+    departmentId:
+      member?.departmentId ??
+      member?.departmentIds?.[0] ??
+      profile?.departmentId ??
+      profile?.departmentIds?.[0] ??
+      undefined,
+    locationId:
+      member?.locationId ??
+      member?.locationIds?.[0] ??
+      profile?.locationId ??
+      profile?.locationIds?.[0] ??
+      profile?.siteId ??
+      profile?.siteIds?.[0] ??
+      undefined,
   };
 };
 
