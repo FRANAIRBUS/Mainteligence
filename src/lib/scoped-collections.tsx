@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { where } from 'firebase/firestore';
+import { where, type QueryConstraint } from 'firebase/firestore';
 
 import { useCollectionQuery } from '@/lib/firebase';
 import { orgCollectionPath } from '@/lib/organization';
@@ -21,6 +21,8 @@ type ScopedParams = {
   rbacUser: RBACUser | null;
   uid?: string | null;
 };
+
+const EMPTY_CONSTRAINTS: QueryConstraint[] = [];
 
 function mergeUniqueById<T extends { id?: string }>(...lists: Array<T[] | undefined | null>): T[] {
   const map = new Map<string, T>();
@@ -60,33 +62,66 @@ export function useScopedTasks({ organizationId, rbacUser, uid }: ScopedParams):
   const useLocationScope = !canReadAll && role === 'jefe_ubicacion' && !!locationId;
   const usePersonalScope = !canReadAll && !!uid;
 
+  // IMPORTANT:
+  // useCollectionQuery depends on the identity of QueryConstraint objects.
+  // We MUST memoize constraints to avoid infinite re-render loops (React error #185).
+  const createdConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !usePersonalScope || !uid) return EMPTY_CONSTRAINTS;
+    return [where('createdBy', '==', uid)];
+  }, [basePath, usePersonalScope, uid]);
+
+  const assignedConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !usePersonalScope || !uid) return EMPTY_CONSTRAINTS;
+    return [where('assignedTo', '==', uid)];
+  }, [basePath, usePersonalScope, uid]);
+
+  const deptLegacyConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !useDeptScope || !departmentId) return EMPTY_CONSTRAINTS;
+    return [where('departmentId', '==', departmentId)];
+  }, [basePath, useDeptScope, departmentId]);
+
+  const deptOriginConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !useDeptScope || !departmentId) return EMPTY_CONSTRAINTS;
+    return [where('originDepartmentId', '==', departmentId)];
+  }, [basePath, useDeptScope, departmentId]);
+
+  const deptTargetConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !useDeptScope || !departmentId) return EMPTY_CONSTRAINTS;
+    return [where('targetDepartmentId', '==', departmentId)];
+  }, [basePath, useDeptScope, departmentId]);
+
+  const locationConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !useLocationScope || !locationId) return EMPTY_CONSTRAINTS;
+    return [where('locationId', '==', locationId)];
+  }, [basePath, useLocationScope, locationId]);
+
   const all = useCollectionQuery<MaintenanceTask>(canReadAll ? basePath : null);
 
   const created = useCollectionQuery<MaintenanceTask>(
     !canReadAll && usePersonalScope ? basePath : null,
-    where('createdBy', '==', uid as string)
+    ...createdConstraints
   );
   const assigned = useCollectionQuery<MaintenanceTask>(
     !canReadAll && usePersonalScope ? basePath : null,
-    where('assignedTo', '==', uid as string)
+    ...assignedConstraints
   );
 
   const deptLegacy = useCollectionQuery<MaintenanceTask>(
     !canReadAll && useDeptScope ? basePath : null,
-    where('departmentId', '==', departmentId as string)
+    ...deptLegacyConstraints
   );
   const deptOrigin = useCollectionQuery<MaintenanceTask>(
     !canReadAll && useDeptScope ? basePath : null,
-    where('originDepartmentId', '==', departmentId as string)
+    ...deptOriginConstraints
   );
   const deptTarget = useCollectionQuery<MaintenanceTask>(
     !canReadAll && useDeptScope ? basePath : null,
-    where('targetDepartmentId', '==', departmentId as string)
+    ...deptTargetConstraints
   );
 
   const loc = useCollectionQuery<MaintenanceTask>(
     !canReadAll && useLocationScope ? basePath : null,
-    where('locationId', '==', locationId as string)
+    ...locationConstraints
   );
 
   const data = useMemo(() => {
@@ -117,33 +152,63 @@ export function useScopedTickets({ organizationId, rbacUser, uid }: ScopedParams
   const useLocationScope = !canReadAll && role === 'jefe_ubicacion' && !!locationId;
   const usePersonalScope = !canReadAll && !!uid;
 
+  const createdConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !usePersonalScope || !uid) return EMPTY_CONSTRAINTS;
+    return [where('createdBy', '==', uid)];
+  }, [basePath, usePersonalScope, uid]);
+
+  const assignedConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !usePersonalScope || !uid) return EMPTY_CONSTRAINTS;
+    return [where('assignedTo', '==', uid)];
+  }, [basePath, usePersonalScope, uid]);
+
+  const deptLegacyConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !useDeptScope || !departmentId) return EMPTY_CONSTRAINTS;
+    return [where('departmentId', '==', departmentId)];
+  }, [basePath, useDeptScope, departmentId]);
+
+  const deptOriginConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !useDeptScope || !departmentId) return EMPTY_CONSTRAINTS;
+    return [where('originDepartmentId', '==', departmentId)];
+  }, [basePath, useDeptScope, departmentId]);
+
+  const deptTargetConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !useDeptScope || !departmentId) return EMPTY_CONSTRAINTS;
+    return [where('targetDepartmentId', '==', departmentId)];
+  }, [basePath, useDeptScope, departmentId]);
+
+  const locationConstraints = useMemo<QueryConstraint[]>(() => {
+    if (!basePath || !useLocationScope || !locationId) return EMPTY_CONSTRAINTS;
+    return [where('locationId', '==', locationId)];
+  }, [basePath, useLocationScope, locationId]);
+
   const all = useCollectionQuery<Ticket>(canReadAll ? basePath : null);
 
   const created = useCollectionQuery<Ticket>(
     !canReadAll && usePersonalScope ? basePath : null,
-    where('createdBy', '==', uid as string)
+    ...createdConstraints
   );
   const assigned = useCollectionQuery<Ticket>(
     !canReadAll && usePersonalScope ? basePath : null,
-    where('assignedTo', '==', uid as string)
+    ...assignedConstraints
   );
 
   const deptLegacy = useCollectionQuery<Ticket>(
     !canReadAll && useDeptScope ? basePath : null,
-    where('departmentId', '==', departmentId as string)
+    ...deptLegacyConstraints
   );
   const deptOrigin = useCollectionQuery<Ticket>(
     !canReadAll && useDeptScope ? basePath : null,
-    where('originDepartmentId', '==', departmentId as string)
+    ...deptOriginConstraints
   );
   const deptTarget = useCollectionQuery<Ticket>(
     !canReadAll && useDeptScope ? basePath : null,
-    where('targetDepartmentId', '==', departmentId as string)
+    ...deptTargetConstraints
   );
 
   const loc = useCollectionQuery<Ticket>(
     !canReadAll && useLocationScope ? basePath : null,
-    where('locationId', '==', locationId as string)
+    ...locationConstraints
   );
 
   const data = useMemo(() => {
