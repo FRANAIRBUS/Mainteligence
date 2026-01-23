@@ -37,11 +37,9 @@ export const canManageMasterData = (role?: UserRole | string | null) => {
   return MASTER_DATA_ROLES.includes((normalized ?? '') as (typeof MASTER_DATA_ROLES)[number]);
 };
 
-type DepartmentScope = { departmentId?: string };
+type DepartmentScope = { departmentId?: string; departmentIds?: string[] };
 
-type LocationScope = {
-  locationId?: string;
-};
+type LocationScope = { locationId?: string; locationIds?: string[] };
 
 const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? null;
 
@@ -81,7 +79,7 @@ export type TaskPermission = {
   canMarkTaskComplete: boolean;
 };
 
-export type RBACUser = Pick<User, 'role' | 'organizationId' | 'departmentId' | 'locationId'>;
+export type RBACUser = Pick<User, 'role' | 'organizationId' | 'departmentId' | 'departmentIds' | 'locationId' | 'locationIds'>;
 
 type BuildRbacUserParams = {
   role?: UserRole | string | null;
@@ -97,25 +95,41 @@ export const buildRbacUser = ({
   profile,
 }: BuildRbacUserParams): RBACUser | null => {
   const normalizedRole = normalizeRole(role ?? profile?.role);
-  const resolvedOrganizationId = organizationId ?? member?.organizationId ?? profile?.organizationId;
+  const resolvedOrganizationId =
+    organizationId ?? member?.organizationId ?? profile?.organizationId;
+
   if (!normalizedRole || !resolvedOrganizationId) return null;
+
+  const departmentIds = Array.from(
+    new Set(
+      [
+        member?.departmentId ?? null,
+        ...(member?.departmentIds ?? []),
+        profile?.departmentId ?? null,
+        ...(profile?.departmentIds ?? []),
+      ].filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    )
+  );
+
+  const locationIds = Array.from(
+    new Set(
+      [
+        member?.locationId ?? null,
+        ...(member?.locationIds ?? []),
+        profile?.locationId ?? null,
+        ...(profile?.locationIds ?? []),
+      ].filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+    )
+  );
 
   return {
     role: normalizedRole,
     organizationId: resolvedOrganizationId,
-    departmentId:
-      member?.departmentId ??
-      member?.departmentIds?.[0] ??
-      profile?.departmentId ??
-      profile?.departmentIds?.[0] ??
-      undefined,
-    locationId:
-      member?.locationId ??
-      member?.locationIds?.[0] ??
-      profile?.locationId ??
-      profile?.locationIds?.[0] ??
-      undefined,
-};
+    departmentId: departmentIds[0] ?? undefined,
+    departmentIds,
+    locationId: locationIds[0] ?? undefined,
+    locationIds,
+  };
 };
 
 const getTicketOrigin = (ticket: Ticket) =>
@@ -126,25 +140,37 @@ const getTicketTarget = (ticket: Ticket) =>
 const isInDepartmentScope = (ticket: Ticket, scope: DepartmentScope) => {
   const origin = getTicketOrigin(ticket);
   const target = getTicketTarget(ticket);
-  return (
-    !!scope.departmentId && (origin === scope.departmentId || target === scope.departmentId)
-  );
+
+  const deptIds =
+    (scope.departmentIds && scope.departmentIds.length > 0)
+      ? scope.departmentIds
+      : (scope.departmentId ? [scope.departmentId] : []);
+
+  if (!deptIds.length) return false;
+  return deptIds.includes(origin ?? '') || deptIds.includes(target ?? '');
 };
 
 const isInLocationScope = (ticket: Ticket, scope: LocationScope) => {
   const site = getTicketLocationId(ticket);
-  return (
-    !!scope.locationId && site === scope.locationId
-  );
+
+  const locationIds =
+    (scope.locationIds && scope.locationIds.length > 0)
+      ? scope.locationIds
+      : (scope.locationId ? [scope.locationId] : []);
+
+  if (!locationIds.length) return false;
+  return locationIds.includes(site ?? '');
 };
 
 const buildGuards = (ticket: Ticket, user: User | RBACUser | null, userId: string | null): TicketRoleGuards => {
   const deptScope: DepartmentScope = {
     departmentId: user?.departmentId,
+    departmentIds: (user as any)?.departmentIds ?? (user?.departmentId ? [user.departmentId] : []),
   };
 
   const locationScope: LocationScope = {
     locationId: user?.locationId,
+    locationIds: (user as any)?.locationIds ?? (user?.locationId ? [user.locationId] : []),
   };
 
   const inDepartmentScope = isInDepartmentScope(ticket, deptScope);
@@ -345,12 +371,27 @@ const buildTaskGuards = (
   user: User | RBACUser | null,
   userId: string | null
 ): TaskRoleGuards => {
-  const deptId =
-    task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? null;
+  const originDeptId = task.originDepartmentId ?? task.departmentId ?? null;
+  const targetDeptId = task.targetDepartmentId ?? task.departmentId ?? null;
   const taskLocationId = task.locationId ?? null;
-  const inDepartmentScope = !!user?.departmentId && !!deptId && deptId === user.departmentId;
+
+  const userDeptIds: string[] =
+    ((user as any)?.departmentIds as string[] | undefined) ??
+    (user?.departmentId ? [user.departmentId] : []);
+  const userLocIds: string[] =
+    ((user as any)?.locationIds as string[] | undefined) ??
+    (user?.locationId ? [user.locationId] : []);
+
+  const inDepartmentScope =
+    userDeptIds.length > 0 &&
+    (
+      (originDeptId ? userDeptIds.includes(originDeptId) : false) ||
+      (targetDeptId ? userDeptIds.includes(targetDeptId) : false)
+    );
+
   const inLocationScope =
-    !!user?.locationId && !!taskLocationId && taskLocationId === user.locationId;
+    userLocIds.length > 0 &&
+    (taskLocationId ? userLocIds.includes(taskLocationId) : false);
 
   return {
     isCreator: !!userId && task.createdBy === userId,
