@@ -33,6 +33,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { buildRbacUser, getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import { useScopedTickets } from '@/lib/scoped-collections';
 import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 import Link from 'next/link';
 import { orgCollectionPath, orgDocPath } from '@/lib/organization';
@@ -89,9 +90,11 @@ export default function IncidentsPage() {
     profile: userProfile ?? null,
   });
 
-  const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
-    organizationId ? orgCollectionPath(organizationId, 'tickets') : null
-  );
+  const { data: tickets = [], loading: ticketsLoading } = useScopedTickets({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
+  });
   const { data: sites = [], loading: sitesLoading } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );

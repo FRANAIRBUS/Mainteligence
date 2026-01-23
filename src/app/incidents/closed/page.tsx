@@ -16,7 +16,6 @@ import { Icons } from "@/components/icons";
 import { AppShell } from "@/components/app-shell";
 import {
   useCollection,
-  useCollectionQuery,
   useDoc,
   useFirestore,
   useUser,
@@ -29,12 +28,12 @@ import {
   serverTimestamp,
   Timestamp,
   updateDoc,
-  where,
 } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { format } from "date-fns";
 import { buildRbacUser, getTicketPermissions, normalizeRole } from "@/lib/rbac";
+import { useScopedTickets } from "@/lib/scoped-collections";
 import { normalizeTicketStatus, ticketStatusLabel } from "@/lib/status";
 
 const statusLabels: Record<string, string> = {
@@ -65,16 +64,11 @@ export default function ClosedIncidentsPage() {
     profile: userProfile ?? null,
   });
 
-  const ticketsConstraints = useMemo(() => {
-    if (userLoading || !user) return null;
-    // Cargamos el histórico de la organización y filtramos por permisos en el cliente.
-    return [where("status", "in", ["resolved", "Resuelta", "Cerrada"])];
-  }, [user, userLoading]);
-
-  const { data: tickets, loading } = useCollectionQuery<Ticket>(
-    ticketsConstraints && organizationId ? orgCollectionPath(organizationId, "tickets") : null,
-    ...(ticketsConstraints ?? [])
-  );
+  const { data: tickets = [], loading } = useScopedTickets({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
+  });
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
   );
@@ -115,7 +109,11 @@ export default function ClosedIncidentsPage() {
       ? tickets.filter((ticket) => getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView)
       : tickets;
 
-    return [...visibleTickets]
+    const resolvedTickets = visibleTickets.filter(
+      (ticket) => normalizeTicketStatus(ticket.status) === "resolved"
+    );
+
+    return [...resolvedTickets]
       .filter((ticket) => {
         if (dateLimits[dateFilter] && ticket.createdAt?.toDate) {
           return ticket.createdAt.toDate() >= (dateLimits[dateFilter] as Date);
