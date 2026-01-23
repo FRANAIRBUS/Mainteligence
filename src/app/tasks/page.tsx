@@ -23,6 +23,7 @@ import { useUser } from "@/lib/firebase/auth/use-user";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, OrganizationMember } from "@/lib/firebase/models";
 import { buildRbacUser, getTaskPermissions, normalizeRole } from "@/lib/rbac";
+import { useScopedTasks } from "@/lib/scoped-collections";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { CalendarRange, ListFilter, MapPin, ShieldAlert } from "lucide-react";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
@@ -64,9 +65,11 @@ export default function TasksPage() {
     profile: userProfile ?? null,
   });
 
-  const { data: tasks, loading } = useCollection<MaintenanceTask>(
-    organizationId ? orgCollectionPath(organizationId, "tasks") : null
-  );
+  const { data: tasks, loading } = useScopedTasks({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
+  });
   const canReadMembers =
     normalizedRole &&
     ["super_admin", "admin", "mantenimiento", "jefe_departamento", "jefe_ubicacion", "auditor"].includes(

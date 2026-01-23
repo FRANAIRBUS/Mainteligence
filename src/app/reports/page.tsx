@@ -88,6 +88,7 @@ import { isFeatureEnabled } from '@/lib/entitlements';
 import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus } from '@/lib/status';
 import { buildRbacUser, getTaskPermissions, getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import { useScopedTasks, useScopedTickets } from '@/lib/scoped-collections';
 
 export default function ReportsPage() {
   const { user, profile: userProfile, role, loading, organizationId } = useUser();
@@ -159,12 +160,16 @@ export default function ReportsPage() {
       : true;
   const exportBlocked = Boolean(entitlement) && planFeatures !== null && !exportAllowed;
 
-  const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
-    organizationId ? orgCollectionPath(organizationId, 'tickets') : null
-  );
-  const { data: tasks = [], loading: tasksLoading } = useCollection<MaintenanceTask>(
-    organizationId ? orgCollectionPath(organizationId, 'tasks') : null
-  );
+  const { data: tickets = [], loading: ticketsLoading } = useScopedTickets({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
+  });
+  const { data: tasks = [], loading: tasksLoading } = useScopedTasks({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
+  });
   const { data: departments = [], loading: departmentsLoading } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );

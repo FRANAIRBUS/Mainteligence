@@ -22,6 +22,7 @@ import type { OrganizationMember, Ticket } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { buildRbacUser, getTaskPermissions, getTicketPermissions } from "@/lib/rbac";
+import { useScopedTasks, useScopedTickets } from "@/lib/scoped-collections";
 
 const priorityLabel: Record<string, string> = {
   alta: "Alta",
@@ -65,12 +66,6 @@ export default function Home() {
       router.replace("/onboarding");
     }
   }, [userLoading, user, organizationId, isRoot, router]);
-  const { data: tasks, loading } = useCollection<MaintenanceTask>(
-    organizationId ? orgCollectionPath(organizationId, "tasks") : null
-  );
-  const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
-    organizationId ? orgCollectionPath(organizationId, "tickets") : null
-  );
   const { data: currentMember } = useDoc<OrganizationMember>(
     user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
   );
@@ -86,6 +81,17 @@ export default function Home() {
     organizationId,
     member: currentMember,
     profile: userProfile ?? null,
+  });
+
+  const { data: tasks, loading } = useScopedTasks({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
+  });
+  const { data: tickets = [], loading: ticketsLoading } = useScopedTickets({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
   });
 
   const visibleTasks = rbacUser

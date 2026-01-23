@@ -19,17 +19,17 @@ import { AppShell } from "@/components/app-shell";
 import {
   useAuth,
   useCollection,
-  useCollectionQuery,
   useDoc,
   useFirestore,
   useUser,
 } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, OrganizationMember } from "@/lib/firebase/models";
-import { Timestamp, where } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
 import { buildRbacUser, getTaskPermissions, normalizeRole } from "@/lib/rbac";
+import { useScopedTasks } from "@/lib/scoped-collections";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
@@ -63,16 +63,21 @@ export default function ClosedTasksPage() {
   const isSuperAdmin = normalizedRole === "super_admin";
   const isAdmin = normalizedRole === "admin" || isSuperAdmin;
 
-  const tasksConstraints = useMemo(() => {
-    if (!user) return null;
-    // Cargamos todas las tareas completadas de la organización y filtramos por permisos en el cliente.
-    return [where("status", "in", ["done", "completada"])];
-  }, [user]);
-
-  const { data: tasks, loading } = useCollectionQuery<TaskWithId>(
-    tasksConstraints && organizationId ? orgCollectionPath(organizationId, "tasks") : null,
-    ...(tasksConstraints ?? [])
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
   );
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: profile ?? null,
+  });
+
+  const { data: tasks, loading } = useScopedTasks({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
+  });
   const { data: departments } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, "departments") : null
   );
@@ -85,19 +90,8 @@ export default function ClosedTasksPage() {
     canReadMembers && organizationId ? orgCollectionPath(organizationId, "members") : null
   );
 
-  const currentMemberFromList = useMemo(() => {
-    if (!user) return null;
-    return (users ?? []).find((m) => m.id === user.uid) ?? null;
-  }, [users, user]);
-  const { data: currentMember } = useDoc<OrganizationMember>(
-    user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
-  );
-  const rbacUser = buildRbacUser({
-    role,
-    organizationId,
-    member: currentMember ?? currentMemberFromList,
-    profile: profile ?? null,
-  });
+  // Nota: para tareas cerradas, la lectura del documento propio de miembro (members/{uid})
+  // es suficiente para construir el RBAC del usuario.
 
   const [dateFilter, setDateFilter] = useState<DateFilter>("todas");
   const [departmentFilter, setDepartmentFilter] = useState("todas");
@@ -123,7 +117,11 @@ export default function ClosedTasksPage() {
       ? tasks.filter((task) => getTaskPermissions(task, rbacUser, user?.uid ?? null).canView)
       : tasks;
 
-    return [...visibleTasks]
+    const doneTasks = visibleTasks.filter(
+      (task) => normalizeTaskStatus(task.status) === "done"
+    );
+
+    return [...doneTasks]
       .filter((task) => {
         const createdAtDate = task.createdAt?.toDate?.() ?? null;
         if (dateLimits[dateFilter] && createdAtDate) {
