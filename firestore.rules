@@ -56,8 +56,8 @@ service cloud.firestore {
       let membership = isValidOrgId(orgId) ? membershipDoc(orgId, uid) : null;
       return isSignedIn()
         && (
-          (isActiveMembership(member) && member.data.role in roles && member.data.organizationId == orgId)
-          || (isActiveMembership(membership) && membership.data.role in roles && membership.data.organizationId == orgId)
+          (isActiveMembership(member) && member.data.role in roles && (!('organizationId' in member.data) || member.data.organizationId == orgId))
+          || (isActiveMembership(membership) && membership.data.role in roles && (!('organizationId' in membership.data) || membership.data.organizationId == orgId))
         );
     }
 
@@ -233,15 +233,15 @@ service cloud.firestore {
         );
     }
 
-    function canUpdateDoc(orgId, uid, data) {
+    function canUpdateDoc(orgId, uid, currentData) {
       let member = activeMemberData(orgId, uid);
       return member != null
-        && organizationIdMatchesDoc(orgId, data)
+        && (organizationIdMatchesDoc(orgId, currentData) || !('organizationId' in currentData))
         && (
           member.role in ["super_admin", "admin", "mantenimiento"]
-          || (member.role in ["jefe_departamento"] && inMemberDepartment(member, data))
-          || (member.role in ["jefe_ubicacion"] && inMemberLocation(member, data))
-          || (member.role in ["operario"] && (isCreator(uid, data) || isAssignee(uid, data)))
+          || (member.role in ["jefe_departamento"] && inMemberDepartment(member, currentData))
+          || (member.role in ["jefe_ubicacion"] && inMemberLocation(member, currentData))
+          || (member.role in ["operario"] && (isCreator(uid, currentData) || isAssignee(uid, currentData)))
         );
     }
 
@@ -362,7 +362,13 @@ service cloud.firestore {
           && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
-          && canUpdateDoc(orgId, request.auth.uid, request.resource.data);
+          && canUpdateDoc(orgId, request.auth.uid, resource.data)
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.originDepartmentId == resource.data.originDepartmentId
+          && request.resource.data.targetDepartmentId == resource.data.targetDepartmentId
+          && request.resource.data.departmentId == resource.data.departmentId
+          && request.resource.data.locationId == resource.data.locationId
+          && request.resource.data.siteId == resource.data.siteId;
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
@@ -380,7 +386,13 @@ service cloud.firestore {
           && !isAuditorInOrg(orgId, request.auth.uid)
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
-          && canUpdateDoc(orgId, request.auth.uid, request.resource.data);
+          && canUpdateDoc(orgId, request.auth.uid, resource.data)
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.originDepartmentId == resource.data.originDepartmentId
+          && request.resource.data.targetDepartmentId == resource.data.targetDepartmentId
+          && request.resource.data.departmentId == resource.data.departmentId
+          && request.resource.data.locationId == resource.data.locationId
+          && request.resource.data.siteId == resource.data.siteId;
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 

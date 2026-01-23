@@ -107,12 +107,14 @@ export const filterTickets = (
 ) => {
   return tickets.filter((ticket) => {
     const ticketLocationId = ticket.locationId ?? '';
-    const ticketDepartmentId =
-      ticket.originDepartmentId ?? ticket.targetDepartmentId ?? ticket.departmentId ?? '';
+    const originDepartmentId = ticket.originDepartmentId ?? ticket.departmentId ?? '';
+    const targetDepartmentId = ticket.targetDepartmentId ?? ticket.departmentId ?? '';
     const locationMatch =
       !filters.location || siteNameById[ticketLocationId] === filters.location;
     const departmentMatch =
-      !filters.departmentId || ticketDepartmentId === filters.departmentId;
+      !filters.departmentId ||
+      originDepartmentId === filters.departmentId ||
+      targetDepartmentId === filters.departmentId;
     const dateMatch = isWithinRange(
       toDate(ticket.closedAt ?? ticket.createdAt),
       filters
@@ -130,12 +132,14 @@ export const filterTasks = (
   return tasks.filter((task) => {
     const taskLocationId = task.locationId ?? '';
     const taskLocationName = siteNameById[taskLocationId] ?? '';
-    const taskDepartmentId =
-      task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? '';
+    const originDepartmentId = task.originDepartmentId ?? task.departmentId ?? '';
+    const targetDepartmentId = task.targetDepartmentId ?? task.departmentId ?? '';
     const locationMatch =
       !filters.location || taskLocationName === filters.location;
     const departmentMatch =
-      !filters.departmentId || taskDepartmentId === filters.departmentId;
+      !filters.departmentId ||
+      originDepartmentId === filters.departmentId ||
+      targetDepartmentId === filters.departmentId;
     const dateMatch = isWithinRange(toDate(task.closedAt ?? task.createdAt), filters);
 
     return locationMatch && departmentMatch && dateMatch;
