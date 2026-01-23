@@ -221,10 +221,10 @@ service cloud.firestore {
       return member != null
         && (organizationIdMatchesDoc(orgId, data) || !('organizationId' in data))
         && (
-          member.role in ["super_admin", "admin", "mantenimiento", "auditor"]
-          || (member.role in ["jefe_departamento"] && (inMemberDepartment(member, data) || isCreator(uid, data) || isAssignee(uid, data)))
-          || (member.role in ["jefe_ubicacion"] && (inMemberLocation(member, data) || isCreator(uid, data) || isAssignee(uid, data)))
-          || (member.role in ["operario"] && (isCreator(uid, data) || isAssignee(uid, data) || inMemberDepartment(member, data)))
+          member.role in ["super_admin", "admin", "mantenimiento", "maintenance", "auditor"]
+          || (member.role in ["jefe_departamento", "dept_head_multi", "dept_head_single"] && (inMemberDepartment(member, data) || isCreator(uid, data) || isAssignee(uid, data)))
+          || (member.role in ["jefe_ubicacion", "location_head", "site_head"] && (inMemberLocation(member, data) || isCreator(uid, data) || isAssignee(uid, data)))
+          || (member.role in ["operario", "operator"] && (isCreator(uid, data) || isAssignee(uid, data) || inMemberDepartment(member, data)))
         );
     }
 
@@ -234,10 +234,10 @@ service cloud.firestore {
         && organizationIdMatchesDoc(orgId, data)
         && isCreator(uid, data)
         && (
-          member.role in ["super_admin", "admin", "mantenimiento"]
-          || (member.role in ["jefe_departamento"] && inMemberDepartment(member, data))
-          || (member.role in ["jefe_ubicacion"] && inMemberLocation(member, data))
-          || (member.role in ["operario"] && inMemberDepartment(member, data))
+          member.role in ["super_admin", "admin", "mantenimiento", "maintenance"]
+          || (member.role in ["jefe_departamento", "dept_head_multi", "dept_head_single"] && inMemberDepartment(member, data))
+          || (member.role in ["jefe_ubicacion", "location_head", "site_head"] && inMemberLocation(member, data))
+          || (member.role in ["operario", "operator"] && inMemberDepartment(member, data))
         );
     }
 
@@ -246,10 +246,10 @@ service cloud.firestore {
       return member != null
         && organizationIdMatchesDoc(orgId, data)
         && (
-          member.role in ["super_admin", "admin", "mantenimiento"]
-          || (member.role in ["jefe_departamento"] && inMemberDepartment(member, data))
-          || (member.role in ["jefe_ubicacion"] && inMemberLocation(member, data))
-          || (member.role in ["operario"] && (isCreator(uid, data) || isAssignee(uid, data)))
+          member.role in ["super_admin", "admin", "mantenimiento", "maintenance"]
+          || (member.role in ["jefe_departamento", "dept_head_multi", "dept_head_single"] && inMemberDepartment(member, data))
+          || (member.role in ["jefe_ubicacion", "location_head", "site_head"] && inMemberLocation(member, data))
+          || (member.role in ["operario", "operator"] && (isCreator(uid, data) || isAssignee(uid, data)))
         );
     }
 
