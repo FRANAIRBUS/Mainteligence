@@ -106,7 +106,7 @@ export const filterTickets = (
   siteNameById: Record<string, string>
 ) => {
   return tickets.filter((ticket) => {
-    const ticketLocationId = ticket.locationId ?? ticket.siteId ?? '';
+    const ticketLocationId = ticket.locationId ?? '';
     const ticketDepartmentId =
       ticket.originDepartmentId ?? ticket.targetDepartmentId ?? ticket.departmentId ?? '';
     const locationMatch =
@@ -128,7 +128,7 @@ export const filterTasks = (
   siteNameById: Record<string, string>
 ) => {
   return tasks.filter((task) => {
-    const taskLocationId = task.locationId ?? task.siteId ?? '';
+    const taskLocationId = task.locationId ?? '';
     const taskLocationName = siteNameById[taskLocationId] ?? '';
     const taskDepartmentId =
       task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? '';
@@ -367,7 +367,7 @@ export const buildTrendData = (
 
 export const buildIncidentGrouping = (
   tickets: Ticket[],
-  groupingKey: "departmentId" | "siteId" | "locationId",
+  groupingKey: "departmentId" | "locationId",
   labelById: Record<string, string>
 ): IncidentGrouping[] => {
   const summary = new Map<
@@ -378,12 +378,12 @@ export const buildIncidentGrouping = (
   tickets.forEach((ticket) => {
     const id = (() => {
       if (groupingKey === "locationId") {
-        return ticket.locationId ?? ticket.siteId ?? null;
+        return ticket.locationId ?? null;
       }
       if (groupingKey === "departmentId") {
         return ticket.originDepartmentId ?? ticket.targetDepartmentId ?? ticket.departmentId ?? null;
       }
-      return ticket[groupingKey] ?? null;
+      return null;
     })();
     if (!id) return;
     const label = labelById[id] ?? id;

@@ -160,7 +160,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
         const departmentName = data.departmentId
           ? departments.find((dept) => dept.id === data.departmentId)?.name || data.departmentId
           : '';
-        const locationName = ticket.locationId || ticket.siteId || '';
+        const locationName = ticket.locationId || '';
 
         void (async () => {
           try {
@@ -245,7 +245,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     }
     if (!canAssignAnyUser) return [];
     const departmentScope = currentMember?.departmentId ?? userProfile?.departmentId ?? null;
-    const locationScope = currentMember?.locationId ?? userProfile?.locationId ?? userProfile?.siteId ?? null;
+    const locationScope = currentMember?.locationId ?? userProfile?.locationId ?? null;
     if (normalizedRole === 'jefe_departamento' && departmentScope) {
       return users.filter((userOption) => userOption.departmentId === departmentScope);
     }

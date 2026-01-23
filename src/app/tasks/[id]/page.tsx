@@ -176,7 +176,7 @@ export default function TaskDetailPage() {
       dueDate,
       assignedTo: isAssigneeValid ? task.assignedTo ?? "" : "",
       departmentId: taskDepartmentId,
-      locationId: task?.locationId ?? task?.siteId ?? "",
+      locationId: task?.locationId ?? "",
       category: task?.category ?? "",
     };
   }, [task, taskDepartmentId, users]);
