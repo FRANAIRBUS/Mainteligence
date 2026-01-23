@@ -129,7 +129,7 @@ export default function ClosedIncidentsPage() {
         return ticketDepartmentId === departmentFilter;
       })
       .filter((ticket) => {
-        const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
+        const ticketLocationId = ticket.locationId ?? null;
         return siteFilter === "todas" ? true : ticketLocationId === siteFilter;
       })
       .filter((ticket) => {
@@ -206,7 +206,7 @@ export default function ClosedIncidentsPage() {
         description: ticket.description,
         status: "new",
         priority: ticket.priority,
-        locationId: ticket.locationId ?? ticket.siteId ?? null,
+        locationId: ticket.locationId ?? null,
         originDepartmentId: ticket.originDepartmentId ?? ticket.departmentId ?? null,
         targetDepartmentId: ticket.targetDepartmentId ?? ticket.departmentId ?? null,
         assetId: ticket.assetId ?? null,
@@ -318,7 +318,7 @@ export default function ClosedIncidentsPage() {
                 null;
               const departmentLabel =
                 (ticketDepartmentId && departments.find((dept) => dept.id === ticketDepartmentId)?.name) || "N/A";
-              const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
+              const ticketLocationId = ticket.locationId ?? null;
               const siteLabel = sites.find((site) => site.id === ticketLocationId)?.name || "N/A";
               const createdAtLabel = ticket.createdAt?.toDate
                 ? format(ticket.createdAt.toDate(), "dd/MM/yyyy")

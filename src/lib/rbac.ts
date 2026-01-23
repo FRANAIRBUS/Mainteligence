@@ -6,61 +6,15 @@ export const normalizeRole = (role?: UserRole | string | null) => {
   if (!role) return undefined;
   const normalized = role.toLowerCase().trim();
 
-  if (normalized === 'super_admin' || normalized === 'superadmin') return 'super_admin';
-  if (normalized === 'admin' || normalized === 'administrator') return 'admin';
+  if (normalized === 'super_admin') return 'super_admin';
+  if (normalized === 'admin') return 'admin';
+  if (normalized === 'mantenimiento') return 'mantenimiento';
+  if (normalized === 'jefe_departamento') return 'jefe_departamento';
+  if (normalized === 'jefe_ubicacion') return 'jefe_ubicacion';
+  if (normalized === 'operario') return 'operario';
+  if (normalized === 'auditor') return 'auditor';
 
-  if (
-    normalized === 'mantenimiento' ||
-    normalized === 'maintenance' ||
-    normalized === 'manteniendo' ||
-    normalized === 'maint' ||
-    normalized === 'maintainer'
-  ) {
-    return 'mantenimiento';
-  }
-
-  if (
-    normalized === 'dept_head_multi' ||
-    normalized === 'deptheadmulti' ||
-    normalized === 'dept-head-multi' ||
-    normalized === 'dept head multi' ||
-    normalized === 'department_head_multi' ||
-    normalized === 'departmentheadmulti' ||
-    normalized === 'jefe_departamento_multi' ||
-    normalized === 'jefe de departamento multi'
-  ) {
-    return 'jefe_departamento';
-  }
-
-  if (
-    normalized === 'dept_head_single' ||
-    normalized === 'deptheadsingle' ||
-    normalized === 'dept-head-single' ||
-    normalized === 'dept head single' ||
-    normalized === 'dept_head' ||
-    normalized === 'depthead' ||
-    normalized === 'department_head_single' ||
-    normalized === 'departmentheadsingle' ||
-    normalized === 'jefe_departamento' ||
-    normalized === 'jefe de departamento'
-  ) {
-    return 'jefe_departamento';
-  }
-
-  if (
-    normalized === 'jefe_ubicacion' ||
-    normalized === 'jefe ubicacion' ||
-    normalized === 'location_head' ||
-    normalized === 'site_head'
-  ) {
-    return 'jefe_ubicacion';
-  }
-
-  if (normalized === 'operario' || normalized === 'operator' || normalized === 'op') return 'operario';
-
-  if (normalized === 'auditor' || normalized === 'audit') return 'auditor';
-
-  return normalized as UserRole;
+  return undefined;
 };
 
 const ADMIN_LIKE_ROLES = ['super_admin', 'admin', 'mantenimiento'] as const;
@@ -89,7 +43,7 @@ type LocationScope = {
   locationId?: string;
 };
 
-const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? ticket.siteId ?? null;
+const getTicketLocationId = (ticket: Ticket) => ticket.locationId ?? null;
 
 type TicketRoleGuards = {
   isCreator: boolean;
@@ -143,8 +97,7 @@ export const buildRbacUser = ({
   profile,
 }: BuildRbacUserParams): RBACUser | null => {
   const normalizedRole = normalizeRole(role ?? profile?.role);
-  const resolvedOrganizationId =
-    organizationId ?? member?.organizationId ?? member?.orgId ?? profile?.organizationId;
+  const resolvedOrganizationId = organizationId ?? member?.organizationId ?? profile?.organizationId;
   if (!normalizedRole || !resolvedOrganizationId) return null;
 
   return {
@@ -161,10 +114,8 @@ export const buildRbacUser = ({
       member?.locationIds?.[0] ??
       profile?.locationId ??
       profile?.locationIds?.[0] ??
-      profile?.siteId ??
-      profile?.siteIds?.[0] ??
       undefined,
-  };
+};
 };
 
 const getTicketOrigin = (ticket: Ticket) =>
@@ -396,7 +347,7 @@ const buildTaskGuards = (
 ): TaskRoleGuards => {
   const deptId =
     task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? null;
-  const taskLocationId = task.locationId ?? task.siteId ?? null;
+  const taskLocationId = task.locationId ?? null;
   const inDepartmentScope = !!user?.departmentId && !!deptId && deptId === user.departmentId;
   const inLocationScope =
     !!user?.locationId && !!taskLocationId && taskLocationId === user.locationId;

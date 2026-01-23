@@ -98,8 +98,6 @@ type MembershipScope = {
   departmentIds: string[];
   locationId?: string;
   locationIds: string[];
-  siteId?: string;
-  siteIds: string[];
 };
 
 type ResolvedMembership = {
@@ -665,7 +663,6 @@ async function updateOrganizationUserProfile({
   email,
   departmentId,
   locationId,
-  siteId,
 }: {
   actorUid: string;
   actorEmail: string | null;
@@ -676,7 +673,6 @@ async function updateOrganizationUserProfile({
   email: string;
   departmentId: string;
   locationId: string;
-  siteId: string;
 }) {
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
   if (!targetUid) throw httpsError('invalid-argument', 'uid requerido.');
@@ -733,15 +729,13 @@ async function updateOrganizationUserProfile({
     }
   }
 
-  const normalizedLocationId = locationId || siteId || null;
-  const normalizedSiteId = siteId || locationId || null;
+  const normalizedLocationId = locationId || null;
 
   const userPayload = {
     displayName: displayName || null,
     email: normalizedEmail || null,
     departmentId: departmentId || null,
     locationId: normalizedLocationId,
-    siteId: normalizedSiteId,
     updatedAt: now,
     source: 'orgUpdateUserProfile_v1',
   };
@@ -751,7 +745,6 @@ async function updateOrganizationUserProfile({
     email: normalizedEmail || null,
     departmentId: departmentId || null,
     locationId: normalizedLocationId,
-    siteId: normalizedSiteId,
     updatedAt: now,
     source: 'orgUpdateUserProfile_v1',
   };
@@ -773,7 +766,6 @@ async function updateOrganizationUserProfile({
       email: normalizedEmail || null,
       departmentId: departmentId || null,
       locationId: normalizedLocationId,
-      siteId: normalizedSiteId,
     },
   });
 }
@@ -1131,46 +1123,13 @@ function normalizeRoleOrNull(input: any): Role | null {
   const r = String(input ?? '').trim().toLowerCase();
   if (!r) return null;
 
-  if (r === 'super_admin' || r === 'superadmin') return 'super_admin';
-  if (r === 'admin' || r === 'administrator') return 'admin';
-
-  if (r === 'mantenimiento' || r === 'maintenance' || r === 'maint' || r === 'maintainer') return 'mantenimiento';
-
-  if (
-    r === 'dept_head_multi' ||
-    r === 'deptheadmulti' ||
-    r === 'dept-head-multi' ||
-    r === 'dept head multi' ||
-    r === 'department_head_multi' ||
-    r === 'departmentheadmulti' ||
-    r === 'jefe_departamento_multi' ||
-    r === 'jefe de departamento multi'
-  ) {
-    return 'jefe_departamento';
-  }
-
-  if (
-    r === 'dept_head_single' ||
-    r === 'deptheadsingle' ||
-    r === 'dept-head-single' ||
-    r === 'dept head single' ||
-    r === 'dept_head' ||
-    r === 'depthead' ||
-    r === 'department_head_single' ||
-    r === 'departmentheadsingle' ||
-    r === 'jefe_departamento' ||
-    r === 'jefe de departamento'
-  ) {
-    return 'jefe_departamento';
-  }
-
-  if (r === 'jefe_ubicacion' || r === 'jefe ubicacion' || r === 'location_head' || r === 'site_head') {
-    return 'jefe_ubicacion';
-  }
-
-  if (r === 'auditor' || r === 'audit') return 'auditor';
-
-  if (r === 'operario' || r === 'operator' || r === 'op') return 'operario';
+  if (r === 'super_admin') return 'super_admin';
+  if (r === 'admin') return 'admin';
+  if (r === 'mantenimiento') return 'mantenimiento';
+  if (r === 'jefe_departamento') return 'jefe_departamento';
+  if (r === 'jefe_ubicacion') return 'jefe_ubicacion';
+  if (r === 'auditor') return 'auditor';
+  if (r === 'operario') return 'operario';
 
   return null;
 }
@@ -1189,14 +1148,11 @@ function normalizeStringArray(value: unknown): string[] {
 function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null): MembershipScope {
   const departmentId = String(userData?.departmentId ?? '').trim();
   const locationId = String(userData?.locationId ?? '').trim();
-  const siteId = String(userData?.siteId ?? '').trim();
   return {
     departmentId: departmentId || undefined,
     departmentIds: normalizeStringArray(userData?.departmentIds),
-    locationId: (locationId || siteId) || undefined,
-    locationIds: normalizeStringArray(userData?.locationIds ?? userData?.siteIds),
-    siteId: siteId || undefined,
-    siteIds: normalizeStringArray(userData?.siteIds),
+    locationId: locationId || undefined,
+    locationIds: normalizeStringArray(userData?.locationIds),
   };
 }
 
@@ -1223,7 +1179,7 @@ function requireScopedAccessToDepartment(role: Role, scope: MembershipScope, dep
 
 function requireScopedAccessToSite(role: Role, scope: MembershipScope, siteId: string) {
   if (!SCOPED_HEAD_ROLES.has(role)) return;
-  const allowedSiteIds = new Set([scope.siteId, ...scope.siteIds].filter(Boolean));
+  const allowedSiteIds = new Set([scope.locationId, ...scope.locationIds].filter(Boolean));
   if (!siteId) {
     throw httpsError('invalid-argument', 'siteId requerido para validar alcance.');
   }
@@ -3627,8 +3583,6 @@ export const orgUpdateUserProfile = functions.https.onRequest(async (req, res) =
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const departmentId = String(req.body?.departmentId ?? '').trim();
     const locationId = String(req.body?.locationId ?? '').trim();
-    const siteId = String(req.body?.siteId ?? '').trim();
-
     await updateOrganizationUserProfile({
       actorUid,
       actorEmail,
@@ -3639,7 +3593,6 @@ export const orgUpdateUserProfile = functions.https.onRequest(async (req, res) =
       email,
       departmentId,
       locationId,
-      siteId,
     });
 
     res.status(200).json({ ok: true, organizationId: orgId, uid: targetUid });
@@ -3659,8 +3612,6 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
   const email = String(data?.email ?? '').trim().toLowerCase();
   const departmentId = String(data?.departmentId ?? '').trim();
   const locationId = String(data?.locationId ?? '').trim();
-  const siteId = String(data?.siteId ?? '').trim();
-
   await updateOrganizationUserProfile({
     actorUid,
     actorEmail,
@@ -3671,7 +3622,6 @@ export const orgUpdateUserProfileCallable = functions.https.onCall(async (data, 
     email,
     departmentId,
     locationId,
-    siteId,
   });
 
   return { ok: true, organizationId: orgId, uid: targetUid };

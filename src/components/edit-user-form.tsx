@@ -100,7 +100,7 @@ export function EditUserForm({ user, departments, sites, onSuccess, onSubmitting
       email: user.email || '',
       role: normalizeRole(user.role) ?? user.role ?? 'operario',
       departmentId: user.departmentId || '__none__',
-      locationId: user.locationId ?? user.siteId ?? '__none__',
+      locationId: user.locationId ?? '__none__',
     },
   });
 
@@ -110,7 +110,7 @@ export function EditUserForm({ user, departments, sites, onSuccess, onSubmitting
       email: user.email || '',
       role: normalizeRole(user.role) ?? user.role ?? 'operario',
       departmentId: user.departmentId || '__none__',
-      locationId: user.locationId ?? user.siteId ?? '__none__',
+      locationId: user.locationId ?? '__none__',
     });
   }, [form, user]);
 
