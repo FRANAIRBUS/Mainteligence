@@ -303,7 +303,8 @@ service cloud.firestore {
           || (actor.role == "jefe_ubicacion" && membersShareLocation(actor, target))
         );
       return !isChanging || (isClearing ? canClear : actorCanAssign);
-    
+
+    }
 
     function operarioUpdateAllowed(orgId, uid, currentData) {
       let member = activeMemberData(orgId, uid);
@@ -316,7 +317,8 @@ service cloud.firestore {
           || creatorOrAssignee
           || isReportingOnly
         );
-    
+
+    }
 
     /* ------------------------------
        USERS (profile)
