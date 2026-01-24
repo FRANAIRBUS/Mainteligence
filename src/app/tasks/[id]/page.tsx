@@ -114,6 +114,46 @@ export default function TaskDetailPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const { toast } = useToast();
 
+const assignableUsers = useMemo(() => {
+  if (!role) return users;
+
+  if (role === "super_admin" || role === "admin" || role === "mantenimiento") {
+    return users;
+  }
+
+  if (!currentMember) return [];
+
+  const actorDeptIds = [currentMember.departmentId, ...(currentMember.departmentIds ?? [])].filter(
+    (value): value is string => Boolean(value)
+  );
+  const actorLocIds = [currentMember.locationId, ...(currentMember.locationIds ?? [])].filter(
+    (value): value is string => Boolean(value)
+  );
+
+  const sharesAny = (a: string[], b: Array<string | null | undefined>) => {
+    if (!a.length) return false;
+    for (const item of b) {
+      if (item && a.includes(item)) return true;
+    }
+    return false;
+  };
+
+  if (role === "jefe_departamento") {
+    return users.filter((member) =>
+      sharesAny(actorDeptIds, [member.departmentId, ...(member.departmentIds ?? [])])
+    );
+  }
+
+  if (role === "jefe_ubicacion") {
+    return users.filter((member) =>
+      sharesAny(actorLocIds, [member.locationId, ...(member.locationIds ?? [])])
+    );
+  }
+
+  return [];
+}, [users, role, currentMember]);
+
+
   const sortedReports = useMemo(() => {
     return [...(task?.reports ?? [])].sort((a, b) => {
       const dateA = a.createdAt?.toDate?.() ?? new Date(0);
@@ -265,7 +305,7 @@ export default function TaskDetailPage() {
       status: values.status,
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
       assignedTo: trimmedAssignedTo,
-      originDepartmentId: values.departmentId.trim(),
+      originDepartmentId: task?.originDepartmentId ?? task?.departmentId ?? values.departmentId.trim(),
       targetDepartmentId: values.departmentId.trim(),
       locationId: values.locationId.trim() || null,
       category: values.category.trim(),
@@ -729,7 +769,7 @@ export default function TaskDetailPage() {
             onSubmit={handleSubmit}
             submitting={submitting}
             errorMessage={errorMessage}
-            users={users}
+            users={assignableUsers}
             departments={departments}
             locations={locations}
             submitLabel="Guardar cambios"

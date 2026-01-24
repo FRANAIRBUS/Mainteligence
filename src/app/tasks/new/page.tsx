@@ -1,17 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FirebaseError } from "firebase/app";
 import { Timestamp } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { TaskForm, type TaskFormValues } from "@/components/task-form";
-import { useAuth, useCollection, useFirestore, useUser } from "@/lib/firebase";
+import { useAuth, useCollection, useDoc, useFirestore, useUser } from "@/lib/firebase";
 import { createTask } from "@/lib/firestore-tasks";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
 import type { Department, OrganizationMember, Site } from "@/lib/firebase/models";
 import { sendAssignmentEmail } from "@/lib/assignment-email";
-import { orgCollectionPath } from "@/lib/organization";
+import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
 const emptyValues: TaskFormValues = {
   title: "",
@@ -29,7 +29,7 @@ const emptyValues: TaskFormValues = {
 export default function NewTaskPage() {
   const firestore = useFirestore();
   const auth = useAuth();
-  const { user, loading: userLoading, organizationId } = useUser();
+  const { user, loading: userLoading, organizationId, role } = useUser();
   const { data: users } = useCollection<OrganizationMember>(
     organizationId ? orgCollectionPath(organizationId, "members") : null
   );
@@ -39,9 +39,53 @@ export default function NewTaskPage() {
   const { data: locations } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, "sites") : null
   );
+const { data: currentMember } = useDoc<OrganizationMember>(
+  user && organizationId ? orgDocPath(organizationId, "members", user.uid) : null
+);
+
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+const assignableUsers = useMemo(() => {
+  if (!role) return users;
+
+  if (role === "super_admin" || role === "admin" || role === "mantenimiento") {
+    return users;
+  }
+
+  if (!currentMember) return [];
+
+  const actorDeptIds = [currentMember.departmentId, ...(currentMember.departmentIds ?? [])].filter(
+    (value): value is string => Boolean(value)
+  );
+  const actorLocIds = [currentMember.locationId, ...(currentMember.locationIds ?? [])].filter(
+    (value): value is string => Boolean(value)
+  );
+
+  const sharesAny = (a: string[], b: Array<string | null | undefined>) => {
+    if (!a.length) return false;
+    for (const item of b) {
+      if (item && a.includes(item)) return true;
+    }
+    return false;
+  };
+
+  if (role === "jefe_departamento") {
+    return users.filter((member) =>
+      sharesAny(actorDeptIds, [member.departmentId, ...(member.departmentIds ?? [])])
+    );
+  }
+
+  if (role === "jefe_ubicacion") {
+    return users.filter((member) =>
+      sharesAny(actorLocIds, [member.locationId, ...(member.locationIds ?? [])])
+    );
+  }
+
+  return [];
+}, [users, role, currentMember]);
+
 
   const handleSubmit = async (values: TaskFormValues) => {
     if (!firestore) {
@@ -94,7 +138,8 @@ export default function NewTaskPage() {
       status: values.status,
       dueDate: values.dueDate ? Timestamp.fromDate(new Date(values.dueDate)) : null,
       assignedTo,
-      originDepartmentId: values.departmentId.trim(),
+      originDepartmentId:
+        currentMember?.departmentId ?? currentMember?.departmentIds?.[0] ?? values.departmentId.trim(),
       targetDepartmentId: values.departmentId.trim(),
       locationId: values.locationId.trim() || null,
       category: values.category.trim(),
@@ -173,7 +218,7 @@ export default function NewTaskPage() {
           onSubmit={handleSubmit}
           submitting={submitting || userLoading}
           errorMessage={errorMessage}
-          users={users}
+          users={assignableUsers}
           departments={departments}
           locations={locations}
           submitLabel="Crear tarea"
