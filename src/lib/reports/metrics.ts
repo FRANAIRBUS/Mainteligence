@@ -106,13 +106,15 @@ export const filterTickets = (
   siteNameById: Record<string, string>
 ) => {
   return tickets.filter((ticket) => {
-    const ticketLocationId = ticket.locationId ?? ticket.siteId ?? '';
-    const ticketDepartmentId =
-      ticket.originDepartmentId ?? ticket.targetDepartmentId ?? ticket.departmentId ?? '';
+    const ticketLocationId = ticket.locationId ?? '';
+    const originDepartmentId = ticket.originDepartmentId ?? ticket.departmentId ?? '';
+    const targetDepartmentId = ticket.targetDepartmentId ?? ticket.departmentId ?? '';
     const locationMatch =
       !filters.location || siteNameById[ticketLocationId] === filters.location;
     const departmentMatch =
-      !filters.departmentId || ticketDepartmentId === filters.departmentId;
+      !filters.departmentId ||
+      originDepartmentId === filters.departmentId ||
+      targetDepartmentId === filters.departmentId;
     const dateMatch = isWithinRange(
       toDate(ticket.closedAt ?? ticket.createdAt),
       filters
@@ -128,14 +130,16 @@ export const filterTasks = (
   siteNameById: Record<string, string>
 ) => {
   return tasks.filter((task) => {
-    const taskLocationId = task.locationId ?? task.siteId ?? '';
+    const taskLocationId = task.locationId ?? '';
     const taskLocationName = siteNameById[taskLocationId] ?? '';
-    const taskDepartmentId =
-      task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? '';
+    const originDepartmentId = task.originDepartmentId ?? task.departmentId ?? '';
+    const targetDepartmentId = task.targetDepartmentId ?? task.departmentId ?? '';
     const locationMatch =
       !filters.location || taskLocationName === filters.location;
     const departmentMatch =
-      !filters.departmentId || taskDepartmentId === filters.departmentId;
+      !filters.departmentId ||
+      originDepartmentId === filters.departmentId ||
+      targetDepartmentId === filters.departmentId;
     const dateMatch = isWithinRange(toDate(task.closedAt ?? task.createdAt), filters);
 
     return locationMatch && departmentMatch && dateMatch;
@@ -367,7 +371,7 @@ export const buildTrendData = (
 
 export const buildIncidentGrouping = (
   tickets: Ticket[],
-  groupingKey: "departmentId" | "siteId" | "locationId",
+  groupingKey: "departmentId" | "locationId",
   labelById: Record<string, string>
 ): IncidentGrouping[] => {
   const summary = new Map<
@@ -378,12 +382,12 @@ export const buildIncidentGrouping = (
   tickets.forEach((ticket) => {
     const id = (() => {
       if (groupingKey === "locationId") {
-        return ticket.locationId ?? ticket.siteId ?? null;
+        return ticket.locationId ?? null;
       }
       if (groupingKey === "departmentId") {
         return ticket.originDepartmentId ?? ticket.targetDepartmentId ?? ticket.departmentId ?? null;
       }
-      return ticket[groupingKey] ?? null;
+      return null;
     })();
     if (!id) return;
     const label = labelById[id] ?? id;

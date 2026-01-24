@@ -136,14 +136,11 @@ export default function IncidentDetailPage() {
         organizationId: organizationId ?? undefined,
         departmentId: currentMember?.departmentId ?? userProfile?.departmentId ?? undefined,
         departmentIds: currentMember?.departmentIds ?? userProfile?.departmentIds ?? undefined,
-        locationId: currentMember?.locationId ?? userProfile?.locationId ?? userProfile?.siteId ?? undefined,
+        locationId: currentMember?.locationId ?? userProfile?.locationId ?? undefined,
         locationIds:
           currentMember?.locationIds ??
           userProfile?.locationIds ??
-          userProfile?.siteIds ??
           undefined,
-        siteId: currentMember?.siteId ?? userProfile?.siteId ?? undefined,
-        siteIds: currentMember?.siteIds ?? userProfile?.siteIds ?? undefined,
       } as any),
     [
       user?.uid,
@@ -153,14 +150,10 @@ export default function IncidentDetailPage() {
       currentMember?.departmentIds,
       currentMember?.locationId,
       currentMember?.locationIds,
-      currentMember?.siteId,
-      currentMember?.siteIds,
       userProfile?.departmentId,
       userProfile?.departmentIds,
       userProfile?.locationId,
       userProfile?.locationIds,
-      userProfile?.siteId,
-      userProfile?.siteIds,
     ]
   );
 
@@ -192,7 +185,7 @@ export default function IncidentDetailPage() {
 
   // Memoize derived data
   const siteName = useMemo(() => {
-    const locationId = ticket?.locationId ?? ticket?.siteId;
+    const locationId = ticket?.locationId;
     return sites?.find((s) => s.id === locationId)?.name || 'N/A';
   }, [sites, ticket]);
   const departmentName = useMemo(() => departments?.find(d => d.id === ticket?.departmentId)?.name || 'N/A', [departments, ticket]);

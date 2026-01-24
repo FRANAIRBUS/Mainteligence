@@ -85,11 +85,13 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { isFeatureEnabled } from '@/lib/entitlements';
-import { orgCollectionPath } from '@/lib/organization';
+import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus } from '@/lib/status';
+import { buildRbacUser, getTaskPermissions, getTicketPermissions, normalizeRole } from '@/lib/rbac';
+import { useScopedTasks, useScopedTickets } from '@/lib/scoped-collections';
 
 export default function ReportsPage() {
-  const { user, loading, organizationId } = useUser();
+  const { user, profile: userProfile, role, loading, organizationId } = useUser();
   const router = useRouter();
   const firestore = useFirestore();
 
@@ -108,6 +110,22 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!loading && !user) router.push('/login');
   }, [user, loading, router]);
+
+  const normalizedRole = normalizeRole(role ?? userProfile?.role);
+  const { data: currentMember } = useDoc<OrganizationMember>(
+    user && organizationId ? orgDocPath(organizationId, 'members', user.uid) : null
+  );
+  const rbacUser = buildRbacUser({
+    role,
+    organizationId,
+    member: currentMember,
+    profile: userProfile ?? null,
+  });
+  const canReadMembers =
+    normalizedRole &&
+    ['super_admin', 'admin', 'mantenimiento', 'jefe_departamento', 'jefe_ubicacion', 'auditor'].includes(
+      normalizedRole
+    );
 
   const { data: organization } = useDoc<Organization>(
     organizationId ? `organizations/${organizationId}` : null
@@ -142,12 +160,16 @@ export default function ReportsPage() {
       : true;
   const exportBlocked = Boolean(entitlement) && planFeatures !== null && !exportAllowed;
 
-  const { data: tickets = [], loading: ticketsLoading } = useCollection<Ticket>(
-    organizationId ? orgCollectionPath(organizationId, 'tickets') : null
-  );
-  const { data: tasks = [], loading: tasksLoading } = useCollection<MaintenanceTask>(
-    organizationId ? orgCollectionPath(organizationId, 'tasks') : null
-  );
+  const { data: tickets = [], loading: ticketsLoading } = useScopedTickets({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
+  });
+  const { data: tasks = [], loading: tasksLoading } = useScopedTasks({
+    organizationId,
+    rbacUser,
+    uid: user?.uid ?? null,
+  });
   const { data: departments = [], loading: departmentsLoading } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );
@@ -155,7 +177,7 @@ export default function ReportsPage() {
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );
   const { data: members = [], loading: membersLoading } = useCollection<OrganizationMember>(
-    organizationId ? orgCollectionPath(organizationId, 'members') : null
+    canReadMembers && organizationId ? orgCollectionPath(organizationId, 'members') : null
   );
 
   if (loading || !user) {
@@ -165,6 +187,13 @@ export default function ReportsPage() {
       </div>
     );
   }
+
+  const visibleTickets = rbacUser
+    ? tickets.filter((ticket) => getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView)
+    : tickets;
+  const visibleTasks = rbacUser
+    ? tasks.filter((task) => getTaskPermissions(task, rbacUser, user?.uid ?? null).canView)
+    : tasks;
 
   const siteNameById = useMemo(() => {
     return sites.reduce(
@@ -208,13 +237,13 @@ export default function ReportsPage() {
   };
 
   const filteredTickets = useMemo(
-    () => filterTickets(tickets, filters, siteNameById),
-    [tickets, filters, siteNameById]
+    () => filterTickets(visibleTickets, filters, siteNameById),
+    [visibleTickets, filters, siteNameById]
   );
 
   const filteredTasks = useMemo(
-    () => filterTasks(tasks, filters, siteNameById),
-    [tasks, filters, siteNameById]
+    () => filterTasks(visibleTasks, filters, siteNameById),
+    [visibleTasks, filters, siteNameById]
   );
 
   const metrics = useMemo(
@@ -336,8 +365,8 @@ export default function ReportsPage() {
   const exportRows = useMemo(
     () =>
       buildReportExportRows({
-        tickets,
-        tasks,
+        tickets: visibleTickets,
+        tasks: visibleTasks,
         usersById,
         departmentsById,
         sitesById,
@@ -350,8 +379,8 @@ export default function ReportsPage() {
         sortOrder: exportSortOrder,
       }),
     [
-      tickets,
-      tasks,
+      visibleTickets,
+      visibleTasks,
       usersById,
       departmentsById,
       sitesById,

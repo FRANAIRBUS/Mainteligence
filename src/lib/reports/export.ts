@@ -159,7 +159,7 @@ export const buildReportExportRows = ({
 
   tickets.forEach((ticket) => {
     const createdAt = toDate(ticket.createdAt);
-    const ticketLocationId = ticket.locationId ?? ticket.siteId ?? null;
+    const ticketLocationId = ticket.locationId ?? null;
     const ticketDepartmentId =
       ticket.originDepartmentId ?? ticket.targetDepartmentId ?? ticket.departmentId ?? null;
     const location = resolveSiteLabel(sitesById, ticketLocationId);
@@ -200,7 +200,7 @@ export const buildReportExportRows = ({
 
   tasks.forEach((task) => {
     const createdAt = toDate(task.createdAt ?? null);
-    const taskLocationId = task.locationId ?? task.siteId ?? null;
+    const taskLocationId = task.locationId ?? null;
     const taskDepartmentId =
       task.targetDepartmentId ?? task.originDepartmentId ?? task.departmentId ?? null;
     const location = resolveSiteLabel(sitesById, taskLocationId);

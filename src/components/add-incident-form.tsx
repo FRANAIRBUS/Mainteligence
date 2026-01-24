@@ -42,7 +42,7 @@ const formSchema = z.object({
   description: z
     .string()
     .min(10, { message: 'La descripción debe tener al menos 10 caracteres.' }),
-  siteId: z.string({ required_error: 'Debe seleccionar una ubicación.' }),
+  locationId: z.string({ required_error: 'Debe seleccionar una ubicación.' }),
   departmentId: z.string({ required_error: 'Debe seleccionar un departamento.' }),
   assetId: z
     .string()
@@ -113,7 +113,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
       const docData = {
         ...data,
-        locationId: data.siteId,
+        locationId: data.locationId,
         type: 'correctivo' as const,
         status: 'new' as const,
         createdBy: user.uid,
@@ -210,7 +210,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField
             control={form.control}
-            name="siteId"
+          name="locationId"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Ubicación</FormLabel>
