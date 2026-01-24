@@ -289,42 +289,34 @@ service cloud.firestore {
     }
 
     function assignmentChangeAllowed(orgId, actorUid) {
-      // If assignment is not changing, allow.
-      if (!changedKeys().hasAny(["assignedTo"])) {
-        return true;
-      }
-
       let actor = activeMemberData(orgId, actorUid);
-      if (actor == null) return false;
-
-      // Operators cannot assign (only request changes via a separate mechanism).
-      if (actor.role == "operario") {
-        return false;
-      }
-
-      // Allow unassign for privileged roles within update scope.
-      let nextAssignedTo = ('assignedTo' in request.resource.data) ? request.resource.data.assignedTo : null;
-      if (nextAssignedTo == null || nextAssignedTo == "") {
-        return actor.role in ["super_admin", "admin", "mantenimiento", "jefe_departamento", "jefe_ubicacion"];
-      }
-
-      // Must be an active member in the org and satisfy per-role constraints.
-      return isActiveMember(orgId, nextAssignedTo) && canAssignToUser(orgId, actorUid, nextAssignedTo);
-    }
+      let nextAssignedTo = ("assignedTo" in request.resource.data) ? request.resource.data.assignedTo : null;
+      let target = (nextAssignedTo != null && nextAssignedTo != "") ? activeMemberData(orgId, nextAssignedTo) : null;
+      let isChanging = changedKeys().hasAny(["assignedTo"]);
+      let isClearing = isChanging && (nextAssignedTo == null || nextAssignedTo == "");
+      let canClear = actor != null && actor.role in ["super_admin", "admin", "mantenimiento"];
+      let actorCanAssign = actor != null
+        && target != null
+        && (
+          actor.role in ["super_admin", "admin", "mantenimiento"]
+          || (actor.role == "jefe_departamento" && membersShareDepartment(actor, target))
+          || (actor.role == "jefe_ubicacion" && membersShareLocation(actor, target))
+        );
+      return !isChanging || (isClearing ? canClear : actorCanAssign);
+    
 
     function operarioUpdateAllowed(orgId, uid, currentData) {
       let member = activeMemberData(orgId, uid);
-      if (member == null) return false;
-      if (member.role != "operario") return true;
-
-      // If operator is creator or assignee, allow normal updates (assignment changes are still blocked elsewhere).
-      if (isCreator(uid, currentData) || isAssignee(uid, currentData)) {
-        return true;
-      }
-
-      // Otherwise, operator updates are limited to reporting (append reports + updatedAt).
-      return changedKeys().hasOnly(["reports", "updatedAt"]);
-    }
+      let isOperario = member != null && member.role == "operario";
+      let creatorOrAssignee = isCreator(uid, currentData) || isAssignee(uid, currentData);
+      let isReportingOnly = changedKeys().hasOnly(["reports", "updatedAt"]);
+      return member != null
+        && (
+          !isOperario
+          || creatorOrAssignee
+          || isReportingOnly
+        );
+    
 
     /* ------------------------------
        USERS (profile)
