@@ -219,7 +219,6 @@ service cloud.firestore {
           || (member.role in ["operario"] && (isCreator(uid, data) || isAssignee(uid, data) || inMemberDepartment(member, data)))
         );
     }
-
     function canCreateDoc(orgId, uid, data) {
       let member = activeMemberData(orgId, uid);
       return member != null
@@ -227,9 +226,9 @@ service cloud.firestore {
         && isCreator(uid, data)
         && (
           member.role in ["super_admin", "admin", "mantenimiento"]
-          || (member.role in ["jefe_departamento"] && inMemberDepartment(member, data))
-          || (member.role in ["jefe_ubicacion"] && inMemberLocation(member, data))
-          || (member.role in ["operario"] && inMemberDepartment(member, data))
+          || member.role == "jefe_departamento"
+          || (member.role == "jefe_ubicacion" && inMemberLocation(member, data))
+          || (member.role == "operario" && inMemberLocation(member, data))
         );
     }
 
@@ -241,8 +240,84 @@ service cloud.firestore {
           member.role in ["super_admin", "admin", "mantenimiento"]
           || (member.role in ["jefe_departamento"] && inMemberDepartment(member, currentData))
           || (member.role in ["jefe_ubicacion"] && inMemberLocation(member, currentData))
-          || (member.role in ["operario"] && (isCreator(uid, currentData) || isAssignee(uid, currentData)))
+          || (member.role in ["operario"] && (isCreator(uid, currentData) || isAssignee(uid, currentData) || inMemberDepartment(member, currentData)))
         );
+    }
+
+    // Update safety helpers (avoid relying on request.resource.data containing full document)
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).changedKeys();
+    }
+
+    // Core immutable keys: never allow client to change these via update.
+    function coreImmutableKeysUnchanged() {
+      return !changedKeys().hasAny(["createdBy", "createdAt", "organizationId"]);
+    }
+
+    function memberDepartmentIds(member) {
+      return member == null
+        ? []
+        : (('departmentIds' in member) ? member.departmentIds :
+            (('departmentId' in member && member.departmentId != null) ? [member.departmentId] : []));
+    }
+
+    function memberLocationIds(member) {
+      return member == null
+        ? []
+        : (('locationIds' in member) ? member.locationIds :
+            (('locationId' in member && member.locationId != null) ? [member.locationId] : []));
+    }
+
+    function membersShareDepartment(a, b) {
+      return memberDepartmentIds(a).hasAny(memberDepartmentIds(b));
+    }
+
+    function membersShareLocation(a, b) {
+      return memberLocationIds(a).hasAny(memberLocationIds(b));
+    }
+
+    function canAssignToUser(orgId, actorUid, targetUid) {
+      let actor = activeMemberData(orgId, actorUid);
+      let target = activeMemberData(orgId, targetUid);
+      return actor != null
+        && target != null
+        && (
+          actor.role in ["super_admin", "admin", "mantenimiento"]
+          || (actor.role == "jefe_departamento" && membersShareDepartment(actor, target))
+          || (actor.role == "jefe_ubicacion" && membersShareLocation(actor, target))
+        );
+    }
+
+    function assignmentChangeAllowed(orgId, actorUid) {
+      let actor = activeMemberData(orgId, actorUid);
+      let nextAssignedTo = ("assignedTo" in request.resource.data) ? request.resource.data.assignedTo : null;
+      let target = (nextAssignedTo != null && nextAssignedTo != "") ? activeMemberData(orgId, nextAssignedTo) : null;
+      let isChanging = changedKeys().hasAny(["assignedTo"]);
+      let isClearing = isChanging && (nextAssignedTo == null || nextAssignedTo == "");
+      let canClear = actor != null && actor.role in ["super_admin", "admin", "mantenimiento"];
+      let actorCanAssign = actor != null
+        && target != null
+        && (
+          actor.role in ["super_admin", "admin", "mantenimiento"]
+          || (actor.role == "jefe_departamento" && membersShareDepartment(actor, target))
+          || (actor.role == "jefe_ubicacion" && membersShareLocation(actor, target))
+        );
+      return !isChanging || (isClearing ? canClear : actorCanAssign);
+
+    }
+
+    function operarioUpdateAllowed(orgId, uid, currentData) {
+      let member = activeMemberData(orgId, uid);
+      let isOperario = member != null && member.role == "operario";
+      let creatorOrAssignee = isCreator(uid, currentData) || isAssignee(uid, currentData);
+      let isReportingOnly = changedKeys().hasOnly(["reports", "updatedAt"]);
+      return member != null
+        && (
+          !isOperario
+          || creatorOrAssignee
+          || isReportingOnly
+        );
+
     }
 
     /* ------------------------------
@@ -263,8 +338,7 @@ service cloud.firestore {
         && request.auth.uid == userId
         && request.resource.data.organizationId == null
         && userQuotaFieldsUnset();
-
-      allow update: if isSignedIn()
+        allow update: if isSignedIn()
         && request.auth.uid == userId
         && organizationIdUnchanged()
         && roleUnchanged()
@@ -363,12 +437,9 @@ service cloud.firestore {
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
           && canUpdateDoc(orgId, request.auth.uid, resource.data)
-          && request.resource.data.createdBy == resource.data.createdBy
-          && request.resource.data.originDepartmentId == resource.data.originDepartmentId
-          && request.resource.data.targetDepartmentId == resource.data.targetDepartmentId
-          && request.resource.data.departmentId == resource.data.departmentId
-          && request.resource.data.locationId == resource.data.locationId
-          && request.resource.data.siteId == resource.data.siteId;
+          && coreImmutableKeysUnchanged()
+          && assignmentChangeAllowed(orgId, request.auth.uid)
+          && operarioUpdateAllowed(orgId, request.auth.uid, resource.data);
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
@@ -387,12 +458,9 @@ service cloud.firestore {
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId)
           && canUpdateDoc(orgId, request.auth.uid, resource.data)
-          && request.resource.data.createdBy == resource.data.createdBy
-          && request.resource.data.originDepartmentId == resource.data.originDepartmentId
-          && request.resource.data.targetDepartmentId == resource.data.targetDepartmentId
-          && request.resource.data.departmentId == resource.data.departmentId
-          && request.resource.data.locationId == resource.data.locationId
-          && request.resource.data.siteId == resource.data.siteId;
+          && coreImmutableKeysUnchanged()
+          && assignmentChangeAllowed(orgId, request.auth.uid)
+          && operarioUpdateAllowed(orgId, request.auth.uid, resource.data);
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
       }
 
