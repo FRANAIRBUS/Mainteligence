@@ -10,7 +10,7 @@ scripts:
 
 env:
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
-    value: AIzaSyBrEI-QvGZGEAoOM4Qrf3Y8d0Sjro71vko
+    value: ""
     availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
     value: studio-4350140400-a3f8f.firebaseapp.com
@@ -34,7 +34,7 @@ env:
     value: /tmp/.npm
     availability: [BUILD]
   - variable: RESEND_API_KEY
-    value: "re_ayevNEZP_AAErLT47BjxU5vTxnkTzDQhn"
+    value: ""
     availability: [BUILD, RUNTIME]
   - variable: RESEND_FROM
     value: "avisos@maintelligence.app"
