@@ -133,15 +133,40 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
       await setDoc(ticketRef, docData);
 
-      for (const photo of photos) {
-        const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
-        const snapshot = await uploadBytes(photoRef, photo);
-        const url = await getDownloadURL(snapshot.ref);
-        photoUrls.push(url);
-      }
+      if (photos.length > 0) {
+        try {
+          for (const photo of photos) {
+            const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
+            const snapshot = await uploadBytes(photoRef, photo);
+            const url = await getDownloadURL(snapshot.ref);
+            photoUrls.push(url);
+          }
 
-      if (photoUrls.length > 0) {
-        await updateDoc(ticketRef, { photoUrls, updatedAt: serverTimestamp() });
+          if (photoUrls.length > 0) {
+            await updateDoc(ticketRef, { photoUrls, updatedAt: serverTimestamp() });
+          }
+        } catch (error: any) {
+          if (error.code === 'storage/unauthorized') {
+            const permissionError = new StoragePermissionError({
+              path: error.customData?.['path'] || orgStoragePath(organizationId, 'tickets', ticketId),
+              operation: 'write',
+            });
+            errorEmitter.emit('permission-error', permissionError);
+          } else if (error.code === 'permission-denied') {
+            const permissionError = new FirestorePermissionError({
+              path: orgCollectionPath(organizationId, 'tickets'),
+              operation: 'update',
+              requestResourceData: { photoUrls },
+            });
+            errorEmitter.emit('permission-error', permissionError);
+          } else {
+            toast({
+              variant: 'destructive',
+              title: 'Incidencia creada con adjuntos pendientes',
+              description: error.message || 'No se pudieron guardar las fotos adjuntas.',
+            });
+          }
+        }
       }
 
       onSuccess?.({ title: data.title });
