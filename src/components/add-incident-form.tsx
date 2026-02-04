@@ -64,7 +64,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
   const storage = useStorage();
-  const { user, organizationId } = useUser();
+  const { user, organizationId, profile } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
   const canSubmit = Boolean(firestore && storage && user && organizationId);
@@ -111,12 +111,14 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const photoUrls: string[] = [];
 
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
+      const createdByName = profile?.displayName || user.email || user.uid;
       const docData = {
         ...data,
         locationId: data.locationId,
         type: 'correctivo' as const,
         status: 'new' as const,
         createdBy: user.uid,
+        createdByName,
         assignedRole: 'mantenimiento',
         assignedTo: null,
         organizationId,

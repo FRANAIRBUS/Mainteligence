@@ -234,6 +234,7 @@ export interface Ticket extends BaseEntity {
   title: string;
   description: string;
   createdBy: string;
+  createdByName?: string;
   assignedRole?: string;
   assignedTo?: string | null;
   photoUrls?: string[];
