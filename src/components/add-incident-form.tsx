@@ -4,7 +4,7 @@ import { useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 import { useToast } from '@/hooks/use-toast';
@@ -106,11 +106,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
     setIsPending(true);
 
-    try {
-      const ticketId = `TICKET_${Date.now()}`; // Temporary ID for storage path
-      const photoUrls: string[] = [];
+    const uploadedPhotoUrls: string[] = [];
 
+    try {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
+      const ticketRef = doc(collectionRef);
+      const ticketId = ticketRef.id;
       const docData = {
         ...data,
         locationId: data.locationId,
@@ -122,7 +123,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         organizationId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        photoUrls,
+        photoUrls: uploadedPhotoUrls,
         displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
       };
 
@@ -130,14 +131,43 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         delete docData.assetId;
       }
 
-      for (const photo of photos) {
-        const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
-        const snapshot = await uploadBytes(photoRef, photo);
-        const url = await getDownloadURL(snapshot.ref);
-        photoUrls.push(url);
-      }
+      await setDoc(ticketRef, docData);
 
-      await addDoc(collectionRef, docData);
+      if (photos.length > 0) {
+        try {
+          for (const photo of photos) {
+            const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
+            const snapshot = await uploadBytes(photoRef, photo);
+            const url = await getDownloadURL(snapshot.ref);
+            uploadedPhotoUrls.push(url);
+          }
+
+          if (uploadedPhotoUrls.length > 0) {
+            await updateDoc(ticketRef, { photoUrls: uploadedPhotoUrls, updatedAt: serverTimestamp() });
+          }
+        } catch (error: any) {
+          if (error.code === 'storage/unauthorized') {
+            const permissionError = new StoragePermissionError({
+              path: error.customData?.['path'] || orgStoragePath(organizationId, 'tickets', ticketId),
+              operation: 'write',
+            });
+            errorEmitter.emit('permission-error', permissionError);
+          } else if (error.code === 'permission-denied') {
+            const permissionError = new FirestorePermissionError({
+              path: orgCollectionPath(organizationId, 'tickets'),
+              operation: 'update',
+              requestResourceData: { photoUrls: uploadedPhotoUrls },
+            });
+            errorEmitter.emit('permission-error', permissionError);
+          } else {
+            toast({
+              variant: 'destructive',
+              title: 'Incidencia creada con adjuntos pendientes',
+              description: error.message || 'No se pudieron guardar las fotos adjuntas.',
+            });
+          }
+        }
+      }
 
       onSuccess?.({ title: data.title });
       form.reset();
