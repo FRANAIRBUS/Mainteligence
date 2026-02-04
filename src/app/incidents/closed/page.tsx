@@ -199,6 +199,7 @@ export default function ClosedIncidentsPage() {
     }
 
     try {
+      const createdByName = userProfile?.displayName || user.email || user.uid;
       await addDoc(collection(firestore, orgCollectionPath(organizationId, "tickets")), {
         title: ticket.title,
         description: ticket.description,
@@ -212,6 +213,7 @@ export default function ClosedIncidentsPage() {
         assignedRole: ticket.assignedRole ?? null,
         assignedTo: ticket.assignedTo ?? null,
         createdBy: user.uid,
+        createdByName,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         reopened: false,
