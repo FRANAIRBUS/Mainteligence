@@ -252,6 +252,13 @@ const assignableUsers = useMemo(() => {
     return name ?? "No asignada";
   }, [assignedUser?.displayName, assignedUser?.email, task?.assignedTo, userNameMap]);
 
+  const createdByName = useMemo(() => {
+    if (!task?.createdBy) return "Sin creador";
+    const name =
+      userNameMap[task.createdBy] || createdByUser?.displayName || createdByUser?.email;
+    return name ?? "Sin creador";
+  }, [createdByUser?.displayName, createdByUser?.email, task?.createdBy, userNameMap]);
+
   const departmentName = useMemo(() => {
     if (!taskDepartmentId) return "Sin departamento";
     return departments.find((item) => item.id === taskDepartmentId)?.name || taskDepartmentId;
@@ -739,6 +746,7 @@ const assignableUsers = useMemo(() => {
                       : "Sin fecha"
                   }
                 />
+                <InfoRow icon={UserIcon} label="Creada por" value={createdByName} />
               </CardContent>
             </Card>
           </div>
