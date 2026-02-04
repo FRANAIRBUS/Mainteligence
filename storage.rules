@@ -49,6 +49,12 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    function isValidUpload(maxBytes) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= maxBytes;
+    }
+
     // --- REGLAS DE CARPETAS ---
 
     // 1. Logo de la empresa
@@ -70,7 +76,7 @@ service firebase.storage {
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && ticketBelongsToOrg(orgId, ticketId)
-        && isValidImageUpload(10 * 1024 * 1024);
+        && isValidUpload(10 * 1024 * 1024);
     }
 
     // 3. Fotos de Tareas (Tasks)

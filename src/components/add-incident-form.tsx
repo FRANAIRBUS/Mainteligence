@@ -112,6 +112,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
       const ticketRef = doc(collectionRef);
       const ticketId = ticketRef.id;
+      const createdByName = profile?.displayName || user.email || user.uid;
       const docData = {
         ...data,
         locationId: data.locationId,
@@ -124,7 +125,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         organizationId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        photoUrls: uploadedPhotoUrls,
+        photoUrls: [],
         displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
       };
 
@@ -138,7 +139,9 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         try {
           for (const photo of photos) {
             const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
-            const snapshot = await uploadBytes(photoRef, photo);
+            const snapshot = await uploadBytes(photoRef, photo, {
+              contentType: photo.type || 'application/octet-stream',
+            });
             const url = await getDownloadURL(snapshot.ref);
             photoUrls.push(url);
           }
@@ -241,7 +244,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField
             control={form.control}
-          name="locationId"
+            name="locationId"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Ubicación</FormLabel>
@@ -383,6 +386,3 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     </Form>
   );
 }
-      if (photoUrls.length > 0) {
-        await updateDoc(ticketRef, { photoUrls, updatedAt: serverTimestamp() });
-      }

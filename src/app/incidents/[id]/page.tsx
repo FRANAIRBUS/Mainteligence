@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Edit, CalendarIcon, User as UserIcon, Building, Archive, HardHat, AlertTriangle } from 'lucide-react';
+import { Edit, CalendarIcon, User as UserIcon, Building, Archive, HardHat, AlertTriangle, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { EditIncidentDialog } from '@/components/edit-incident-dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -391,6 +391,14 @@ export default function IncidentDetailPage() {
 
   const canEdit = !!permissions?.canEditContent && !isClosed;
   const canClose = !!permissions?.canClose && !isClosed;
+  const photoUrls = ticket?.photoUrls?.filter(Boolean) ?? [];
+  const isImageUrl = (url: string) => /\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(url);
+  const getFileName = (url: string) => {
+    const cleanUrl = url.split('?')[0] ?? url;
+    const parts = cleanUrl.split('/');
+    const name = parts[parts.length - 1] || 'Adjunto';
+    return decodeURIComponent(name);
+  };
 
   const renderContent = () => {
     if (isLoading || !user) {
@@ -471,6 +479,41 @@ export default function IncidentDetailPage() {
                 <p className="text-sm text-foreground/80">{ticket.description}</p>
               </CardContent>
             </Card>
+            {photoUrls.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Adjuntos</CardTitle>
+                  <CardDescription>Archivos e imágenes adjuntas a la incidencia.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {photoUrls.map((url, index) => (
+                      <a
+                        key={`${url}-${index}`}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group relative block overflow-hidden rounded-lg border border-border/70 bg-muted/20"
+                      >
+                        {isImageUrl(url) ? (
+                          <img
+                            src={url}
+                            alt={`Adjunto ${index + 1}`}
+                            className="h-40 w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="flex h-40 w-full flex-col items-center justify-center gap-2 px-3 text-center text-sm text-muted-foreground">
+                            <FileText className="h-8 w-8" />
+                            <span className="line-clamp-2 text-xs">{getFileName(url)}</span>
+                          </div>
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             <Card className="bg-transparent">
               <CardHeader>
                 <CardTitle>Informes</CardTitle>
