@@ -106,7 +106,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
     setIsPending(true);
 
-    const uploadedPhotoUrls: string[] = [];
+    const photoUrls: string[] = [];
 
     try {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
@@ -140,11 +140,11 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
             const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
             const snapshot = await uploadBytes(photoRef, photo);
             const url = await getDownloadURL(snapshot.ref);
-            uploadedPhotoUrls.push(url);
+            photoUrls.push(url);
           }
 
-          if (uploadedPhotoUrls.length > 0) {
-            await updateDoc(ticketRef, { photoUrls: uploadedPhotoUrls, updatedAt: serverTimestamp() });
+          if (photoUrls.length > 0) {
+            await updateDoc(ticketRef, { photoUrls, updatedAt: serverTimestamp() });
           }
         } catch (error: any) {
           if (error.code === 'storage/unauthorized') {
@@ -157,7 +157,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
             const permissionError = new FirestorePermissionError({
               path: orgCollectionPath(organizationId, 'tickets'),
               operation: 'update',
-              requestResourceData: { photoUrls: uploadedPhotoUrls },
+              requestResourceData: { photoUrls },
             });
             errorEmitter.emit('permission-error', permissionError);
           } else {
