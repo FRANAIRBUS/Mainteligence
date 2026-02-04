@@ -108,9 +108,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
     try {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
-      const ticketRef = doc(collectionRef);
-      const ticketId = ticketRef.id;
-      const photoUrls: string[] = [];
+      const createdByName = profile?.displayName || user.email || user.uid;
       const docData = {
         ...data,
         locationId: data.locationId,
