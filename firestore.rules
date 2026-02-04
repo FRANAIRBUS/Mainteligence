@@ -491,7 +491,9 @@ service cloud.firestore {
       match /members/{memberUid} {
         // Read access is required for assignment UX and name resolution.
         // Keep it limited to admin/maintenance/heads.
-        allow read: if isSignedIn() && (
+        allow get: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid);
+        allow list: if isSignedIn() && (
           isAdminInOrg(orgId, request.auth.uid)
           || isMaintenanceOnlyInOrg(orgId, request.auth.uid)
           || isDepartmentHeadInOrg(orgId, request.auth.uid)
