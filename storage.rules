@@ -62,7 +62,11 @@ service firebase.storage {
 
     // 2. Fotos de Incidencias (Tickets)
     match /orgs/{orgId}/tickets/{ticketId}/{allPaths=**} {
-      allow read, write: if isSignedIn()
+      allow read: if isSignedIn()
+        && isValidOrgId(orgId)
+        && isActiveMember(orgId, request.auth.uid)
+        && ticketBelongsToOrg(orgId, ticketId);
+      allow write: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && ticketBelongsToOrg(orgId, ticketId)
@@ -71,7 +75,11 @@ service firebase.storage {
 
     // 3. Fotos de Tareas (Tasks)
     match /orgs/{orgId}/tasks/{taskId}/{allPaths=**} {
-      allow read, write: if isSignedIn()
+      allow read: if isSignedIn()
+        && isValidOrgId(orgId)
+        && isActiveMember(orgId, request.auth.uid)
+        && taskBelongsToOrg(orgId, taskId);
+      allow write: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && taskBelongsToOrg(orgId, taskId)
@@ -80,7 +88,11 @@ service firebase.storage {
 
     // 4. Activos (Assets)
     match /orgs/{orgId}/assets/{assetId}/{allPaths=**} {
-      allow read, write: if isSignedIn()
+      allow read: if isSignedIn()
+        && isValidOrgId(orgId)
+        && isActiveMember(orgId, request.auth.uid)
+        && assetBelongsToOrg(orgId, assetId);
+      allow write: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && assetBelongsToOrg(orgId, assetId)
