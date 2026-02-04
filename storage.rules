@@ -42,6 +42,13 @@ service firebase.storage {
         && exists(/databases/$(database)/documents/organizations/$(orgId)/assets/$(id));
     }
 
+    function isValidImageUpload(maxBytes) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= maxBytes
+        && request.resource.contentType.matches('image/.*');
+    }
+
     // --- REGLAS DE CARPETAS ---
 
     // 1. Logo de la empresa
@@ -49,7 +56,8 @@ service firebase.storage {
       allow read: if true;
       allow write: if isSignedIn()
         && isValidOrgId(orgId)
-        && isActiveMember(orgId, request.auth.uid);
+        && isActiveMember(orgId, request.auth.uid)
+        && isValidImageUpload(5 * 1024 * 1024);
     }
 
     // 2. Fotos de Incidencias (Tickets)
@@ -57,7 +65,8 @@ service firebase.storage {
       allow read, write: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
-        && ticketBelongsToOrg(orgId, ticketId);
+        && ticketBelongsToOrg(orgId, ticketId)
+        && isValidImageUpload(10 * 1024 * 1024);
     }
 
     // 3. Fotos de Tareas (Tasks)
@@ -65,7 +74,8 @@ service firebase.storage {
       allow read, write: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
-        && taskBelongsToOrg(orgId, taskId);
+        && taskBelongsToOrg(orgId, taskId)
+        && isValidImageUpload(10 * 1024 * 1024);
     }
 
     // 4. Activos (Assets)
@@ -73,13 +83,17 @@ service firebase.storage {
       allow read, write: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
-        && assetBelongsToOrg(orgId, assetId);
+        && assetBelongsToOrg(orgId, assetId)
+        && isValidImageUpload(10 * 1024 * 1024);
     }
 
     // 5. Avatares de usuario
     match /users/{userId}/{fileName} {
       allow read: if isSignedIn() && fileName.matches('avatar\\..+');
-      allow write: if isSignedIn() && request.auth.uid == userId && fileName.matches('avatar\\..+');
+      allow write: if isSignedIn()
+        && request.auth.uid == userId
+        && fileName.matches('avatar\\..+')
+        && isValidImageUpload(5 * 1024 * 1024);
     }
   }
 }

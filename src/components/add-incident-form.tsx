@@ -4,7 +4,7 @@ import { useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 import { useToast } from '@/hooks/use-toast';
@@ -107,11 +107,10 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     setIsPending(true);
 
     try {
-      const ticketId = `TICKET_${Date.now()}`; // Temporary ID for storage path
-      const photoUrls: string[] = [];
-
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
-      const createdByName = profile?.displayName || user.email || user.uid;
+      const ticketRef = doc(collectionRef);
+      const ticketId = ticketRef.id;
+      const photoUrls: string[] = [];
       const docData = {
         ...data,
         locationId: data.locationId,
@@ -132,6 +131,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         delete docData.assetId;
       }
 
+      await setDoc(ticketRef, docData);
+
       for (const photo of photos) {
         const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
         const snapshot = await uploadBytes(photoRef, photo);
@@ -139,7 +140,9 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         photoUrls.push(url);
       }
 
-      await addDoc(collectionRef, docData);
+      if (photoUrls.length > 0) {
+        await updateDoc(ticketRef, { photoUrls, updatedAt: serverTimestamp() });
+      }
 
       onSuccess?.({ title: data.title });
       form.reset();
@@ -354,3 +357,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     </Form>
   );
 }
+      if (photoUrls.length > 0) {
+        await updateDoc(ticketRef, { photoUrls, updatedAt: serverTimestamp() });
+      }
