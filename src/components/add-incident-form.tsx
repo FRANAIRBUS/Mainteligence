@@ -139,7 +139,9 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         try {
           for (const photo of photos) {
             const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
-            const snapshot = await uploadBytes(photoRef, photo);
+            const snapshot = await uploadBytes(photoRef, photo, {
+              contentType: photo.type || 'application/octet-stream',
+            });
             const url = await getDownloadURL(snapshot.ref);
             photoUrls.push(url);
           }
