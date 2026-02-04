@@ -106,13 +106,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
     setIsPending(true);
 
-    let photoUrls: string[] = [];
+    const uploadedPhotoUrls: string[] = [];
 
     try {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
       const ticketRef = doc(collectionRef);
       const ticketId = ticketRef.id;
-      photoUrls = [];
       const docData = {
         ...data,
         locationId: data.locationId,
@@ -125,7 +124,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         organizationId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        photoUrls,
+        photoUrls: uploadedPhotoUrls,
         displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
       };
 
@@ -141,11 +140,11 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
             const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
             const snapshot = await uploadBytes(photoRef, photo);
             const url = await getDownloadURL(snapshot.ref);
-            photoUrls.push(url);
+            uploadedPhotoUrls.push(url);
           }
 
-          if (photoUrls.length > 0) {
-            await updateDoc(ticketRef, { photoUrls, updatedAt: serverTimestamp() });
+          if (uploadedPhotoUrls.length > 0) {
+            await updateDoc(ticketRef, { photoUrls: uploadedPhotoUrls, updatedAt: serverTimestamp() });
           }
         } catch (error: any) {
           if (error.code === 'storage/unauthorized') {
@@ -158,7 +157,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
             const permissionError = new FirestorePermissionError({
               path: orgCollectionPath(organizationId, 'tickets'),
               operation: 'update',
-              requestResourceData: { photoUrls },
+              requestResourceData: { photoUrls: uploadedPhotoUrls },
             });
             errorEmitter.emit('permission-error', permissionError);
           } else {
