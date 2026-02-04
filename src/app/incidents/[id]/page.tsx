@@ -551,6 +551,7 @@ export default function IncidentDetailPage() {
                   icon={UserIcon}
                   label="Creado por"
                   value={
+                    ticket.createdByName ||
                     createdByMember?.displayName ||
                     (ticket.createdBy ? userNameMap[ticket.createdBy] || ticket.createdBy : 'N/A')
                   }
