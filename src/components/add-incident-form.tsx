@@ -95,6 +95,21 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
   };
 
+  const uploadPhotoWithRetry = async (photo: File, photoRef: ReturnType<typeof ref>, attempts = 2) => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const snapshot = await uploadBytes(photoRef, photo, {
+          contentType: photo.type || 'application/octet-stream',
+        });
+        return await getDownloadURL(snapshot.ref);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError;
+  };
+
   const onSubmit = async (data: AddIncidentFormValues) => {
     if (!canSubmit) {
       toast({
@@ -107,6 +122,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     setIsPending(true);
 
     const photoUrls: string[] = [];
+    const failedUploads: string[] = [];
+    let lastUploadError: any = null;
 
     try {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
@@ -126,7 +143,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         photoUrls: [],
-        hasAttachments: photos.length > 0,
+        hasAttachments: false,
         displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
       };
 
@@ -137,42 +154,54 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       await setDoc(ticketRef, docData);
 
       if (photos.length > 0) {
-        try {
-          for (const photo of photos) {
-            const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
-            const snapshot = await uploadBytes(photoRef, photo, {
-              contentType: photo.type || 'application/octet-stream',
-            });
-            const url = await getDownloadURL(snapshot.ref);
+        for (const photo of photos) {
+          const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
+          try {
+            const url = await uploadPhotoWithRetry(photo, photoRef);
             photoUrls.push(url);
+          } catch (error) {
+            lastUploadError = error;
+            failedUploads.push(photo.name);
           }
+        }
 
-          if (photoUrls.length > 0) {
+        if (photoUrls.length > 0) {
+          try {
             await updateDoc(ticketRef, {
               photoUrls,
               hasAttachments: true,
               updatedAt: serverTimestamp(),
             });
+          } catch (error: any) {
+            if (error.code === 'permission-denied') {
+              const permissionError = new FirestorePermissionError({
+                path: orgCollectionPath(organizationId, 'tickets'),
+                operation: 'update',
+                requestResourceData: { photoUrls },
+              });
+              errorEmitter.emit('permission-error', permissionError);
+            } else {
+              toast({
+                variant: 'destructive',
+                title: 'Incidencia creada con adjuntos incompletos',
+                description: error.message || 'No se pudieron guardar las fotos adjuntas.',
+              });
+            }
           }
-        } catch (error: any) {
-          if (error.code === 'storage/unauthorized') {
+        }
+
+        if (failedUploads.length > 0) {
+          if (lastUploadError?.code === 'storage/unauthorized') {
             const permissionError = new StoragePermissionError({
-              path: error.customData?.['path'] || orgStoragePath(organizationId, 'tickets', ticketId),
+              path: lastUploadError.customData?.['path'] || orgStoragePath(organizationId, 'tickets', ticketId),
               operation: 'write',
-            });
-            errorEmitter.emit('permission-error', permissionError);
-          } else if (error.code === 'permission-denied') {
-            const permissionError = new FirestorePermissionError({
-              path: orgCollectionPath(organizationId, 'tickets'),
-              operation: 'update',
-              requestResourceData: { photoUrls },
             });
             errorEmitter.emit('permission-error', permissionError);
           } else {
             toast({
               variant: 'destructive',
-              title: 'Incidencia creada con adjuntos pendientes',
-              description: error.message || 'No se pudieron guardar las fotos adjuntas.',
+              title: 'Incidencia creada con adjuntos incompletos',
+              description: `No se pudieron subir: ${failedUploads.join(', ')}.`,
             });
           }
         }
