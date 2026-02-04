@@ -77,9 +77,8 @@ export default function IncidentDetailPage() {
   const isMantenimiento =
     isSuperAdmin || normalizedRole === 'admin' || normalizedRole === 'mantenimiento';
 
-  // Member roster is only needed for privileged screens (assignment dropdown, audit, etc.)
   const { data: members = [], loading: membersLoading } = useCollection<OrganizationMember>(
-    isMantenimiento && organizationId ? orgCollectionPath(organizationId, 'members') : null
+    organizationId ? orgCollectionPath(organizationId, 'members') : null
   );
 
   // Resolve ticket actors from org members (best-effort)
