@@ -106,11 +106,13 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
     setIsPending(true);
 
+    let photoUrls: string[] = [];
+
     try {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
       const ticketRef = doc(collectionRef);
       const ticketId = ticketRef.id;
-      const photoUrls: string[] = [];
+      photoUrls = [];
       const docData = {
         ...data,
         locationId: data.locationId,
