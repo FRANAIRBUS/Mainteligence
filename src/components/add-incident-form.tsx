@@ -126,6 +126,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         photoUrls: [],
+        hasAttachments: photos.length > 0,
         displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
       };
 
@@ -147,7 +148,11 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           }
 
           if (photoUrls.length > 0) {
-            await updateDoc(ticketRef, { photoUrls, updatedAt: serverTimestamp() });
+            await updateDoc(ticketRef, {
+              photoUrls,
+              hasAttachments: true,
+              updatedAt: serverTimestamp(),
+            });
           }
         } catch (error: any) {
           if (error.code === 'storage/unauthorized') {
