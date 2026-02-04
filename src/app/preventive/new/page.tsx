@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Timestamp, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 
 import { AppShell } from '@/components/app-shell';
+import { Icons } from '@/components/icons';
 import {
   PreventiveTemplateForm,
   type PreventiveTemplateFormValues,
@@ -23,6 +24,12 @@ export default function NewPreventiveTemplatePage() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!userLoading && !user) {
+      router.push('/login');
+    }
+  }, [router, user, userLoading]);
+
   const { data: sites } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );
@@ -32,6 +39,14 @@ export default function NewPreventiveTemplatePage() {
   const { data: assets } = useCollection<Asset>(
     organizationId ? orgCollectionPath(organizationId, 'assets') : null
   );
+
+  if (userLoading || !user) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   const handleSubmit = async (values: PreventiveTemplateFormValues) => {
     if (!firestore) {

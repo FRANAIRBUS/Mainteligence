@@ -45,6 +45,7 @@ import { doc, getDoc, where } from 'firebase/firestore';
 import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { isFeatureEnabled } from '@/lib/entitlements';
 import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organization';
+import Link from 'next/link';
 
 const formatSchedule = (template: PreventiveTemplate) => {
   const schedule = template.schedule;
@@ -332,12 +333,13 @@ export default function PreventivePage() {
                     </p>
                   ) : null}
                 </div>
-                <Button
-                  disabled={preventivesBlocked || preventivesPaused}
-                  onClick={() => router.push('/preventive/new')}
-                >
-                  Crear Plantilla
-                </Button>
+                {preventivesBlocked || preventivesPaused ? (
+                  <Button disabled>Crear Plantilla</Button>
+                ) : (
+                  <Button asChild>
+                    <Link href="/preventive/new">Crear Plantilla</Link>
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
