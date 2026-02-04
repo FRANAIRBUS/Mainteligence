@@ -95,7 +95,13 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
   };
 
-  const uploadPhotoWithRetry = async (photo: File, photoRef: ReturnType<typeof ref>, attempts = 2) => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const uploadPhotoWithRetry = async (
+    photo: File,
+    photoRef: ReturnType<typeof ref>,
+    attempts = 3
+  ) => {
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
@@ -103,8 +109,17 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           contentType: photo.type || 'application/octet-stream',
         });
         return await getDownloadURL(snapshot.ref);
-      } catch (error) {
+      } catch (error: any) {
         lastError = error;
+        const retryable =
+          error?.code === 'storage/unauthorized' ||
+          error?.code === 'storage/retry-limit-exceeded' ||
+          error?.code === 'storage/unknown' ||
+          error?.code === 'storage/network-error';
+        if (!retryable || attempt === attempts) {
+          break;
+        }
+        await sleep(300 * attempt);
       }
     }
     throw lastError;
