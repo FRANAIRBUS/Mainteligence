@@ -391,6 +391,7 @@ export default function IncidentDetailPage() {
 
   const canEdit = !!permissions?.canEditContent && !isClosed;
   const canClose = !!permissions?.canClose && !isClosed;
+  const photoUrls = ticket?.photoUrls?.filter(Boolean) ?? [];
 
   const renderContent = () => {
     if (isLoading || !user) {
@@ -471,6 +472,34 @@ export default function IncidentDetailPage() {
                 <p className="text-sm text-foreground/80">{ticket.description}</p>
               </CardContent>
             </Card>
+            {photoUrls.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Adjuntos</CardTitle>
+                  <CardDescription>Archivos e imágenes adjuntas a la incidencia.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {photoUrls.map((url, index) => (
+                      <a
+                        key={`${url}-${index}`}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group relative block overflow-hidden rounded-lg border border-border/70 bg-muted/20"
+                      >
+                        <img
+                          src={url}
+                          alt={`Adjunto ${index + 1}`}
+                          className="h-40 w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                          loading="lazy"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
             <Card className="bg-transparent">
               <CardHeader>
                 <CardTitle>Informes</CardTitle>
