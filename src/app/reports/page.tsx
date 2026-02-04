@@ -154,11 +154,14 @@ export default function ReportsPage() {
   }, [firestore, organization?.entitlement?.planId]);
 
   const entitlement = organization?.entitlement ?? null;
+  const planFeaturesLoading = Boolean(entitlement) && planFeatures === null;
   const exportAllowed =
-    planFeatures && entitlement
-      ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'EXPORT_PDF')
-      : true;
-  const exportBlocked = Boolean(entitlement) && planFeatures !== null && !exportAllowed;
+    !entitlement
+      ? true
+      : planFeatures
+        ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'EXPORT_PDF')
+        : false;
+  const exportBlocked = Boolean(entitlement) && !exportAllowed;
 
   const { data: tickets = [], loading: ticketsLoading } = useScopedTickets({
     organizationId,
@@ -394,6 +397,14 @@ export default function ReportsPage() {
 
   const handleExport = () => {
     if (isExporting) return;
+    if (planFeaturesLoading) {
+      toast({
+        title: 'Permisos en carga',
+        description: 'Estamos validando tu plan. Intenta nuevamente en unos segundos.',
+      });
+      return;
+    }
+
     if (exportBlocked) {
       toast({
         title: 'Exportación no disponible',
@@ -592,7 +603,11 @@ export default function ReportsPage() {
           </CardHeader>
 
           <CardContent className="grid min-w-0 grid-cols-1 gap-3 p-4 pt-0 sm:gap-4 sm:p-6 sm:pt-0 md:grid-cols-[repeat(3,minmax(0,1fr))]">
-            {exportBlocked ? (
+            {planFeaturesLoading ? (
+              <div className="md:col-span-3 rounded-lg border border-muted/60 bg-muted/30 p-3 text-sm text-muted-foreground">
+                Validando tu plan. La exportación estará disponible en breve.
+              </div>
+            ) : exportBlocked ? (
               <div className="md:col-span-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
