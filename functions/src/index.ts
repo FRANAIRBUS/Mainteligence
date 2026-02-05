@@ -26,6 +26,7 @@ type AccountPlan = 'free' | 'personal_plus' | 'business_creator' | 'enterprise';
 type EntitlementPlanId = 'free' | 'starter' | 'pro' | 'enterprise';
 type EntitlementStatus = 'trialing' | 'active' | 'past_due' | 'canceled';
 type EntitlementProvider = 'stripe' | 'google_play' | 'apple_app_store' | 'manual';
+type OrganizationStatus = 'active' | 'suspended' | 'deleted';
 
 type EntitlementLimits = {
   maxSites: number;
@@ -424,6 +425,22 @@ function resolveEntitlementStatusFromApple(notificationType?: string, renewal?: 
     default:
       return 'past_due';
   }
+}
+
+function resolveOrganizationStatus(input: unknown): OrganizationStatus | null {
+  const normalized = String(input ?? '').trim().toLowerCase();
+  if (normalized === 'active' || normalized === 'suspended' || normalized === 'deleted') {
+    return normalized;
+  }
+  return null;
+}
+
+function resolveEntitlementStatus(input: unknown): EntitlementStatus | null {
+  const normalized = String(input ?? '').trim().toLowerCase();
+  if (normalized === 'trialing' || normalized === 'active' || normalized === 'past_due' || normalized === 'canceled') {
+    return normalized;
+  }
+  return null;
 }
 
 function shouldBlockProviderUpdate(entitlement: Entitlement | undefined, incomingProvider: EntitlementProvider): boolean {
@@ -1932,6 +1949,161 @@ export const rootDeactivateOrganization = functions.https.onCall(async (data, co
   });
 
   return { ok: true, organizationId: orgId, isActive, status };
+});
+
+export const rootSetOrganizationPlan = functions.https.onCall(async (data, context) => {
+  const actorUid = requireRoot(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
+  if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+
+  const reason = String(data?.reason ?? '').trim();
+  if (!reason) throw httpsError('invalid-argument', 'reason requerido.');
+
+  const requestedPlanIdRaw = String(data?.planId ?? '').trim();
+  const requestedEntitlementStatusRaw = String(data?.entitlementStatus ?? data?.status ?? '').trim();
+  const requestedOrgStatusRaw = String(data?.organizationStatus ?? '').trim();
+  const providerRaw = String(data?.provider ?? '').trim().toLowerCase();
+  const provider: EntitlementProvider = providerRaw === 'manual' ? 'manual' : DEFAULT_ENTITLEMENT_PROVIDER;
+
+  const applyPlan = Boolean(requestedPlanIdRaw) || Boolean(requestedEntitlementStatusRaw) || provider === 'manual';
+  const applyOrgStatus = Boolean(requestedOrgStatusRaw);
+
+  if (!applyPlan && !applyOrgStatus) {
+    throw httpsError('invalid-argument', 'Debes enviar plan/status de entitlement y/o organizationStatus.');
+  }
+
+  const orgStatus = applyOrgStatus ? resolveOrganizationStatus(requestedOrgStatusRaw) : null;
+  if (applyOrgStatus && !orgStatus) {
+    throw httpsError('invalid-argument', 'organizationStatus inválido.');
+  }
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const orgPublicRef = db.collection('organizationsPublic').doc(orgId);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  let auditBefore: Record<string, unknown> | null = null;
+  let auditAfter: Record<string, unknown> | null = null;
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'La organización no existe.');
+
+    const orgData = orgSnap.data() as FirebaseFirestore.DocumentData;
+    const currentEntitlement = orgData?.entitlement as Entitlement | undefined;
+
+    const resolvedPlanId = resolveEntitlementPlanId({
+      metadataPlanId: requestedPlanIdRaw || null,
+      fallbackPlanId: currentEntitlement?.planId,
+    });
+
+    if (requestedPlanIdRaw) {
+      const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
+      if (!planSnap.exists) {
+        throw httpsError('failed-precondition', `El plan '${resolvedPlanId}' no existe en planCatalog.`);
+      }
+    }
+
+    const resolvedEntitlementStatus = requestedEntitlementStatusRaw
+      ? resolveEntitlementStatus(requestedEntitlementStatusRaw)
+      : currentEntitlement?.status ?? 'active';
+
+    if (!resolvedEntitlementStatus) {
+      throw httpsError('invalid-argument', 'entitlementStatus inválido.');
+    }
+
+    const limits = currentEntitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const usage = currentEntitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
+
+    const nextEntitlement = buildEntitlementPayload({
+      planId: resolvedPlanId,
+      status: resolvedEntitlementStatus,
+      provider,
+      now,
+      limits,
+      usage,
+    });
+
+    const updatePayload: Record<string, unknown> = {
+      updatedAt: now,
+      source: 'rootSetOrganizationPlan_v1',
+    };
+
+    const publicUpdatePayload: Record<string, unknown> = {
+      updatedAt: now,
+      source: 'rootSetOrganizationPlan_v1',
+    };
+
+    if (applyPlan) {
+      updatePayload.entitlement = nextEntitlement;
+      updatePayload.billingProviders = {
+        ...(isPlainObject(orgData?.billingProviders) ? orgData.billingProviders : {}),
+        manual: {
+          planId: resolvedPlanId,
+          status: resolvedEntitlementStatus,
+          updatedAt: now,
+          conflict: false,
+          conflictReason: null,
+          reason,
+        },
+      };
+    }
+
+    if (orgStatus) {
+      const isActive = orgStatus === 'active';
+      updatePayload.status = orgStatus;
+      updatePayload.isActive = isActive;
+      publicUpdatePayload.status = orgStatus;
+      publicUpdatePayload.isActive = isActive;
+    }
+
+    tx.set(orgRef, updatePayload, { merge: true });
+    if (orgStatus) {
+      tx.set(orgPublicRef, publicUpdatePayload, { merge: true });
+    }
+
+    auditBefore = {
+      organizationStatus: orgData?.status ?? null,
+      isActive: orgData?.isActive ?? null,
+      entitlement: currentEntitlement ?? null,
+    };
+    auditAfter = {
+      organizationStatus: orgStatus ?? orgData?.status ?? null,
+      isActive: orgStatus ? orgStatus === 'active' : orgData?.isActive ?? null,
+      entitlement: applyPlan
+        ? {
+            planId: resolvedPlanId,
+            status: resolvedEntitlementStatus,
+            provider,
+          }
+        : currentEntitlement ?? null,
+    };
+  });
+
+  await auditLog({
+    action: 'rootSetOrganizationPlan',
+    actorUid,
+    actorEmail,
+    orgId,
+    before: auditBefore,
+    after: auditAfter,
+    meta: {
+      reason,
+      source: 'rootSetOrganizationPlan_v1',
+      applyPlan,
+      applyOrgStatus,
+    },
+  });
+
+  return {
+    ok: true,
+    organizationId: orgId,
+    updated: {
+      plan: applyPlan,
+      organizationStatus: applyOrgStatus,
+    },
+  };
 });
 
 export const orgSetOrganizationStatus = functions.https.onCall(async (data, context) => {
