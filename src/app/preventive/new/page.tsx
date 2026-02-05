@@ -2,16 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
+import { Button } from '@/components/ui/button';
 import {
   PreventiveTemplateForm,
   type PreventiveTemplateFormValues,
 } from '@/components/preventive-template-form';
-import { useCollection, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
-import type { Asset, Department, Site } from '@/lib/firebase/models';
+import { useCollection, useDoc, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
+import type { Asset, Department, Organization, Site } from '@/lib/firebase/models';
+import { isFeatureEnabled } from '@/lib/entitlements';
 import { orgCollectionPath } from '@/lib/organization';
 
 const normalizeOptional = (value?: string) =>
@@ -24,6 +28,7 @@ export default function NewPreventiveTemplatePage() {
   const { user, loading: userLoading, organizationId } = useUser();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -40,6 +45,47 @@ export default function NewPreventiveTemplatePage() {
   const { data: assets } = useCollection<Asset>(
     organizationId ? orgCollectionPath(organizationId, 'assets') : null
   );
+  const { data: organization } = useDoc<Organization>(
+    organizationId ? `organizations/${organizationId}` : null
+  );
+
+  useEffect(() => {
+    if (!firestore || !organization?.entitlement?.planId) {
+      setPlanFeatures(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+      .then((snap) => {
+        if (cancelled) {
+          return;
+        }
+
+        const features =
+          (snap.exists() ? (snap.data()?.features as Record<string, boolean>) : null) ?? null;
+        setPlanFeatures(features);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setPlanFeatures(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, organization?.entitlement?.planId]);
+
+  const entitlement = organization?.entitlement ?? null;
+  const preventivesAllowed =
+    planFeatures && entitlement
+      ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'PREVENTIVES')
+      : true;
+  const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);
+  const preventivesBlocked = planFeatures !== null && !preventivesAllowed;
 
   if (userLoading || !user) {
     return (
@@ -100,6 +146,14 @@ export default function NewPreventiveTemplatePage() {
       router.push('/preventive');
     } catch (error) {
       console.error('Error al crear la plantilla preventiva', error);
+      const errorCode =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String(error.code)
+          : '';
+      if (errorCode.includes('failed-precondition')) {
+        setErrorMessage('Tu plan no incluye preventivos. Actualiza tu plan para crear plantillas.');
+        return;
+      }
       const message =
         error instanceof Error && error.message
           ? error.message
@@ -115,17 +169,35 @@ export default function NewPreventiveTemplatePage() {
       title="Nueva plantilla preventiva"
       description="Define la frecuencia y alcance de mantenimiento preventivo."
     >
-      <div className="rounded-lg border border-white/80 bg-card p-6 shadow-sm">
-        <PreventiveTemplateForm
-          onSubmit={handleSubmit}
-          submitting={submitting || userLoading}
-          errorMessage={errorMessage}
-          onCancel={() => router.push('/preventive')}
-          sites={sites}
-          departments={departments}
-          assets={assets}
-        />
-      </div>
+      {preventivesBlocked || preventivesPaused ? (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-6 text-sm text-amber-100">
+          <p>
+            {preventivesBlocked
+              ? 'Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.'
+              : 'Los preventivos están pausados por limitaciones del plan actual.'}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button asChild>
+              <Link href="/plans">Ver planes</Link>
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/preventive')}>
+              Volver
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-white/80 bg-card p-6 shadow-sm">
+          <PreventiveTemplateForm
+            onSubmit={handleSubmit}
+            submitting={submitting || userLoading}
+            errorMessage={errorMessage}
+            onCancel={() => router.push('/preventive')}
+            sites={sites}
+            departments={departments}
+            assets={assets}
+          />
+        </div>
+      )}
     </AppShell>
   );
 }
