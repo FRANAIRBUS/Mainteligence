@@ -456,10 +456,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           path: error.customData?.['path'] || orgStoragePath(organizationId!, 'tickets', 'photos'),
           operation: 'write',
         });
-        return [];
-      });
-    } catch (error: any) {
-      if (error.code === 'permission-denied') {
+        errorEmitter.emit('permission-error', permissionError);
+      } else if (error.code === 'permission-denied') {
         const permissionError = new FirestorePermissionError({
           path: orgCollectionPath(organizationId!, 'tickets'),
           operation: 'create',
