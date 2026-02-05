@@ -16,15 +16,22 @@ service firebase.storage {
       return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
     }
 
+    function membershipDoc(orgId, uid) {
+      return get(/databases/$(database)/documents/memberships/$(uid + "_" + orgId));
+    }
+
+    function isActiveMembership(doc) {
+      return doc != null
+        && doc.data != null
+        && (doc.data.active == true || doc.data.status == "active");
+    }
+
     function isActiveMember(orgId, uid) {
       let member = memberDoc(orgId, uid);
+      let membership = membershipDoc(orgId, uid);
       return isSignedIn()
         && isValidOrgId(orgId)
-        && member.data != null
-        && (
-          member.data.active == true
-          || member.data.status == "active"
-        );
+        && (isActiveMembership(member) || isActiveMembership(membership));
     }
 
     function ticketBelongsToOrg(orgId, id) {
