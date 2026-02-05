@@ -447,9 +447,11 @@ export default function PreventivePage() {
   const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);
   const preventivesBlocked = planFeatures !== null && !preventivesAllowed;
 
+  const preventiveTicketsFilter = useMemo(() => where('type', '==', 'preventivo'), []);
+
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(
     organizationId ? orgCollectionPath(organizationId, 'tickets') : null,
-    where('type', '==', 'preventivo')
+    preventiveTicketsFilter
   );
 
   const { data: templates, loading: templatesLoading } = useCollectionQuery<PreventiveTemplate>(
