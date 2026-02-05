@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { doc, getDoc } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -27,6 +28,7 @@ export default function NewPreventiveTemplatePage() {
   const { user, loading: userLoading, organizationId } = useUser();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -47,8 +49,43 @@ export default function NewPreventiveTemplatePage() {
     organizationId ? `organizations/${organizationId}` : null
   );
 
-  const preventivesBlocked = !isFeatureEnabled(organization?.entitlement, 'PREVENTIVES');
-  const preventivesPaused = organization?.preventivesPausedByEntitlement === true;
+  useEffect(() => {
+    if (!firestore || !organization?.entitlement?.planId) {
+      setPlanFeatures(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+      .then((snap) => {
+        if (cancelled) {
+          return;
+        }
+
+        const features =
+          (snap.exists() ? (snap.data()?.features as Record<string, boolean>) : null) ?? null;
+        setPlanFeatures(features);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setPlanFeatures(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, organization?.entitlement?.planId]);
+
+  const entitlement = organization?.entitlement ?? null;
+  const preventivesAllowed =
+    planFeatures && entitlement
+      ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'PREVENTIVES')
+      : true;
+  const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);
+  const preventivesBlocked = planFeatures !== null && !preventivesAllowed;
 
   if (userLoading || !user) {
     return (
@@ -149,17 +186,17 @@ export default function NewPreventiveTemplatePage() {
           </div>
         </div>
       ) : (
-      <div className="rounded-lg border border-white/80 bg-card p-6 shadow-sm">
-        <PreventiveTemplateForm
-          onSubmit={handleSubmit}
-          submitting={submitting || userLoading}
-          errorMessage={errorMessage}
-          onCancel={() => router.push('/preventive')}
-          sites={sites}
-          departments={departments}
-          assets={assets}
-        />
-      </div>
+        <div className="rounded-lg border border-white/80 bg-card p-6 shadow-sm">
+          <PreventiveTemplateForm
+            onSubmit={handleSubmit}
+            submitting={submitting || userLoading}
+            errorMessage={errorMessage}
+            onCancel={() => router.push('/preventive')}
+            sites={sites}
+            departments={departments}
+            assets={assets}
+          />
+        </div>
       )}
     </AppShell>
   );
