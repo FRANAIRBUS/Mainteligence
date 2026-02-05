@@ -9,6 +9,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
@@ -208,6 +209,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
   const uploadPhotoWithRetry = async (
     attachment: SelectedAttachment,
+    scopedOrganizationId: string,
     ticketId: string,
     onProgress: (progress: number) => void,
     attempts = 2
@@ -217,7 +219,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
         const objectName = uniqueFileName(attachment.file.name);
-        const photoRef = ref(storage!, orgStoragePath(organizationId!, 'tickets', ticketId, objectName));
+        const photoRef = ref(storage!, orgStoragePath(scopedOrganizationId, 'tickets', ticketId, objectName));
 
         const snapshot = await new Promise<UploadTaskSnapshot>((resolve, reject) => {
           const task = uploadBytesResumable(photoRef, attachment.file, {
@@ -341,6 +343,11 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           maxFiles: MAX_ATTACHMENTS,
         });
 
+        const uploadSessionSnapshot = await getDoc(uploadSessionRef);
+        if (!uploadSessionSnapshot.exists()) {
+          throw new Error('No se pudo inicializar la sesión de subida para los adjuntos.');
+        }
+
         const results = await Promise.allSettled(
           attachments.map(async (attachment) => {
             setAttachments((current) =>
@@ -354,6 +361,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
             try {
               const url = await uploadPhotoWithRetry(
                 attachment,
+                scopedOrganizationId,
                 ticketId,
                 (progress) => {
                   setAttachments((current) =>
