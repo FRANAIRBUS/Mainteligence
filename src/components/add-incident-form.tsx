@@ -7,6 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
   collection,
+  deleteDoc,
   doc,
   serverTimestamp,
   setDoc,
