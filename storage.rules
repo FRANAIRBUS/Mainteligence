@@ -25,7 +25,11 @@ service firebase.storage {
     function isActiveMembership(doc) {
       return doc != null
         && doc.data != null
-        && (doc.data.active == true || doc.data.status == "active");
+        && (
+          doc.data.active == true
+          || doc.data.isActive == true
+          || doc.data.status == "active"
+        );
     }
 
     function isActiveMember(orgId, uid) {

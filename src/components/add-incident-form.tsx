@@ -123,7 +123,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
   const storage = useStorage();
-  const { user, organizationId, profile } = useUser();
+  const { user, organizationId, profile, activeMembership } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [attachments, setAttachments] = useState<SelectedAttachment[]>([]);
   const [submitWarning, setSubmitWarning] = useState<string | null>(null);
@@ -335,6 +335,19 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         variant: 'destructive',
         title: 'Error',
         description: 'No autenticado o falta el organizationId para registrar la incidencia.',
+      });
+      return;
+    }
+
+    if (
+      !activeMembership
+      || activeMembership.organizationId !== organizationId
+      || activeMembership.status !== 'active'
+    ) {
+      toast({
+        variant: 'destructive',
+        title: 'Sin membresía activa',
+        description: 'Tu usuario no tiene membresía activa en esta organización. Cambia de organización o solicita activación.',
       });
       return;
     }
