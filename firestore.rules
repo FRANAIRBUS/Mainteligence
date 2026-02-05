@@ -379,7 +379,7 @@ service cloud.firestore {
           && organizationIdMatchesPath(orgId);
       }
 
-      // Short-lived upload sessions (used to harden Storage writes before an incident exists).
+      // Short-lived upload sessions (used to harden Storage writes before a ticket exists).
       // Client creates a session owned by itself, uploads files, then creates the ticket and deletes the session.
       match /uploadSessions/{sessionId} {
         allow get: if isSignedIn()
@@ -398,7 +398,7 @@ service cloud.firestore {
           && request.resource.data.expiresAt is timestamp
           && request.resource.data.expiresAt > request.time
           && request.resource.data.expiresAt <= request.time + duration.value(15, 'm')
-          && ( !('maxFiles' in request.resource.data) || request.resource.data.maxFiles <= 10 );
+          && (!('maxFiles' in request.resource.data) || request.resource.data.maxFiles <= 10);
 
         allow update: if false;
 
