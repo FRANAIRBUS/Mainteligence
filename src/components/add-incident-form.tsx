@@ -10,7 +10,6 @@ import {
   doc,
   serverTimestamp,
   setDoc,
-  updateDoc,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
 
@@ -104,7 +103,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const { user, organizationId, profile } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [attachments, setAttachments] = useState<SelectedAttachment[]>([]);
-  const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
   const [submitWarning, setSubmitWarning] = useState<string | null>(null);
   const canSubmit = Boolean(firestore && storage && user && organizationId);
 
@@ -279,6 +277,22 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     throw lastError;
   };
 
+  const mapUploadErrorMessage = (error: any) => {
+    switch (error?.code) {
+      case 'storage/unauthorized':
+        return 'Sin permisos para subir este archivo. Revisa tus permisos de Storage.';
+      case 'storage/canceled':
+      case 'storage/retry-limit-exceeded':
+        return 'La subida se interrumpió por tiempo de espera. Intenta nuevamente.';
+      case 'storage/quota-exceeded':
+        return 'Se superó la cuota de almacenamiento.';
+      case 'storage/network-error':
+        return 'Error de red durante la subida.';
+      default:
+        return error?.message || 'No se pudo subir el archivo.';
+    }
+  };
+
   const onSubmit = async (data: AddIncidentFormValues) => {
     if (!canSubmit) {
       toast({
@@ -295,42 +309,37 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
     setIsPending(true);
     setSubmitWarning(null);
-    setCreatedTicketId(null);
+
+    let uploadSessionRefLocal: ReturnType<typeof doc> | null = null;
 
     try {
       const collectionRef = collection(scopedFirestore, orgCollectionPath(scopedOrganizationId, 'tickets'));
       const ticketRef = doc(collectionRef);
       const ticketId = ticketRef.id;
       const createdByName = profile?.displayName || scopedUser.email || scopedUser.uid;
-
-      const docData: any = {
-        ...data,
-        locationId: data.locationId,
-        type: 'correctivo' as const,
-        status: 'new' as const,
-        createdBy: scopedUser.uid,
-        createdByName,
-        assignedRole: 'mantenimiento',
-        assignedTo: null,
-        organizationId: scopedOrganizationId,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        photoUrls: [],
-        hasAttachments: false,
-        displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
-      };
-
-      if (!docData.assetId) {
-        delete docData.assetId;
-      }
-
-      await setDoc(ticketRef, docData);
-      setCreatedTicketId(ticketId);
+      const uploadSessionRef = doc(
+        scopedFirestore,
+        orgCollectionPath(scopedOrganizationId, 'uploadSessions'),
+        ticketId
+      );
+      uploadSessionRefLocal = uploadSessionRef;
 
       const urls: string[] = [];
       const failedUploads: string[] = [];
 
       if (attachments.length > 0) {
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
+        await setDoc(uploadSessionRef, {
+          organizationId: scopedOrganizationId,
+          uploaderUid: scopedUser.uid,
+          type: 'ticket',
+          status: 'active',
+          createdAt: serverTimestamp(),
+          expiresAt,
+          maxFiles: MAX_ATTACHMENTS,
+        });
+
         const results = await Promise.allSettled(
           attachments.map(async (attachment) => {
             setAttachments((current) =>
@@ -364,7 +373,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
               return { url, fileName: attachment.file.name };
             } catch (error: any) {
-              const errorMessage = error?.message || 'No se pudo subir el archivo.';
+              const errorMessage = mapUploadErrorMessage(error);
               setAttachments((current) =>
                 current.map((item) =>
                   item.id === attachment.id
@@ -372,7 +381,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                     : item
                 )
               );
-              throw { error, fileName: attachment.file.name };
+              throw { error, fileName: attachment.file.name, message: errorMessage };
             }
           })
         );
@@ -381,7 +390,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           if (result.status === 'fulfilled') {
             urls.push(result.value.url);
           } else {
-            failedUploads.push(result.reason.fileName || 'archivo');
+            failedUploads.push(`${result.reason.fileName || 'archivo'} (${result.reason.message || 'error'})`);
             const error = result.reason.error;
             if (error?.code === 'storage/unauthorized') {
               const permissionError = new StoragePermissionError({
@@ -393,24 +402,42 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           }
         }
 
-        if (urls.length > 0) {
-          await updateDoc(ticketRef, {
-            photoUrls: urls,
-            hasAttachments: true,
-            updatedAt: serverTimestamp(),
-          });
-        }
-
         if (failedUploads.length > 0) {
-          const warningMessage = `La incidencia se creó, pero no se pudieron subir: ${failedUploads.join(', ')}.`;
-          setSubmitWarning(warningMessage);
+          await Promise.allSettled([deleteDoc(uploadSessionRef)]);
+          setSubmitWarning(`No se creó la incidencia. Corrige o quita los adjuntos con error y reintenta: ${failedUploads.join(', ')}.`);
           toast({
             variant: 'destructive',
-            title: 'Adjuntos no subidos',
-            description: 'Revisa el detalle en el formulario antes de salir.',
+            title: 'Falló la subida de adjuntos',
+            description: 'La incidencia no se creó. Revisa el error por archivo y reintenta.',
           });
           return;
         }
+      }
+
+      const docData: any = {
+        ...data,
+        locationId: data.locationId,
+        type: 'correctivo' as const,
+        status: 'new' as const,
+        createdBy: scopedUser.uid,
+        createdByName,
+        assignedRole: 'mantenimiento',
+        assignedTo: null,
+        organizationId: scopedOrganizationId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        photoUrls: urls,
+        hasAttachments: urls.length > 0,
+        displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
+      };
+
+      if (!docData.assetId) {
+        delete docData.assetId;
+      }
+
+      await setDoc(ticketRef, docData);
+      if (attachments.length > 0) {
+        await Promise.allSettled([deleteDoc(uploadSessionRef)]);
       }
 
       onSuccess?.({ title: data.title });
@@ -420,6 +447,14 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           if (attachment.previewUrl) {
             URL.revokeObjectURL(attachment.previewUrl);
           }
+        });
+        return [];
+      });
+    } catch (error: any) {
+      if (error.code === 'storage/unauthorized') {
+        const permissionError = new StoragePermissionError({
+          path: error.customData?.['path'] || orgStoragePath(organizationId!, 'tickets', 'photos'),
+          operation: 'write',
         });
         return [];
       });
@@ -439,6 +474,9 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         });
       }
     } finally {
+      if (uploadSessionRefLocal) {
+        await Promise.allSettled([deleteDoc(uploadSessionRefLocal)]);
+      }
       setIsPending(false);
     }
   };
@@ -614,13 +652,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         {submitWarning && (
           <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
             <p className="font-medium text-destructive">{submitWarning}</p>
-            {createdTicketId && (
-              <p className="mt-1">
-                <Link className="underline underline-offset-2" href={`/incidents/${createdTicketId}`}>
-                  Ver incidencia creada
-                </Link>
-              </p>
-            )}
           </div>
         )}
 
