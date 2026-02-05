@@ -445,16 +445,25 @@ export default function PreventivePage() {
       ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'PREVENTIVES')
       : true;
   const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);
-  const preventivesBlocked = planFeatures !== null && !preventivesAllowed;
+  const isDemoOrganization =
+    organization?.type === 'demo' ||
+    organization?.subscriptionPlan === 'trial' ||
+    (organizationId ? organizationId.startsWith('demo-') : false);
+
+  const preventiveTicketsFilter = useMemo(() => where('type', '==', 'preventivo'), []);
 
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(
     organizationId ? orgCollectionPath(organizationId, 'tickets') : null,
-    where('type', '==', 'preventivo')
+    preventiveTicketsFilter
   );
 
   const { data: templates, loading: templatesLoading } = useCollectionQuery<PreventiveTemplate>(
     organizationId ? orgPreventiveTemplatesPath(organizationId) : null
   );
+
+  const demoTemplateLimitReached = isDemoOrganization && templates.length >= 2;
+  const preventivesBlockedByPlan = planFeatures !== null && !preventivesAllowed && !isDemoOrganization;
+  const preventivesBlocked = preventivesBlockedByPlan || demoTemplateLimitReached;
 
   const { data: sites } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
@@ -507,7 +516,9 @@ export default function PreventivePage() {
               {preventivesBlocked ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-200">
                   <span>
-                    Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.
+                    {demoTemplateLimitReached
+                      ? 'La demo permite hasta 2 plantillas preventivas. Cambia tu plan para crear más.'
+                      : 'Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.'}
                   </span>
                   <Button variant="outline" size="sm" onClick={() => router.push('/plans')}>
                     Ver planes
