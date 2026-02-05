@@ -80,6 +80,7 @@ Notas:
 - `organizationId` y `reason` son obligatorios.
 - Si no se envía `planId` ni `entitlementStatus`, no se aplica cambio de entitlement.
 - Si se envía `organizationStatus`, se sincroniza también `organizationsPublic/{orgId}` (`status` + `isActive`).
+- Si el `planId` no existe en `planCatalog`, ROOT puede aplicar override manual; queda advertencia en logs y traza en auditoría (`planCatalogFound=false`).
 
 ## 6) Guardrails de seguridad y consistencia
 
@@ -87,7 +88,7 @@ Notas:
 
 - Solo ROOT (custom claim).
 - Validación estricta de estados.
-- Validación de `planId` en `planCatalog` cuando se envía explícitamente.
+- Intento de validación en `planCatalog` cuando se envía `planId`; si no existe, se permite override manual con warning y trazabilidad.
 - Preserva `entitlement.usage` y `entitlement.limits` al cambiar plan/estado.
 - Escribe traza manual en `billingProviders.manual`.
 - Registra `auditLog` con `before/after`, actor y `reason`.

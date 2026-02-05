@@ -2021,7 +2021,7 @@ export const rootSetOrganizationPlan = functions.https.onCall(async (data, conte
   const providerRaw = String(data?.provider ?? '').trim().toLowerCase();
   const provider: EntitlementProvider = providerRaw === 'manual' ? 'manual' : DEFAULT_ENTITLEMENT_PROVIDER;
 
-  const applyPlan = Boolean(requestedPlanIdRaw) || Boolean(requestedEntitlementStatusRaw) || provider === 'manual';
+  const applyPlan = Boolean(requestedPlanIdRaw) || Boolean(requestedEntitlementStatusRaw);
   const applyOrgStatus = Boolean(requestedOrgStatusRaw);
 
   if (!applyPlan && !applyOrgStatus) {
@@ -2039,6 +2039,7 @@ export const rootSetOrganizationPlan = functions.https.onCall(async (data, conte
 
   let auditBefore: Record<string, unknown> | null = null;
   let auditAfter: Record<string, unknown> | null = null;
+  let planCatalogFound: boolean | null = null;
 
   await db.runTransaction(async (tx) => {
     const orgSnap = await tx.get(orgRef);
@@ -2054,8 +2055,13 @@ export const rootSetOrganizationPlan = functions.https.onCall(async (data, conte
 
     if (requestedPlanIdRaw) {
       const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
+      planCatalogFound = planSnap.exists;
       if (!planSnap.exists) {
-        throw httpsError('failed-precondition', `El plan '${resolvedPlanId}' no existe en planCatalog.`);
+        console.warn('rootSetOrganizationPlan: plan missing in planCatalog, applying manual override', {
+          orgId,
+          planId: resolvedPlanId,
+          actorUid,
+        });
       }
     }
 
@@ -2147,6 +2153,7 @@ export const rootSetOrganizationPlan = functions.https.onCall(async (data, conte
       source: 'rootSetOrganizationPlan_v1',
       applyPlan,
       applyOrgStatus,
+      planCatalogFound,
     },
   });
 
