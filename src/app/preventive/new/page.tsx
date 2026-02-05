@@ -15,7 +15,7 @@ import {
 } from '@/components/preventive-template-form';
 import { useCollection, useDoc, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
 import type { Asset, Department, Organization, PreventiveTemplate, Site } from '@/lib/firebase/models';
-import { isFeatureEnabled } from '@/lib/entitlements';
+import { isFeatureEnabled, resolveEffectivePlanFeatures } from '@/lib/entitlements';
 import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organization';
 
 const normalizeOptional = (value?: string) =>
@@ -83,17 +83,19 @@ export default function NewPreventiveTemplatePage() {
   }, [firestore, organization?.entitlement?.planId]);
 
   const entitlement = organization?.entitlement ?? null;
-  const preventivesAllowed =
-    planFeatures && entitlement
-      ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'PREVENTIVES')
-      : true;
+  const preventivesAllowed = entitlement
+    ? isFeatureEnabled({
+        ...entitlement,
+        features: resolveEffectivePlanFeatures(entitlement.planId, planFeatures),
+      }, 'PREVENTIVES')
+    : false;
   const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);
   const isDemoOrganization =
     organization?.type === 'demo' ||
     organization?.subscriptionPlan === 'trial' ||
     (organizationId ? organizationId.startsWith('demo-') : false);
-  const demoTemplateLimitReached = isDemoOrganization && templates.length >= 2;
-  const preventivesBlockedByPlan = planFeatures !== null && !preventivesAllowed && !isDemoOrganization;
+  const demoTemplateLimitReached = isDemoOrganization && templates.length >= 5;
+  const preventivesBlockedByPlan = !preventivesAllowed && !isDemoOrganization;
   const preventivesBlocked = preventivesBlockedByPlan || demoTemplateLimitReached;
 
   if (userLoading || !user) {
@@ -165,8 +167,8 @@ export default function NewPreventiveTemplatePage() {
             ? String(error.message ?? '')
             : '';
 
-        if (backendMessage.toLowerCase().includes('hasta 2 plantillas')) {
-          setErrorMessage('La demo permite hasta 2 plantillas preventivas. Cambia tu plan para crear más.');
+        if (backendMessage.toLowerCase().includes('hasta 5 plantillas')) {
+          setErrorMessage('La demo permite hasta 5 plantillas preventivas. Cambia tu plan para crear más.');
           return;
         }
 
@@ -192,7 +194,7 @@ export default function NewPreventiveTemplatePage() {
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-6 text-sm text-amber-100">
           <p>
             {demoTemplateLimitReached
-              ? 'La demo permite hasta 2 plantillas preventivas. Cambia tu plan para crear más.'
+              ? 'La demo permite hasta 5 plantillas preventivas. Cambia tu plan para crear más.'
               : preventivesBlocked
                 ? 'Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.'
                 : 'Los preventivos están pausados por limitaciones del plan actual.'}
