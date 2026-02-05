@@ -8,20 +8,8 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, getDoc, where } from 'firebase/firestore';
 import { MoreHorizontal } from 'lucide-react';
 
-import { MainNav } from '@/components/main-nav';
-import { UserNav } from '@/components/user-nav';
-import { DynamicClientLogo } from '@/components/dynamic-client-logo';
 import { Icons } from '@/components/icons';
 import { AppShell } from '@/components/app-shell';
-
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from '@/components/ui/sidebar';
 import {
   Table,
   TableBody,
@@ -327,64 +315,66 @@ function PreventiveTemplatesTable({
 
   return (
     <>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Nombre</TableHead>
-            <TableHead>Estado</TableHead>
-            <TableHead>Programación</TableHead>
-            <TableHead>Automático</TableHead>
-            <TableHead>Próxima ejecución</TableHead>
-            <TableHead>
-              <span className="sr-only">Acciones</span>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {templates.length > 0 ? (
-            templates.map((template) => (
-              <TableRow key={template.id}>
-                <TableCell className="font-medium">{template.name}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">{template.status}</Badge>
-                </TableCell>
-                <TableCell>{formatSchedule(template)}</TableCell>
-                <TableCell>
-                  <Badge variant={template.automatic ? 'secondary' : 'outline'}>
-                    {template.automatic ? 'Sí' : 'No'}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {template.schedule?.nextRunAt?.toDate
-                    ? template.schedule.nextRunAt.toDate().toLocaleDateString()
-                    : 'N/A'}
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button aria-haspopup="true" size="icon" variant="ghost" disabled={submitting}>
-                        <MoreHorizontal className="h-4 w-4" />
-                        <span className="sr-only">Menú de acciones</span>
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                      <DropdownMenuItem onClick={() => openEdit(template)}>Editar</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDuplicate(template)}>Duplicar</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+      <div className="w-full overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead>Programación</TableHead>
+              <TableHead>Automático</TableHead>
+              <TableHead>Próxima ejecución</TableHead>
+              <TableHead>
+                <span className="sr-only">Acciones</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {templates.length > 0 ? (
+              templates.map((template) => (
+                <TableRow key={template.id}>
+                  <TableCell className="font-medium">{template.name}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{template.status}</Badge>
+                  </TableCell>
+                  <TableCell>{formatSchedule(template)}</TableCell>
+                  <TableCell>
+                    <Badge variant={template.automatic ? 'secondary' : 'outline'}>
+                      {template.automatic ? 'Sí' : 'No'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {template.schedule?.nextRunAt?.toDate
+                      ? template.schedule.nextRunAt.toDate().toLocaleDateString()
+                      : 'N/A'}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button aria-haspopup="true" size="icon" variant="ghost" disabled={submitting}>
+                          <MoreHorizontal className="h-4 w-4" />
+                          <span className="sr-only">Menú de acciones</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                        <DropdownMenuItem onClick={() => openEdit(template)}>Editar</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDuplicate(template)}>Duplicar</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={6} className="h-24 text-center">
+                  No se encontraron plantillas preventivas.
                 </TableCell>
               </TableRow>
-            ))
-          ) : (
-            <TableRow>
-              <TableCell colSpan={6} className="h-24 text-center">
-                No se encontraron plantillas preventivas.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       <Dialog open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (!open) setActiveTemplate(null); }}>
         <DialogContent className="max-w-3xl">
@@ -493,91 +483,73 @@ export default function PreventivePage() {
   }
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader className="p-4 text-center">
-          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-            <DynamicClientLogo />
-          </div>
-          <a href="/" className="flex flex-col items-center gap-2">
-            <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-              Maintelligence
-            </span>
-          </a>
-        </SidebarHeader>
-        <SidebarContent>
-          <MainNav />
-        </SidebarContent>
-      </Sidebar>
-      <SidebarInset>
-        <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-background/80 px-4 backdrop-blur-sm lg:px-6">
-          <SidebarTrigger className="md:hidden" />
-          <div className="flex w-full items-center justify-end">
-            <UserNav />
-          </div>
-        </header>
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
-          <Card className="mb-6">
-            <CardHeader>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <CardTitle>Plantillas Preventivas</CardTitle>
-                  <CardDescription className="mt-2">
-                    Define la programación y alcance de las órdenes preventivas.
-                  </CardDescription>
-                  {preventivesBlocked ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-200">
-                      <span>
-                        Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.
-                      </span>
-                      <Button variant="outline" size="sm" onClick={() => router.push('/plans')}>
-                        Ver planes
-                      </Button>
-                    </div>
-                  ) : null}
-                  {preventivesPaused ? (
-                    <p className="mt-2 text-xs text-amber-200">
-                      Los preventivos están pausados por limitaciones del plan actual.
-                    </p>
-                  ) : null}
-                </div>
-                {preventivesBlocked || preventivesPaused ? (
-                  <Button disabled>Crear Plantilla</Button>
-                ) : (
-                  <Button asChild>
-                    <Link href="/preventive/new">Crear Plantilla</Link>
+    <AppShell
+      title="Preventivos"
+      description="Plantillas y órdenes de mantenimiento preventivo"
+      action={
+        preventivesBlocked || preventivesPaused ? (
+          <Button disabled>Crear Plantilla</Button>
+        ) : (
+          <Button asChild>
+            <Link href="/preventive/new">Crear Plantilla</Link>
+          </Button>
+        )
+      }
+    >
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle>Plantillas Preventivas</CardTitle>
+              <CardDescription className="mt-2">
+                Define la programación y alcance de las órdenes preventivas.
+              </CardDescription>
+              {preventivesBlocked ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-200">
+                  <span>
+                    Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => router.push('/plans')}>
+                    Ver planes
                   </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <PreventiveTemplatesTable
-                organizationId={organizationId}
-                templates={templates}
-                loading={templatesLoading}
-                sites={sites}
-                departments={departments}
-                assets={assets}
-              />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <CardTitle>Mantenimiento Preventivo</CardTitle>
-                  <CardDescription className="mt-2">
-                    Visualiza y gestiona todas las órdenes de mantenimiento preventivo.
-                  </CardDescription>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <PreventiveTable tickets={tickets} loading={ticketsLoading} />
-            </CardContent>
-          </Card>
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+              ) : null}
+              {preventivesPaused ? (
+                <p className="mt-2 text-xs text-amber-200">
+                  Los preventivos están pausados por limitaciones del plan actual.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <PreventiveTemplatesTable
+            organizationId={organizationId}
+            templates={templates}
+            loading={templatesLoading}
+            sites={sites}
+            departments={departments}
+            assets={assets}
+          />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle>Mantenimiento Preventivo</CardTitle>
+              <CardDescription className="mt-2">
+                Visualiza y gestiona todas las órdenes de mantenimiento preventivo.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="w-full overflow-x-auto">
+            <PreventiveTable tickets={tickets} loading={ticketsLoading} />
+          </div>
+        </CardContent>
+      </Card>
+    </AppShell>
   );
 }
