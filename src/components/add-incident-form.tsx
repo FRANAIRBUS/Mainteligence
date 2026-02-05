@@ -42,6 +42,27 @@ import {
 import { Loader2 } from 'lucide-react';
 import { Icons } from '@/components/icons';
 
+const MAX_ATTACHMENTS = 10;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const UPLOAD_STALL_TIMEOUT_MS = 30_000;
+
+const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
+  'application/msword',
+  'application/pdf',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+
+const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
+  'doc',
+  'docx',
+  'pdf',
+  'txt',
+  'xls',
+  'xlsx',
+]);
+
 const formSchema = z.object({
   title: z
     .string()
@@ -97,9 +118,41 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   });
 
   const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
-      setPhotos(Array.from(event.target.files));
+    if (!event.target.files) return;
+
+    const selectedFiles = Array.from(event.target.files);
+    if (selectedFiles.length > MAX_ATTACHMENTS) {
+      toast({
+        variant: 'destructive',
+        title: 'Demasiados adjuntos',
+        description: `Puedes subir un máximo de ${MAX_ATTACHMENTS} archivos por incidencia.`,
+      });
+      event.target.value = '';
+      setPhotos([]);
+      return;
     }
+
+    const invalidFiles = selectedFiles.filter((file) => {
+      const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : '';
+      const allowedByMime = file.type.startsWith('image/') || ALLOWED_ATTACHMENT_MIME_TYPES.has(file.type);
+      const allowedByExtension = extension ? ALLOWED_ATTACHMENT_EXTENSIONS.has(extension) : false;
+      const sizeAllowed = file.size > 0 && file.size <= MAX_ATTACHMENT_BYTES;
+      return !(sizeAllowed && (allowedByMime || allowedByExtension));
+    });
+
+    if (invalidFiles.length > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Adjuntos inválidos',
+        description:
+          'Revisa formato y tamaño. Permitidos: imágenes, PDF, TXT, DOC, DOCX, XLS, XLSX (máx. 10 MB).',
+      });
+      event.target.value = '';
+      setPhotos([]);
+      return;
+    }
+
+    setPhotos(selectedFiles);
   };
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -124,25 +177,35 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     attempts = 3
   ) => {
     let lastError: unknown;
+
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        const snapshot = await uploadBytes(photoRef, photo, {
-          contentType: photo.type || 'application/octet-stream',
-        });
-        return await getDownloadURL(snapshot.ref);
+        const snapshot = await Promise.race([
+          uploadBytes(photoRef, photo, {
+            contentType: photo.type || 'application/octet-stream',
+          }),
+          sleep(UPLOAD_STALL_TIMEOUT_MS).then(() => {
+            throw {
+              code: 'storage/retry-limit-exceeded',
+              message: 'La subida del archivo tardó demasiado tiempo.',
+            };
+          }),
+        ]);
+
+        return await getDownloadURL((snapshot as Awaited<ReturnType<typeof uploadBytes>>).ref);
       } catch (error: any) {
         lastError = error;
         const retryable =
-          error?.code === 'storage/unauthorized' ||
           error?.code === 'storage/retry-limit-exceeded' ||
           error?.code === 'storage/unknown' ||
           error?.code === 'storage/network-error';
         if (!retryable || attempt === attempts) {
           break;
         }
-        await sleep(300 * attempt);
+        await sleep(500 * attempt);
       }
     }
+
     throw lastError;
   };
 
@@ -191,7 +254,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
             status: 'active',
             createdAt: serverTimestamp(),
             expiresAt,
-            maxFiles: 10,
+            maxFiles: MAX_ATTACHMENTS,
           });
         } catch (e: any) {
           // Si no podemos crear la sesión (rules viejas), no bloqueamos: caemos a legacy.
