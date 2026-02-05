@@ -58,11 +58,32 @@ const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set([
   'doc',
   'docx',
+  'heic',
+  'heif',
+  'jpg',
+  'jpeg',
   'pdf',
+  'png',
   'txt',
+  'webp',
   'xls',
   'xlsx',
 ]);
+
+const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  txt: 'text/plain',
+  webp: 'image/webp',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
 
 type SelectedAttachment = {
   id: string;
@@ -207,6 +228,14 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     return `${suffix}-${safe}`;
   };
 
+  const resolveAttachmentContentType = (file: File) => {
+    if (file.type && file.type.trim().length > 0) {
+      return file.type;
+    }
+    const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : '';
+    return extension ? CONTENT_TYPE_BY_EXTENSION[extension] || 'application/octet-stream' : 'application/octet-stream';
+  };
+
   const uploadPhotoWithRetry = async (
     attachment: SelectedAttachment,
     scopedOrganizationId: string,
@@ -223,7 +252,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
         const snapshot = await new Promise<UploadTaskSnapshot>((resolve, reject) => {
           const task = uploadBytesResumable(photoRef, attachment.file, {
-            contentType: attachment.file.type || 'application/octet-stream',
+            contentType: resolveAttachmentContentType(attachment.file),
           });
 
           let stallTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
