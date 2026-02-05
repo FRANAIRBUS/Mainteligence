@@ -1,12 +1,12 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
   collection,
-  deleteDoc,
   doc,
   serverTimestamp,
   setDoc,
@@ -456,8 +456,10 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           path: error.customData?.['path'] || orgStoragePath(organizationId!, 'tickets', 'photos'),
           operation: 'write',
         });
-        errorEmitter.emit('permission-error', permissionError);
-      } else if (error.code === 'permission-denied') {
+        return [];
+      });
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
         const permissionError = new FirestorePermissionError({
           path: orgCollectionPath(organizationId!, 'tickets'),
           operation: 'create',
