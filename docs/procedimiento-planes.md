@@ -2,82 +2,106 @@
 
 ## 1) Dónde se aplican los planes en la app
 
-Los planes se aplican en el campo `organizations/{orgId}.entitlement`.
+Los planes se aplican en `organizations/{orgId}.entitlement`.
 
-- El backend valida este `entitlement` antes de permitir altas de recursos (`sites`, `assets`, `departments`, `users`, `preventives`).
-- Además de límites (`limits` + `usage`), se evalúan `status`, vencimiento de trial y features cargadas desde `planCatalog/{planId}`.
+Validaciones efectivas (backend):
 
-En frontend, la pantalla `/plans` solo visualiza el plan/uso actual y muestra CTA comerciales (mensual/anual), sin mutación directa del plan.
+- Estado de entitlement (`trialing|active|past_due|canceled`).
+- Vencimiento de trial (`trialEndsAt`).
+- Límites (`entitlement.limits`) vs consumo (`entitlement.usage`).
+- Features por plan desde `planCatalog/{planId}`.
 
-## 2) Planes disponibles hoy
+La pantalla `/plans` en frontend sigue siendo informativa/comercial; no muta plan directamente.
 
-Planes modelados en código:
+## 2) Planes disponibles
+
+`planId` soportados:
 
 - `free`
 - `starter`
 - `pro`
 - `enterprise`
 
-Estados de entitlement soportados:
+`entitlement.status` soportados:
 
 - `trialing`
 - `active`
 - `past_due`
 - `canceled`
 
-## 3) Cómo cambia el plan un usuario (super_admin de una organización)
+`organization.status` soportados:
 
-No existe hoy un flujo self-service que cambie plan desde `/plans`.
+- `active`
+- `suspended`
+- `deleted`
 
-Flujos existentes:
+## 3) Cambio de plan como usuario de organización
 
-1. **Stripe**: el cambio real de plan se consolida por webhook (`stripeWebhook`) y se aplica a `organizations/{orgId}.entitlement`.
-2. **Apple App Store**: se registra vínculo org-token y las notificaciones aplican cambios de entitlement.
-3. **Google Play**: se registra compra vinculada a la organización; el plan queda asociado al purchase token para actualización posterior.
+Como usuario de organización (super_admin), el cambio de plan productivo se realiza por proveedor de billing:
 
-Requisito de permisos para registrar compras/tokens desde callable: `super_admin` de la organización objetivo.
+1. Stripe (`stripeWebhook`).
+2. Apple App Store (`appleAppStoreNotifications`).
+3. Google Play (registro de compra para reconciliación de entitlement).
 
-## 4) Cómo cambia planes un usuario root para cualquier organización
+No existe self-service real de upgrade/downgrade en `/plans`.
 
-No existe actualmente un callable/admin action tipo `rootSetOrganizationPlan` ni UI root para editar plan directamente.
+## 4) Cambio de plan/estado como ROOT
 
-Con el código actual, root solo puede:
+Existe callable oficial:
 
-- listar organizaciones,
-- ver resumen,
-- mover usuarios,
-- activar/desactivar organización,
-- purgar colecciones o borrar scaffold.
+- `rootSetOrganizationPlan` (solo claim `root`).
 
-Para cambiar planes de terceros hoy hay dos caminos operativos:
+Existe UI root en `/root` para ejecutar esta operación en “Zona peligrosa” con confirmación estricta por `organizationId`.
 
-1. **Vía billing provider** (recomendado): provocar el evento de proveedor correcto (Stripe/Apple/Google) para que el backend aplique entitlement.
-2. **Operación manual controlada** (no ideal): actualización directa de documento en Firestore por operador con privilegios de infraestructura, preservando consistencia de `entitlement` y `billingProviders`.
+Campos operativos:
 
-## 5) Procedimiento correcto recomendado (operación)
+- `planId`: `free|starter|pro|enterprise`
+- `entitlementStatus`: `trialing|active|past_due|canceled`
+- `organizationStatus`: `active|suspended|deleted`
+- `reason`: obligatorio (auditoría)
 
-1. Confirmar `organizationId` destino.
-2. Validar proveedor activo actual (`entitlement.provider`) y evitar mezcla de proveedores activos.
-3. Ejecutar cambio en proveedor de billing (no en UI `/plans`).
-4. Verificar recepción de webhook/notificación y actualización de:
-   - `organizations/{orgId}.entitlement.planId`
-   - `organizations/{orgId}.entitlement.status`
-   - `organizations/{orgId}.billingProviders.{provider}`
-5. Validar impacto funcional:
-   - creación de activos/sitios/departamentos/usuarios según límites,
-   - habilitación de features (`PREVENTIVES`, `EXPORT_PDF`, etc.) según `planCatalog`.
-6. Registrar evidencia (audit logs + timestamps del provider).
+## 5) Contrato operativo recomendado (payload)
 
-## 6) Brecha actual y recomendación técnica
+Ejemplo de llamada:
 
-Para operación enterprise/multi-tenant, conviene agregar un callable explícito y auditado para root:
+```json
+{
+  "organizationId": "acme-prod",
+  "planId": "pro",
+  "entitlementStatus": "active",
+  "organizationStatus": "active",
+  "provider": "manual",
+  "reason": "Upgrade aprobado por soporte L2 / ticket OPS-1234"
+}
+```
 
-- `rootSetOrganizationPlan({ organizationId, planId, status, provider='manual', reason })`
+Notas:
 
-Con controles:
+- `organizationId` y `reason` son obligatorios.
+- Si no se envía `planId` ni `entitlementStatus`, no se aplica cambio de entitlement.
+- Si se envía `organizationStatus`, se sincroniza también `organizationsPublic/{orgId}` (`status` + `isActive`).
 
-- validación estricta de `planId` contra `planCatalog`,
-- preservación de `usage` vigente,
-- escritura de `billingProviders.manual`,
-- bloqueo de override cuando haya provider activo conflictivo,
-- `auditLog` obligatorio con actor root y motivo.
+## 6) Guardrails de seguridad y consistencia
+
+`rootSetOrganizationPlan` aplica controles:
+
+- Solo ROOT (custom claim).
+- Validación estricta de estados.
+- Validación de `planId` en `planCatalog` cuando se envía explícitamente.
+- Preserva `entitlement.usage` y `entitlement.limits` al cambiar plan/estado.
+- Escribe traza manual en `billingProviders.manual`.
+- Registra `auditLog` con `before/after`, actor y `reason`.
+
+## 7) Procedimiento correcto de operación
+
+1. Seleccionar organización en `/root`.
+2. Confirmar `organizationId` exacto en “Zona peligrosa”.
+3. Definir `planId`, `entitlementStatus`, `organizationStatus`.
+4. Completar `reason` con referencia de ticket/aprobación.
+5. Ejecutar “Aplicar plan/estado”.
+6. Verificar resultado:
+   - `organizations/{orgId}.entitlement`
+   - `organizations/{orgId}.billingProviders.manual`
+   - `organizations/{orgId}.status`/`isActive`
+   - `organizationsPublic/{orgId}.status`/`isActive`
+   - `auditLogs`.

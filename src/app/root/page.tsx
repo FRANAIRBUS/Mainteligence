@@ -51,6 +51,10 @@ const ROLE_OPTIONS = [
   'auditor',
 ] as const;
 
+const PLAN_OPTIONS = ['free', 'starter', 'pro', 'enterprise'] as const;
+const ENTITLEMENT_STATUS_OPTIONS = ['trialing', 'active', 'past_due', 'canceled'] as const;
+const ORG_STATUS_OPTIONS = ['active', 'suspended', 'deleted'] as const;
+
 export default function RootPage() {
   const router = useRouter();
   const auth = useAuth();
@@ -66,6 +70,7 @@ export default function RootPage() {
   }, []);
 
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   // ORGS
   const [orgs, setOrgs] = useState<OrgRow[]>([]);
@@ -97,6 +102,13 @@ export default function RootPage() {
   const [targetRole, setTargetRole] = useState<(typeof ROLE_OPTIONS)[number]>('admin');
   const [moving, setMoving] = useState(false);
 
+  // PLAN / STATUS
+  const [planId, setPlanId] = useState<(typeof PLAN_OPTIONS)[number]>('free');
+  const [entitlementStatus, setEntitlementStatus] = useState<(typeof ENTITLEMENT_STATUS_OPTIONS)[number]>('active');
+  const [organizationStatus, setOrganizationStatus] = useState<(typeof ORG_STATUS_OPTIONS)[number]>('active');
+  const [planReason, setPlanReason] = useState('');
+  const [planApplying, setPlanApplying] = useState(false);
+
   // DANGER
   const [dangerConfirm, setDangerConfirm] = useState('');
   const canDanger = dangerConfirm.trim() === selectedOrgId && Boolean(selectedOrgId);
@@ -114,7 +126,7 @@ export default function RootPage() {
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      if (auth) await signOut(auth);
     } finally {
       router.replace('/login');
       router.refresh();
@@ -129,6 +141,7 @@ export default function RootPage() {
       rootListUsersByOrg: httpsCallable(fn, 'rootListUsersByOrg'),
       rootUpsertUserToOrganization: httpsCallable(fn, 'rootUpsertUserToOrganization'),
       rootDeactivateOrganization: httpsCallable(fn, 'rootDeactivateOrganization'),
+      rootSetOrganizationPlan: httpsCallable(fn, 'rootSetOrganizationPlan'),
       rootPurgeOrganizationCollection: httpsCallable(fn, 'rootPurgeOrganizationCollection'),
       rootDeleteOrganizationScaffold: httpsCallable(fn, 'rootDeleteOrganizationScaffold'),
     };
@@ -236,6 +249,37 @@ export default function RootPage() {
     }
   };
 
+  const applyPlanAndStatus = async () => {
+    if (!api || !selectedOrgId) return;
+    if (!planReason.trim()) {
+      setError('reason es requerido para aplicar plan/estado.');
+      return;
+    }
+
+    setError(null);
+    setSuccess(null);
+    setPlanApplying(true);
+    try {
+      await api.rootSetOrganizationPlan({
+        organizationId: selectedOrgId,
+        planId,
+        entitlementStatus,
+        organizationStatus,
+        provider: 'manual',
+        reason: planReason.trim(),
+      });
+      await loadOrgs('reset');
+      await loadSummary();
+      setPlanReason('');
+      setSuccess('Plan y estado aplicados correctamente.');
+    } catch (e: any) {
+      setSuccess(null);
+      setError(e?.message ?? 'Error aplicando plan/estado');
+    } finally {
+      setPlanApplying(false);
+    }
+  };
+
   const deactivateOrg = async (isActive: boolean) => {
     if (!api || !selectedOrgId) return;
     setError(null);
@@ -304,6 +348,7 @@ export default function RootPage() {
           </div>
 
           {error ? <div className="text-sm text-red-600 pt-2">{error}</div> : null}
+          {success ? <div className="text-sm text-emerald-700 pt-1">{success}</div> : null}
         </CardContent>
       </Card>
 
@@ -383,6 +428,11 @@ export default function RootPage() {
                             setMemberCursorUid(null);
                             setMemberHasMore(false);
                             setDangerConfirm('');
+                            setSuccess(null);
+                            setPlanReason('');
+                            setPlanId('free');
+                            setEntitlementStatus('active');
+                            setOrganizationStatus('active');
                           }}
                         >
                           Seleccionar
@@ -549,6 +599,74 @@ export default function RootPage() {
                 Para acciones destructivas, escribe exactamente el <b>organizationId</b>: {selectedOrgId}
               </div>
               <Input value={dangerConfirm} onChange={(e) => setDangerConfirm(e.target.value)} placeholder={selectedOrgId} />
+
+              <div className="grid gap-3 rounded-md border p-3">
+                <div className="text-sm font-medium">Plan y estado (ROOT)</div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-2">
+                    <Label>Plan (entitlement.planId)</Label>
+                    <select
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                      value={planId}
+                      onChange={(e) => setPlanId(e.target.value as (typeof PLAN_OPTIONS)[number])}
+                    >
+                      {PLAN_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Estado entitlement</Label>
+                    <select
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                      value={entitlementStatus}
+                      onChange={(e) => setEntitlementStatus(e.target.value as (typeof ENTITLEMENT_STATUS_OPTIONS)[number])}
+                    >
+                      {ENTITLEMENT_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Estado organización</Label>
+                    <select
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                      value={organizationStatus}
+                      onChange={(e) => setOrganizationStatus(e.target.value as (typeof ORG_STATUS_OPTIONS)[number])}
+                    >
+                      {ORG_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Reason (auditoría obligatoria)</Label>
+                  <Input
+                    value={planReason}
+                    onChange={(e) => setPlanReason(e.target.value)}
+                    placeholder="Ej: upgrade comercial aprobado por soporte L2"
+                  />
+                </div>
+
+                <div>
+                  <Button
+                    onClick={applyPlanAndStatus}
+                    disabled={!canDanger || !planReason.trim() || planApplying}
+                  >
+                    {planApplying ? 'Aplicando plan/estado…' : 'Aplicar plan/estado'}
+                  </Button>
+                </div>
+              </div>
 
               <div className="flex gap-2 flex-wrap">
                 <Button variant="outline" disabled={!canDanger} onClick={() => deactivateOrg(false)}>
