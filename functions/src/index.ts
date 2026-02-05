@@ -57,6 +57,16 @@ type Entitlement = {
   usage: EntitlementUsage;
 };
 
+type BillingProviderEntitlement = {
+  planId: EntitlementPlanId;
+  status: EntitlementStatus;
+  trialEndsAt?: admin.firestore.Timestamp;
+  currentPeriodEnd?: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
+  conflict?: boolean;
+  conflictReason?: string;
+};
+
 const DEFAULT_ACCOUNT_PLAN: AccountPlan = 'free';
 const DEFAULT_ENTERPRISE_LIMIT = 10;
 const CREATED_ORG_LIMITS: Record<AccountPlan, number> = {
@@ -1248,6 +1258,50 @@ async function resolvePlanFeaturesForTx(tx: FirebaseFirestore.Transaction, planI
   const planSnap = await tx.get(db.collection('planCatalog').doc(planId));
   if (!planSnap.exists) return undefined;
   return planSnap.get('features') as Record<string, boolean> | undefined;
+}
+
+async function resolveFallbackPreventivesEntitlementForTx(
+  tx: FirebaseFirestore.Transaction,
+  orgData: FirebaseFirestore.DocumentData | undefined,
+  baseEntitlement: Entitlement,
+): Promise<{ entitlement: Entitlement; features?: Record<string, boolean> } | null> {
+  const providersRaw = (orgData?.billingProviders ?? null) as
+    | Partial<Record<EntitlementProvider, BillingProviderEntitlement>>
+    | null;
+  if (!providersRaw) return null;
+
+  const activeProviders = Object.values(providersRaw)
+    .filter((provider): provider is BillingProviderEntitlement => {
+      if (!provider) return false;
+      if (provider.conflict === true) return false;
+      return provider.status === 'active' || provider.status === 'trialing';
+    })
+    .sort((a, b) => {
+      const left = a.updatedAt instanceof admin.firestore.Timestamp ? a.updatedAt.toMillis() : 0;
+      const right = b.updatedAt instanceof admin.firestore.Timestamp ? b.updatedAt.toMillis() : 0;
+      return right - left;
+    });
+
+  for (const providerEntitlement of activeProviders) {
+    const providerFeatures = await resolvePlanFeaturesForTx(tx, providerEntitlement.planId);
+    const effectiveEntitlement: Entitlement = {
+      ...baseEntitlement,
+      planId: providerEntitlement.planId,
+      status: providerEntitlement.status,
+      trialEndsAt: providerEntitlement.trialEndsAt ?? baseEntitlement.trialEndsAt,
+      currentPeriodEnd: providerEntitlement.currentPeriodEnd ?? baseEntitlement.currentPeriodEnd,
+      updatedAt: providerEntitlement.updatedAt ?? baseEntitlement.updatedAt,
+    };
+
+    if (isFeatureEnabled({ ...(effectiveEntitlement as any), features: providerFeatures }, 'PREVENTIVES')) {
+      return {
+        entitlement: effectiveEntitlement,
+        features: providerFeatures,
+      };
+    }
+  }
+
+  return null;
 }
 
 function ensureEntitlementAllowsCreate({
@@ -3460,10 +3514,24 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
     if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
 
     const isDemoOrg = isDemoOrganization(orgId, orgData);
-    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    let features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    let effectiveEntitlement = entitlement;
+
+    if (!isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) {
+      const fallbackEntitlement = await resolveFallbackPreventivesEntitlementForTx(
+        tx,
+        orgData,
+        entitlement,
+      );
+      if (fallbackEntitlement) {
+        effectiveEntitlement = fallbackEntitlement.entitlement;
+        features = fallbackEntitlement.features;
+      }
+    }
+
     ensureEntitlementAllowsCreate({
       kind: 'preventives',
-      entitlement,
+      entitlement: effectiveEntitlement,
       features,
       orgType: String(orgData?.type ?? ''),
     });
