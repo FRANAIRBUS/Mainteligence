@@ -452,8 +452,6 @@ export default function PreventivePage() {
 
   const preventiveTicketsFilter = useMemo(() => where('type', '==', 'preventivo'), []);
 
-  const preventiveTicketsFilter = useMemo(() => where('type', '==', 'preventivo'), []);
-
   const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(
     organizationId ? orgCollectionPath(organizationId, 'tickets') : null,
     preventiveTicketsFilter
