@@ -13,11 +13,12 @@ service firebase.storage {
     }
 
     function memberDoc(orgId, uid) {
-      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
+      // Storage rules cannot use Firestore 'get' directly; must use firestore.get with (default) database.
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)/members/$(uid));
     }
 
     function membershipDoc(orgId, uid) {
-      return get(/databases/$(database)/documents/memberships/$(uid + "_" + orgId));
+      return firestore.get(/databases/(default)/documents/memberships/$(uid + "_" + orgId));
     }
 
     function isActiveMembership(doc) {
@@ -36,11 +37,11 @@ service firebase.storage {
 
     function ticketBelongsToOrg(orgId, id) {
       return isValidOrgId(orgId)
-        && exists(/databases/$(database)/documents/organizations/$(orgId)/tickets/$(id));
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId)/tickets/$(id));
     }
 
     function uploadSession(orgId, id) {
-      return get(/databases/$(database)/documents/organizations/$(orgId)/uploadSessions/$(id));
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)/uploadSessions/$(id));
     }
 
     function hasActiveUploadSession(orgId, id) {
@@ -66,12 +67,12 @@ service firebase.storage {
 
     function taskBelongsToOrg(orgId, id) {
       return isValidOrgId(orgId)
-        && exists(/databases/$(database)/documents/organizations/$(orgId)/tasks/$(id));
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId)/tasks/$(id));
     }
 
     function assetBelongsToOrg(orgId, id) {
       return isValidOrgId(orgId)
-        && exists(/databases/$(database)/documents/organizations/$(orgId)/assets/$(id));
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId)/assets/$(id));
     }
 
     function isValidImageUpload(maxBytes) {

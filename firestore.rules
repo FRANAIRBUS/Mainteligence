@@ -500,3 +500,9 @@ service cloud.firestore {
         // Server-only writes: prevent bypassing schema/entitlement/nextRunAt logic.
         allow create, update, delete: if false;
       }
+
+    } // match /organizations/{orgId}
+
+  } // match /databases/{database}/documents
+
+} // service cloud.firestore
