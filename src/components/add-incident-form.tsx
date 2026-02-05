@@ -4,8 +4,15 @@ import { useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage, useCollection } from '@/lib/firebase';
@@ -64,7 +71,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
   const storage = useStorage();
-  const { user, organizationId } = useUser();
+  const { user, organizationId, profile } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [photos, setPhotos] = useState<File[]>([]);
   const canSubmit = Boolean(firestore && storage && user && organizationId);
@@ -95,6 +102,50 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
   };
 
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const sanitizeFileName = (name: string) =>
+    name
+      .replace(/\\/g, '_')
+      .replace(/\//g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9._-]/g, '')
+      .slice(0, 120) || 'adjunto';
+
+  const uniqueFileName = (originalName: string) => {
+    const safe = sanitizeFileName(originalName);
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return `${suffix}-${safe}`;
+  };
+
+  const uploadPhotoWithRetry = async (
+    photo: File,
+    photoRef: ReturnType<typeof ref>,
+    attempts = 3
+  ) => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        const snapshot = await uploadBytes(photoRef, photo, {
+          contentType: photo.type || 'application/octet-stream',
+        });
+        return await getDownloadURL(snapshot.ref);
+      } catch (error: any) {
+        lastError = error;
+        const retryable =
+          error?.code === 'storage/unauthorized' ||
+          error?.code === 'storage/retry-limit-exceeded' ||
+          error?.code === 'storage/unknown' ||
+          error?.code === 'storage/network-error';
+        if (!retryable || attempt === attempts) {
+          break;
+        }
+        await sleep(300 * attempt);
+      }
+    }
+    throw lastError;
+  };
+
   const onSubmit = async (data: AddIncidentFormValues) => {
     if (!canSubmit) {
       toast({
@@ -106,23 +157,129 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
     setIsPending(true);
 
-    try {
-      const ticketId = `TICKET_${Date.now()}`; // Temporary ID for storage path
-      const photoUrls: string[] = [];
+    const photoUrls: string[] = [];
+    const failedUploads: string[] = [];
+    let lastUploadError: any = null;
 
+    try {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
+      const ticketRef = doc(collectionRef);
+      const ticketId = ticketRef.id;
+      const uploadSessionRef = doc(
+        firestore,
+        orgCollectionPath(organizationId, 'uploadSessions'),
+        ticketId
+      );
+      const createdByName = profile?.displayName || user.email || user.uid;
+
+      // --- NUEVO FLUJO HARDENED ---
+      // Objetivo: evitar incidencias "fantasma".
+      // Si hay adjuntos, abrimos sesión temporal, subimos, y SOLO entonces creamos la incidencia.
+      const shouldUseHardenedFlow = photos.length > 0;
+
+      if (shouldUseHardenedFlow) {
+        const uploadedRefs: Array<ReturnType<typeof ref>> = [];
+
+        // 1) crear sesión de subida (si falla por rules, hacemos fallback al flujo legacy para no bloquear UX)
+        try {
+          const now = new Date();
+          const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
+          await setDoc(uploadSessionRef, {
+            organizationId,
+            uploaderUid: user.uid,
+            type: 'ticket',
+            status: 'active',
+            createdAt: serverTimestamp(),
+            expiresAt,
+            maxFiles: 10,
+          });
+        } catch (e: any) {
+          // Si no podemos crear la sesión (rules viejas), no bloqueamos: caemos a legacy.
+          if (e?.code !== 'permission-denied') throw e;
+        }
+
+        // 2) intentar subida (si hay sesión, rules dejan; si no, depende de rules legacy)
+        try {
+          for (const photo of photos) {
+            const objectName = uniqueFileName(photo.name);
+            const photoRef = ref(
+              storage,
+              orgStoragePath(organizationId, 'tickets', ticketId, objectName)
+            );
+            uploadedRefs.push(photoRef);
+            const url = await uploadPhotoWithRetry(photo, photoRef);
+            photoUrls.push(url);
+          }
+        } catch (error: any) {
+          lastUploadError = error;
+          // cleanup best-effort
+          await Promise.allSettled(uploadedRefs.map((r) => deleteObject(r)));
+          await Promise.allSettled([deleteDoc(uploadSessionRef)]);
+
+          if (error?.code === 'storage/unauthorized') {
+            const permissionError = new StoragePermissionError({
+              path:
+                error.customData?.['path'] ||
+                orgStoragePath(organizationId, 'tickets', ticketId),
+              operation: 'write',
+            });
+            errorEmitter.emit('permission-error', permissionError);
+          } else {
+            toast({
+              variant: 'destructive',
+              title: 'No se pudo subir el adjunto',
+              description:
+                error?.message || 'Ocurrió un error inesperado durante la subida.',
+            });
+          }
+          return;
+        }
+
+        // Si llegamos aquí, o subimos todo o no había fotos (no aplica)
+        // 3) crear incidencia con urls
+        const hardenedDocData: any = {
+          ...data,
+          locationId: data.locationId,
+          type: 'correctivo' as const,
+          status: 'new' as const,
+          createdBy: user.uid,
+          createdByName,
+          assignedRole: 'mantenimiento',
+          assignedTo: null,
+          organizationId,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          photoUrls,
+          hasAttachments: photoUrls.length > 0,
+          displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
+        };
+
+        if (!hardenedDocData.assetId) delete hardenedDocData.assetId;
+
+        await setDoc(ticketRef, hardenedDocData);
+        await Promise.allSettled([deleteDoc(uploadSessionRef)]);
+
+        onSuccess?.({ title: data.title });
+        form.reset();
+        setPhotos([]);
+        return;
+      }
+
+      // --- FLUJO LEGACY (sin adjuntos) ---
       const docData = {
         ...data,
         locationId: data.locationId,
         type: 'correctivo' as const,
         status: 'new' as const,
         createdBy: user.uid,
+        createdByName,
         assignedRole: 'mantenimiento',
         assignedTo: null,
         organizationId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        photoUrls,
+        photoUrls: [],
+        hasAttachments: false,
         displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
       };
 
@@ -130,14 +287,62 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         delete docData.assetId;
       }
 
-      for (const photo of photos) {
-        const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
-        const snapshot = await uploadBytes(photoRef, photo);
-        const url = await getDownloadURL(snapshot.ref);
-        photoUrls.push(url);
-      }
+      await setDoc(ticketRef, docData);
 
-      await addDoc(collectionRef, docData);
+      // --- LEGACY CON ADJUNTOS (por si se llega aquí con fotos en futuro) ---
+      if (photos.length > 0) {
+        for (const photo of photos) {
+          const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
+          try {
+            const url = await uploadPhotoWithRetry(photo, photoRef);
+            photoUrls.push(url);
+          } catch (error) {
+            lastUploadError = error;
+            failedUploads.push(photo.name);
+          }
+        }
+
+        if (photoUrls.length > 0) {
+          try {
+            await updateDoc(ticketRef, {
+              photoUrls,
+              hasAttachments: true,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (error: any) {
+            if (error.code === 'permission-denied') {
+              const permissionError = new FirestorePermissionError({
+                path: orgCollectionPath(organizationId, 'tickets'),
+                operation: 'update',
+                requestResourceData: { photoUrls },
+              });
+              errorEmitter.emit('permission-error', permissionError);
+            } else {
+              toast({
+                variant: 'destructive',
+                title: 'Incidencia creada con adjuntos incompletos',
+                description: error.message || 'No se pudieron guardar las fotos adjuntas.',
+              });
+            }
+          }
+        }
+
+        if (failedUploads.length > 0) {
+          if (lastUploadError?.code === 'storage/unauthorized') {
+            const permissionError = new StoragePermissionError({
+              path: lastUploadError.customData?.['path'] || orgStoragePath(organizationId, 'tickets', ticketId),
+              operation: 'write',
+            });
+            errorEmitter.emit('permission-error', permissionError);
+          } else {
+            toast({
+              variant: 'destructive',
+              title: 'Incidencia creada con adjuntos incompletos',
+              description: `No se pudieron subir: ${failedUploads.join(', ')}.`,
+            });
+          }
+        }
+      }
 
       onSuccess?.({ title: data.title });
       form.reset();
@@ -210,7 +415,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FormField
             control={form.control}
-          name="locationId"
+            name="locationId"
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Ubicación</FormLabel>
@@ -327,7 +532,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         <FormItem>
           <FormLabel>Fotos (Opcional)</FormLabel>
           <FormControl>
-            <Input type="file" multiple onChange={handlePhotoChange} accept="image/*" />
+            <Input
+              type="file"
+              multiple
+              onChange={handlePhotoChange}
+              accept="image/*,application/pdf,text/plain,.pdf,.doc,.docx,.xls,.xlsx"
+            />
           </FormControl>
           <FormMessage />
         </FormItem>

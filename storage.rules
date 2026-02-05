@@ -13,33 +13,79 @@ service firebase.storage {
     }
 
     function memberDoc(orgId, uid) {
-      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(uid));
+      // Storage rules cannot use Firestore 'get' directly; must use firestore.get with (default) database.
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)/members/$(uid));
+    }
+
+    function membershipDoc(orgId, uid) {
+      return firestore.get(/databases/(default)/documents/memberships/$(uid + "_" + orgId));
+    }
+
+    function isActiveMembership(doc) {
+      return doc != null
+        && doc.data != null
+        && (doc.data.active == true || doc.data.status == "active");
     }
 
     function isActiveMember(orgId, uid) {
       let member = memberDoc(orgId, uid);
+      let membership = membershipDoc(orgId, uid);
       return isSignedIn()
         && isValidOrgId(orgId)
-        && member.data != null
-        && (
-          member.data.active == true
-          || member.data.status == "active"
-        );
+        && (isActiveMembership(member) || isActiveMembership(membership));
     }
 
     function ticketBelongsToOrg(orgId, id) {
       return isValidOrgId(orgId)
-        && exists(/databases/$(database)/documents/organizations/$(orgId)/tickets/$(id));
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId)/tickets/$(id));
+    }
+
+    function uploadSession(orgId, id) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)/uploadSessions/$(id));
+    }
+
+    function hasActiveUploadSession(orgId, id) {
+      let session = uploadSession(orgId, id);
+      return session != null
+        && session.data != null
+        && session.data.status == 'active'
+        && session.data.type == 'ticket'
+        && session.data.uploaderUid == request.auth.uid
+        && session.data.expiresAt is timestamp
+        && session.data.expiresAt > request.time;
+    }
+
+    function isAllowedTicketContentType() {
+      return request.resource.contentType.matches('image/.*')
+        || request.resource.contentType == 'application/pdf'
+        || request.resource.contentType.matches('text/.*')
+        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        || request.resource.contentType == 'application/msword'
+        || request.resource.contentType == 'application/vnd.ms-excel';
     }
 
     function taskBelongsToOrg(orgId, id) {
       return isValidOrgId(orgId)
-        && exists(/databases/$(database)/documents/organizations/$(orgId)/tasks/$(id));
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId)/tasks/$(id));
     }
 
     function assetBelongsToOrg(orgId, id) {
       return isValidOrgId(orgId)
-        && exists(/databases/$(database)/documents/organizations/$(orgId)/assets/$(id));
+        && firestore.exists(/databases/(default)/documents/organizations/$(orgId)/assets/$(id));
+    }
+
+    function isValidImageUpload(maxBytes) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= maxBytes
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    function isValidUpload(maxBytes) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= maxBytes;
     }
 
     // --- REGLAS DE CARPETAS ---
@@ -49,37 +95,61 @@ service firebase.storage {
       allow read: if true;
       allow write: if isSignedIn()
         && isValidOrgId(orgId)
-        && isActiveMember(orgId, request.auth.uid);
+        && isActiveMember(orgId, request.auth.uid)
+        && isValidImageUpload(5 * 1024 * 1024);
     }
 
-    // 2. Fotos de Incidencias (Tickets)
-    match /orgs/{orgId}/tickets/{ticketId}/{allPaths=**} {
-      allow read, write: if isSignedIn()
+    // 2. Adjuntos de Incidencias (Tickets)
+    // Hardened:
+    // - Write requires either an existing ticket OR a short-lived upload session owned by the uploader.
+    // - Read is allowed for members when the ticket exists, or for the uploader during the upload session (needed for getDownloadURL).
+    // - Disallow nested directories to avoid arbitrary writes.
+    match /orgs/{orgId}/tickets/{ticketId}/{fileName} {
+      allow read: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
-        && ticketBelongsToOrg(orgId, ticketId);
+        && (ticketBelongsToOrg(orgId, ticketId) || hasActiveUploadSession(orgId, ticketId));
+      allow write: if isSignedIn()
+        && isValidOrgId(orgId)
+        && isActiveMember(orgId, request.auth.uid)
+        && (ticketBelongsToOrg(orgId, ticketId) || hasActiveUploadSession(orgId, ticketId))
+        && isValidUpload(10 * 1024 * 1024)
+        && isAllowedTicketContentType();
     }
 
     // 3. Fotos de Tareas (Tasks)
     match /orgs/{orgId}/tasks/{taskId}/{allPaths=**} {
-      allow read, write: if isSignedIn()
+      allow read: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && taskBelongsToOrg(orgId, taskId);
+      allow write: if isSignedIn()
+        && isValidOrgId(orgId)
+        && isActiveMember(orgId, request.auth.uid)
+        && taskBelongsToOrg(orgId, taskId)
+        && isValidImageUpload(10 * 1024 * 1024);
     }
 
     // 4. Activos (Assets)
     match /orgs/{orgId}/assets/{assetId}/{allPaths=**} {
-      allow read, write: if isSignedIn()
+      allow read: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
         && assetBelongsToOrg(orgId, assetId);
+      allow write: if isSignedIn()
+        && isValidOrgId(orgId)
+        && isActiveMember(orgId, request.auth.uid)
+        && assetBelongsToOrg(orgId, assetId)
+        && isValidImageUpload(10 * 1024 * 1024);
     }
 
     // 5. Avatares de usuario
     match /users/{userId}/{fileName} {
       allow read: if isSignedIn() && fileName.matches('avatar\\..+');
-      allow write: if isSignedIn() && request.auth.uid == userId && fileName.matches('avatar\\..+');
+      allow write: if isSignedIn()
+        && request.auth.uid == userId
+        && fileName.matches('avatar\\..+')
+        && isValidImageUpload(5 * 1024 * 1024);
     }
   }
 }

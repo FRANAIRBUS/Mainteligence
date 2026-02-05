@@ -1,7 +1,19 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { doc, getDoc, where } from 'firebase/firestore';
+import { MoreHorizontal } from 'lucide-react';
+
 import { MainNav } from '@/components/main-nav';
 import { UserNav } from '@/components/user-nav';
+import { DynamicClientLogo } from '@/components/dynamic-client-logo';
+import { Icons } from '@/components/icons';
+import { AppShell } from '@/components/app-shell';
+
 import {
   Sidebar,
   SidebarContent,
@@ -10,11 +22,6 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
-import { Icons } from '@/components/icons';
-import { useCollectionQuery, useDoc, useFirestore, useUser } from '@/lib/firebase';
-import type { Organization, PreventiveTemplate, Ticket } from '@/lib/firebase/models';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
 import {
   Table,
   TableBody,
@@ -31,20 +38,63 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal } from 'lucide-react';
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ticketStatusLabel } from '@/lib/status';
-import { doc, getDoc, where } from 'firebase/firestore';
-import { DynamicClientLogo } from '@/components/dynamic-client-logo';
-import { isFeatureEnabled } from '@/lib/entitlements';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+
+import { useToast } from '@/hooks/use-toast';
+
+import {
+  PreventiveTemplateForm,
+  type PreventiveTemplateFormValues,
+} from '@/components/preventive-template-form';
+
+import {
+  useCollection,
+  useCollectionQuery,
+  useDoc,
+  useFirebaseApp,
+  useFirestore,
+  useUser,
+} from '@/lib/firebase';
+import type {
+  Asset,
+  Department,
+  Organization,
+  PreventiveTemplate,
+  Site,
+  Ticket,
+} from '@/lib/firebase/models';
 import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organization';
+import { ticketStatusLabel } from '@/lib/status';
+import { isFeatureEnabled } from '@/lib/entitlements';
+
+const normalizeOptional = (value?: string) =>
+  value && value !== '__none__' ? value : undefined;
+
+const toIsoDate = (value: any): string | undefined => {
+  if (!value) return undefined;
+  if (typeof value === 'string') return value;
+  if (value?.toDate) {
+    const d: Date = value.toDate();
+    const yyyy = String(d.getFullYear());
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return undefined;
+};
 
 const formatSchedule = (template: PreventiveTemplate) => {
   const schedule = template.schedule;
@@ -65,13 +115,7 @@ const formatSchedule = (template: PreventiveTemplate) => {
   }
 };
 
-function PreventiveTable({
-  tickets,
-  loading,
-}: {
-  tickets: Ticket[];
-  loading: boolean;
-}) {
+function PreventiveTable({ tickets, loading }: { tickets: Ticket[]; loading: boolean }) {
   if (loading) {
     return (
       <div className="flex h-64 w-full items-center justify-center">
@@ -98,12 +142,12 @@ function PreventiveTable({
         {tickets.length > 0 ? (
           tickets.map((ticket) => (
             <TableRow key={ticket.id}>
-              <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0,6)}</TableCell>
+              <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0, 6)}</TableCell>
               <TableCell>{ticket.title}</TableCell>
-               <TableCell>
+              <TableCell>
                 <Badge variant="outline">{ticketStatusLabel(ticket.status)}</Badge>
               </TableCell>
-               <TableCell>
+              <TableCell>
                 <Badge variant="secondary">{ticket.priority}</Badge>
               </TableCell>
               <TableCell>
@@ -112,11 +156,7 @@ function PreventiveTable({
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button
-                      aria-haspopup="true"
-                      size="icon"
-                      variant="ghost"
-                    >
+                    <Button aria-haspopup="true" size="icon" variant="ghost">
                       <MoreHorizontal className="h-4 w-4" />
                       <span className="sr-only">Menú de acciones</span>
                     </Button>
@@ -143,12 +183,140 @@ function PreventiveTable({
 }
 
 function PreventiveTemplatesTable({
+  organizationId,
   templates,
   loading,
+  sites,
+  departments,
+  assets,
 }: {
+  organizationId: string;
   templates: PreventiveTemplate[];
   loading: boolean;
+  sites: Site[];
+  departments: Department[];
+  assets: Asset[];
 }) {
+  const router = useRouter();
+  const app = useFirebaseApp();
+  const { toast } = useToast();
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [activeTemplate, setActiveTemplate] = useState<PreventiveTemplate | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const defaultValues = useMemo(() => {
+    if (!activeTemplate) return undefined;
+
+    const schedule = activeTemplate.schedule;
+
+    return {
+      name: activeTemplate.name ?? '',
+      description: activeTemplate.description ?? '',
+      status: (activeTemplate.status as any) ?? 'active',
+      automatic: Boolean(activeTemplate.automatic),
+      scheduleType: (schedule?.type as any) ?? 'monthly',
+      timeOfDay: schedule?.timeOfDay ?? '08:00',
+      daysOfWeek: schedule?.daysOfWeek ?? [],
+      dayOfMonth: schedule?.dayOfMonth ? String(schedule.dayOfMonth) : undefined,
+      date: toIsoDate(schedule?.date),
+      priority: (activeTemplate.priority as any) ?? 'Media',
+      siteId: activeTemplate.siteId ?? '__none__',
+      departmentId: activeTemplate.departmentId ?? '__none__',
+      assetId: activeTemplate.assetId ?? '__none__',
+    } as Partial<PreventiveTemplateFormValues>;
+  }, [activeTemplate]);
+
+  const openEdit = (template: PreventiveTemplate) => {
+    setErrorMessage(null);
+    setActiveTemplate(template);
+    setEditOpen(true);
+  };
+
+  const handleDuplicate = async (template: PreventiveTemplate) => {
+    if (!app) {
+      toast({ title: 'Firebase', description: 'No se pudo inicializar Firebase App.', variant: 'destructive' });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const fn = httpsCallable(getFunctions(app), 'duplicatePreventiveTemplate');
+      const res = await fn({ organizationId, templateId: template.id });
+      const newId = (res.data as any)?.templateId ?? null;
+      toast({
+        title: 'Plantilla duplicada',
+        description: newId ? `Nueva plantilla creada (${newId}).` : 'Nueva plantilla creada.',
+      });
+    } catch (err: any) {
+      console.error('duplicatePreventiveTemplate failed', err);
+      toast({
+        title: 'No se pudo duplicar',
+        description: err?.message || 'Error inesperado.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleUpdate = async (values: PreventiveTemplateFormValues) => {
+    if (!app) {
+      setErrorMessage('No se pudo inicializar Firebase App.');
+      return;
+    }
+
+    if (!activeTemplate?.id) {
+      setErrorMessage('No se pudo resolver la plantilla a editar.');
+      return;
+    }
+
+    setSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      const fn = httpsCallable(getFunctions(app), 'updatePreventiveTemplate');
+
+      await fn({
+        organizationId,
+        templateId: activeTemplate.id,
+        name: values.name.trim(),
+        description: values.description?.trim() || null,
+        status: values.status,
+        automatic: values.automatic,
+        schedule: {
+          type: values.scheduleType,
+          timezone:
+            typeof Intl !== 'undefined'
+              ? Intl.DateTimeFormat().resolvedOptions().timeZone
+              : undefined,
+          timeOfDay: values.timeOfDay?.trim() || undefined,
+          daysOfWeek: values.daysOfWeek?.length ? values.daysOfWeek : undefined,
+          dayOfMonth:
+            typeof values.dayOfMonth === 'number' && !Number.isNaN(values.dayOfMonth)
+              ? values.dayOfMonth
+              : undefined,
+          date: values.date ? values.date : undefined,
+        },
+        priority: values.priority,
+        siteId: normalizeOptional(values.siteId),
+        departmentId: normalizeOptional(values.departmentId),
+        assetId: normalizeOptional(values.assetId),
+      });
+
+      toast({ title: 'Plantilla actualizada' });
+      setEditOpen(false);
+      setActiveTemplate(null);
+    } catch (error: any) {
+      console.error('updatePreventiveTemplate failed', error);
+      const msg = error?.message || 'No se pudo actualizar la plantilla.';
+      setErrorMessage(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-64 w-full items-center justify-center">
@@ -158,67 +326,88 @@ function PreventiveTemplatesTable({
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Nombre</TableHead>
-          <TableHead>Estado</TableHead>
-          <TableHead>Programación</TableHead>
-          <TableHead>Automático</TableHead>
-          <TableHead>Próxima ejecución</TableHead>
-          <TableHead>
-            <span className="sr-only">Acciones</span>
-          </TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {templates.length > 0 ? (
-          templates.map((template) => (
-            <TableRow key={template.id}>
-              <TableCell className="font-medium">{template.name}</TableCell>
-              <TableCell>
-                <Badge variant="outline">{template.status}</Badge>
-              </TableCell>
-              <TableCell>{formatSchedule(template)}</TableCell>
-              <TableCell>
-                <Badge variant={template.automatic ? 'secondary' : 'outline'}>
-                  {template.automatic ? 'Sí' : 'No'}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                {template.schedule?.nextRunAt?.toDate
-                  ? template.schedule.nextRunAt.toDate().toLocaleDateString()
-                  : 'N/A'}
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button aria-haspopup="true" size="icon" variant="ghost">
-                      <MoreHorizontal className="h-4 w-4" />
-                      <span className="sr-only">Menú de acciones</span>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem>Editar</DropdownMenuItem>
-                    <DropdownMenuItem>Duplicar</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Nombre</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead>Programación</TableHead>
+            <TableHead>Automático</TableHead>
+            <TableHead>Próxima ejecución</TableHead>
+            <TableHead>
+              <span className="sr-only">Acciones</span>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {templates.length > 0 ? (
+            templates.map((template) => (
+              <TableRow key={template.id}>
+                <TableCell className="font-medium">{template.name}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{template.status}</Badge>
+                </TableCell>
+                <TableCell>{formatSchedule(template)}</TableCell>
+                <TableCell>
+                  <Badge variant={template.automatic ? 'secondary' : 'outline'}>
+                    {template.automatic ? 'Sí' : 'No'}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {template.schedule?.nextRunAt?.toDate
+                    ? template.schedule.nextRunAt.toDate().toLocaleDateString()
+                    : 'N/A'}
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button aria-haspopup="true" size="icon" variant="ghost" disabled={submitting}>
+                        <MoreHorizontal className="h-4 w-4" />
+                        <span className="sr-only">Menú de acciones</span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => openEdit(template)}>Editar</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDuplicate(template)}>Duplicar</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={6} className="h-24 text-center">
+                No se encontraron plantillas preventivas.
               </TableCell>
             </TableRow>
-          ))
-        ) : (
-          <TableRow>
-            <TableCell colSpan={6} className="h-24 text-center">
-              No se encontraron plantillas preventivas.
-            </TableCell>
-          </TableRow>
-        )}
-      </TableBody>
-    </Table>
+          )}
+        </TableBody>
+      </Table>
+
+      <Dialog open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (!open) setActiveTemplate(null); }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Editar plantilla preventiva</DialogTitle>
+          </DialogHeader>
+          <div className="rounded-lg border border-white/80 bg-card p-6 shadow-sm">
+            <PreventiveTemplateForm
+              defaultValues={defaultValues}
+              onSubmit={handleUpdate}
+              submitting={submitting}
+              errorMessage={errorMessage}
+              onCancel={() => { setEditOpen(false); setActiveTemplate(null); }}
+              sites={sites}
+              departments={departments}
+              assets={assets}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
-
 
 export default function PreventivePage() {
   const { user, loading: userLoading, organizationId } = useUser();
@@ -245,7 +434,9 @@ export default function PreventivePage() {
     getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
       .then((snap) => {
         if (cancelled) return;
-        const features = (snap.exists() ? (snap.data()?.features as Record<string, boolean>) : null) ?? null;
+        const features = (snap.exists()
+          ? (snap.data()?.features as Record<string, boolean>)
+          : null) ?? null;
         setPlanFeatures(features);
       })
       .catch(() => {
@@ -275,6 +466,16 @@ export default function PreventivePage() {
     organizationId ? orgPreventiveTemplatesPath(organizationId) : null
   );
 
+  const { data: sites } = useCollection<Site>(
+    organizationId ? orgCollectionPath(organizationId, 'sites') : null
+  );
+  const { data: departments } = useCollection<Department>(
+    organizationId ? orgCollectionPath(organizationId, 'departments') : null
+  );
+  const { data: assets } = useCollection<Asset>(
+    organizationId ? orgCollectionPath(organizationId, 'assets') : null
+  );
+
   if (userLoading || !user) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
@@ -283,18 +484,26 @@ export default function PreventivePage() {
     );
   }
 
+  if (!organizationId) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center">
+        <p className="text-sm text-muted-foreground">No se pudo resolver la organización.</p>
+      </div>
+    );
+  }
+
   return (
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader className="p-4 text-center">
-            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
-              <DynamicClientLogo />
-            </div>
-            <a href="/" className="flex flex-col items-center gap-2">
-                <span className="text-xl font-headline font-semibold text-sidebar-foreground">
-                Maintelligence
-                </span>
-            </a>
+          <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center">
+            <DynamicClientLogo />
+          </div>
+          <a href="/" className="flex flex-col items-center gap-2">
+            <span className="text-xl font-headline font-semibold text-sidebar-foreground">
+              Maintelligence
+            </span>
+          </a>
         </SidebarHeader>
         <SidebarContent>
           <MainNav />
@@ -332,16 +541,24 @@ export default function PreventivePage() {
                     </p>
                   ) : null}
                 </div>
-                <Button
-                  disabled={preventivesBlocked || preventivesPaused}
-                  onClick={() => router.push('/preventive/new')}
-                >
-                  Crear Plantilla
-                </Button>
+                {preventivesBlocked || preventivesPaused ? (
+                  <Button disabled>Crear Plantilla</Button>
+                ) : (
+                  <Button asChild>
+                    <Link href="/preventive/new">Crear Plantilla</Link>
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
-              <PreventiveTemplatesTable templates={templates} loading={templatesLoading} />
+              <PreventiveTemplatesTable
+                organizationId={organizationId}
+                templates={templates}
+                loading={templatesLoading}
+                sites={sites}
+                departments={departments}
+                assets={assets}
+              />
             </CardContent>
           </Card>
           <Card>
