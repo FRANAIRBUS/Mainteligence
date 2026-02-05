@@ -379,6 +379,17 @@ service cloud.firestore {
           && organizationIdMatchesPath(orgId);
       }
 
+      // Canonical organization membership records.
+      // Read access is required by the web client to resolve scoped permissions and assignee lists.
+      // Writes remain server-only to avoid privilege escalation from the client.
+      match /members/{memberId} {
+        allow read: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
+          && resourceOrganizationIdMatchesPath(orgId);
+
+        allow create, update, delete: if false;
+      }
+
       // Short-lived upload sessions (used to harden Storage writes before an incident exists).
       // Client creates a session owned by itself, uploads files, then creates the ticket and deletes the session.
       match /uploadSessions/{sessionId} {
