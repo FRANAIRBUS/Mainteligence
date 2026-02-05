@@ -8,6 +8,7 @@ service firebase.storage {
       return request.auth != null;
     }
 
+
     function isValidOrgId(orgId) {
       return orgId is string && orgId.size() > 0;
     }
