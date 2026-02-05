@@ -241,7 +241,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     scopedOrganizationId: string,
     ticketId: string,
     onProgress: (progress: number) => void,
-    attempts = 2
+    attempts = 3
   ) => {
     let lastError: unknown;
 
@@ -295,14 +295,18 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         return url;
       } catch (error: any) {
         lastError = error;
+        // `storage/unauthorized` can be transient right after creating the Firestore
+        // upload session, because Storage rules read that document through
+        // `firestore.get(...)` and visibility is not always immediate.
         const retryable =
           error?.code === 'storage/retry-limit-exceeded' ||
           error?.code === 'storage/unknown' ||
-          error?.code === 'storage/network-error';
+          error?.code === 'storage/network-error' ||
+          error?.code === 'storage/unauthorized';
         if (!retryable || attempt === attempts) {
           break;
         }
-        await sleep(500 * attempt);
+        await sleep(750 * attempt);
       }
     }
 
@@ -312,7 +316,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const mapUploadErrorMessage = (error: any) => {
     switch (error?.code) {
       case 'storage/unauthorized':
-        return 'Sin permisos para subir este archivo. Revisa tus permisos de Storage.';
+        return 'Sin permisos para subir este archivo. Verifica membresía activa en la organización y reglas de Storage.';
       case 'storage/canceled':
       case 'storage/retry-limit-exceeded':
         return 'La subida se interrumpió por tiempo de espera. Intenta nuevamente.';
