@@ -4,8 +4,8 @@ import { useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { collection, doc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage, useCollection } from '@/lib/firebase';
@@ -97,6 +97,20 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  const sanitizeFileName = (name: string) =>
+    name
+      .replace(/\\/g, '_')
+      .replace(/\//g, '_')
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9._-]/g, '')
+      .slice(0, 120) || 'adjunto';
+
+  const uniqueFileName = (originalName: string) => {
+    const safe = sanitizeFileName(originalName);
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return `${suffix}-${safe}`;
+  };
+
   const uploadPhotoWithRetry = async (
     photo: File,
     photoRef: ReturnType<typeof ref>,
@@ -137,15 +151,67 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     setIsPending(true);
 
     const photoUrls: string[] = [];
-    const failedUploads: string[] = [];
-    let lastUploadError: any = null;
+    const uploadedRefs: Array<ReturnType<typeof ref>> = [];
 
     try {
       const collectionRef = collection(firestore, orgCollectionPath(organizationId, 'tickets'));
       const ticketRef = doc(collectionRef);
       const ticketId = ticketRef.id;
+      const uploadSessionRef = doc(
+        firestore,
+        orgCollectionPath(organizationId, 'uploadSessions'),
+        ticketId
+      );
       const createdByName = profile?.displayName || user.email || user.uid;
-      const docData = {
+      // Si hay adjuntos, primero abrimos una sesión temporal de subida.
+      // Esto permite endurecer las reglas de Storage y evita incidencias "fantasma" (incidencias creadas sin adjuntos realmente subidos).
+      if (photos.length > 0) {
+        const now = new Date();
+        // Keep it short. Also tolerates small client clock skew (rules cap at 15m).
+        const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
+        await setDoc(uploadSessionRef, {
+          organizationId,
+          uploaderUid: user.uid,
+          type: 'ticket',
+          status: 'active',
+          createdAt: serverTimestamp(),
+          expiresAt,
+          maxFiles: 10,
+        });
+
+        try {
+          // Subida: solo si TODOS los archivos suben correctamente se crea la incidencia.
+          for (const photo of photos) {
+            const objectName = uniqueFileName(photo.name);
+            const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, objectName));
+            uploadedRefs.push(photoRef);
+            const url = await uploadPhotoWithRetry(photo, photoRef);
+            photoUrls.push(url);
+          }
+        } catch (error: any) {
+          // Best-effort cleanup: evita residuos si un upload falla a mitad.
+          await Promise.allSettled(uploadedRefs.map((r) => deleteObject(r)));
+          await Promise.allSettled([deleteDoc(uploadSessionRef)]);
+
+          if (error?.code === 'storage/unauthorized') {
+            const permissionError = new StoragePermissionError({
+              path: error.customData?.['path'] || orgStoragePath(organizationId, 'tickets', ticketId),
+              operation: 'write',
+            });
+            errorEmitter.emit('permission-error', permissionError);
+          } else {
+            toast({
+              variant: 'destructive',
+              title: 'No se pudo subir el adjunto',
+              description: error?.message || 'Ocurrió un error inesperado durante la subida.',
+            });
+          }
+          return;
+        }
+      }
+
+      // Crear incidencia SOLO cuando los adjuntos (si los hay) ya están subidos y con URL.
+      const docData: any = {
         ...data,
         locationId: data.locationId,
         type: 'correctivo' as const,
@@ -157,69 +223,18 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         organizationId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        photoUrls: [],
-        hasAttachments: false,
+        photoUrls,
+        hasAttachments: photoUrls.length > 0,
         displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
       };
 
-      if (!docData.assetId) {
-        delete docData.assetId;
-      }
+      if (!docData.assetId) delete docData.assetId;
 
       await setDoc(ticketRef, docData);
 
+      // Cerrar sesión de subida (best-effort).
       if (photos.length > 0) {
-        for (const photo of photos) {
-          const photoRef = ref(storage, orgStoragePath(organizationId, 'tickets', ticketId, photo.name));
-          try {
-            const url = await uploadPhotoWithRetry(photo, photoRef);
-            photoUrls.push(url);
-          } catch (error) {
-            lastUploadError = error;
-            failedUploads.push(photo.name);
-          }
-        }
-
-        if (photoUrls.length > 0) {
-          try {
-            await updateDoc(ticketRef, {
-              photoUrls,
-              hasAttachments: true,
-              updatedAt: serverTimestamp(),
-            });
-          } catch (error: any) {
-            if (error.code === 'permission-denied') {
-              const permissionError = new FirestorePermissionError({
-                path: orgCollectionPath(organizationId, 'tickets'),
-                operation: 'update',
-                requestResourceData: { photoUrls },
-              });
-              errorEmitter.emit('permission-error', permissionError);
-            } else {
-              toast({
-                variant: 'destructive',
-                title: 'Incidencia creada con adjuntos incompletos',
-                description: error.message || 'No se pudieron guardar las fotos adjuntas.',
-              });
-            }
-          }
-        }
-
-        if (failedUploads.length > 0) {
-          if (lastUploadError?.code === 'storage/unauthorized') {
-            const permissionError = new StoragePermissionError({
-              path: lastUploadError.customData?.['path'] || orgStoragePath(organizationId, 'tickets', ticketId),
-              operation: 'write',
-            });
-            errorEmitter.emit('permission-error', permissionError);
-          } else {
-            toast({
-              variant: 'destructive',
-              title: 'Incidencia creada con adjuntos incompletos',
-              description: `No se pudieron subir: ${failedUploads.join(', ')}.`,
-            });
-          }
-        }
+        await Promise.allSettled([deleteDoc(uploadSessionRef)]);
       }
 
       onSuccess?.({ title: data.title });
@@ -408,9 +423,14 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         </div>
 
         <FormItem>
-          <FormLabel>Fotos (Opcional)</FormLabel>
+          <FormLabel>Adjuntos (opcional)</FormLabel>
           <FormControl>
-            <Input type="file" multiple onChange={handlePhotoChange} accept="image/*" />
+            <Input
+              type="file"
+              multiple
+              onChange={handlePhotoChange}
+              accept="image/*,.pdf,.txt,.doc,.docx,.xls,.xlsx"
+            />
           </FormControl>
           <FormMessage />
         </FormItem>

@@ -32,6 +32,31 @@ service firebase.storage {
         && exists(/databases/$(database)/documents/organizations/$(orgId)/tickets/$(id));
     }
 
+    function uploadSession(orgId, id) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/uploadSessions/$(id));
+    }
+
+    function hasActiveUploadSession(orgId, id) {
+      let session = uploadSession(orgId, id);
+      return session != null
+        && session.data != null
+        && session.data.status == 'active'
+        && session.data.type == 'ticket'
+        && session.data.uploaderUid == request.auth.uid
+        && session.data.expiresAt is timestamp
+        && session.data.expiresAt > request.time;
+    }
+
+    function isAllowedTicketContentType() {
+      return request.resource.contentType.matches('image/.*')
+        || request.resource.contentType == 'application/pdf'
+        || request.resource.contentType.matches('text/.*')
+        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        || request.resource.contentType == 'application/msword'
+        || request.resource.contentType == 'application/vnd.ms-excel';
+    }
+
     function taskBelongsToOrg(orgId, id) {
       return isValidOrgId(orgId)
         && exists(/databases/$(database)/documents/organizations/$(orgId)/tasks/$(id));
@@ -66,17 +91,22 @@ service firebase.storage {
         && isValidImageUpload(5 * 1024 * 1024);
     }
 
-    // 2. Fotos de Incidencias (Tickets)
-    match /orgs/{orgId}/tickets/{ticketId}/{allPaths=**} {
+    // 2. Adjuntos de Incidencias (Tickets)
+    // Hardened:
+    // - Write requires either an existing ticket OR a short-lived upload session owned by the uploader.
+    // - Read is allowed for members when the ticket exists, or for the uploader during the upload session (needed for getDownloadURL).
+    // - Disallow nested directories to avoid arbitrary writes.
+    match /orgs/{orgId}/tickets/{ticketId}/{fileName} {
       allow read: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
-        && ticketBelongsToOrg(orgId, ticketId);
+        && (ticketBelongsToOrg(orgId, ticketId) || hasActiveUploadSession(orgId, ticketId));
       allow write: if isSignedIn()
         && isValidOrgId(orgId)
         && isActiveMember(orgId, request.auth.uid)
-        && ticketBelongsToOrg(orgId, ticketId)
-        && isValidUpload(10 * 1024 * 1024);
+        && (ticketBelongsToOrg(orgId, ticketId) || hasActiveUploadSession(orgId, ticketId))
+        && isValidUpload(10 * 1024 * 1024)
+        && isAllowedTicketContentType();
     }
 
     // 3. Fotos de Tareas (Tasks)

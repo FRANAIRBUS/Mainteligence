@@ -72,6 +72,23 @@ const formSchema = z
     assetId: z.string().optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.automatic && value.status === 'active') {
+      if (!value.siteId || value.siteId === '__none__') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['siteId'],
+          message: 'Selecciona una ubicación para plantillas automáticas activas.',
+        });
+      }
+      if (!value.departmentId || value.departmentId === '__none__') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['departmentId'],
+          message: 'Selecciona un departamento para plantillas automáticas activas.',
+        });
+      }
+    }
+
     if (value.scheduleType === 'weekly') {
       if (!value.daysOfWeek || value.daysOfWeek.length === 0) {
         ctx.addIssue({

@@ -3158,6 +3158,186 @@ export const createPreventive = functions.https.onCall(async (data, context) => 
   return { ok: true, organizationId: orgId, ticketId: ticketRef.id };
 });
 
+export const createPreventiveTemplate = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(
+    role,
+    new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]),
+    'No tienes permisos para crear plantillas preventivas.',
+  );
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+
+  const payload = data.payload as Record<string, unknown>;
+
+  const name = requireStringField(payload.name, 'name');
+  const description = String(payload.description ?? '').trim();
+  const status = String(payload.status ?? 'active').trim();
+  if (!['active', 'paused', 'archived'].includes(status)) {
+    throw httpsError('invalid-argument', 'status inválido.');
+  }
+
+  if (typeof payload.automatic !== 'boolean') {
+    throw httpsError('invalid-argument', 'automatic debe ser boolean.');
+  }
+  const automatic = payload.automatic as boolean;
+
+  const priority = String(payload.priority ?? 'Media').trim();
+  if (!['Baja', 'Media', 'Alta', 'Crítica'].includes(priority)) {
+    throw httpsError('invalid-argument', 'priority inválida.');
+  }
+
+  const siteId = String(payload.siteId ?? '').trim();
+  const departmentId = String(payload.departmentId ?? '').trim();
+  const assetId = String(payload.assetId ?? '').trim();
+
+  if (automatic && status === 'active') {
+    if (!siteId) throw httpsError('invalid-argument', 'siteId requerido para plantillas automáticas activas.');
+    if (!departmentId)
+      throw httpsError('invalid-argument', 'departmentId requerido para plantillas automáticas activas.');
+  }
+
+  if (siteId) requireScopedAccessToSite(role, scope, siteId);
+  if (departmentId) requireScopedAccessToDepartment(role, scope, departmentId);
+
+  if (!isPlainObject(payload.schedule)) {
+    throw httpsError('invalid-argument', 'schedule requerido.');
+  }
+
+  const schedulePayload = payload.schedule as Record<string, unknown>;
+  const scheduleType = String(schedulePayload.type ?? '').trim();
+  if (!['daily', 'weekly', 'monthly', 'date'].includes(scheduleType)) {
+    throw httpsError('invalid-argument', 'schedule.type inválido.');
+  }
+
+  const timezone = String(schedulePayload.timezone ?? '').trim() || undefined;
+  const timeOfDay = String(schedulePayload.timeOfDay ?? '').trim() || undefined;
+  if (timeOfDay && !/^\d{2}:\d{2}$/.test(timeOfDay)) {
+    throw httpsError('invalid-argument', 'schedule.timeOfDay debe ser HH:MM.');
+  }
+
+  const rawDaysOfWeek = Array.isArray(schedulePayload.daysOfWeek)
+    ? (schedulePayload.daysOfWeek as unknown[])
+    : undefined;
+  const daysOfWeek = rawDaysOfWeek
+    ? rawDaysOfWeek.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v >= 1 && v <= 7)
+    : undefined;
+
+  const dayOfMonthValue = schedulePayload.dayOfMonth;
+  const dayOfMonth =
+    dayOfMonthValue === null || dayOfMonthValue === undefined
+      ? undefined
+      : Number(dayOfMonthValue);
+
+  const dateValue = String(schedulePayload.date ?? '').trim();
+  let dateTimestamp: admin.firestore.Timestamp | undefined;
+  if (scheduleType === 'date') {
+    if (!dateValue) throw httpsError('invalid-argument', 'schedule.date requerido para tipo date.');
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) throw httpsError('invalid-argument', 'schedule.date inválido.');
+    dateTimestamp = admin.firestore.Timestamp.fromDate(date);
+  }
+
+  if (scheduleType === 'weekly' && (!daysOfWeek || daysOfWeek.length === 0)) {
+    throw httpsError('invalid-argument', 'schedule.daysOfWeek requerido para tipo weekly.');
+  }
+
+  if (scheduleType === 'monthly') {
+    if (!Number.isFinite(dayOfMonth) || (dayOfMonth as number) < 1 || (dayOfMonth as number) > 31) {
+      throw httpsError('invalid-argument', 'schedule.dayOfMonth inválido (1-31).');
+    }
+  }
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const templateRef = orgRef.collection('preventiveTemplates').doc();
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  const siteRef = siteId ? orgRef.collection('sites').doc(siteId) : null;
+  const departmentRef = departmentId ? orgRef.collection('departments').doc(departmentId) : null;
+  const assetRef = assetId ? orgRef.collection('assets').doc(assetId) : null;
+
+  await db.runTransaction(async (tx) => {
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+
+    const orgData = orgSnap.data() as any;
+    if (orgData?.preventivesPausedByEntitlement === true) {
+      throw httpsError('failed-precondition', 'Los preventivos están pausados por limitaciones del plan.');
+    }
+
+    const entitlement = orgData?.entitlement as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    if (!isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) {
+      throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
+    }
+
+    if (siteRef) {
+      const siteSnap = await tx.get(siteRef);
+      if (!siteSnap.exists || String(siteSnap.get('organizationId') ?? '') !== orgId) {
+        throw httpsError('failed-precondition', 'La ubicación indicada no existe en esta organización.');
+      }
+    }
+
+    if (departmentRef) {
+      const deptSnap = await tx.get(departmentRef);
+      if (!deptSnap.exists || String(deptSnap.get('organizationId') ?? '') !== orgId) {
+        throw httpsError('failed-precondition', 'El departamento indicado no existe en esta organización.');
+      }
+    }
+
+    if (assetRef) {
+      const assetSnap = await tx.get(assetRef);
+      if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+        throw httpsError('failed-precondition', 'El activo indicado no existe en esta organización.');
+      }
+    }
+
+    tx.create(templateRef, {
+      name,
+      description: description || undefined,
+      status,
+      automatic,
+      schedule: {
+        type: scheduleType,
+        timezone,
+        timeOfDay,
+        daysOfWeek: scheduleType === 'weekly' ? daysOfWeek : undefined,
+        dayOfMonth: scheduleType === 'monthly' ? dayOfMonth : undefined,
+        date: scheduleType === 'date' ? dateTimestamp : undefined,
+        // nextRunAt/lastRunAt are server-managed (generatePreventiveTickets)
+        nextRunAt: null,
+        lastRunAt: null,
+      },
+      priority,
+      siteId: siteId || null,
+      departmentId: departmentId || null,
+      assetId: assetId || null,
+      organizationId: orgId,
+      createdBy: actorUid,
+      updatedBy: actorUid,
+      createdAt: now,
+      updatedAt: now,
+      source: 'createPreventiveTemplate_v1',
+    });
+  });
+
+  await auditLog({
+    action: 'createPreventiveTemplate',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { templateId: templateRef.id, name, status, automatic },
+  });
+
+  return { ok: true, organizationId: orgId, templateId: templateRef.id };
+});
+
 export const inviteUserToOrg = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;

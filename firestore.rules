@@ -379,6 +379,34 @@ service cloud.firestore {
           && organizationIdMatchesPath(orgId);
       }
 
+      // Short-lived upload sessions (used to harden Storage writes before an incident exists).
+      // Client creates a session owned by itself, uploads files, then creates the ticket and deletes the session.
+      match /uploadSessions/{sessionId} {
+        allow get: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
+          && (resource.data.uploaderUid == request.auth.uid || isAdminInOrg(orgId, request.auth.uid));
+        allow list: if false;
+
+        allow create: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
+          && !isAuditorInOrg(orgId, request.auth.uid)
+          && organizationIdMatchesPath(orgId)
+          && request.resource.data.organizationId == orgId
+          && request.resource.data.uploaderUid == request.auth.uid
+          && request.resource.data.type == 'ticket'
+          && request.resource.data.status == 'active'
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.time
+          && request.resource.data.expiresAt <= request.time + duration.value(15, 'm')
+          && ( !('maxFiles' in request.resource.data) || request.resource.data.maxFiles <= 10 );
+
+        allow update: if false;
+
+        allow delete: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
+          && (resource.data.uploaderUid == request.auth.uid || isAdminInOrg(orgId, request.auth.uid));
+      }
+
       // Organization-scoped resources (v14+ data model)
       match /sites/{siteId} {
         allow read: if isSignedIn()
