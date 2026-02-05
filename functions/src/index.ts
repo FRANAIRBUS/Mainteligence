@@ -84,6 +84,8 @@ const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
   attachmentsThisMonthMB: 0,
 };
 
+const DEMO_PREVENTIVE_TEMPLATES_LIMIT = 2;
+
 // Basic rentable org settings (Pro-ready).
 // Stored in organizations/{orgId}/settings/main.
 const DEFAULT_ORG_SETTINGS_MAIN = {
@@ -1235,6 +1237,7 @@ function ensureEntitlementAllowsCreate({
   kind,
   entitlement,
   features,
+  orgType,
 }: {
   kind: keyof typeof USAGE_FIELDS;
   entitlement: {
@@ -1245,6 +1248,7 @@ function ensureEntitlementAllowsCreate({
     trialEndsAt?: admin.firestore.Timestamp;
   };
   features?: Record<string, boolean>;
+  orgType?: string;
 }) {
   const status = String(entitlement?.status ?? '');
   if (status !== 'active' && status !== 'trialing') {
@@ -1258,11 +1262,17 @@ function ensureEntitlementAllowsCreate({
     }
   }
 
-  if (kind === 'preventives' && String(entitlement?.planId ?? '') === 'free') {
+  const isDemoOrg = orgType === 'demo';
+
+  if (kind === 'preventives' && !isDemoOrg && String(entitlement?.planId ?? '') === 'free') {
     throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
   }
 
-  if (kind === 'preventives' && !isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) {
+  if (
+    kind === 'preventives' &&
+    !isDemoOrg &&
+    !isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')
+  ) {
     throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
   }
 
@@ -1275,6 +1285,35 @@ function resolveOrgIdFromData(data: any): string {
   const orgId = sanitizeOrganizationId(String(data?.orgId ?? data?.organizationId ?? ''));
   if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
   return orgId;
+}
+
+function isDemoOrganization(orgId: string, orgData: FirebaseFirestore.DocumentData | undefined) {
+  const type = String(orgData?.type ?? '').trim();
+  if (type === 'demo') return true;
+
+  const subscriptionPlan = String(orgData?.subscriptionPlan ?? '').trim();
+  if (subscriptionPlan === 'trial') return true;
+
+  return orgId.startsWith('demo-');
+}
+
+async function ensureDemoTemplateLimit(
+  tx: FirebaseFirestore.Transaction,
+  orgRef: FirebaseFirestore.DocumentReference,
+  isDemoOrg: boolean,
+) {
+  if (!isDemoOrg) return;
+
+  const existingTemplatesSnap = await tx.get(
+    orgRef.collection('preventiveTemplates').limit(DEMO_PREVENTIVE_TEMPLATES_LIMIT),
+  );
+
+  if (existingTemplatesSnap.size >= DEMO_PREVENTIVE_TEMPLATES_LIMIT) {
+    throw httpsError(
+      'failed-precondition',
+      `La demo permite hasta ${DEMO_PREVENTIVE_TEMPLATES_LIMIT} plantillas preventivas.`,
+    );
+  }
 }
 
 async function pausePreventiveTicketsForOrg(orgId: string, now: admin.firestore.Timestamp) {
@@ -3236,11 +3275,20 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
     const orgSnap = await tx.get(orgRef);
     if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
 
+    const orgData = orgSnap.data() as FirebaseFirestore.DocumentData | undefined;
+
     const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
     if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
 
+    const isDemoOrg = isDemoOrganization(orgId, orgData);
     const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
-    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+    ensureEntitlementAllowsCreate({
+      kind: 'preventives',
+      entitlement,
+      features,
+      orgType: String(orgData?.type ?? ''),
+    });
+    await ensureDemoTemplateLimit(tx, orgRef, isDemoOrg);
 
     // Validate referenced master data exists when provided.
     if (siteId) {
@@ -3387,11 +3435,18 @@ export const updatePreventiveTemplate = functions.https.onCall(async (data, cont
       throw httpsError('permission-denied', 'Plantilla fuera de la organización.');
     }
 
+    const orgData = orgSnap.data() as FirebaseFirestore.DocumentData | undefined;
+
     const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
     if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
 
     const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
-    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+    ensureEntitlementAllowsCreate({
+      kind: 'preventives',
+      entitlement,
+      features,
+      orgType: String(orgData?.type ?? ''),
+    });
 
     if (siteId) {
       const siteSnap = await tx.get(orgRef.collection('sites').doc(siteId));
@@ -3467,11 +3522,27 @@ export const duplicatePreventiveTemplate = functions.https.onCall(async (data, c
   let newName = '';
 
   await db.runTransaction(async (tx) => {
-    const sourceSnap = await tx.get(sourceRef);
+    const [orgSnap, sourceSnap] = await Promise.all([tx.get(orgRef), tx.get(sourceRef)]);
+
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
     if (!sourceSnap.exists) throw httpsError('not-found', 'Plantilla no encontrada.');
     if (String(sourceSnap.get('organizationId') ?? '') !== orgId) {
       throw httpsError('permission-denied', 'Plantilla fuera de la organización.');
     }
+
+    const orgData = orgSnap.data() as FirebaseFirestore.DocumentData | undefined;
+    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const isDemoOrg = isDemoOrganization(orgId, orgData);
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    ensureEntitlementAllowsCreate({
+      kind: 'preventives',
+      entitlement,
+      features,
+      orgType: String(orgData?.type ?? ''),
+    });
+    await ensureDemoTemplateLimit(tx, orgRef, isDemoOrg);
 
     const sourceData = sourceSnap.data() as any;
     const baseName = String(sourceData?.name ?? '').trim() || 'Plantilla';

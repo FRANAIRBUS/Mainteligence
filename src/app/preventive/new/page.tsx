@@ -14,9 +14,9 @@ import {
   type PreventiveTemplateFormValues,
 } from '@/components/preventive-template-form';
 import { useCollection, useDoc, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
-import type { Asset, Department, Organization, Site } from '@/lib/firebase/models';
+import type { Asset, Department, Organization, PreventiveTemplate, Site } from '@/lib/firebase/models';
 import { isFeatureEnabled } from '@/lib/entitlements';
-import { orgCollectionPath } from '@/lib/organization';
+import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organization';
 
 const normalizeOptional = (value?: string) =>
   value && value !== '__none__' ? value : undefined;
@@ -47,6 +47,9 @@ export default function NewPreventiveTemplatePage() {
   );
   const { data: organization } = useDoc<Organization>(
     organizationId ? `organizations/${organizationId}` : null
+  );
+  const { data: templates } = useCollection<PreventiveTemplate>(
+    organizationId ? orgPreventiveTemplatesPath(organizationId) : null
   );
 
   useEffect(() => {
@@ -85,7 +88,13 @@ export default function NewPreventiveTemplatePage() {
       ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'PREVENTIVES')
       : true;
   const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);
-  const preventivesBlocked = planFeatures !== null && !preventivesAllowed;
+  const isDemoOrganization =
+    organization?.type === 'demo' ||
+    organization?.subscriptionPlan === 'trial' ||
+    (organizationId ? organizationId.startsWith('demo-') : false);
+  const demoTemplateLimitReached = isDemoOrganization && templates.length >= 2;
+  const preventivesBlockedByPlan = planFeatures !== null && !preventivesAllowed && !isDemoOrganization;
+  const preventivesBlocked = preventivesBlockedByPlan || demoTemplateLimitReached;
 
   if (userLoading || !user) {
     return (
@@ -151,6 +160,16 @@ export default function NewPreventiveTemplatePage() {
           ? String(error.code)
           : '';
       if (errorCode.includes('failed-precondition')) {
+        const backendMessage =
+          typeof error === 'object' && error !== null && 'message' in error
+            ? String(error.message ?? '')
+            : '';
+
+        if (backendMessage.toLowerCase().includes('hasta 2 plantillas')) {
+          setErrorMessage('La demo permite hasta 2 plantillas preventivas. Cambia tu plan para crear más.');
+          return;
+        }
+
         setErrorMessage('Tu plan no incluye preventivos. Actualiza tu plan para crear plantillas.');
         return;
       }
@@ -172,9 +191,11 @@ export default function NewPreventiveTemplatePage() {
       {preventivesBlocked || preventivesPaused ? (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-6 text-sm text-amber-100">
           <p>
-            {preventivesBlocked
-              ? 'Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.'
-              : 'Los preventivos están pausados por limitaciones del plan actual.'}
+            {demoTemplateLimitReached
+              ? 'La demo permite hasta 2 plantillas preventivas. Cambia tu plan para crear más.'
+              : preventivesBlocked
+                ? 'Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.'
+                : 'Los preventivos están pausados por limitaciones del plan actual.'}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button asChild>
