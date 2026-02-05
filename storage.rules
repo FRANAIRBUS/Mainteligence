@@ -25,7 +25,11 @@ service firebase.storage {
     function isActiveMembership(doc) {
       return doc != null
         && doc.data != null
-        && (doc.data.active == true || doc.data.status == "active");
+        && (
+          doc.data.active == true
+          || doc.data.isActive == true
+          || doc.data.status == "active"
+        );
     }
 
     function isActiveMember(orgId, uid) {
@@ -106,14 +110,21 @@ service firebase.storage {
     // - Read is allowed for members when the ticket exists, or for the uploader during the upload session (needed for getDownloadURL).
     // - Disallow nested directories to avoid arbitrary writes.
     match /orgs/{orgId}/tickets/{ticketId}/{fileName} {
+      // If there is an active upload session owned by the caller, allow the upload/read
+      // even if membership fields are temporarily inconsistent across collections.
+      // Session creation itself is protected by Firestore rules.
       allow read: if isSignedIn()
         && isValidOrgId(orgId)
-        && isActiveMember(orgId, request.auth.uid)
-        && (ticketBelongsToOrg(orgId, ticketId) || hasActiveUploadSession(orgId, ticketId));
+        && (
+          (ticketBelongsToOrg(orgId, ticketId) && isActiveMember(orgId, request.auth.uid))
+          || hasActiveUploadSession(orgId, ticketId)
+        );
       allow write: if isSignedIn()
         && isValidOrgId(orgId)
-        && isActiveMember(orgId, request.auth.uid)
-        && (ticketBelongsToOrg(orgId, ticketId) || hasActiveUploadSession(orgId, ticketId))
+        && (
+          (ticketBelongsToOrg(orgId, ticketId) && isActiveMember(orgId, request.auth.uid))
+          || hasActiveUploadSession(orgId, ticketId)
+        )
         && isValidUpload(10 * 1024 * 1024)
         && isAllowedTicketContentType();
     }
