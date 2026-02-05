@@ -72,23 +72,6 @@ const formSchema = z
     assetId: z.string().optional(),
   })
   .superRefine((value, ctx) => {
-    if (value.automatic && value.status === 'active') {
-      if (!value.siteId || value.siteId === '__none__') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['siteId'],
-          message: 'Selecciona una ubicación para plantillas automáticas activas.',
-        });
-      }
-      if (!value.departmentId || value.departmentId === '__none__') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['departmentId'],
-          message: 'Selecciona un departamento para plantillas automáticas activas.',
-        });
-      }
-    }
-
     if (value.scheduleType === 'weekly') {
       if (!value.daysOfWeek || value.daysOfWeek.length === 0) {
         ctx.addIssue({
@@ -118,6 +101,25 @@ const formSchema = z
         });
       }
     }
+    if (value.automatic === true && value.status === "active") {
+      const siteId = value.siteId && value.siteId !== "__none__" ? value.siteId : undefined;
+      const departmentId = value.departmentId && value.departmentId !== "__none__" ? value.departmentId : undefined;
+      if (!siteId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["siteId"],
+          message: "Selecciona una ubicación para preventivos automáticos activos.",
+        });
+      }
+      if (!departmentId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["departmentId"],
+          message: "Selecciona un departamento para preventivos automáticos activos.",
+        });
+      }
+    }
+
   });
 
 export type PreventiveTemplateFormValues = z.infer<typeof formSchema>;

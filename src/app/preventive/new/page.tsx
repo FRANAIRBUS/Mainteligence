@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useRouter } from 'next/navigation';
 
 import { AppShell } from '@/components/app-shell';
 import { Icons } from '@/components/icons';
@@ -10,7 +10,7 @@ import {
   PreventiveTemplateForm,
   type PreventiveTemplateFormValues,
 } from '@/components/preventive-template-form';
-import { useCollection, useFirebaseApp, useUser } from '@/lib/firebase';
+import { useCollection, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
 import type { Asset, Department, Site } from '@/lib/firebase/models';
 import { orgCollectionPath } from '@/lib/organization';
 
@@ -20,6 +20,7 @@ const normalizeOptional = (value?: string) =>
 export default function NewPreventiveTemplatePage() {
   const router = useRouter();
   const app = useFirebaseApp();
+  const firestore = useFirestore();
   const { user, loading: userLoading, organizationId } = useUser();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -50,17 +51,12 @@ export default function NewPreventiveTemplatePage() {
 
   const handleSubmit = async (values: PreventiveTemplateFormValues) => {
     if (!app) {
-      setErrorMessage('No se pudo inicializar Firebase.');
+      setErrorMessage('No se pudo inicializar Firebase App.');
       return;
     }
 
-    if (userLoading) {
-      setErrorMessage('Cargando sesión, intenta de nuevo en un momento.');
-      return;
-    }
-
-    if (!user) {
-      setErrorMessage('No se pudo identificar al usuario actual.');
+    if (!firestore) {
+      setErrorMessage('No se pudo inicializar la base de datos.');
       return;
     }
 
@@ -73,34 +69,34 @@ export default function NewPreventiveTemplatePage() {
     setErrorMessage(null);
 
     try {
-      const fn = httpsCallable(getFunctions(app, 'us-central1'), 'createPreventiveTemplate');
+      const fn = httpsCallable(getFunctions(app), 'createPreventiveTemplate');
+
       await fn({
         organizationId,
-        payload: {
-          name: values.name.trim(),
-          description: values.description?.trim() || undefined,
-          status: values.status,
-          automatic: values.automatic,
-          schedule: {
-            type: values.scheduleType,
-            timezone:
-              typeof Intl !== 'undefined'
-                ? Intl.DateTimeFormat().resolvedOptions().timeZone
-                : undefined,
-            timeOfDay: values.timeOfDay?.trim() || undefined,
-            daysOfWeek: values.daysOfWeek?.length ? values.daysOfWeek : undefined,
-            dayOfMonth:
-              typeof values.dayOfMonth === 'number' && !Number.isNaN(values.dayOfMonth)
-                ? values.dayOfMonth
-                : undefined,
-            date: values.date?.trim() || undefined,
-          },
-          priority: values.priority,
-          siteId: normalizeOptional(values.siteId),
-          departmentId: normalizeOptional(values.departmentId),
-          assetId: normalizeOptional(values.assetId),
+        name: values.name.trim(),
+        description: values.description?.trim() || null,
+        status: values.status,
+        automatic: values.automatic,
+        schedule: {
+          type: values.scheduleType,
+          timezone:
+            typeof Intl !== 'undefined'
+              ? Intl.DateTimeFormat().resolvedOptions().timeZone
+              : undefined,
+          timeOfDay: values.timeOfDay?.trim() || undefined,
+          daysOfWeek: values.daysOfWeek?.length ? values.daysOfWeek : undefined,
+          dayOfMonth:
+            typeof values.dayOfMonth === 'number' && !Number.isNaN(values.dayOfMonth)
+              ? values.dayOfMonth
+              : undefined,
+          date: values.date ? values.date : undefined,
         },
+        priority: values.priority,
+        siteId: normalizeOptional(values.siteId),
+        departmentId: normalizeOptional(values.departmentId),
+        assetId: normalizeOptional(values.assetId),
       });
+
       router.push('/preventive');
     } catch (error) {
       console.error('Error al crear la plantilla preventiva', error);

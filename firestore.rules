@@ -379,7 +379,7 @@ service cloud.firestore {
           && organizationIdMatchesPath(orgId);
       }
 
-      // Short-lived upload sessions (used to harden Storage writes before a ticket exists).
+      // Short-lived upload sessions (used to harden Storage writes before an incident exists).
       // Client creates a session owned by itself, uploads files, then creates the ticket and deletes the session.
       match /uploadSessions/{sessionId} {
         allow get: if isSignedIn()
@@ -398,7 +398,7 @@ service cloud.firestore {
           && request.resource.data.expiresAt is timestamp
           && request.resource.data.expiresAt > request.time
           && request.resource.data.expiresAt <= request.time + duration.value(15, 'm')
-          && (!('maxFiles' in request.resource.data) || request.resource.data.maxFiles <= 10);
+          && ( !('maxFiles' in request.resource.data) || request.resource.data.maxFiles <= 10 );
 
         allow update: if false;
 
@@ -496,73 +496,7 @@ service cloud.firestore {
         allow read: if isSignedIn()
           && isActiveMember(orgId, request.auth.uid)
           && resourceOrganizationIdMatchesPath(orgId);
-        allow create: if isSignedIn()
-          && isMaintenanceInOrg(orgId, request.auth.uid)
-          && organizationIdMatchesPath(orgId);
-        allow update: if isSignedIn()
-          && isMaintenanceInOrg(orgId, request.auth.uid)
-          && organizationIdUnchanged()
-          && resourceOrganizationIdMatchesPath(orgId);
-        allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
-      }
 
-      match /auditLogs/{logId} {
-        allow read: if isSignedIn()
-          && (isAdminInOrg(orgId, request.auth.uid) || isAuditorInOrg(orgId, request.auth.uid));
-        allow create: if isSignedIn()
-          && isAdminInOrg(orgId, request.auth.uid)
-          && organizationIdMatchesPath(orgId);
-        allow update, delete: if false;
-      }
-
-      // Members snapshot (operational listing)
-      match /members/{memberUid} {
-        // Read access is required for assignment UX and name resolution.
-        // Keep it limited to admin/maintenance/heads.
-        allow get: if isSignedIn()
-          && isActiveMember(orgId, request.auth.uid);
-        allow list: if isSignedIn() && (
-          isAdminInOrg(orgId, request.auth.uid)
-          || isMaintenanceOnlyInOrg(orgId, request.auth.uid)
-          || isDepartmentHeadInOrg(orgId, request.auth.uid)
-          || isLocationHeadInOrg(orgId, request.auth.uid)
-          || isAuditorInOrg(orgId, request.auth.uid)
-          || (request.auth.uid == memberUid && isActiveMember(orgId, request.auth.uid))
-        );
+        // Server-only writes: prevent bypassing schema/entitlement/nextRunAt logic.
         allow create, update, delete: if false;
       }
-
-      // Billing providers are server-only (no client read/write).
-      match /billingProviders/{providerId} {
-        allow read: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
-        allow create, update, delete: if false;
-      }
-
-      // Join requests (pending access)
-      match /joinRequests/{requestUid} {
-        allow get: if isSignedIn() && (
-          isSuperAdminInOrg(orgId, request.auth.uid) ||
-          request.auth.uid == requestUid
-        );
-
-        allow list: if isSuperAdminInOrg(orgId, request.auth.uid);
-
-        allow create, update, delete: if false;
-      }
-    }
-
-    /* ------------------------------
-       ORGANIZATIONS PUBLIC
-       - Read-only public metadata for signup validation.
-       - Writes server-only.
-    --------------------------------- */
-    match /organizationsPublic/{orgId} {
-      allow read: if true;
-      allow create, update, delete: if false;
-    }
-
-    /* ------------------------------
-       ROOT-LEVEL SETTINGS (removed)
-    --------------------------------- */
-  }
-}
