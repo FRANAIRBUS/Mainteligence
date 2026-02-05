@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -103,6 +104,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const { user, organizationId, profile } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [attachments, setAttachments] = useState<SelectedAttachment[]>([]);
+  const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
+  const [submitWarning, setSubmitWarning] = useState<string | null>(null);
   const canSubmit = Boolean(firestore && storage && user && organizationId);
 
   const { data: sites, loading: sitesLoading } = useCollection<Site>(
@@ -291,6 +294,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     const scopedOrganizationId = organizationId!;
 
     setIsPending(true);
+    setSubmitWarning(null);
+    setCreatedTicketId(null);
 
     try {
       const collectionRef = collection(scopedFirestore, orgCollectionPath(scopedOrganizationId, 'tickets'));
@@ -320,6 +325,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       }
 
       await setDoc(ticketRef, docData);
+      setCreatedTicketId(ticketId);
 
       const urls: string[] = [];
       const failedUploads: string[] = [];
@@ -396,11 +402,14 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         }
 
         if (failedUploads.length > 0) {
+          const warningMessage = `La incidencia se creó, pero no se pudieron subir: ${failedUploads.join(', ')}.`;
+          setSubmitWarning(warningMessage);
           toast({
             variant: 'destructive',
-            title: 'Incidencia creada con adjuntos incompletos',
-            description: `No se pudieron subir: ${failedUploads.join(', ')}.`,
+            title: 'Adjuntos no subidos',
+            description: 'Revisa el detalle en el formulario antes de salir.',
           });
+          return;
         }
       }
 
@@ -602,6 +611,19 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           </FormControl>
           <FormMessage />
         </FormItem>
+        {submitWarning && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+            <p className="font-medium text-destructive">{submitWarning}</p>
+            {createdTicketId && (
+              <p className="mt-1">
+                <Link className="underline underline-offset-2" href={`/incidents/${createdTicketId}`}>
+                  Ver incidencia creada
+                </Link>
+              </p>
+            )}
+          </div>
+        )}
+
         {attachments.length > 0 && (
           <div className="space-y-2">
             <div className="text-xs text-muted-foreground">{attachments.length} archivo(s) seleccionado(s).</div>
