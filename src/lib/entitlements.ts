@@ -8,6 +8,97 @@ import type {
   PlanCatalogEntry,
 } from "@/lib/firebase/models";
 
+const DEFAULT_PLAN_FEATURES: Record<
+  Entitlement["planId"],
+  Record<EntitlementFeature, boolean>
+> = {
+  free: {
+    EXPORT_PDF: false,
+    AUDIT_TRAIL: false,
+    PREVENTIVES: false,
+  },
+  starter: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
+  pro: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
+  enterprise: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
+};
+
+const DEFAULT_PLAN_LIMITS: Record<Entitlement["planId"], EntitlementLimits> = {
+  free: {
+    maxSites: 100,
+    maxAssets: 5000,
+    maxDepartments: 100,
+    maxUsers: 50,
+    maxActivePreventives: 3,
+    attachmentsMonthlyMB: 1024,
+  },
+  starter: {
+    maxSites: 100,
+    maxAssets: 5000,
+    maxDepartments: 100,
+    maxUsers: 50,
+    maxActivePreventives: 25,
+    attachmentsMonthlyMB: 1024,
+  },
+  pro: {
+    maxSites: 100,
+    maxAssets: 5000,
+    maxDepartments: 100,
+    maxUsers: 50,
+    maxActivePreventives: 100,
+    attachmentsMonthlyMB: 1024,
+  },
+  enterprise: {
+    maxSites: 100,
+    maxAssets: 5000,
+    maxDepartments: 100,
+    maxUsers: 50,
+    maxActivePreventives: 1000,
+    attachmentsMonthlyMB: 1024,
+  },
+};
+
+export const getDefaultPlanFeatures = (
+  planId?: Entitlement["planId"] | string
+): Record<EntitlementFeature, boolean> => {
+  const normalized = String(planId ?? "").trim() as Entitlement["planId"];
+  return DEFAULT_PLAN_FEATURES[normalized] ?? DEFAULT_PLAN_FEATURES.free;
+};
+
+export const getDefaultPlanLimits = (
+  planId?: Entitlement["planId"] | string
+): EntitlementLimits => {
+  const normalized = String(planId ?? "").trim() as Entitlement["planId"];
+  return DEFAULT_PLAN_LIMITS[normalized] ?? DEFAULT_PLAN_LIMITS.free;
+};
+
+export const resolveEffectivePlanFeatures = (
+  planId: Entitlement["planId"],
+  rawFeatures?: Partial<Record<EntitlementFeature, boolean>> | null
+): Record<EntitlementFeature, boolean> => ({
+  ...getDefaultPlanFeatures(planId),
+  ...(rawFeatures ?? {}),
+});
+
+export const resolveEffectivePlanLimits = (
+  planId: Entitlement["planId"],
+  rawLimits?: Partial<EntitlementLimits> | null
+): EntitlementLimits => ({
+  ...getDefaultPlanLimits(planId),
+  ...(rawLimits ?? {}),
+});
+
 export type EntitlementWithFeatures = Entitlement & {
   features?: Record<EntitlementFeature, boolean>;
 };
@@ -41,7 +132,8 @@ export const getOrgEntitlement = async (
 
   return {
     ...entitlement,
-    features: planCatalogData?.features ?? undefined,
+    limits: resolveEffectivePlanLimits(entitlement.planId, planCatalogData?.limits ?? entitlement.limits),
+    features: resolveEffectivePlanFeatures(entitlement.planId, planCatalogData?.features ?? null),
   };
 };
 

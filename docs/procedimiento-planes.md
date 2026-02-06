@@ -35,6 +35,18 @@ La pantalla `/plans` en frontend sigue siendo informativa/comercial; no muta pla
 - `suspended`
 - `deleted`
 
+
+## 2.1) Límite operativo de preventivos por plan
+
+- `demo`: 5 plantillas preventivas (tope de demo).
+- `free`: 3 preventivos activos.
+- `pro`: 100 preventivos activos.
+- `enterprise`: 1000 preventivos activos.
+
+Notas:
+- La habilitación de preventivos se rige por `features.PREVENTIVES` en `planCatalog/{planId}` con fallback seguro por defecto en backend.
+- El límite efectivo se normaliza en backend por `planId` para evitar inconsistencias históricas en `entitlement.limits`.
+
 ## 3) Cambio de plan como usuario de organización
 
 Como usuario de organización (super_admin), el cambio de plan productivo se realiza por proveedor de billing:
