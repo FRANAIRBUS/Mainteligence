@@ -266,7 +266,11 @@ function resolveTemplateOrgId(docRef: FirebaseFirestore.DocumentReference, data?
 
 function resolveZonedDate(timeZone?: string) {
   if (!timeZone) return new Date();
-  return new Date(new Date().toLocaleString('en-US', { timeZone }));
+  try {
+    return new Date(new Date().toLocaleString('en-US', { timeZone }));
+  } catch {
+    return new Date();
+  }
 }
 
 function parseTimeOfDay(timeOfDay?: string) {
@@ -3506,9 +3510,10 @@ export const createPreventive = functions.https.onCall(async (data, context) => 
 
 
 export const createPreventiveTemplate = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
-  const orgId = resolveOrgIdFromData(data);
+  try {
+    const actorUid = requireAuth(context);
+    const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+    const orgId = resolveOrgIdFromData(data);
 
   const { role, scope } = await requireActiveMembership(actorUid, orgId);
   requireRoleAllowed(
@@ -3661,15 +3666,26 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
     });
   });
 
-  await auditLog({
-    action: 'createPreventiveTemplate',
-    actorUid,
-    actorEmail,
-    orgId,
-    after: { templateId: templateRef.id, name, status, automatic },
-  });
+    await auditLog({
+      action: 'createPreventiveTemplate',
+      actorUid,
+      actorEmail,
+      orgId,
+      after: { templateId: templateRef.id, name, status, automatic },
+    });
 
-  return { ok: true, organizationId: orgId, templateId: templateRef.id };
+    return { ok: true, organizationId: orgId, templateId: templateRef.id };
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
+    console.error('createPreventiveTemplate: unexpected error', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw httpsError('failed-precondition', 'No se pudo crear la plantilla preventiva. Revisa plan, permisos y datos de programación.');
+  }
 });
 
 export const updatePreventiveTemplate = functions.https.onCall(async (data, context) => {
