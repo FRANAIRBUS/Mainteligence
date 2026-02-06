@@ -918,6 +918,25 @@ function resolveMembershipScope(userData) {
 function isPlainObject(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value);
 }
+function stripUndefinedDeep(value) {
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => stripUndefinedDeep(item))
+            .filter((item) => item !== undefined);
+    }
+    if (isPlainObject(value)) {
+        const entries = Object.entries(value);
+        const cleaned = entries.reduce((acc, [key, nestedValue]) => {
+            const normalized = stripUndefinedDeep(nestedValue);
+            if (normalized !== undefined) {
+                acc[key] = normalized;
+            }
+            return acc;
+        }, {});
+        return cleaned;
+    }
+    return value;
+}
 function requireRoleAllowed(role, allowed, message) {
     if (!allowed.has(role)) {
         throw httpsError('permission-denied', message);
@@ -2855,8 +2874,8 @@ exports.createPreventiveTemplate = functions.https.onCall(async (data, context) 
             }
             const zonedNow = resolveZonedDate(schedule.timezone);
             const computed = automatic && status === 'active' ? computeNextRunAt(schedule, zonedNow) : null;
-            const storedSchedule = Object.assign(Object.assign({}, schedule), { nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined, lastRunAt: undefined });
-            tx.create(templateRef, {
+            const storedSchedule = stripUndefinedDeep(Object.assign(Object.assign({}, schedule), { nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined, lastRunAt: undefined }));
+            tx.create(templateRef, stripUndefinedDeep({
                 name,
                 description: description || undefined,
                 status,
@@ -2872,7 +2891,7 @@ exports.createPreventiveTemplate = functions.https.onCall(async (data, context) 
                 createdAt: now,
                 updatedAt: now,
                 source: 'createPreventiveTemplate_v1',
-            });
+            }));
         });
         await auditLog({
             action: 'createPreventiveTemplate',
@@ -2998,8 +3017,8 @@ exports.updatePreventiveTemplate = functions.https.onCall(async (data, context) 
         }
         const zonedNow = resolveZonedDate(schedule.timezone);
         const computed = automatic && status === 'active' ? computeNextRunAt(schedule, zonedNow) : null;
-        const storedSchedule = Object.assign(Object.assign({}, schedule), { nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined, lastRunAt: schedule.type === 'date' ? undefined : templateSnap.get('schedule.lastRunAt') });
-        tx.update(templateRef, {
+        const storedSchedule = stripUndefinedDeep(Object.assign(Object.assign({}, schedule), { nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined, lastRunAt: schedule.type === 'date' ? undefined : templateSnap.get('schedule.lastRunAt') }));
+        tx.update(templateRef, stripUndefinedDeep({
             name,
             description: description || undefined,
             status,
@@ -3012,7 +3031,7 @@ exports.updatePreventiveTemplate = functions.https.onCall(async (data, context) 
             updatedBy: actorUid,
             updatedAt: now,
             source: 'updatePreventiveTemplate_v1',
-        });
+        }));
     });
     await auditLog({
         action: 'updatePreventiveTemplate',

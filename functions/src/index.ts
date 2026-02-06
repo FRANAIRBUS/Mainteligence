@@ -1259,6 +1259,28 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stripUndefinedDeep(item))
+      .filter((item) => item !== undefined) as unknown as T;
+  }
+
+  if (isPlainObject(value)) {
+    const entries = Object.entries(value);
+    const cleaned = entries.reduce<Record<string, unknown>>((acc, [key, nestedValue]) => {
+      const normalized = stripUndefinedDeep(nestedValue as unknown);
+      if (normalized !== undefined) {
+        acc[key] = normalized;
+      }
+      return acc;
+    }, {});
+    return cleaned as T;
+  }
+
+  return value;
+}
+
 function requireRoleAllowed(role: Role, allowed: Set<Role>, message: string) {
   if (!allowed.has(role)) {
     throw httpsError('permission-denied', message);
@@ -3655,29 +3677,32 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
     const zonedNow = resolveZonedDate(schedule.timezone);
     const computed = automatic && status === 'active' ? computeNextRunAt(schedule, zonedNow) : null;
 
-    const storedSchedule: PreventiveSchedule = {
+    const storedSchedule: PreventiveSchedule = stripUndefinedDeep({
       ...schedule,
       nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined,
       lastRunAt: undefined,
-    };
-
-    tx.create(templateRef, {
-      name,
-      description: description || undefined,
-      status,
-      automatic,
-      schedule: storedSchedule,
-      priority,
-      siteId: siteId || undefined,
-      departmentId: departmentId || undefined,
-      assetId: assetId || undefined,
-      createdBy: actorUid,
-      updatedBy: actorUid,
-      organizationId: orgId,
-      createdAt: now,
-      updatedAt: now,
-      source: 'createPreventiveTemplate_v1',
     });
+
+    tx.create(
+      templateRef,
+      stripUndefinedDeep({
+        name,
+        description: description || undefined,
+        status,
+        automatic,
+        schedule: storedSchedule,
+        priority,
+        siteId: siteId || undefined,
+        departmentId: departmentId || undefined,
+        assetId: assetId || undefined,
+        createdBy: actorUid,
+        updatedBy: actorUid,
+        organizationId: orgId,
+        createdAt: now,
+        updatedAt: now,
+        source: 'createPreventiveTemplate_v1',
+      }),
+    );
   });
 
     await auditLog({
@@ -3823,26 +3848,29 @@ export const updatePreventiveTemplate = functions.https.onCall(async (data, cont
     const zonedNow = resolveZonedDate(schedule.timezone);
     const computed = automatic && status === 'active' ? computeNextRunAt(schedule, zonedNow) : null;
 
-    const storedSchedule: PreventiveSchedule = {
+    const storedSchedule: PreventiveSchedule = stripUndefinedDeep({
       ...schedule,
       nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined,
       lastRunAt: schedule.type === 'date' ? undefined : (templateSnap.get('schedule.lastRunAt') as any),
-    };
-
-    tx.update(templateRef, {
-      name,
-      description: description || undefined,
-      status,
-      automatic,
-      schedule: storedSchedule,
-      priority,
-      siteId: siteId || undefined,
-      departmentId: departmentId || undefined,
-      assetId: assetId || undefined,
-      updatedBy: actorUid,
-      updatedAt: now,
-      source: 'updatePreventiveTemplate_v1',
     });
+
+    tx.update(
+      templateRef,
+      stripUndefinedDeep({
+        name,
+        description: description || undefined,
+        status,
+        automatic,
+        schedule: storedSchedule,
+        priority,
+        siteId: siteId || undefined,
+        departmentId: departmentId || undefined,
+        assetId: assetId || undefined,
+        updatedBy: actorUid,
+        updatedAt: now,
+        source: 'updatePreventiveTemplate_v1',
+      }),
+    );
   });
 
   await auditLog({
