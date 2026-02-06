@@ -66,7 +66,7 @@ import type {
 } from '@/lib/firebase/models';
 import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organization';
 import { ticketStatusLabel } from '@/lib/status';
-import { isFeatureEnabled } from '@/lib/entitlements';
+import { isFeatureEnabled, resolveEffectivePlanFeatures } from '@/lib/entitlements';
 
 const normalizeOptional = (value?: string) =>
   value && value !== '__none__' ? value : undefined;
@@ -440,10 +440,12 @@ export default function PreventivePage() {
   }, [firestore, organization?.entitlement?.planId]);
 
   const entitlement = organization?.entitlement ?? null;
-  const preventivesAllowed =
-    planFeatures && entitlement
-      ? isFeatureEnabled({ ...entitlement, features: planFeatures }, 'PREVENTIVES')
-      : true;
+  const preventivesAllowed = entitlement
+    ? isFeatureEnabled({
+        ...entitlement,
+        features: resolveEffectivePlanFeatures(entitlement.planId, planFeatures),
+      }, 'PREVENTIVES')
+    : false;
   const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);
   const isDemoOrganization =
     organization?.type === 'demo' ||
@@ -461,8 +463,8 @@ export default function PreventivePage() {
     organizationId ? orgPreventiveTemplatesPath(organizationId) : null
   );
 
-  const demoTemplateLimitReached = isDemoOrganization && templates.length >= 2;
-  const preventivesBlockedByPlan = planFeatures !== null && !preventivesAllowed && !isDemoOrganization;
+  const demoTemplateLimitReached = isDemoOrganization && templates.length >= 5;
+  const preventivesBlockedByPlan = !preventivesAllowed && !isDemoOrganization;
   const preventivesBlocked = preventivesBlockedByPlan || demoTemplateLimitReached;
 
   const { data: sites } = useCollection<Site>(
@@ -517,7 +519,7 @@ export default function PreventivePage() {
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-200">
                   <span>
                     {demoTemplateLimitReached
-                      ? 'La demo permite hasta 2 plantillas preventivas. Cambia tu plan para crear más.'
+                      ? 'La demo permite hasta 5 plantillas preventivas. Cambia tu plan para crear más.'
                       : 'Tu plan actual no incluye preventivos. Actualiza tu plan para habilitar esta función.'}
                   </span>
                   <Button variant="outline" size="sm" onClick={() => router.push('/plans')}>

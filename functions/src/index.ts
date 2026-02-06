@@ -82,8 +82,50 @@ const DEFAULT_ENTITLEMENT_LIMITS: EntitlementLimits = {
   maxAssets: 5000,
   maxDepartments: 100,
   maxUsers: 50,
-  maxActivePreventives: 1000,
+  maxActivePreventives: 3,
   attachmentsMonthlyMB: 1024,
+};
+
+const PLAN_DEFAULT_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
+  free: {
+    ...DEFAULT_ENTITLEMENT_LIMITS,
+    maxActivePreventives: 3,
+  },
+  starter: {
+    ...DEFAULT_ENTITLEMENT_LIMITS,
+    maxActivePreventives: 25,
+  },
+  pro: {
+    ...DEFAULT_ENTITLEMENT_LIMITS,
+    maxActivePreventives: 100,
+  },
+  enterprise: {
+    ...DEFAULT_ENTITLEMENT_LIMITS,
+    maxActivePreventives: 1000,
+  },
+};
+
+const PLAN_DEFAULT_FEATURES: Record<EntitlementPlanId, Record<'EXPORT_PDF' | 'AUDIT_TRAIL' | 'PREVENTIVES', boolean>> = {
+  free: {
+    EXPORT_PDF: false,
+    AUDIT_TRAIL: false,
+    PREVENTIVES: false,
+  },
+  starter: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
+  pro: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
+  enterprise: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
 };
 
 const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
@@ -95,7 +137,7 @@ const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
   attachmentsThisMonthMB: 0,
 };
 
-const DEMO_PREVENTIVE_TEMPLATES_LIMIT = 2;
+const DEMO_PREVENTIVE_TEMPLATES_LIMIT = 5;
 
 // Basic rentable org settings (Pro-ready).
 // Stored in organizations/{orgId}/settings/main.
@@ -177,7 +219,7 @@ function buildEntitlementPayload({
   currentPeriodEnd,
   provider = DEFAULT_ENTITLEMENT_PROVIDER,
   now,
-  limits = DEFAULT_ENTITLEMENT_LIMITS,
+  limits,
   usage = DEFAULT_ENTITLEMENT_USAGE,
 }: {
   planId: EntitlementPlanId;
@@ -189,12 +231,14 @@ function buildEntitlementPayload({
   limits?: EntitlementLimits;
   usage?: EntitlementUsage;
 }) {
+  const resolvedLimits = resolveEffectiveLimitsForPlan(planId, limits ?? null);
+
   const payload: Record<string, unknown> = {
     planId,
     status,
     provider,
     updatedAt: now,
-    limits,
+    limits: resolvedLimits,
     usage,
   };
 
@@ -222,7 +266,11 @@ function resolveTemplateOrgId(docRef: FirebaseFirestore.DocumentReference, data?
 
 function resolveZonedDate(timeZone?: string) {
   if (!timeZone) return new Date();
-  return new Date(new Date().toLocaleString('en-US', { timeZone }));
+  try {
+    return new Date(new Date().toLocaleString('en-US', { timeZone }));
+  } catch {
+    return new Date();
+  }
 }
 
 function parseTimeOfDay(timeOfDay?: string) {
@@ -417,6 +465,28 @@ function resolveEntitlementPlanId({
   return 'free';
 }
 
+function resolveDefaultLimitsForPlan(planId: EntitlementPlanId): EntitlementLimits {
+  return PLAN_DEFAULT_LIMITS[planId] ?? PLAN_DEFAULT_LIMITS.free;
+}
+
+function resolveDefaultFeaturesForPlan(planId: EntitlementPlanId): Record<string, boolean> {
+  return PLAN_DEFAULT_FEATURES[planId] ?? PLAN_DEFAULT_FEATURES.free;
+}
+
+function resolveEffectiveLimitsForPlan(planId: EntitlementPlanId, limits?: Partial<EntitlementLimits> | null): EntitlementLimits {
+  return {
+    ...resolveDefaultLimitsForPlan(planId),
+    ...(limits ?? {}),
+  };
+}
+
+function resolveEffectiveFeaturesForPlan(planId: EntitlementPlanId, features?: Record<string, boolean> | null): Record<string, boolean> {
+  return {
+    ...resolveDefaultFeaturesForPlan(planId),
+    ...(features ?? {}),
+  };
+}
+
 function resolveEntitlementStatusFromApple(notificationType?: string, renewal?: AppleRenewalPayload | null): EntitlementStatus {
   switch (String(notificationType ?? '').toUpperCase()) {
     case 'DID_RENEW':
@@ -592,7 +662,6 @@ async function updateOrganizationStripeEntitlement({
 
     const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
     const entitlement = orgData?.entitlement;
-    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
     const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -600,6 +669,7 @@ async function updateOrganizationStripeEntitlement({
       metadataPlanId: planId ?? null,
       fallbackPlanId: entitlement?.planId,
     });
+    const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement?.limits);
 
     const shouldBlock = shouldBlockProviderUpdate(entitlement, 'stripe');
     const billingProviderPayload: Record<string, unknown> = shouldBlock
@@ -819,7 +889,6 @@ async function updateOrganizationAppleEntitlement({
 
     const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
     const entitlement = orgData?.entitlement;
-    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
     const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -827,6 +896,7 @@ async function updateOrganizationAppleEntitlement({
       metadataPlanId: planId ?? null,
       fallbackPlanId: entitlement?.planId,
     });
+    const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement?.limits);
 
     const shouldBlock = shouldBlockProviderUpdate(entitlement, 'apple_app_store');
     const billingProviderPayload: Record<string, unknown> = shouldBlock
@@ -1254,17 +1324,19 @@ async function requireActiveMembership(actorUid: string, orgId: string): Promise
 }
 
 async function resolvePlanFeaturesForTx(tx: FirebaseFirestore.Transaction, planId: string | undefined) {
-  if (!planId) return undefined;
-  const planSnap = await tx.get(db.collection('planCatalog').doc(planId));
-  if (!planSnap.exists) return undefined;
-  return planSnap.get('features') as Record<string, boolean> | undefined;
+  const resolvedPlanId = resolveEntitlementPlanId({ metadataPlanId: planId ?? null });
+  const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
+  const rawFeatures = planSnap.exists
+    ? (planSnap.get('features') as Record<string, boolean> | undefined)
+    : undefined;
+  return resolveEffectiveFeaturesForPlan(resolvedPlanId, rawFeatures ?? null);
 }
 
 async function resolveFallbackPreventivesEntitlementForTx(
   tx: FirebaseFirestore.Transaction,
   orgData: FirebaseFirestore.DocumentData | undefined,
   baseEntitlement: Entitlement,
-): Promise<{ entitlement: Entitlement; features?: Record<string, boolean> } | null> {
+): Promise<{ entitlement: Entitlement; features: Record<string, boolean> } | null> {
   const providersRaw = (orgData?.billingProviders ?? null) as
     | Partial<Record<EntitlementProvider, BillingProviderEntitlement>>
     | null;
@@ -1335,7 +1407,11 @@ function ensureEntitlementAllowsCreate({
 
   const isDemoOrg = orgType === 'demo';
 
-  if (kind === 'preventives' && !isDemoOrg && String(entitlement?.planId ?? '') === 'free') {
+  const normalizedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: entitlement?.planId ?? null,
+  });
+
+  if (kind === 'preventives' && !isDemoOrg && normalizedPlanId === 'free') {
     throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
   }
 
@@ -1347,7 +1423,9 @@ function ensureEntitlementAllowsCreate({
     throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
   }
 
-  if (!canCreate(kind, entitlement?.usage, entitlement?.limits)) {
+  const effectiveLimits = resolveEffectiveLimitsForPlan(normalizedPlanId, entitlement?.limits);
+
+  if (!canCreate(kind, entitlement?.usage, effectiveLimits)) {
     throw httpsError('failed-precondition', LIMIT_MESSAGES[kind]);
   }
 }
@@ -2073,7 +2151,7 @@ export const rootSetOrganizationPlan = functions.https.onCall(async (data, conte
       throw httpsError('invalid-argument', 'entitlementStatus inválido.');
     }
 
-    const limits = currentEntitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, currentEntitlement?.limits);
     const usage = currentEntitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
 
     const nextEntitlement = buildEntitlementPayload({
@@ -3432,9 +3510,10 @@ export const createPreventive = functions.https.onCall(async (data, context) => 
 
 
 export const createPreventiveTemplate = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
-  const orgId = resolveOrgIdFromData(data);
+  try {
+    const actorUid = requireAuth(context);
+    const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+    const orgId = resolveOrgIdFromData(data);
 
   const { role, scope } = await requireActiveMembership(actorUid, orgId);
   requireRoleAllowed(
@@ -3587,15 +3666,26 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
     });
   });
 
-  await auditLog({
-    action: 'createPreventiveTemplate',
-    actorUid,
-    actorEmail,
-    orgId,
-    after: { templateId: templateRef.id, name, status, automatic },
-  });
+    await auditLog({
+      action: 'createPreventiveTemplate',
+      actorUid,
+      actorEmail,
+      orgId,
+      after: { templateId: templateRef.id, name, status, automatic },
+    });
 
-  return { ok: true, organizationId: orgId, templateId: templateRef.id };
+    return { ok: true, organizationId: orgId, templateId: templateRef.id };
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
+    console.error('createPreventiveTemplate: unexpected error', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw httpsError('failed-precondition', 'No se pudo crear la plantilla preventiva. Revisa plan, permisos y datos de programación.');
+  }
 });
 
 export const updatePreventiveTemplate = functions.https.onCall(async (data, context) => {
@@ -4576,6 +4666,7 @@ export const registerGooglePlayPurchase = functions.https.onCall(async (data, co
   const now = admin.firestore.FieldValue.serverTimestamp();
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(purchaseRef);
+
     const payload: Record<string, unknown> = {
       organizationId: orgId,
       subscriptionId,
@@ -4624,6 +4715,7 @@ export const registerAppleAppAccountToken = functions.https.onCall(async (data, 
   const now = admin.firestore.FieldValue.serverTimestamp();
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(tokenRef);
+
     const payload: Record<string, unknown> = {
       organizationId: orgId,
       uid,

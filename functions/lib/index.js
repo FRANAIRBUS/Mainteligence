@@ -1,7 +1,7 @@
 "use strict";
 var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.stripeWebhook = exports.appleAppStoreNotifications = exports.registerAppleAppAccountToken = exports.registerGooglePlayPurchase = exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.generatePreventiveTickets = exports.pausePreventivesWithoutEntitlement = exports.pauseExpiredDemoPreventives = exports.inviteUserToOrg = exports.duplicatePreventiveTemplate = exports.updatePreventiveTemplate = exports.createPreventiveTemplate = exports.createPreventive = exports.createAsset = exports.createDepartment = exports.createSite = exports.setActiveOrganization = exports.finalizeOrganizationSignup = exports.bootstrapSignup = exports.bootstrapFromInvites = exports.checkOrganizationAvailability = exports.resolveOrganizationId = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.orgSetOrganizationStatus = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
+exports.stripeWebhook = exports.appleAppStoreNotifications = exports.registerAppleAppAccountToken = exports.registerGooglePlayPurchase = exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.generatePreventiveTickets = exports.pausePreventivesWithoutEntitlement = exports.pauseExpiredDemoPreventives = exports.inviteUserToOrg = exports.duplicatePreventiveTemplate = exports.updatePreventiveTemplate = exports.createPreventiveTemplate = exports.createPreventive = exports.createAsset = exports.createDepartment = exports.createSite = exports.setActiveOrganization = exports.finalizeOrganizationSignup = exports.bootstrapSignup = exports.bootstrapFromInvites = exports.checkOrganizationAvailability = exports.resolveOrganizationId = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.orgSetOrganizationStatus = exports.rootSetOrganizationPlan = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const assignment_email_1 = require("./assignment-email");
@@ -25,8 +25,36 @@ const DEFAULT_ENTITLEMENT_LIMITS = {
     maxAssets: 5000,
     maxDepartments: 100,
     maxUsers: 50,
-    maxActivePreventives: 1000,
+    maxActivePreventives: 3,
     attachmentsMonthlyMB: 1024,
+};
+const PLAN_DEFAULT_LIMITS = {
+    free: Object.assign(Object.assign({}, DEFAULT_ENTITLEMENT_LIMITS), { maxActivePreventives: 3 }),
+    starter: Object.assign(Object.assign({}, DEFAULT_ENTITLEMENT_LIMITS), { maxActivePreventives: 25 }),
+    pro: Object.assign(Object.assign({}, DEFAULT_ENTITLEMENT_LIMITS), { maxActivePreventives: 100 }),
+    enterprise: Object.assign(Object.assign({}, DEFAULT_ENTITLEMENT_LIMITS), { maxActivePreventives: 1000 }),
+};
+const PLAN_DEFAULT_FEATURES = {
+    free: {
+        EXPORT_PDF: false,
+        AUDIT_TRAIL: false,
+        PREVENTIVES: false,
+    },
+    starter: {
+        EXPORT_PDF: true,
+        AUDIT_TRAIL: true,
+        PREVENTIVES: true,
+    },
+    pro: {
+        EXPORT_PDF: true,
+        AUDIT_TRAIL: true,
+        PREVENTIVES: true,
+    },
+    enterprise: {
+        EXPORT_PDF: true,
+        AUDIT_TRAIL: true,
+        PREVENTIVES: true,
+    },
 };
 const DEFAULT_ENTITLEMENT_USAGE = {
     sitesCount: 0,
@@ -36,7 +64,7 @@ const DEFAULT_ENTITLEMENT_USAGE = {
     activePreventivesCount: 0,
     attachmentsThisMonthMB: 0,
 };
-const DEMO_PREVENTIVE_TEMPLATES_LIMIT = 2;
+const DEMO_PREVENTIVE_TEMPLATES_LIMIT = 5;
 // Basic rentable org settings (Pro-ready).
 // Stored in organizations/{orgId}/settings/main.
 const DEFAULT_ORG_SETTINGS_MAIN = {
@@ -62,13 +90,14 @@ const LIMIT_MESSAGES = {
     users: 'Has alcanzado el límite de usuarios de tu plan. Contacta para ampliarlo.',
     preventives: 'Has alcanzado el límite de preventivos activos de tu plan. Contacta para ampliarlo.',
 };
-function buildEntitlementPayload({ planId, status, trialEndsAt, currentPeriodEnd, provider = DEFAULT_ENTITLEMENT_PROVIDER, now, limits = DEFAULT_ENTITLEMENT_LIMITS, usage = DEFAULT_ENTITLEMENT_USAGE, }) {
+function buildEntitlementPayload({ planId, status, trialEndsAt, currentPeriodEnd, provider = DEFAULT_ENTITLEMENT_PROVIDER, now, limits, usage = DEFAULT_ENTITLEMENT_USAGE, }) {
+    const resolvedLimits = resolveEffectiveLimitsForPlan(planId, limits !== null && limits !== void 0 ? limits : null);
     const payload = {
         planId,
         status,
         provider,
         updatedAt: now,
-        limits,
+        limits: resolvedLimits,
         usage,
     };
     if (trialEndsAt) {
@@ -93,7 +122,12 @@ function resolveTemplateOrgId(docRef, data) {
 function resolveZonedDate(timeZone) {
     if (!timeZone)
         return new Date();
-    return new Date(new Date().toLocaleString('en-US', { timeZone }));
+    try {
+        return new Date(new Date().toLocaleString('en-US', { timeZone }));
+    }
+    catch (_a) {
+        return new Date();
+    }
 }
 function parseTimeOfDay(timeOfDay) {
     if (!timeOfDay)
@@ -230,6 +264,20 @@ function resolveEntitlementPlanId({ metadataPlanId, fallbackPlanId, }) {
     }
     return 'free';
 }
+function resolveDefaultLimitsForPlan(planId) {
+    var _a;
+    return (_a = PLAN_DEFAULT_LIMITS[planId]) !== null && _a !== void 0 ? _a : PLAN_DEFAULT_LIMITS.free;
+}
+function resolveDefaultFeaturesForPlan(planId) {
+    var _a;
+    return (_a = PLAN_DEFAULT_FEATURES[planId]) !== null && _a !== void 0 ? _a : PLAN_DEFAULT_FEATURES.free;
+}
+function resolveEffectiveLimitsForPlan(planId, limits) {
+    return Object.assign(Object.assign({}, resolveDefaultLimitsForPlan(planId)), (limits !== null && limits !== void 0 ? limits : {}));
+}
+function resolveEffectiveFeaturesForPlan(planId, features) {
+    return Object.assign(Object.assign({}, resolveDefaultFeaturesForPlan(planId)), (features !== null && features !== void 0 ? features : {}));
+}
 function resolveEntitlementStatusFromApple(notificationType, renewal) {
     switch (String(notificationType !== null && notificationType !== void 0 ? notificationType : '').toUpperCase()) {
         case 'DID_RENEW':
@@ -249,6 +297,20 @@ function resolveEntitlementStatusFromApple(notificationType, renewal) {
         default:
             return 'past_due';
     }
+}
+function resolveOrganizationStatus(input) {
+    const normalized = String(input !== null && input !== void 0 ? input : '').trim().toLowerCase();
+    if (normalized === 'active' || normalized === 'suspended' || normalized === 'deleted') {
+        return normalized;
+    }
+    return null;
+}
+function resolveEntitlementStatus(input) {
+    const normalized = String(input !== null && input !== void 0 ? input : '').trim().toLowerCase();
+    if (normalized === 'trialing' || normalized === 'active' || normalized === 'past_due' || normalized === 'canceled') {
+        return normalized;
+    }
+    return null;
 }
 function shouldBlockProviderUpdate(entitlement, incomingProvider) {
     if (!(entitlement === null || entitlement === void 0 ? void 0 : entitlement.provider))
@@ -351,27 +413,27 @@ async function fetchStripeSubscription(subscriptionId, secretKey) {
 async function updateOrganizationStripeEntitlement({ orgId, planId, status, trialEndsAt, currentPeriodEnd, }) {
     const orgRef = db.collection('organizations').doc(orgId);
     await db.runTransaction(async (tx) => {
-        var _a, _b, _c;
+        var _a, _b;
         const orgSnap = await tx.get(orgRef);
         if (!orgSnap.exists) {
             throw new Error(`Organization ${orgId} not found.`);
         }
         const orgData = orgSnap.data();
         const entitlement = orgData === null || orgData === void 0 ? void 0 : orgData.entitlement;
-        const limits = (_a = entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits) !== null && _a !== void 0 ? _a : DEFAULT_ENTITLEMENT_LIMITS;
-        const usage = (_b = entitlement === null || entitlement === void 0 ? void 0 : entitlement.usage) !== null && _b !== void 0 ? _b : DEFAULT_ENTITLEMENT_USAGE;
+        const usage = (_a = entitlement === null || entitlement === void 0 ? void 0 : entitlement.usage) !== null && _a !== void 0 ? _a : DEFAULT_ENTITLEMENT_USAGE;
         const now = admin.firestore.FieldValue.serverTimestamp();
         const resolvedPlanId = resolveEntitlementPlanId({
             metadataPlanId: planId !== null && planId !== void 0 ? planId : null,
             fallbackPlanId: entitlement === null || entitlement === void 0 ? void 0 : entitlement.planId,
         });
+        const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits);
         const shouldBlock = shouldBlockProviderUpdate(entitlement, 'stripe');
         const billingProviderPayload = shouldBlock
             ? buildConflictPayload({
                 planId: resolvedPlanId,
                 status,
                 now,
-                reason: `active_provider_${(_c = entitlement === null || entitlement === void 0 ? void 0 : entitlement.provider) !== null && _c !== void 0 ? _c : 'unknown'}`,
+                reason: `active_provider_${(_b = entitlement === null || entitlement === void 0 ? void 0 : entitlement.provider) !== null && _b !== void 0 ? _b : 'unknown'}`,
             })
             : {
                 planId: resolvedPlanId,
@@ -530,27 +592,27 @@ async function updateOrganizationUserProfile({ actorUid, actorEmail, isRoot, org
 async function updateOrganizationAppleEntitlement({ orgId, planId, status, currentPeriodEnd, }) {
     const orgRef = db.collection('organizations').doc(orgId);
     await db.runTransaction(async (tx) => {
-        var _a, _b, _c;
+        var _a, _b;
         const orgSnap = await tx.get(orgRef);
         if (!orgSnap.exists) {
             throw new Error(`Organization ${orgId} not found.`);
         }
         const orgData = orgSnap.data();
         const entitlement = orgData === null || orgData === void 0 ? void 0 : orgData.entitlement;
-        const limits = (_a = entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits) !== null && _a !== void 0 ? _a : DEFAULT_ENTITLEMENT_LIMITS;
-        const usage = (_b = entitlement === null || entitlement === void 0 ? void 0 : entitlement.usage) !== null && _b !== void 0 ? _b : DEFAULT_ENTITLEMENT_USAGE;
+        const usage = (_a = entitlement === null || entitlement === void 0 ? void 0 : entitlement.usage) !== null && _a !== void 0 ? _a : DEFAULT_ENTITLEMENT_USAGE;
         const now = admin.firestore.FieldValue.serverTimestamp();
         const resolvedPlanId = resolveEntitlementPlanId({
             metadataPlanId: planId !== null && planId !== void 0 ? planId : null,
             fallbackPlanId: entitlement === null || entitlement === void 0 ? void 0 : entitlement.planId,
         });
+        const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits);
         const shouldBlock = shouldBlockProviderUpdate(entitlement, 'apple_app_store');
         const billingProviderPayload = shouldBlock
             ? buildConflictPayload({
                 planId: resolvedPlanId,
                 status,
                 now,
-                reason: `active_provider_${(_c = entitlement === null || entitlement === void 0 ? void 0 : entitlement.provider) !== null && _c !== void 0 ? _c : 'unknown'}`,
+                reason: `active_provider_${(_b = entitlement === null || entitlement === void 0 ? void 0 : entitlement.provider) !== null && _b !== void 0 ? _b : 'unknown'}`,
             })
             : {
                 planId: resolvedPlanId,
@@ -914,12 +976,12 @@ async function requireActiveMembership(actorUid, orgId) {
     };
 }
 async function resolvePlanFeaturesForTx(tx, planId) {
-    if (!planId)
-        return undefined;
-    const planSnap = await tx.get(db.collection('planCatalog').doc(planId));
-    if (!planSnap.exists)
-        return undefined;
-    return planSnap.get('features');
+    const resolvedPlanId = resolveEntitlementPlanId({ metadataPlanId: planId !== null && planId !== void 0 ? planId : null });
+    const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
+    const rawFeatures = planSnap.exists
+        ? planSnap.get('features')
+        : undefined;
+    return resolveEffectiveFeaturesForPlan(resolvedPlanId, rawFeatures !== null && rawFeatures !== void 0 ? rawFeatures : null);
 }
 async function resolveFallbackPreventivesEntitlementForTx(tx, orgData, baseEntitlement) {
     var _a, _b, _c, _d;
@@ -964,7 +1026,10 @@ function ensureEntitlementAllowsCreate({ kind, entitlement, features, orgType, }
         }
     }
     const isDemoOrg = orgType === 'demo';
-    if (kind === 'preventives' && !isDemoOrg && String((_b = entitlement === null || entitlement === void 0 ? void 0 : entitlement.planId) !== null && _b !== void 0 ? _b : '') === 'free') {
+    const normalizedPlanId = resolveEntitlementPlanId({
+        metadataPlanId: (_b = entitlement === null || entitlement === void 0 ? void 0 : entitlement.planId) !== null && _b !== void 0 ? _b : null,
+    });
+    if (kind === 'preventives' && !isDemoOrg && normalizedPlanId === 'free') {
         throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
     }
     if (kind === 'preventives' &&
@@ -972,7 +1037,8 @@ function ensureEntitlementAllowsCreate({ kind, entitlement, features, orgType, }
         !(0, entitlements_1.isFeatureEnabled)(Object.assign(Object.assign({}, entitlement), { features }), 'PREVENTIVES')) {
         throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
     }
-    if (!(0, entitlements_1.canCreate)(kind, entitlement === null || entitlement === void 0 ? void 0 : entitlement.usage, entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits)) {
+    const effectiveLimits = resolveEffectiveLimitsForPlan(normalizedPlanId, entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits);
+    if (!(0, entitlements_1.canCreate)(kind, entitlement === null || entitlement === void 0 ? void 0 : entitlement.usage, effectiveLimits)) {
         throw httpsError('failed-precondition', LIMIT_MESSAGES[kind]);
     }
 }
@@ -1529,6 +1595,145 @@ exports.rootDeactivateOrganization = functions.https.onCall(async (data, context
         after: { isActive, status },
     });
     return { ok: true, organizationId: orgId, isActive, status };
+});
+exports.rootSetOrganizationPlan = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    const actorUid = requireRoot(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = sanitizeOrganizationId(String((_d = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _d !== void 0 ? _d : ''));
+    if (!orgId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const reason = String((_e = data === null || data === void 0 ? void 0 : data.reason) !== null && _e !== void 0 ? _e : '').trim();
+    if (!reason)
+        throw httpsError('invalid-argument', 'reason requerido.');
+    const requestedPlanIdRaw = String((_f = data === null || data === void 0 ? void 0 : data.planId) !== null && _f !== void 0 ? _f : '').trim();
+    const requestedEntitlementStatusRaw = String((_h = (_g = data === null || data === void 0 ? void 0 : data.entitlementStatus) !== null && _g !== void 0 ? _g : data === null || data === void 0 ? void 0 : data.status) !== null && _h !== void 0 ? _h : '').trim();
+    const requestedOrgStatusRaw = String((_j = data === null || data === void 0 ? void 0 : data.organizationStatus) !== null && _j !== void 0 ? _j : '').trim();
+    const providerRaw = String((_k = data === null || data === void 0 ? void 0 : data.provider) !== null && _k !== void 0 ? _k : '').trim().toLowerCase();
+    const provider = providerRaw === 'manual' ? 'manual' : DEFAULT_ENTITLEMENT_PROVIDER;
+    const applyPlan = Boolean(requestedPlanIdRaw) || Boolean(requestedEntitlementStatusRaw);
+    const applyOrgStatus = Boolean(requestedOrgStatusRaw);
+    if (!applyPlan && !applyOrgStatus) {
+        throw httpsError('invalid-argument', 'Debes enviar plan/status de entitlement y/o organizationStatus.');
+    }
+    const orgStatus = applyOrgStatus ? resolveOrganizationStatus(requestedOrgStatusRaw) : null;
+    if (applyOrgStatus && !orgStatus) {
+        throw httpsError('invalid-argument', 'organizationStatus inválido.');
+    }
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgPublicRef = db.collection('organizationsPublic').doc(orgId);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    let auditBefore = null;
+    let auditAfter = null;
+    let planCatalogFound = null;
+    await db.runTransaction(async (tx) => {
+        var _a, _b, _c, _d, _e, _f;
+        const orgSnap = await tx.get(orgRef);
+        if (!orgSnap.exists)
+            throw httpsError('not-found', 'La organización no existe.');
+        const orgData = orgSnap.data();
+        const currentEntitlement = orgData === null || orgData === void 0 ? void 0 : orgData.entitlement;
+        const resolvedPlanId = resolveEntitlementPlanId({
+            metadataPlanId: requestedPlanIdRaw || null,
+            fallbackPlanId: currentEntitlement === null || currentEntitlement === void 0 ? void 0 : currentEntitlement.planId,
+        });
+        if (requestedPlanIdRaw) {
+            const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
+            planCatalogFound = planSnap.exists;
+            if (!planSnap.exists) {
+                console.warn('rootSetOrganizationPlan: plan missing in planCatalog, applying manual override', {
+                    orgId,
+                    planId: resolvedPlanId,
+                    actorUid,
+                });
+            }
+        }
+        const resolvedEntitlementStatus = requestedEntitlementStatusRaw
+            ? resolveEntitlementStatus(requestedEntitlementStatusRaw)
+            : (_a = currentEntitlement === null || currentEntitlement === void 0 ? void 0 : currentEntitlement.status) !== null && _a !== void 0 ? _a : 'active';
+        if (!resolvedEntitlementStatus) {
+            throw httpsError('invalid-argument', 'entitlementStatus inválido.');
+        }
+        const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, currentEntitlement === null || currentEntitlement === void 0 ? void 0 : currentEntitlement.limits);
+        const usage = (_b = currentEntitlement === null || currentEntitlement === void 0 ? void 0 : currentEntitlement.usage) !== null && _b !== void 0 ? _b : DEFAULT_ENTITLEMENT_USAGE;
+        const nextEntitlement = buildEntitlementPayload({
+            planId: resolvedPlanId,
+            status: resolvedEntitlementStatus,
+            provider,
+            now,
+            limits,
+            usage,
+        });
+        const updatePayload = {
+            updatedAt: now,
+            source: 'rootSetOrganizationPlan_v1',
+        };
+        const publicUpdatePayload = {
+            updatedAt: now,
+            source: 'rootSetOrganizationPlan_v1',
+        };
+        if (applyPlan) {
+            updatePayload.entitlement = nextEntitlement;
+            updatePayload.billingProviders = Object.assign(Object.assign({}, (isPlainObject(orgData === null || orgData === void 0 ? void 0 : orgData.billingProviders) ? orgData.billingProviders : {})), { manual: {
+                    planId: resolvedPlanId,
+                    status: resolvedEntitlementStatus,
+                    updatedAt: now,
+                    conflict: false,
+                    conflictReason: null,
+                    reason,
+                } });
+        }
+        if (orgStatus) {
+            const isActive = orgStatus === 'active';
+            updatePayload.status = orgStatus;
+            updatePayload.isActive = isActive;
+            publicUpdatePayload.status = orgStatus;
+            publicUpdatePayload.isActive = isActive;
+        }
+        tx.set(orgRef, updatePayload, { merge: true });
+        if (orgStatus) {
+            tx.set(orgPublicRef, publicUpdatePayload, { merge: true });
+        }
+        auditBefore = {
+            organizationStatus: (_c = orgData === null || orgData === void 0 ? void 0 : orgData.status) !== null && _c !== void 0 ? _c : null,
+            isActive: (_d = orgData === null || orgData === void 0 ? void 0 : orgData.isActive) !== null && _d !== void 0 ? _d : null,
+            entitlement: currentEntitlement !== null && currentEntitlement !== void 0 ? currentEntitlement : null,
+        };
+        auditAfter = {
+            organizationStatus: (_e = orgStatus !== null && orgStatus !== void 0 ? orgStatus : orgData === null || orgData === void 0 ? void 0 : orgData.status) !== null && _e !== void 0 ? _e : null,
+            isActive: orgStatus ? orgStatus === 'active' : (_f = orgData === null || orgData === void 0 ? void 0 : orgData.isActive) !== null && _f !== void 0 ? _f : null,
+            entitlement: applyPlan
+                ? {
+                    planId: resolvedPlanId,
+                    status: resolvedEntitlementStatus,
+                    provider,
+                }
+                : currentEntitlement !== null && currentEntitlement !== void 0 ? currentEntitlement : null,
+        };
+    });
+    await auditLog({
+        action: 'rootSetOrganizationPlan',
+        actorUid,
+        actorEmail,
+        orgId,
+        before: auditBefore,
+        after: auditAfter,
+        meta: {
+            reason,
+            source: 'rootSetOrganizationPlan_v1',
+            applyPlan,
+            applyOrgStatus,
+            planCatalogFound,
+        },
+    });
+    return {
+        ok: true,
+        organizationId: orgId,
+        updated: {
+            plan: applyPlan,
+            organizationStatus: applyOrgStatus,
+        },
+    };
 });
 exports.orgSetOrganizationStatus = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e;
@@ -2530,139 +2735,151 @@ exports.createPreventive = functions.https.onCall(async (data, context) => {
 });
 exports.createPreventiveTemplate = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
-    const actorUid = requireAuth(context);
-    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
-    const orgId = resolveOrgIdFromData(data);
-    const { role, scope } = await requireActiveMembership(actorUid, orgId);
-    requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para crear plantillas preventivas.');
-    if (!isPlainObject(data))
-        throw httpsError('invalid-argument', 'payload requerido.');
-    const name = requireStringField(data.name, 'name');
-    const description = String((_d = data.description) !== null && _d !== void 0 ? _d : '').trim();
-    const status = String((_e = data.status) !== null && _e !== void 0 ? _e : 'active').trim();
-    const automatic = Boolean(data.automatic);
-    const priority = String((_f = data.priority) !== null && _f !== void 0 ? _f : 'Media').trim();
-    const siteId = String((_g = data.siteId) !== null && _g !== void 0 ? _g : '').trim();
-    const departmentId = String((_h = data.departmentId) !== null && _h !== void 0 ? _h : '').trim();
-    const assetId = String((_j = data.assetId) !== null && _j !== void 0 ? _j : '').trim();
-    if (!isPlainObject(data.schedule))
-        throw httpsError('invalid-argument', 'schedule requerido.');
-    const scheduleType = String((_k = data.schedule.type) !== null && _k !== void 0 ? _k : '').trim();
-    if (!['daily', 'weekly', 'monthly', 'date'].includes(scheduleType)) {
-        throw httpsError('invalid-argument', 'schedule.type inválido.');
-    }
-    if (automatic && status === 'active') {
-        if (!siteId)
-            throw httpsError('invalid-argument', 'siteId requerido para preventivos automáticos activos.');
-        if (!departmentId)
-            throw httpsError('invalid-argument', 'departmentId requerido para preventivos automáticos activos.');
-    }
-    requireScopedAccessToSite(role, scope, siteId);
-    requireScopedAccessToDepartment(role, scope, departmentId);
-    const timeOfDay = String((_l = data.schedule.timeOfDay) !== null && _l !== void 0 ? _l : '').trim();
-    const timezone = String((_m = data.schedule.timezone) !== null && _m !== void 0 ? _m : '').trim();
-    const daysOfWeekRaw = Array.isArray(data.schedule.daysOfWeek) ? data.schedule.daysOfWeek : [];
-    const daysOfWeek = daysOfWeekRaw
-        .map((d) => Number(d))
-        .filter((d) => Number.isFinite(d) && d >= 1 && d <= 7);
-    const dayOfMonthRaw = data.schedule.dayOfMonth;
-    const dayOfMonth = Number.isFinite(Number(dayOfMonthRaw)) ? Number(dayOfMonthRaw) : undefined;
-    let dateTs;
-    if (scheduleType === 'date') {
-        const dateStr = String((_o = data.schedule.date) !== null && _o !== void 0 ? _o : '').trim();
-        if (!dateStr)
-            throw httpsError('invalid-argument', 'schedule.date requerido para tipo date.');
-        const parsed = new Date(dateStr);
-        if (Number.isNaN(parsed.getTime())) {
-            throw httpsError('invalid-argument', 'schedule.date inválido.');
+    try {
+        const actorUid = requireAuth(context);
+        const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+        const orgId = resolveOrgIdFromData(data);
+        const { role, scope } = await requireActiveMembership(actorUid, orgId);
+        requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para crear plantillas preventivas.');
+        if (!isPlainObject(data))
+            throw httpsError('invalid-argument', 'payload requerido.');
+        const name = requireStringField(data.name, 'name');
+        const description = String((_d = data.description) !== null && _d !== void 0 ? _d : '').trim();
+        const status = String((_e = data.status) !== null && _e !== void 0 ? _e : 'active').trim();
+        const automatic = Boolean(data.automatic);
+        const priority = String((_f = data.priority) !== null && _f !== void 0 ? _f : 'Media').trim();
+        const siteId = String((_g = data.siteId) !== null && _g !== void 0 ? _g : '').trim();
+        const departmentId = String((_h = data.departmentId) !== null && _h !== void 0 ? _h : '').trim();
+        const assetId = String((_j = data.assetId) !== null && _j !== void 0 ? _j : '').trim();
+        if (!isPlainObject(data.schedule))
+            throw httpsError('invalid-argument', 'schedule requerido.');
+        const scheduleType = String((_k = data.schedule.type) !== null && _k !== void 0 ? _k : '').trim();
+        if (!['daily', 'weekly', 'monthly', 'date'].includes(scheduleType)) {
+            throw httpsError('invalid-argument', 'schedule.type inválido.');
         }
-        dateTs = admin.firestore.Timestamp.fromDate(parsed);
-    }
-    const schedule = {
-        type: scheduleType,
-        timezone: timezone || undefined,
-        timeOfDay: timeOfDay || undefined,
-        daysOfWeek: daysOfWeek.length ? daysOfWeek : undefined,
-        dayOfMonth: scheduleType === 'monthly' ? dayOfMonth : undefined,
-        date: scheduleType === 'date' ? dateTs : undefined,
-    };
-    const now = admin.firestore.FieldValue.serverTimestamp();
-    const orgRef = db.collection('organizations').doc(orgId);
-    const templateRef = orgRef.collection('preventiveTemplates').doc();
-    await db.runTransaction(async (tx) => {
-        var _a, _b, _c, _d;
-        const orgSnap = await tx.get(orgRef);
-        if (!orgSnap.exists)
-            throw httpsError('not-found', 'Organización no encontrada.');
-        const orgData = orgSnap.data();
-        const entitlement = orgSnap.get('entitlement');
-        if (!entitlement)
-            throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
-        const isDemoOrg = isDemoOrganization(orgId, orgData);
-        let features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
-        let effectiveEntitlement = entitlement;
-        if (!(0, entitlements_1.isFeatureEnabled)(Object.assign(Object.assign({}, entitlement), { features }), 'PREVENTIVES')) {
-            const fallbackEntitlement = await resolveFallbackPreventivesEntitlementForTx(tx, orgData, entitlement);
-            if (fallbackEntitlement) {
-                effectiveEntitlement = fallbackEntitlement.entitlement;
-                features = fallbackEntitlement.features;
+        if (automatic && status === 'active') {
+            if (!siteId)
+                throw httpsError('invalid-argument', 'siteId requerido para preventivos automáticos activos.');
+            if (!departmentId)
+                throw httpsError('invalid-argument', 'departmentId requerido para preventivos automáticos activos.');
+        }
+        requireScopedAccessToSite(role, scope, siteId);
+        requireScopedAccessToDepartment(role, scope, departmentId);
+        const timeOfDay = String((_l = data.schedule.timeOfDay) !== null && _l !== void 0 ? _l : '').trim();
+        const timezone = String((_m = data.schedule.timezone) !== null && _m !== void 0 ? _m : '').trim();
+        const daysOfWeekRaw = Array.isArray(data.schedule.daysOfWeek) ? data.schedule.daysOfWeek : [];
+        const daysOfWeek = daysOfWeekRaw
+            .map((d) => Number(d))
+            .filter((d) => Number.isFinite(d) && d >= 1 && d <= 7);
+        const dayOfMonthRaw = data.schedule.dayOfMonth;
+        const dayOfMonth = Number.isFinite(Number(dayOfMonthRaw)) ? Number(dayOfMonthRaw) : undefined;
+        let dateTs;
+        if (scheduleType === 'date') {
+            const dateStr = String((_o = data.schedule.date) !== null && _o !== void 0 ? _o : '').trim();
+            if (!dateStr)
+                throw httpsError('invalid-argument', 'schedule.date requerido para tipo date.');
+            const parsed = new Date(dateStr);
+            if (Number.isNaN(parsed.getTime())) {
+                throw httpsError('invalid-argument', 'schedule.date inválido.');
             }
+            dateTs = admin.firestore.Timestamp.fromDate(parsed);
         }
-        ensureEntitlementAllowsCreate({
-            kind: 'preventives',
-            entitlement: effectiveEntitlement,
-            features,
-            orgType: String((_a = orgData === null || orgData === void 0 ? void 0 : orgData.type) !== null && _a !== void 0 ? _a : ''),
+        const schedule = {
+            type: scheduleType,
+            timezone: timezone || undefined,
+            timeOfDay: timeOfDay || undefined,
+            daysOfWeek: daysOfWeek.length ? daysOfWeek : undefined,
+            dayOfMonth: scheduleType === 'monthly' ? dayOfMonth : undefined,
+            date: scheduleType === 'date' ? dateTs : undefined,
+        };
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const orgRef = db.collection('organizations').doc(orgId);
+        const templateRef = orgRef.collection('preventiveTemplates').doc();
+        await db.runTransaction(async (tx) => {
+            var _a, _b, _c, _d;
+            const orgSnap = await tx.get(orgRef);
+            if (!orgSnap.exists)
+                throw httpsError('not-found', 'Organización no encontrada.');
+            const orgData = orgSnap.data();
+            const entitlement = orgSnap.get('entitlement');
+            if (!entitlement)
+                throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+            const isDemoOrg = isDemoOrganization(orgId, orgData);
+            let features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+            let effectiveEntitlement = entitlement;
+            if (!(0, entitlements_1.isFeatureEnabled)(Object.assign(Object.assign({}, entitlement), { features }), 'PREVENTIVES')) {
+                const fallbackEntitlement = await resolveFallbackPreventivesEntitlementForTx(tx, orgData, entitlement);
+                if (fallbackEntitlement) {
+                    effectiveEntitlement = fallbackEntitlement.entitlement;
+                    features = fallbackEntitlement.features;
+                }
+            }
+            ensureEntitlementAllowsCreate({
+                kind: 'preventives',
+                entitlement: effectiveEntitlement,
+                features,
+                orgType: String((_a = orgData === null || orgData === void 0 ? void 0 : orgData.type) !== null && _a !== void 0 ? _a : ''),
+            });
+            await ensureDemoTemplateLimit(tx, orgRef, isDemoOrg);
+            // Validate referenced master data exists when provided.
+            if (siteId) {
+                const siteSnap = await tx.get(orgRef.collection('sites').doc(siteId));
+                if (!siteSnap.exists || String((_b = siteSnap.get('organizationId')) !== null && _b !== void 0 ? _b : '') !== orgId) {
+                    throw httpsError('failed-precondition', 'La ubicación indicada no existe en esta organización.');
+                }
+            }
+            if (departmentId) {
+                const deptSnap = await tx.get(orgRef.collection('departments').doc(departmentId));
+                if (!deptSnap.exists || String((_c = deptSnap.get('organizationId')) !== null && _c !== void 0 ? _c : '') !== orgId) {
+                    throw httpsError('failed-precondition', 'El departamento indicado no existe en esta organización.');
+                }
+            }
+            if (assetId) {
+                const assetSnap = await tx.get(orgRef.collection('assets').doc(assetId));
+                if (!assetSnap.exists || String((_d = assetSnap.get('organizationId')) !== null && _d !== void 0 ? _d : '') !== orgId) {
+                    throw httpsError('failed-precondition', 'El activo indicado no existe en esta organización.');
+                }
+            }
+            const zonedNow = resolveZonedDate(schedule.timezone);
+            const computed = automatic && status === 'active' ? computeNextRunAt(schedule, zonedNow) : null;
+            const storedSchedule = Object.assign(Object.assign({}, schedule), { nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined, lastRunAt: undefined });
+            tx.create(templateRef, {
+                name,
+                description: description || undefined,
+                status,
+                automatic,
+                schedule: storedSchedule,
+                priority,
+                siteId: siteId || undefined,
+                departmentId: departmentId || undefined,
+                assetId: assetId || undefined,
+                createdBy: actorUid,
+                updatedBy: actorUid,
+                organizationId: orgId,
+                createdAt: now,
+                updatedAt: now,
+                source: 'createPreventiveTemplate_v1',
+            });
         });
-        await ensureDemoTemplateLimit(tx, orgRef, isDemoOrg);
-        // Validate referenced master data exists when provided.
-        if (siteId) {
-            const siteSnap = await tx.get(orgRef.collection('sites').doc(siteId));
-            if (!siteSnap.exists || String((_b = siteSnap.get('organizationId')) !== null && _b !== void 0 ? _b : '') !== orgId) {
-                throw httpsError('failed-precondition', 'La ubicación indicada no existe en esta organización.');
-            }
-        }
-        if (departmentId) {
-            const deptSnap = await tx.get(orgRef.collection('departments').doc(departmentId));
-            if (!deptSnap.exists || String((_c = deptSnap.get('organizationId')) !== null && _c !== void 0 ? _c : '') !== orgId) {
-                throw httpsError('failed-precondition', 'El departamento indicado no existe en esta organización.');
-            }
-        }
-        if (assetId) {
-            const assetSnap = await tx.get(orgRef.collection('assets').doc(assetId));
-            if (!assetSnap.exists || String((_d = assetSnap.get('organizationId')) !== null && _d !== void 0 ? _d : '') !== orgId) {
-                throw httpsError('failed-precondition', 'El activo indicado no existe en esta organización.');
-            }
-        }
-        const zonedNow = resolveZonedDate(schedule.timezone);
-        const computed = automatic && status === 'active' ? computeNextRunAt(schedule, zonedNow) : null;
-        const storedSchedule = Object.assign(Object.assign({}, schedule), { nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined, lastRunAt: undefined });
-        tx.create(templateRef, {
-            name,
-            description: description || undefined,
-            status,
-            automatic,
-            schedule: storedSchedule,
-            priority,
-            siteId: siteId || undefined,
-            departmentId: departmentId || undefined,
-            assetId: assetId || undefined,
-            createdBy: actorUid,
-            updatedBy: actorUid,
-            organizationId: orgId,
-            createdAt: now,
-            updatedAt: now,
-            source: 'createPreventiveTemplate_v1',
+        await auditLog({
+            action: 'createPreventiveTemplate',
+            actorUid,
+            actorEmail,
+            orgId,
+            after: { templateId: templateRef.id, name, status, automatic },
         });
-    });
-    await auditLog({
-        action: 'createPreventiveTemplate',
-        actorUid,
-        actorEmail,
-        orgId,
-        after: { templateId: templateRef.id, name, status, automatic },
-    });
-    return { ok: true, organizationId: orgId, templateId: templateRef.id };
+        return { ok: true, organizationId: orgId, templateId: templateRef.id };
+    }
+    catch (error) {
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        console.error('createPreventiveTemplate: unexpected error', {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+        });
+        throw httpsError('failed-precondition', 'No se pudo crear la plantilla preventiva. Revisa plan, permisos y datos de programación.');
+    }
 });
 exports.updatePreventiveTemplate = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;

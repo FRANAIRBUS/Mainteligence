@@ -1,14 +1,16 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { doc, getDoc } from 'firebase/firestore';
 import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
-import { useDoc, useUser } from '@/lib/firebase';
+import { useDoc, useFirestore, useUser } from '@/lib/firebase';
 import type { Organization } from '@/lib/firebase/models';
+import { isFeatureEnabled, resolveEffectivePlanFeatures, resolveEffectivePlanLimits } from '@/lib/entitlements';
 
 const PLAN_LABELS: Record<string, string> = {
   free: 'Demo',
@@ -40,6 +42,9 @@ export default function PlansPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { user, loading: userLoading, organizationId } = useUser();
+  const firestore = useFirestore();
+  const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
+  const [planLimits, setPlanLimits] = useState<Record<string, number> | null>(null);
   const { data: organization, loading: orgLoading } = useDoc<Organization>(
     organizationId ? `organizations/${organizationId}` : null
   );
@@ -50,38 +55,77 @@ export default function PlansPage() {
     }
   }, [router, user, userLoading]);
 
+
+
+  useEffect(() => {
+    if (!firestore || !organization?.entitlement?.planId) {
+      setPlanFeatures(null);
+      setPlanLimits(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+      .then((snap) => {
+        if (cancelled) return;
+        const data = snap.exists() ? snap.data() : null;
+        setPlanFeatures((data?.features as Record<string, boolean> | undefined) ?? null);
+        setPlanLimits((data?.limits as Record<string, number> | undefined) ?? null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPlanFeatures(null);
+        setPlanLimits(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore, organization?.entitlement?.planId]);
+
   const entitlement = organization?.entitlement ?? null;
   const planLabel = entitlement?.planId ? PLAN_LABELS[entitlement.planId] ?? entitlement.planId : '—';
+
+  const effectiveLimits = entitlement
+    ? resolveEffectivePlanLimits(entitlement.planId, (planLimits as any) ?? entitlement.limits)
+    : null;
+  const effectiveFeatures = entitlement
+    ? resolveEffectivePlanFeatures(entitlement.planId, (planFeatures as any) ?? null)
+    : null;
+  const preventivesEnabled = entitlement
+    ? isFeatureEnabled({ ...entitlement, features: effectiveFeatures ?? undefined }, 'PREVENTIVES')
+    : false;
 
   const usageRows: UsageRow[] = useMemo(() => {
     return [
       {
         label: 'Ubicaciones',
         usage: entitlement?.usage?.sitesCount,
-        limit: entitlement?.limits?.maxSites,
+        limit: effectiveLimits?.maxSites,
       },
       {
         label: 'Activos',
         usage: entitlement?.usage?.assetsCount,
-        limit: entitlement?.limits?.maxAssets,
+        limit: effectiveLimits?.maxAssets,
       },
       {
         label: 'Departamentos',
         usage: entitlement?.usage?.departmentsCount,
-        limit: entitlement?.limits?.maxDepartments,
+        limit: effectiveLimits?.maxDepartments,
       },
       {
         label: 'Usuarios',
         usage: entitlement?.usage?.usersCount,
-        limit: entitlement?.limits?.maxUsers,
+        limit: effectiveLimits?.maxUsers,
       },
       {
         label: 'Preventivos activos',
         usage: entitlement?.usage?.activePreventivesCount,
-        limit: entitlement?.limits?.maxActivePreventives,
+        limit: effectiveLimits?.maxActivePreventives,
       },
     ];
-  }, [entitlement?.limits, entitlement?.usage]);
+  }, [effectiveLimits, entitlement?.usage]);
 
   const handleMonthlyCta = () => {
     toast({
@@ -106,6 +150,11 @@ export default function PlansPage() {
             <CardDescription>
               {orgLoading ? 'Cargando...' : `Plan: ${planLabel}`}
             </CardDescription>
+            {!orgLoading && entitlement ? (
+              <p className="text-xs text-muted-foreground">
+                Preventivos: {preventivesEnabled ? 'habilitados' : 'no incluidos en el plan'}
+              </p>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-4">
             {usageRows.map((row) => (
