@@ -2600,76 +2600,90 @@ export const checkOrganizationAvailability = functions.https.onCall(async (data)
 export const bootstrapFromInvites = functions.https.onCall(async (_data, context) => {
   const uid = requireAuth(context);
 
-  const authUser = await admin.auth().getUser(uid).catch(() => null);
-  const email = (authUser?.email ?? '').trim().toLowerCase();
-  if (!email) {
-    throw httpsError('failed-precondition', 'Email requerido.');
+  try {
+    const authUser = await admin.auth().getUser(uid).catch(() => null);
+    const email = (authUser?.email ?? '').trim().toLowerCase();
+    if (!email) {
+      throw httpsError('failed-precondition', 'Email requerido.');
+    }
+
+    const joinReqByEmail = db
+      .collectionGroup('joinRequests')
+      .where('email', '==', email)
+      .where('status', '==', 'pending');
+    const joinReqByUid = db
+      .collectionGroup('joinRequests')
+      .where('userId', '==', uid)
+      .where('status', '==', 'pending');
+
+    const [emailSnap, uidSnap] = await Promise.all([joinReqByEmail.get(), joinReqByUid.get()]);
+    const joinReqDocs = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+    emailSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
+    uidSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
+
+    if (joinReqDocs.size === 0) {
+      return { ok: true, created: 0, claimed: 0 };
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const batch = db.batch();
+    let created = 0;
+
+    for (const docSnap of joinReqDocs.values()) {
+      const data = docSnap.data() as any;
+      const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
+      if (!orgId) continue;
+
+      const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+      const membershipSnap = await membershipRef.get();
+      if (membershipSnap.exists) continue;
+
+      batch.set(
+        membershipRef,
+        {
+          userId: uid,
+          organizationId: orgId,
+          organizationName: String(data?.organizationName ?? orgId),
+          role: normalizeRole(data?.requestedRole) ?? 'operario',
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+          source: 'bootstrapFromInvites_v1',
+        },
+        { merge: true },
+      );
+
+      batch.set(
+        docSnap.ref,
+        {
+          userId: uid,
+          updatedAt: now,
+          source: 'bootstrapFromInvites_v1',
+        },
+        { merge: true },
+      );
+
+      created += 1;
+    }
+
+    if (created > 0) {
+      await batch.commit();
+    }
+
+    return { ok: true, created, claimed: created };
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
+    console.error('bootstrapFromInvites: unexpected error', {
+      uid,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    return { ok: false, created: 0, claimed: 0 };
   }
-
-  const joinReqByEmail = db
-    .collectionGroup('joinRequests')
-    .where('email', '==', email)
-    .where('status', '==', 'pending');
-  const joinReqByUid = db
-    .collectionGroup('joinRequests')
-    .where('userId', '==', uid)
-    .where('status', '==', 'pending');
-
-  const [emailSnap, uidSnap] = await Promise.all([joinReqByEmail.get(), joinReqByUid.get()]);
-  const joinReqDocs = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-  emailSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
-  uidSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
-
-  if (joinReqDocs.size === 0) {
-    return { ok: true, created: 0 };
-  }
-
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  const batch = db.batch();
-  let created = 0;
-
-  for (const docSnap of joinReqDocs.values()) {
-    const data = docSnap.data() as any;
-    const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
-    if (!orgId) continue;
-
-    const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
-    const membershipSnap = await membershipRef.get();
-    if (membershipSnap.exists) continue;
-
-    batch.set(
-      membershipRef,
-      {
-        userId: uid,
-        organizationId: orgId,
-        organizationName: String(data?.organizationName ?? orgId),
-        role: normalizeRole(data?.requestedRole) ?? 'operario',
-        status: 'pending',
-        createdAt: now,
-        updatedAt: now,
-        source: 'bootstrapFromInvites_v1',
-      },
-      { merge: true },
-    );
-
-    batch.set(
-      docSnap.ref,
-      {
-        userId: uid,
-        updatedAt: now,
-        source: 'bootstrapFromInvites_v1',
-      },
-      { merge: true },
-    );
-
-    created += 1;
-  }
-
-  if (created > 0) {
-    await batch.commit();
-  }
-
-  return { ok: true, created };
 });
 
 export const bootstrapSignup = functions.https.onCall(async (data, context) => {
@@ -3684,7 +3698,7 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
-    throw httpsError('failed-precondition', 'No se pudo crear la plantilla preventiva. Revisa plan, permisos y datos de programación.');
+    throw httpsError('internal', 'Error interno al crear la plantilla preventiva. Inténtalo de nuevo o contacta soporte.');
   }
 });
 

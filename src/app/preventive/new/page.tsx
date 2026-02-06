@@ -157,29 +157,50 @@ export default function NewPreventiveTemplatePage() {
       router.push('/preventive');
     } catch (error) {
       console.error('Error al crear la plantilla preventiva', error);
+
       const errorCode =
         typeof error === 'object' && error !== null && 'code' in error
-          ? String(error.code)
+          ? String(error.code ?? '')
           : '';
-      if (errorCode.includes('failed-precondition')) {
-        const backendMessage =
-          typeof error === 'object' && error !== null && 'message' in error
-            ? String(error.message ?? '')
-            : '';
+      const backendMessage =
+        typeof error === 'object' && error !== null && 'message' in error
+          ? String(error.message ?? '').trim()
+          : '';
+      const normalizedMessage = backendMessage.toLowerCase();
 
-        if (backendMessage.toLowerCase().includes('hasta 5 plantillas')) {
-          setErrorMessage('La demo permite hasta 5 plantillas preventivas. Cambia tu plan para crear más.');
-          return;
-        }
+      const cleanBackendMessage = backendMessage.replace(/^[a-z-]+:\s*/i, '');
 
+      if (normalizedMessage.includes('hasta 5 plantillas')) {
+        setErrorMessage('La demo permite hasta 5 plantillas preventivas. Cambia tu plan para crear más.');
+        return;
+      }
+
+      if (normalizedMessage.includes('plan no incluye preventivos')) {
         setErrorMessage('Tu plan no incluye preventivos. Actualiza tu plan para crear plantillas.');
         return;
       }
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : 'No se pudo crear la plantilla. Inténtalo de nuevo.';
-      setErrorMessage(message);
+
+      if (errorCode.includes('permission-denied')) {
+        setErrorMessage(cleanBackendMessage || 'No tienes permisos para crear plantillas preventivas.');
+        return;
+      }
+
+      if (errorCode.includes('invalid-argument') || errorCode.includes('failed-precondition') || errorCode.includes('not-found')) {
+        setErrorMessage(cleanBackendMessage || 'No se pudo crear la plantilla preventiva. Revisa los datos e inténtalo de nuevo.');
+        return;
+      }
+
+      if (errorCode.includes('internal')) {
+        setErrorMessage('Error interno al crear la plantilla preventiva. Inténtalo de nuevo en unos minutos.');
+        return;
+      }
+
+      setErrorMessage(
+        cleanBackendMessage ||
+          (error instanceof Error && error.message
+            ? error.message
+            : 'No se pudo crear la plantilla. Inténtalo de nuevo.')
+      );
     } finally {
       setSubmitting(false);
     }

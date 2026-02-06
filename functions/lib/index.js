@@ -2015,59 +2015,72 @@ exports.checkOrganizationAvailability = functions.https.onCall(async (data) => {
 exports.bootstrapFromInvites = functions.https.onCall(async (_data, context) => {
     var _a, _b, _c, _d;
     const uid = requireAuth(context);
-    const authUser = await admin.auth().getUser(uid).catch(() => null);
-    const email = ((_a = authUser === null || authUser === void 0 ? void 0 : authUser.email) !== null && _a !== void 0 ? _a : '').trim().toLowerCase();
-    if (!email) {
-        throw httpsError('failed-precondition', 'Email requerido.');
+    try {
+        const authUser = await admin.auth().getUser(uid).catch(() => null);
+        const email = ((_a = authUser === null || authUser === void 0 ? void 0 : authUser.email) !== null && _a !== void 0 ? _a : '').trim().toLowerCase();
+        if (!email) {
+            throw httpsError('failed-precondition', 'Email requerido.');
+        }
+        const joinReqByEmail = db
+            .collectionGroup('joinRequests')
+            .where('email', '==', email)
+            .where('status', '==', 'pending');
+        const joinReqByUid = db
+            .collectionGroup('joinRequests')
+            .where('userId', '==', uid)
+            .where('status', '==', 'pending');
+        const [emailSnap, uidSnap] = await Promise.all([joinReqByEmail.get(), joinReqByUid.get()]);
+        const joinReqDocs = new Map();
+        emailSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
+        uidSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
+        if (joinReqDocs.size === 0) {
+            return { ok: true, created: 0, claimed: 0 };
+        }
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const batch = db.batch();
+        let created = 0;
+        for (const docSnap of joinReqDocs.values()) {
+            const data = docSnap.data();
+            const orgId = sanitizeOrganizationId(String((_b = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _b !== void 0 ? _b : ''));
+            if (!orgId)
+                continue;
+            const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+            const membershipSnap = await membershipRef.get();
+            if (membershipSnap.exists)
+                continue;
+            batch.set(membershipRef, {
+                userId: uid,
+                organizationId: orgId,
+                organizationName: String((_c = data === null || data === void 0 ? void 0 : data.organizationName) !== null && _c !== void 0 ? _c : orgId),
+                role: (_d = normalizeRole(data === null || data === void 0 ? void 0 : data.requestedRole)) !== null && _d !== void 0 ? _d : 'operario',
+                status: 'pending',
+                createdAt: now,
+                updatedAt: now,
+                source: 'bootstrapFromInvites_v1',
+            }, { merge: true });
+            batch.set(docSnap.ref, {
+                userId: uid,
+                updatedAt: now,
+                source: 'bootstrapFromInvites_v1',
+            }, { merge: true });
+            created += 1;
+        }
+        if (created > 0) {
+            await batch.commit();
+        }
+        return { ok: true, created, claimed: created };
     }
-    const joinReqByEmail = db
-        .collectionGroup('joinRequests')
-        .where('email', '==', email)
-        .where('status', '==', 'pending');
-    const joinReqByUid = db
-        .collectionGroup('joinRequests')
-        .where('userId', '==', uid)
-        .where('status', '==', 'pending');
-    const [emailSnap, uidSnap] = await Promise.all([joinReqByEmail.get(), joinReqByUid.get()]);
-    const joinReqDocs = new Map();
-    emailSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
-    uidSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
-    if (joinReqDocs.size === 0) {
-        return { ok: true, created: 0 };
+    catch (error) {
+        if (error instanceof functions.https.HttpsError) {
+            throw error;
+        }
+        console.error('bootstrapFromInvites: unexpected error', {
+            uid,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+        });
+        return { ok: false, created: 0, claimed: 0 };
     }
-    const now = admin.firestore.FieldValue.serverTimestamp();
-    const batch = db.batch();
-    let created = 0;
-    for (const docSnap of joinReqDocs.values()) {
-        const data = docSnap.data();
-        const orgId = sanitizeOrganizationId(String((_b = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _b !== void 0 ? _b : ''));
-        if (!orgId)
-            continue;
-        const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
-        const membershipSnap = await membershipRef.get();
-        if (membershipSnap.exists)
-            continue;
-        batch.set(membershipRef, {
-            userId: uid,
-            organizationId: orgId,
-            organizationName: String((_c = data === null || data === void 0 ? void 0 : data.organizationName) !== null && _c !== void 0 ? _c : orgId),
-            role: (_d = normalizeRole(data === null || data === void 0 ? void 0 : data.requestedRole)) !== null && _d !== void 0 ? _d : 'operario',
-            status: 'pending',
-            createdAt: now,
-            updatedAt: now,
-            source: 'bootstrapFromInvites_v1',
-        }, { merge: true });
-        batch.set(docSnap.ref, {
-            userId: uid,
-            updatedAt: now,
-            source: 'bootstrapFromInvites_v1',
-        }, { merge: true });
-        created += 1;
-    }
-    if (created > 0) {
-        await batch.commit();
-    }
-    return { ok: true, created };
 });
 exports.bootstrapSignup = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
@@ -2878,7 +2891,7 @@ exports.createPreventiveTemplate = functions.https.onCall(async (data, context) 
             message: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined,
         });
-        throw httpsError('failed-precondition', 'No se pudo crear la plantilla preventiva. Revisa plan, permisos y datos de programación.');
+        throw httpsError('internal', 'Error interno al crear la plantilla preventiva. Inténtalo de nuevo o contacta soporte.');
     }
 });
 exports.updatePreventiveTemplate = functions.https.onCall(async (data, context) => {
