@@ -1,5 +1,6 @@
 'use client';
 
+import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
@@ -8,7 +9,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useDoc, useFirestore, useUser } from '@/lib/firebase';
 import type { EntitlementPlanId, Organization } from '@/lib/firebase/models';
@@ -21,7 +26,7 @@ import {
 } from '@/lib/entitlements';
 
 const PLAN_LABELS: Record<string, string> = {
-  free: 'Demo',
+  free: 'Free',
   starter: 'Starter',
   pro: 'Pro',
   enterprise: 'Enterprise',
@@ -77,6 +82,8 @@ export default function PlansPage() {
   const firestore = useFirestore();
   const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
   const [planLimits, setPlanLimits] = useState<Record<string, number> | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<EntitlementPlanId>('free');
   const { data: organization, loading: orgLoading } = useDoc<Organization>(
     organizationId ? `organizations/${organizationId}` : null
   );
@@ -175,10 +182,34 @@ export default function PlansPage() {
   };
 
   const handlePlanCta = (planId: EntitlementPlanId) => {
+    setSelectedPlanId(planId);
+    setDialogOpen(true);
+  };
+
+  const handleSalesCta = (planId: EntitlementPlanId) => {
+    setSelectedPlanId(planId);
+    setDialogOpen(true);
+  };
+
+  const handleSubmitLead = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const name = String(formData.get('name') ?? '').trim();
+    const email = String(formData.get('email') ?? '').trim();
+    if (!name || !email) {
+      toast({
+        title: 'Completa los datos',
+        description: 'Nombre y correo son obligatorios para enviar la solicitud.',
+      });
+      return;
+    }
+
     toast({
-      title: `Plan ${PLAN_LABELS[planId]}`,
-      description: 'Para activar este plan, contacta al equipo comercial.',
+      title: 'Solicitud enviada',
+      description: 'El equipo comercial revisará tu solicitud y te contactará pronto.',
     });
+    event.currentTarget.reset();
+    setDialogOpen(false);
   };
 
   const planCards = PLAN_ORDER.map((planId) => {
@@ -341,7 +372,7 @@ export default function PlansPage() {
                         >
                           {currentPlanId === plan.planId ? 'Plan actual' : 'Solicitar upgrade'}
                         </Button>
-                        <Button variant="outline" onClick={() => router.push('/onboarding')}>
+                        <Button variant="outline" onClick={() => handleSalesCta(plan.planId)}>
                           Hablar con ventas
                         </Button>
                       </div>
@@ -352,6 +383,52 @@ export default function PlansPage() {
             ))}
           </div>
         </section>
+
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Solicitar upgrade</DialogTitle>
+              <DialogDescription>
+                Comparte tus datos para activar el plan {PLAN_LABELS[selectedPlanId]}.
+              </DialogDescription>
+            </DialogHeader>
+            <form className="space-y-4" onSubmit={handleSubmitLead}>
+              <div className="grid gap-2">
+                <Label htmlFor="lead-name">Nombre completo</Label>
+                <Input id="lead-name" name="name" placeholder="Tu nombre" required />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="lead-email">Correo corporativo</Label>
+                <Input
+                  id="lead-email"
+                  name="email"
+                  type="email"
+                  placeholder="nombre@empresa.com"
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="lead-company">Empresa</Label>
+                <Input id="lead-company" name="company" placeholder="Nombre de la empresa" />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="lead-message">Necesidades específicas</Label>
+                <Textarea
+                  id="lead-message"
+                  name="message"
+                  placeholder="Ej. número de usuarios, activos o integraciones requeridas"
+                  rows={4}
+                />
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit">Enviar solicitud</Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppShell>
   );
