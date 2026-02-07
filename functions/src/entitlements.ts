@@ -3,7 +3,7 @@ import * as admin from 'firebase-admin';
 if (admin.apps.length === 0) {
   admin.initializeApp();
 }
-type EntitlementPlanId = 'free' | 'starter' | 'pro' | 'enterprise';
+type EntitlementPlanId = 'free' | 'basic' | 'starter' | 'pro' | 'enterprise';
 type EntitlementFeature = 'EXPORT_PDF' | 'AUDIT_TRAIL' | 'PREVENTIVES';
 
 type EntitlementLimits = {
@@ -12,7 +12,12 @@ type EntitlementLimits = {
   maxDepartments: number;
   maxUsers: number;
   maxActivePreventives: number;
+  maxOpenTickets: number;
+  maxOpenTasks: number;
   attachmentsMonthlyMB: number;
+  maxAttachmentMB: number;
+  maxAttachmentsPerTicket: number;
+  retentionDays: number;
 };
 
 type EntitlementUsage = {
@@ -21,6 +26,8 @@ type EntitlementUsage = {
   departmentsCount: number;
   usersCount: number;
   activePreventivesCount: number;
+  openTicketsCount: number;
+  openTasksCount: number;
   attachmentsThisMonthMB: number;
 };
 
@@ -74,16 +81,78 @@ const db = admin.firestore();
 
 const DEFAULT_PLAN_FEATURES: Record<EntitlementPlanId, Record<EntitlementFeature, boolean>> = {
   free: { EXPORT_PDF: false, AUDIT_TRAIL: false, PREVENTIVES: false },
-  starter: { EXPORT_PDF: true, AUDIT_TRAIL: true, PREVENTIVES: true },
+  basic: { EXPORT_PDF: false, AUDIT_TRAIL: false, PREVENTIVES: false },
+  starter: { EXPORT_PDF: true, AUDIT_TRAIL: false, PREVENTIVES: true },
   pro: { EXPORT_PDF: true, AUDIT_TRAIL: true, PREVENTIVES: true },
   enterprise: { EXPORT_PDF: true, AUDIT_TRAIL: true, PREVENTIVES: true },
 };
 
 const DEFAULT_PLAN_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
-  free: { maxSites: 100, maxAssets: 5000, maxDepartments: 100, maxUsers: 50, maxActivePreventives: 3, attachmentsMonthlyMB: 1024 },
-  starter: { maxSites: 100, maxAssets: 5000, maxDepartments: 100, maxUsers: 50, maxActivePreventives: 25, attachmentsMonthlyMB: 1024 },
-  pro: { maxSites: 100, maxAssets: 5000, maxDepartments: 100, maxUsers: 50, maxActivePreventives: 100, attachmentsMonthlyMB: 1024 },
-  enterprise: { maxSites: 100, maxAssets: 5000, maxDepartments: 100, maxUsers: 50, maxActivePreventives: 1000, attachmentsMonthlyMB: 1024 },
+  free: {
+    maxUsers: 2,
+    maxSites: 1,
+    maxDepartments: 3,
+    maxAssets: 1,
+    maxActivePreventives: 0,
+    maxOpenTickets: 10,
+    maxOpenTasks: 10,
+    attachmentsMonthlyMB: 0,
+    maxAttachmentMB: 0,
+    maxAttachmentsPerTicket: 0,
+    retentionDays: 0,
+  },
+  basic: {
+    maxUsers: 5,
+    maxSites: 2,
+    maxDepartments: 5,
+    maxAssets: 5,
+    maxActivePreventives: 0,
+    maxOpenTickets: 50,
+    maxOpenTasks: 50,
+    attachmentsMonthlyMB: 0,
+    maxAttachmentMB: 0,
+    maxAttachmentsPerTicket: 0,
+    retentionDays: 0,
+  },
+  starter: {
+    maxUsers: 10,
+    maxSites: 5,
+    maxDepartments: 15,
+    maxAssets: 200,
+    maxActivePreventives: 50,
+    maxOpenTickets: 200,
+    maxOpenTasks: 200,
+    attachmentsMonthlyMB: 500,
+    maxAttachmentMB: 10,
+    maxAttachmentsPerTicket: 10,
+    retentionDays: 180,
+  },
+  pro: {
+    maxUsers: 25,
+    maxSites: 15,
+    maxDepartments: 50,
+    maxAssets: 1000,
+    maxActivePreventives: 250,
+    maxOpenTickets: 1000,
+    maxOpenTasks: 1000,
+    attachmentsMonthlyMB: 5000,
+    maxAttachmentMB: 25,
+    maxAttachmentsPerTicket: 25,
+    retentionDays: 365,
+  },
+  enterprise: {
+    maxUsers: 500,
+    maxSites: 200,
+    maxDepartments: 500,
+    maxAssets: 100000,
+    maxActivePreventives: 5000,
+    maxOpenTickets: 10000,
+    maxOpenTasks: 10000,
+    attachmentsMonthlyMB: 20000,
+    maxAttachmentMB: 50,
+    maxAttachmentsPerTicket: 50,
+    retentionDays: 3650,
+  },
 };
 
 const resolveEffectivePlanFeatures = (

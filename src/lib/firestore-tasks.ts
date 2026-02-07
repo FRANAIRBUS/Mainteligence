@@ -1,6 +1,4 @@
 import {
-  addDoc,
-  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -11,8 +9,6 @@ import {
   serverTimestamp,
   setDoc,
   startAfter,
-  updateDoc,
-  Timestamp,
   type DocumentData,
   type Firestore,
   type FirestoreDataConverter,
@@ -21,6 +17,7 @@ import {
   type Unsubscribe,
   limit,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import type { Auth } from "firebase/auth";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import type { User, Department } from "@/lib/firebase/models";
@@ -114,16 +111,15 @@ export const createTask = async (
     throw new Error("Critical: Missing organizationId in transaction");
   }
 
-  const user = await ensureAuthenticatedUser(auth);
+  await ensureAuthenticatedUser(auth);
 
-  const docRef = await addDoc(tasksCollection(db, payload.organizationId), {
-    ...payload,
-    createdBy: user.uid,
-    status: payload.status || "open",
-    priority: payload.priority || "media",
-  });
-
-  return docRef.id;
+  const fn = httpsCallable(getFunctions(auth.app), "createTask");
+  const result = await fn({ organizationId: payload.organizationId, payload });
+  const taskId = (result.data as { taskId?: string } | undefined)?.taskId;
+  if (!taskId) {
+    throw new Error("No se pudo crear la tarea.");
+  }
+  return taskId;
 };
 
 export const upsertTask = async (
@@ -150,9 +146,14 @@ export const updateTask = async (
   options?: { users: User[]; departments: Department[] }
 ) => {
   await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id);
-  await updateDoc(docRef, { ...updates, updatedAt: serverTimestamp() });
-
+  const { status, ...rest } = updates;
+  const fn = httpsCallable(getFunctions(auth.app), "updateTaskStatus");
+  await fn({
+    organizationId,
+    taskId: id,
+    newStatus: status ?? null,
+    updates: rest,
+  });
   return id;
 };
 
@@ -164,17 +165,16 @@ export const addTaskReport = async (
   report: { description: string; createdBy?: string }
 ) => {
   const user = await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id);
-
-  const reportEntry = {
-    description: report.description,
-    createdAt: Timestamp.now(),
-    createdBy: report.createdBy || user.uid,
-  };
-
-  await updateDoc(docRef, {
-    reports: arrayUnion(reportEntry),
-    updatedAt: serverTimestamp(),
+  const fn = httpsCallable(getFunctions(auth.app), "updateTaskStatus");
+  await fn({
+    organizationId,
+    taskId: id,
+    updates: {
+      reportEntry: {
+        description: report.description,
+        createdBy: report.createdBy || user.uid,
+      },
+    },
   });
 };
 

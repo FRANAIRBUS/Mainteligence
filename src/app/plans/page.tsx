@@ -27,6 +27,7 @@ import {
 
 const PLAN_LABELS: Record<string, string> = {
   free: 'Free',
+  basic: 'Basic',
   starter: 'Starter',
   pro: 'Pro',
   enterprise: 'Enterprise',
@@ -38,22 +39,28 @@ type UsageRow = {
   limit?: number;
 };
 
-const PLAN_ORDER: EntitlementPlanId[] = ['free', 'starter', 'pro', 'enterprise'];
+const PLAN_ORDER: EntitlementPlanId[] = ['free', 'basic', 'starter', 'pro', 'enterprise'];
 
 const PLAN_PRICE_LABELS: Record<EntitlementPlanId, { price: string; note: string }> = {
-  free: { price: 'Gratis', note: 'Para equipos pequeños y pruebas.' },
-  starter: { price: 'Consultar', note: 'Ideal para operaciones en crecimiento.' },
-  pro: { price: 'Consultar', note: 'Mayor capacidad y automatización.' },
+  free: { price: '0€ / mes', note: 'Para equipos pequeños y pruebas.' },
+  basic: { price: '4,99€ / mes', note: 'Para operaciones básicas con límites ampliados.' },
+  starter: { price: '19€ / mes', note: 'Ideal para operaciones en crecimiento.' },
+  pro: { price: '49€ / mes', note: 'Mayor capacidad y automatización.' },
   enterprise: { price: 'A medida', note: 'Para organizaciones con altos volúmenes.' },
 };
 
 const LIMIT_LABELS: Array<{ key: keyof ReturnType<typeof getDefaultPlanLimits>; label: string }> = [
+  { key: 'maxOpenTickets', label: 'Incidencias abiertas' },
+  { key: 'maxOpenTasks', label: 'Tareas abiertas' },
   { key: 'maxSites', label: 'Ubicaciones' },
   { key: 'maxAssets', label: 'Activos' },
   { key: 'maxDepartments', label: 'Departamentos' },
   { key: 'maxUsers', label: 'Usuarios' },
   { key: 'maxActivePreventives', label: 'Preventivos activos' },
   { key: 'attachmentsMonthlyMB', label: 'Adjuntos al mes (MB)' },
+  { key: 'maxAttachmentMB', label: 'Tamaño máximo por adjunto (MB)' },
+  { key: 'maxAttachmentsPerTicket', label: 'Adjuntos por incidencia' },
+  { key: 'retentionDays', label: 'Retención (días)' },
 ];
 
 const FEATURE_LABELS = {
@@ -63,9 +70,8 @@ const FEATURE_LABELS = {
 } as const;
 
 function formatLimit(limit?: number) {
-  if (!Number.isFinite(limit)) return '∞';
   if (limit == null) return '—';
-  if (limit <= 0) return '∞';
+  if (!Number.isFinite(limit)) return '∞';
   return String(limit);
 }
 
@@ -140,6 +146,16 @@ export default function PlansPage() {
   const usageRows: UsageRow[] = useMemo(() => {
     return [
       {
+        label: 'Incidencias abiertas',
+        usage: entitlement?.usage?.openTicketsCount,
+        limit: effectiveLimits?.maxOpenTickets,
+      },
+      {
+        label: 'Tareas abiertas',
+        usage: entitlement?.usage?.openTasksCount,
+        limit: effectiveLimits?.maxOpenTasks,
+      },
+      {
         label: 'Ubicaciones',
         usage: entitlement?.usage?.sitesCount,
         limit: effectiveLimits?.maxSites,
@@ -163,6 +179,11 @@ export default function PlansPage() {
         label: 'Preventivos activos',
         usage: entitlement?.usage?.activePreventivesCount,
         limit: effectiveLimits?.maxActivePreventives,
+      },
+      {
+        label: 'Adjuntos este mes (MB)',
+        usage: entitlement?.usage?.attachmentsThisMonthMB,
+        limit: effectiveLimits?.attachmentsMonthlyMB,
       },
     ];
   }, [effectiveLimits, entitlement?.usage]);
@@ -317,7 +338,7 @@ export default function PlansPage() {
                     </div>
                     <div>
                       <p className="text-2xl font-semibold leading-none">{plan.pricing.price}</p>
-                      <p className="text-xs text-muted-foreground">Factura según contrato comercial.</p>
+                      <p className="text-xs text-muted-foreground">Precio por organización.</p>
                     </div>
                     <div className="space-y-1 text-xs text-muted-foreground">
                       <p>Ubicaciones: {formatLimit(plan.limits.maxSites)}</p>
