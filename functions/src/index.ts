@@ -3547,7 +3547,7 @@ export const createTicketUploadSession = functions.https.onCall(async (data, con
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
 
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
@@ -3612,7 +3612,7 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
   const sizeMB = sizeBytes / (1024 * 1024);
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
 
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
