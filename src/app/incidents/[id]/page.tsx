@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useDoc, useUser, useCollection, useFirebaseApp } from '@/lib/firebase';
+import { useDoc, useUser, useCollection, useFirestore } from '@/lib/firebase';
 import type { Ticket, Site, Department, Asset, OrganizationMember } from '@/lib/firebase/models';
 import { Icons } from '@/components/icons';
 import { getTicketPermissions, normalizeRole } from '@/lib/rbac';
@@ -54,7 +54,7 @@ export default function IncidentDetailPage() {
   const params = useParams();
   const { id } = params;
   const ticketId = Array.isArray(id) ? id[0] : id;
-  const app = useFirebaseApp();
+  const firestore = useFirestore();
 
   const { user, profile: userProfile, role, organizationId, loading: userLoading } = useUser();
   const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(
@@ -195,7 +195,7 @@ export default function IncidentDetailPage() {
   }, [permissions, router, ticket, ticketLoading, user, userProfile, userLoading]);
 
   const handleAddReport = async () => {
-    if (!app || !ticket?.id) {
+    if (!firestore || !ticket?.id) {
       toast({
         title: 'No se pudo registrar el informe',
         description: 'Inténtalo nuevamente en unos instantes. Faltan datos obligatorios.',
@@ -247,16 +247,12 @@ export default function IncidentDetailPage() {
     setReportSubmitting(true);
 
     try {
-      const fn = httpsCallable(getFunctions(app), 'updateTicketStatus');
-      await fn({
-        organizationId: targetOrganizationId,
+      const functions = getFunctions();
+      const updateTicket = httpsCallable(functions, 'updateTicketStatus');
+      await updateTicket({
+        orgId: targetOrganizationId,
         ticketId: ticket.id,
-        updates: {
-          reportEntry: {
-            description,
-            createdBy: user.uid,
-          },
-        },
+        reportAppend: { description },
       });
 
       setReportDescription('');
@@ -278,7 +274,7 @@ export default function IncidentDetailPage() {
   };
 
   const handleCloseIncident = async (reason: string) => {
-    if (!app || !ticket?.id) {
+    if (!firestore || !ticket?.id) {
       toast({
         title: 'No se pudo cerrar la incidencia',
         description: 'Inténtalo nuevamente en unos instantes. Faltan datos obligatorios.',
@@ -328,14 +324,13 @@ export default function IncidentDetailPage() {
     setCloseSubmitting(true);
 
     try {
-      const fn = httpsCallable(getFunctions(app), 'updateTicketStatus');
-      await fn({
-        organizationId: targetOrganizationId,
+      const functions = getFunctions();
+      const updateTicket = httpsCallable(functions, 'updateTicketStatus');
+      await updateTicket({
+        orgId: targetOrganizationId,
         ticketId: ticket.id,
         newStatus: 'resolved',
-        updates: {
-          closedReason: reason,
-        },
+        patch: { closedReason: reason },
       });
 
       setCloseReason('');

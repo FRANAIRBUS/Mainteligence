@@ -23,9 +23,9 @@ export interface EntitlementLimits {
   maxDepartments: number;
   maxUsers: number;
   maxActivePreventives: number;
+  attachmentsMonthlyMB: number;
   maxOpenTickets: number;
   maxOpenTasks: number;
-  attachmentsMonthlyMB: number;
   maxAttachmentMB: number;
   maxAttachmentsPerTicket: number;
   retentionDays: number;
@@ -37,9 +37,9 @@ export interface EntitlementUsage {
   departmentsCount: number;
   usersCount: number;
   activePreventivesCount: number;
+  attachmentsThisMonthMB: number;
   openTicketsCount: number;
   openTasksCount: number;
-  attachmentsThisMonthMB: number;
 }
 
 export interface Entitlement {

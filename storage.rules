@@ -49,6 +49,28 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/organizations/$(orgId)/uploadSessions/$(id));
     }
 
+    function orgEntitlementLimits(orgId) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.limits;
+    }
+
+    function attachmentsAllowed(orgId) {
+      let limits = orgEntitlementLimits(orgId);
+      return limits != null
+        && limits.attachmentsMonthlyMB is number
+        && limits.maxAttachmentMB is number
+        && limits.maxAttachmentsPerTicket is number
+        && limits.attachmentsMonthlyMB > 0
+        && limits.maxAttachmentMB > 0
+        && limits.maxAttachmentsPerTicket > 0;
+    }
+
+    function maxTicketAttachmentBytes(orgId) {
+      let limits = orgEntitlementLimits(orgId);
+      return (limits != null && limits.maxAttachmentMB is number)
+        ? limits.maxAttachmentMB * 1024 * 1024
+        : 0;
+    }
+
     function hasActiveUploadSession(orgId, id) {
       let session = uploadSession(orgId, id);
       return session != null
@@ -119,13 +141,13 @@ service firebase.storage {
           (ticketBelongsToOrg(orgId, ticketId) && isActiveMember(orgId, request.auth.uid))
           || hasActiveUploadSession(orgId, ticketId)
         );
+      // Writes are only allowed through a short-lived upload session created by Cloud Functions.
+      // This prevents bypassing plan limits and enforces a server-side approval step.
       allow write: if isSignedIn()
         && isValidOrgId(orgId)
-        && (
-          (ticketBelongsToOrg(orgId, ticketId) && isActiveMember(orgId, request.auth.uid))
-          || hasActiveUploadSession(orgId, ticketId)
-        )
-        && isValidUpload(10 * 1024 * 1024)
+        && attachmentsAllowed(orgId)
+        && hasActiveUploadSession(orgId, ticketId)
+        && isValidUpload(maxTicketAttachmentBytes(orgId))
         && isAllowedTicketContentType();
     }
 
