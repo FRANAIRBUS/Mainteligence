@@ -51,7 +51,7 @@ const ROLE_OPTIONS = [
   'auditor',
 ] as const;
 
-const PLAN_OPTIONS = ['free', 'starter', 'pro', 'enterprise'] as const;
+const PLAN_OPTIONS = ['free', 'basic', 'starter', 'pro', 'enterprise'] as const;
 const ENTITLEMENT_STATUS_OPTIONS = ['trialing', 'active', 'past_due', 'canceled'] as const;
 const ORG_STATUS_OPTIONS = ['active', 'suspended', 'deleted'] as const;
 
