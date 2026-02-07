@@ -4,7 +4,7 @@ import {
   onSnapshot,
   orderBy,
   query,
-  getDoc,
+  serverTimestamp,
   startAfter,
   type DocumentData,
   type Firestore,
@@ -128,20 +128,6 @@ export const createTask = async (
   return taskId;
 };
 
-export const upsertTask = async (
-  db: Firestore,
-  auth: Auth,
-  organizationId: string,
-  id: string,
-  payload: MaintenanceTaskInput
-) => {
-  await ensureAuthenticatedUser(auth);
-  const functions = getFunctions(getApp());
-  const updateTaskFn = httpsCallable(functions, 'updateTaskStatus');
-  await updateTaskFn({ orgId: organizationId, taskId: id, patch: payload });
-  return id;
-};
-
 export const updateTask = async (
   db: Firestore,
   auth: Auth,
@@ -173,16 +159,4 @@ export const addTaskReport = async (
     taskId: id,
     reportAppend: { description: report.description, createdBy: report.createdBy || user.uid },
   });
-};
-
-export const deleteTask = async (
-  db: Firestore,
-  auth: Auth,
-  organizationId: string,
-  id: string
-) => {
-  await ensureAuthenticatedUser(auth);
-  const functions = getFunctions(getApp());
-  const deleteTaskFn = httpsCallable(functions, 'deleteTask');
-  await deleteTaskFn({ orgId: organizationId, taskId: id });
 };
