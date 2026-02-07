@@ -4336,8 +4336,8 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
   const { role, scope } = await requireActiveMembership(actorUid, orgId);
 
   const bytesRaw = Number(data?.bytes ?? 0);
-  const fileSizesRaw = Array.isArray(data?.fileSizes) ? data.fileSizes : [];
-  const urlsRaw = Array.isArray(data?.photoUrls) ? data.photoUrls : [];
+  const fileSizesRaw: unknown[] = Array.isArray(data?.fileSizes) ? data.fileSizes : [];
+  const urlsRaw: unknown[] = Array.isArray(data?.photoUrls) ? data.photoUrls : [];
   const photoUrls = urlsRaw.map((url: unknown) => String(url ?? '').trim()).filter(Boolean);
   const fileSizes = fileSizesRaw
     .map((size: unknown) => Number(size ?? 0))
