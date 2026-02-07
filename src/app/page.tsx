@@ -46,6 +46,43 @@ const incidentPriorityOrder: Record<Ticket["priority"], number> = {
   Baja: 0,
 };
 
+type FirestoreDateValue =
+  | {
+      toDate?: () => Date;
+      toMillis?: () => number;
+    }
+  | Date
+  | string
+  | number
+  | null
+  | undefined;
+
+const toDateValue = (value: FirestoreDateValue): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? null : date;
+  }
+  const maybeTimestamp = value as { toDate?: () => Date; toMillis?: () => number };
+  if (typeof maybeTimestamp.toDate === "function") {
+    const date = maybeTimestamp.toDate();
+    return date instanceof Date && !isNaN(date.getTime()) ? date : null;
+  }
+  if (typeof maybeTimestamp.toMillis === "function") {
+    const date = new Date(maybeTimestamp.toMillis());
+    return isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+};
+
+const toMillisValue = (value: FirestoreDateValue): number => {
+  const date = toDateValue(value);
+  return date ? date.getTime() : 0;
+};
+
 export default function Home() {
   const {
     user,
@@ -132,8 +169,8 @@ export default function Home() {
       return incidentPriorityOrder[b.priority] - incidentPriorityOrder[a.priority];
     }
 
-    const aCreatedAt = a.createdAt?.toMillis?.() ?? 0;
-    const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
+    const aCreatedAt = toMillisValue(a.createdAt);
+    const bCreatedAt = toMillisValue(b.createdAt);
 
     return bCreatedAt - aCreatedAt;
   });
@@ -264,11 +301,15 @@ export default function Home() {
                         <Badge variant="outline" className="border-destructive text-destructive">
                           {ticketStatusLabel(ticket.status)}
                         </Badge>
-                        {ticket.createdAt && (
-                          <span>
-                            Creada: {format(ticket.createdAt.toDate(), "PPP", { locale: es })}
-                          </span>
-                        )}
+                        {(() => {
+                          const createdAt = toDateValue(ticket.createdAt);
+                          if (!createdAt) return null;
+                          return (
+                            <span>
+                              Creada: {format(createdAt, "PPP", { locale: es })}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                     <Badge variant="destructive">{ticket.priority}</Badge>
