@@ -181,7 +181,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         variant: 'destructive',
         title: 'Adjuntos bloqueados',
         description:
-          'Los adjuntos no están habilitados para tu plan actual o los límites están en 0. Revisa /plans.',
+          'Los adjuntos no están habilitados para tu plan actual o el catálogo de planes tiene límites en 0. Revisa /plans.',
       });
       event.target.value = '';
       return;
