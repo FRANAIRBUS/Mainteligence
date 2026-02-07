@@ -53,8 +53,37 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.limits;
     }
 
-    function attachmentsAllowed(orgId) {
+    function orgPlanId(orgId) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.planId;
+    }
+
+    function defaultAttachmentLimits(planId) {
+      return planId == "starter" || planId == "Starter" || planId == "STARTER"
+        ? { attachmentsMonthlyMB: 500, maxAttachmentMB: 10, maxAttachmentsPerTicket: 10 }
+        : planId == "pro" || planId == "Pro" || planId == "PRO"
+          ? { attachmentsMonthlyMB: 5000, maxAttachmentMB: 25, maxAttachmentsPerTicket: 25 }
+          : planId == "enterprise" || planId == "Enterprise" || planId == "ENTERPRISE"
+            ? { attachmentsMonthlyMB: 100000, maxAttachmentMB: 100, maxAttachmentsPerTicket: 100 }
+            : { attachmentsMonthlyMB: 0, maxAttachmentMB: 0, maxAttachmentsPerTicket: 0 };
+    }
+
+    function effectiveAttachmentLimits(orgId) {
       let limits = orgEntitlementLimits(orgId);
+      let planId = orgPlanId(orgId);
+      let defaults = defaultAttachmentLimits(planId);
+      return limits != null
+        && limits.attachmentsMonthlyMB is number
+        && limits.maxAttachmentMB is number
+        && limits.maxAttachmentsPerTicket is number
+        && limits.attachmentsMonthlyMB > 0
+        && limits.maxAttachmentMB > 0
+        && limits.maxAttachmentsPerTicket > 0
+        ? limits
+        : defaults;
+    }
+
+    function attachmentsAllowed(orgId) {
+      let limits = effectiveAttachmentLimits(orgId);
       return limits != null
         && limits.attachmentsMonthlyMB is number
         && limits.maxAttachmentMB is number
@@ -65,7 +94,7 @@ service firebase.storage {
     }
 
     function maxTicketAttachmentBytes(orgId) {
-      let limits = orgEntitlementLimits(orgId);
+      let limits = effectiveAttachmentLimits(orgId);
       return (limits != null && limits.maxAttachmentMB is number)
         ? limits.maxAttachmentMB * 1024 * 1024
         : 0;

@@ -21,6 +21,7 @@ import {
   getDefaultPlanFeatures,
   getDefaultPlanLimits,
   isFeatureEnabled,
+  normalizePlanId,
   resolveEffectivePlanFeatures,
   resolveEffectivePlanLimits,
 } from '@/lib/entitlements';
@@ -110,8 +111,9 @@ export default function PlansPage() {
     }
 
     let cancelled = false;
+    const normalizedPlanId = normalizePlanId(organization.entitlement.planId);
 
-    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+    getDoc(doc(firestore, 'planCatalog', normalizedPlanId))
       .then((snap) => {
         if (cancelled) return;
         const data = snap.exists() ? snap.data() : null;
@@ -130,16 +132,17 @@ export default function PlansPage() {
   }, [firestore, organization?.entitlement?.planId]);
 
   const entitlement = organization?.entitlement ?? null;
-  const planLabel = entitlement?.planId ? PLAN_LABELS[entitlement.planId] ?? entitlement.planId : '—';
-  const currentPlanId = entitlement?.planId ?? 'free';
+  const normalizedPlanId = entitlement?.planId ? normalizePlanId(entitlement.planId) : 'free';
+  const planLabel = entitlement?.planId ? PLAN_LABELS[normalizedPlanId] ?? normalizedPlanId : '—';
+  const currentPlanId = normalizedPlanId;
   const currentPlanLimits = getDefaultPlanLimits(currentPlanId);
   const currentPlanFeatures = getDefaultPlanFeatures(currentPlanId);
 
   const effectiveLimits = entitlement
-    ? resolveEffectivePlanLimits(entitlement.planId, (planLimits as any) ?? entitlement.limits)
+    ? resolveEffectivePlanLimits(normalizedPlanId, (planLimits as any) ?? entitlement.limits)
     : null;
   const effectiveFeatures = entitlement
-    ? resolveEffectivePlanFeatures(entitlement.planId, (planFeatures as any) ?? null)
+    ? resolveEffectivePlanFeatures(normalizedPlanId, (planFeatures as any) ?? null)
     : null;
   const preventivesEnabled = entitlement
     ? isFeatureEnabled({ ...entitlement, features: effectiveFeatures ?? undefined }, 'PREVENTIVES')
