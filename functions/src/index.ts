@@ -1377,14 +1377,15 @@ function normalizeTicketStatusValue(status: unknown): string {
     case 'En curso':
       return 'in_progress';
     case 'En espera':
-      return 'in_progress';
+      return 'pending';
     case 'Resuelta':
       return 'resolved';
     case 'Cierre solicitado':
-      return 'in_progress';
+      return 'pending';
     case 'Cerrada':
       return 'resolved';
     default:
+      if (value.toLowerCase() === 'pending') return 'pending';
       return value;
   }
 }
@@ -1393,12 +1394,13 @@ function normalizeTaskStatusValue(status: unknown): string {
   const value = String(status ?? '').trim();
   switch (value) {
     case 'pendiente':
-      return 'open';
+      return 'pending';
     case 'en_progreso':
       return 'in_progress';
     case 'completada':
       return 'done';
     default:
+      if (value.toLowerCase() === 'pending') return 'pending';
       return value;
   }
 }
@@ -1407,7 +1409,7 @@ function isOpenTicketStatus(status: unknown): boolean {
   const normalized = normalizeTicketStatusValue(status);
   const closed = new Set(['resolved', 'closed', 'canceled']);
   if (closed.has(normalized)) return false;
-  const open = new Set(['new', 'in_progress', 'assigned', 'waiting_parts', 'waiting_external', 'reopened']);
+  const open = new Set(['new', 'in_progress', 'pending', 'assigned', 'waiting_parts', 'waiting_external', 'reopened']);
   if (open.has(normalized)) return true;
   return true;
 }
@@ -1416,7 +1418,7 @@ function isOpenTaskStatus(status: unknown): boolean {
   const normalized = normalizeTaskStatusValue(status);
   const closed = new Set(['done', 'canceled', 'validated']);
   if (closed.has(normalized)) return false;
-  const open = new Set(['open', 'in_progress', 'blocked']);
+  const open = new Set(['open', 'in_progress', 'pending', 'blocked']);
   if (open.has(normalized)) return true;
   return true;
 }
