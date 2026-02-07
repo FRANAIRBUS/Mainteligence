@@ -107,18 +107,27 @@ const DEFAULT_PLAN_LIMITS: Record<Entitlement["planId"], EntitlementLimits> = {
   },
 };
 
+const normalizePlanId = (
+  planId?: Entitlement["planId"] | string
+): Entitlement["planId"] => {
+  const normalized = String(planId ?? "").trim().toLowerCase();
+  return (normalized in DEFAULT_PLAN_LIMITS
+    ? normalized
+    : "free") as Entitlement["planId"];
+};
+
 export const getDefaultPlanFeatures = (
   planId?: Entitlement["planId"] | string
 ): Record<EntitlementFeature, boolean> => {
-  const normalized = String(planId ?? "").trim() as Entitlement["planId"];
-  return DEFAULT_PLAN_FEATURES[normalized] ?? DEFAULT_PLAN_FEATURES.free;
+  const normalized = normalizePlanId(planId);
+  return DEFAULT_PLAN_FEATURES[normalized];
 };
 
 export const getDefaultPlanLimits = (
   planId?: Entitlement["planId"] | string
 ): EntitlementLimits => {
-  const normalized = String(planId ?? "").trim() as Entitlement["planId"];
-  return DEFAULT_PLAN_LIMITS[normalized] ?? DEFAULT_PLAN_LIMITS.free;
+  const normalized = normalizePlanId(planId);
+  return DEFAULT_PLAN_LIMITS[normalized];
 };
 
 export const resolveEffectivePlanFeatures = (
@@ -162,7 +171,8 @@ export const getOrgEntitlement = async (
   const entitlement = orgData?.entitlement ?? null;
   if (!entitlement) return null;
 
-  const planCatalogRef = doc(db, "planCatalog", entitlement.planId);
+  const normalizedPlanId = normalizePlanId(entitlement.planId);
+  const planCatalogRef = doc(db, "planCatalog", normalizedPlanId);
   const planCatalogSnap = await getDoc(planCatalogRef);
   const planCatalogData = planCatalogSnap.exists()
     ? (planCatalogSnap.data() as PlanCatalogEntry)
@@ -170,8 +180,9 @@ export const getOrgEntitlement = async (
 
   return {
     ...entitlement,
-    limits: resolveEffectivePlanLimits(entitlement.planId, planCatalogData?.limits ?? entitlement.limits),
-    features: resolveEffectivePlanFeatures(entitlement.planId, planCatalogData?.features ?? null),
+    planId: normalizedPlanId,
+    limits: resolveEffectivePlanLimits(normalizedPlanId, planCatalogData?.limits ?? entitlement.limits),
+    features: resolveEffectivePlanFeatures(normalizedPlanId, planCatalogData?.features ?? null),
   };
 };
 
