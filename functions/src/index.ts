@@ -3671,7 +3671,7 @@ export const createTicket = functions.https.onCall(async (data, context) => {
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
 
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
@@ -3790,7 +3790,7 @@ export const updateTicketStatus = functions.https.onCall(async (data, context) =
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const ticketRef = orgRef.collection('tickets').doc(ticketId);
 
@@ -3891,7 +3891,7 @@ export const createTask = functions.https.onCall(async (data, context) => {
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
     if (!orgSnap.exists) {
@@ -3966,7 +3966,7 @@ export const updateTaskStatus = functions.https.onCall(async (data, context) => 
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const taskRef = orgRef.collection('tasks').doc(taskId);
 
