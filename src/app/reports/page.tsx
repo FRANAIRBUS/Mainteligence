@@ -84,7 +84,7 @@ import {
 
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { isFeatureEnabled } from '@/lib/entitlements';
+import { isFeatureEnabled, resolveEffectivePlanFeatures } from '@/lib/entitlements';
 import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus } from '@/lib/status';
 import { buildRbacUser, getTaskPermissions, getTicketPermissions, normalizeRole } from '@/lib/rbac';
@@ -103,6 +103,7 @@ export default function ReportsPage() {
     useState<ExportSortOrder>('desc');
   const [isExporting, setIsExporting] = useState(false);
   const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
+  const [planFeaturesLoading, setPlanFeaturesLoading] = useState(false);
 
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -134,18 +135,24 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!firestore || !organization?.entitlement?.planId) {
       setPlanFeatures(null);
+      setPlanFeaturesLoading(false);
       return;
     }
     let cancelled = false;
+    setPlanFeaturesLoading(true);
     getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
       .then((snap) => {
         if (cancelled) return;
-        const features = (snap.exists() ? (snap.data()?.features as Record<string, boolean>) : null) ?? null;
-        setPlanFeatures(features);
+        const rawFeatures = snap.exists()
+          ? (snap.data()?.features as Record<string, boolean> | null | undefined)
+          : null;
+        setPlanFeatures(resolveEffectivePlanFeatures(organization.entitlement.planId, rawFeatures));
+        setPlanFeaturesLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
-        setPlanFeatures(null);
+        setPlanFeatures(resolveEffectivePlanFeatures(organization.entitlement.planId, null));
+        setPlanFeaturesLoading(false);
       });
 
     return () => {
@@ -154,7 +161,6 @@ export default function ReportsPage() {
   }, [firestore, organization?.entitlement?.planId]);
 
   const entitlement = organization?.entitlement ?? null;
-  const planFeaturesLoading = Boolean(entitlement) && planFeatures === null;
   const exportAllowed =
     !entitlement
       ? true
