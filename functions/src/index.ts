@@ -1333,118 +1333,6 @@ function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null)
   };
 }
 
-function resolveDocLocationId(data: FirebaseFirestore.DocumentData | null | undefined): string | null {
-  const value = String(data?.locationId ?? '').trim();
-  return value || null;
-}
-
-function resolveDocOriginDepartmentId(
-  data: FirebaseFirestore.DocumentData | null | undefined,
-): string | null {
-  const origin = String(data?.originDepartmentId ?? '').trim();
-  if (origin) return origin;
-  const fallback = String(data?.departmentId ?? '').trim();
-  return fallback || null;
-}
-
-function resolveDocTargetDepartmentId(
-  data: FirebaseFirestore.DocumentData | null | undefined,
-): string | null {
-  const target = String(data?.targetDepartmentId ?? '').trim();
-  if (target) return target;
-  const fallback = String(data?.departmentId ?? '').trim();
-  return fallback || null;
-}
-
-function scopeHasDepartment(scope: MembershipScope, departmentId: string | null): boolean {
-  if (!departmentId) return false;
-  const allowed = new Set([scope.departmentId, ...scope.departmentIds].filter(Boolean));
-  return allowed.size > 0 && allowed.has(departmentId);
-}
-
-function scopeHasLocation(scope: MembershipScope, locationId: string | null): boolean {
-  if (!locationId) return false;
-  const allowed = new Set([scope.locationId, ...scope.locationIds].filter(Boolean));
-  return allowed.size > 0 && allowed.has(locationId);
-}
-
-function normalizeMemberIds(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item ?? '').trim()).filter(Boolean);
-}
-
-function resolveMemberDepartmentIds(member: FirebaseFirestore.DocumentData | null): Set<string> {
-  if (!member) return new Set();
-  const ids = [
-    String(member.departmentId ?? '').trim(),
-    ...normalizeMemberIds(member.departmentIds),
-  ].filter(Boolean);
-  return new Set(ids);
-}
-
-function resolveMemberLocationIds(member: FirebaseFirestore.DocumentData | null): Set<string> {
-  if (!member) return new Set();
-  const ids = [
-    String(member.locationId ?? '').trim(),
-    ...normalizeMemberIds(member.locationIds),
-  ].filter(Boolean);
-  return new Set(ids);
-}
-
-function normalizeTicketStatusValue(status: unknown): string {
-  const value = String(status ?? '').trim();
-  switch (value) {
-    case 'Abierta':
-      return 'new';
-    case 'En curso':
-      return 'in_progress';
-    case 'En espera':
-      return 'pending';
-    case 'Resuelta':
-      return 'resolved';
-    case 'Cierre solicitado':
-      return 'pending';
-    case 'Cerrada':
-      return 'resolved';
-    default:
-      if (value.toLowerCase() === 'pending') return 'pending';
-      return value;
-  }
-}
-
-function normalizeTaskStatusValue(status: unknown): string {
-  const value = String(status ?? '').trim();
-  switch (value) {
-    case 'pendiente':
-      return 'pending';
-    case 'en_progreso':
-      return 'in_progress';
-    case 'completada':
-      return 'done';
-    default:
-      if (value.toLowerCase() === 'pending') return 'pending';
-      return value;
-  }
-}
-
-function isOpenTicketStatus(status: unknown): boolean {
-  const normalized = normalizeTicketStatusValue(status);
-  const closed = new Set(['resolved', 'closed', 'canceled']);
-  if (closed.has(normalized)) return false;
-  const open = new Set(['new', 'in_progress', 'pending', 'assigned', 'waiting_parts', 'waiting_external', 'reopened']);
-  if (open.has(normalized)) return true;
-  return true;
-}
-
-function isOpenTaskStatus(status: unknown): boolean {
-  const normalized = normalizeTaskStatusValue(status);
-  const closed = new Set(['done', 'canceled', 'validated']);
-  if (closed.has(normalized)) return false;
-  const open = new Set(['open', 'in_progress', 'pending', 'blocked']);
-  if (open.has(normalized)) return true;
-  return true;
-}
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -3783,7 +3671,7 @@ export const createTicket = functions.https.onCall(async (data, context) => {
   }
 
   return await db.runTransaction(async (tx) => {
-    await requireActiveMembershipForTx(tx, orgId, uid);
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
 
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
@@ -3902,7 +3790,7 @@ export const updateTicketStatus = functions.https.onCall(async (data, context) =
   }
 
   return await db.runTransaction(async (tx) => {
-    await requireActiveMembershipForTx(tx, orgId, uid);
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const ticketRef = orgRef.collection('tickets').doc(ticketId);
 
@@ -4003,7 +3891,7 @@ export const createTask = functions.https.onCall(async (data, context) => {
   }
 
   return await db.runTransaction(async (tx) => {
-    await requireActiveMembershipForTx(tx, orgId, uid);
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
     if (!orgSnap.exists) {
@@ -4078,7 +3966,7 @@ export const updateTaskStatus = functions.https.onCall(async (data, context) => 
   }
 
   return await db.runTransaction(async (tx) => {
-    await requireActiveMembershipForTx(tx, orgId, uid);
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const taskRef = orgRef.collection('tasks').doc(taskId);
 
