@@ -180,7 +180,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       toast({
         variant: 'destructive',
         title: 'Adjuntos bloqueados',
-        description: 'Los adjuntos están disponibles a partir del plan Starter. Revisa /plans.',
+        description:
+          'Los adjuntos no están habilitados para tu plan actual o los límites están en 0. Revisa /plans.',
       });
       event.target.value = '';
       return;
@@ -724,7 +725,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           </FormControl>
           {!canAttach && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Bloqueado por plan. Disponible a partir de Starter.{' '}
+              Adjuntos no disponibles para tu plan actual o límites configurados en 0.{' '}
               <Link href="/plans" className="underline">Ver planes</Link>.
             </p>
           )}
