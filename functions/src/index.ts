@@ -84,20 +84,6 @@ const CREATED_ORG_LIMITS: Record<AccountPlan, number> = {
 };
 
 const DEFAULT_ENTITLEMENT_PROVIDER: EntitlementProvider = 'manual';
-// Base defaults (used for enterprise-like overrides).
-const DEFAULT_ENTITLEMENT_LIMITS: EntitlementLimits = {
-  maxUsers: 2,
-  maxSites: 1,
-  maxDepartments: 3,
-  maxAssets: 1,
-  maxActivePreventives: 0,
-  maxOpenTickets: 10,
-  maxOpenTasks: 10,
-  attachmentsMonthlyMB: 0,
-  maxAttachmentMB: 0,
-  maxAttachmentsPerTicket: 0,
-  retentionDays: 0,
-};
 
 const PLAN_DEFAULT_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
   free: {
@@ -235,6 +221,7 @@ type ResolvedMembership = {
 const ADMIN_LIKE_ROLES = new Set<Role>(['super_admin', 'admin', 'mantenimiento']);
 const SCOPED_HEAD_ROLES = new Set<Role>(['jefe_departamento']);
 const MASTER_DATA_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
+const TASKS_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
 
 const USAGE_FIELDS: Record<'sites' | 'assets' | 'departments' | 'users' | 'preventives', keyof EntitlementUsage> = {
   sites: 'sitesCount',
@@ -1436,6 +1423,40 @@ async function requireActiveMembership(actorUid: string, orgId: string): Promise
   };
 }
 
+async function requireActiveMembershipForTx(
+  tx: FirebaseFirestore.Transaction,
+  orgId: string,
+  actorUid: string
+): Promise<ResolvedMembership> {
+  const membershipRef = db.collection('memberships').doc(`${actorUid}_${orgId}`);
+  const userRef = db.collection('users').doc(actorUid);
+
+  const [membershipSnap, userSnap] = await Promise.all([tx.get(membershipRef), tx.get(userRef)]);
+  if (!membershipSnap.exists) {
+    throw httpsError('permission-denied', 'No perteneces a esa organización.');
+  }
+
+  const membershipData = membershipSnap.data() as FirebaseFirestore.DocumentData | null;
+  const status =
+    String(membershipData?.status ?? '') ||
+    (membershipData?.active === true ? 'active' : 'pending');
+
+  if (status !== 'active') {
+    throw httpsError('failed-precondition', 'Tu membresía no está activa.');
+  }
+
+  const role = normalizeRole(membershipData?.role);
+  const userData = userSnap.exists ? (userSnap.data() as FirebaseFirestore.DocumentData) : null;
+
+  return {
+    role,
+    status,
+    scope: resolveMembershipScope(userData),
+    membershipData,
+    userData,
+  };
+}
+
 async function resolvePlanFeaturesForTx(tx: FirebaseFirestore.Transaction, planId: string | undefined) {
   const resolvedPlanId = resolveEntitlementPlanId({ metadataPlanId: planId ?? null });
   const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
@@ -1487,6 +1508,26 @@ async function resolveFallbackPreventivesEntitlementForTx(
   }
 
   return null;
+}
+
+function resolveEffectiveEntitlementForTx(orgSnap: FirebaseFirestore.DocumentSnapshot): Entitlement {
+  const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+  const entitlement = orgData?.entitlement;
+  if (!entitlement) {
+    throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+  }
+
+  const resolvedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: entitlement.planId ?? null,
+    fallbackPlanId: entitlement.planId,
+  });
+
+  return {
+    ...entitlement,
+    planId: resolvedPlanId,
+    limits: resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement.limits),
+    usage: entitlement.usage ?? DEFAULT_ENTITLEMENT_USAGE,
+  };
 }
 
 function ensureEntitlementAllowsCreate({
@@ -3506,7 +3547,7 @@ export const createTicketUploadSession = functions.https.onCall(async (data, con
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
 
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
