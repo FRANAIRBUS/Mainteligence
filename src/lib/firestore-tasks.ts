@@ -1,13 +1,11 @@
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   startAfter,
   type DocumentData,
   type Firestore,
@@ -122,21 +120,6 @@ export const createTask = async (
   return taskId;
 };
 
-export const upsertTask = async (
-  db: Firestore,
-  auth: Auth,
-  organizationId: string,
-  id: string,
-  payload: MaintenanceTaskInput
-) => {
-  await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id).withConverter(
-    taskConverter
-  );
-  await setDoc(docRef, payload, { merge: true });
-  return id;
-};
-
 export const updateTask = async (
   db: Firestore,
   auth: Auth,
@@ -176,15 +159,4 @@ export const addTaskReport = async (
       },
     },
   });
-};
-
-export const deleteTask = async (
-  db: Firestore,
-  auth: Auth,
-  organizationId: string,
-  id: string
-) => {
-  await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id);
-  await deleteDoc(docRef);
 };
