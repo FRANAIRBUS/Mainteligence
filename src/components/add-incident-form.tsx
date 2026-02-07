@@ -19,7 +19,6 @@ import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { orgCollectionPath, orgStoragePath } from '@/lib/organization';
 import { getOrgEntitlement } from '@/lib/entitlements';
-import { getOrgEntitlement } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
