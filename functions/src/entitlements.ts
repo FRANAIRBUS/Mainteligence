@@ -12,9 +12,9 @@ type EntitlementLimits = {
   maxDepartments: number;
   maxUsers: number;
   maxActivePreventives: number;
+  attachmentsMonthlyMB: number;
   maxOpenTickets: number;
   maxOpenTasks: number;
-  attachmentsMonthlyMB: number;
   maxAttachmentMB: number;
   maxAttachmentsPerTicket: number;
   retentionDays: number;
@@ -26,9 +26,9 @@ type EntitlementUsage = {
   departmentsCount: number;
   usersCount: number;
   activePreventivesCount: number;
+  attachmentsThisMonthMB: number;
   openTicketsCount: number;
   openTasksCount: number;
-  attachmentsThisMonthMB: number;
 };
 
 type Entitlement = {
@@ -141,16 +141,16 @@ const DEFAULT_PLAN_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
     retentionDays: 365,
   },
   enterprise: {
-    maxUsers: 500,
-    maxSites: 200,
-    maxDepartments: 500,
-    maxAssets: 100000,
-    maxActivePreventives: 5000,
-    maxOpenTickets: 10000,
-    maxOpenTasks: 10000,
-    attachmentsMonthlyMB: 20000,
-    maxAttachmentMB: 50,
-    maxAttachmentsPerTicket: 50,
+    maxUsers: 10_000,
+    maxSites: 10_000,
+    maxDepartments: 10_000,
+    maxAssets: 1_000_000,
+    maxActivePreventives: 100_000,
+    maxOpenTickets: 1_000_000,
+    maxOpenTasks: 1_000_000,
+    attachmentsMonthlyMB: 100_000,
+    maxAttachmentMB: 100,
+    maxAttachmentsPerTicket: 100,
     retentionDays: 3650,
   },
 };

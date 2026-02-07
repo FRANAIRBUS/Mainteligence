@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useFirebaseApp, useUser, useDoc } from '@/lib/firebase';
+import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department, OrganizationMember } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
@@ -60,7 +60,7 @@ interface EditIncidentDialogProps {
 
 export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], departments = [] }: EditIncidentDialogProps) {
   const { toast } = useToast();
-  const app = useFirebaseApp();
+  const firestore = useFirestore();
   const { user: currentUser, loading: userLoading, organizationId, role } = useUser();
   const { data: userProfile, loading: profileLoading } = useDoc<User>(currentUser ? `users/${currentUser.uid}` : null);
   const { data: currentMember } = useDoc<OrganizationMember>(
@@ -91,7 +91,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
   }, [ticket, form]);
 
   const onSubmit = async (data: EditIncidentFormValues) => {
-    if (!app || !currentUser || !organizationId || ticket.organizationId !== organizationId) {
+    if (!firestore || !currentUser || !organizationId || ticket.organizationId !== organizationId) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -140,14 +140,9 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     }
     
     try {
-      const fn = httpsCallable(getFunctions(app), 'updateTicketStatus');
-      const { status, ...rest } = updateData;
-      await fn({
-        organizationId,
-        ticketId: ticket.id,
-        newStatus: status ?? null,
-        updates: rest,
-      });
+      const functions = getFunctions();
+      const updateTicket = httpsCallable(functions, 'updateTicketStatus');
+      await updateTicket({ orgId: organizationId, ticketId: ticket.id, patch: updateData });
 
       if (assignmentChanged && newAssignee) {
         const baseUrl =
@@ -188,7 +183,13 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       });
       onOpenChange(false);
     } catch(error: any) {
-        if (error.code === 'permission-denied' || String(error?.code ?? '').includes('permission-denied')) {
+        if (error?.code?.startsWith?.('functions/')) {
+          toast({
+            variant: 'destructive',
+            title: 'No se pudo actualizar la incidencia',
+            description: error.message || 'Ocurrió un error inesperado.',
+          });
+        } else if (error.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
             path: orgDocPath(organizationId, 'tickets', ticket.id),
             operation: 'update',

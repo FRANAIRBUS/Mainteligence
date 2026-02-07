@@ -1,13 +1,10 @@
 import {
   collection,
-  deleteDoc,
   doc,
-  getDoc,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  setDoc,
+  getDoc,
   startAfter,
   type DocumentData,
   type Firestore,
@@ -17,7 +14,8 @@ import {
   type Unsubscribe,
   limit,
 } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { getApp } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import type { Auth } from "firebase/auth";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import type { User, Department } from "@/lib/firebase/models";
@@ -111,14 +109,22 @@ export const createTask = async (
     throw new Error("Critical: Missing organizationId in transaction");
   }
 
-  await ensureAuthenticatedUser(auth);
+  const user = await ensureAuthenticatedUser(auth);
 
-  const fn = httpsCallable(getFunctions(auth.app), "createTask");
-  const result = await fn({ organizationId: payload.organizationId, payload });
-  const taskId = (result.data as { taskId?: string } | undefined)?.taskId;
-  if (!taskId) {
-    throw new Error("No se pudo crear la tarea.");
-  }
+  const taskId = doc(tasksCollection(db, payload.organizationId)).id;
+  const functions = getFunctions(getApp());
+  const createTaskFn = httpsCallable(functions, 'createTask');
+  await createTaskFn({
+    orgId: payload.organizationId,
+    taskId,
+    payload: {
+      ...payload,
+      createdBy: user.uid,
+      status: payload.status || 'open',
+      priority: payload.priority || 'media',
+    },
+  });
+
   return taskId;
 };
 
@@ -130,10 +136,9 @@ export const upsertTask = async (
   payload: MaintenanceTaskInput
 ) => {
   await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id).withConverter(
-    taskConverter
-  );
-  await setDoc(docRef, payload, { merge: true });
+  const functions = getFunctions(getApp());
+  const updateTaskFn = httpsCallable(functions, 'updateTaskStatus');
+  await updateTaskFn({ orgId: organizationId, taskId: id, patch: payload });
   return id;
 };
 
@@ -146,14 +151,10 @@ export const updateTask = async (
   options?: { users: User[]; departments: Department[] }
 ) => {
   await ensureAuthenticatedUser(auth);
-  const { status, ...rest } = updates;
-  const fn = httpsCallable(getFunctions(auth.app), "updateTaskStatus");
-  await fn({
-    organizationId,
-    taskId: id,
-    newStatus: status ?? null,
-    updates: rest,
-  });
+  const functions = getFunctions(getApp());
+  const updateTaskFn = httpsCallable(functions, 'updateTaskStatus');
+  await updateTaskFn({ orgId: organizationId, taskId: id, patch: updates });
+
   return id;
 };
 
@@ -165,16 +166,12 @@ export const addTaskReport = async (
   report: { description: string; createdBy?: string }
 ) => {
   const user = await ensureAuthenticatedUser(auth);
-  const fn = httpsCallable(getFunctions(auth.app), "updateTaskStatus");
-  await fn({
-    organizationId,
+  const functions = getFunctions(getApp());
+  const updateTaskFn = httpsCallable(functions, 'updateTaskStatus');
+  await updateTaskFn({
+    orgId: organizationId,
     taskId: id,
-    updates: {
-      reportEntry: {
-        description: report.description,
-        createdBy: report.createdBy || user.uid,
-      },
-    },
+    reportAppend: { description: report.description, createdBy: report.createdBy || user.uid },
   });
 };
 
@@ -185,6 +182,7 @@ export const deleteTask = async (
   id: string
 ) => {
   await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id);
-  await deleteDoc(docRef);
+  const functions = getFunctions(getApp());
+  const deleteTaskFn = httpsCallable(functions, 'deleteTask');
+  await deleteTaskFn({ orgId: organizationId, taskId: id });
 };

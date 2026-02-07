@@ -34,9 +34,9 @@ type EntitlementLimits = {
   maxDepartments: number;
   maxUsers: number;
   maxActivePreventives: number;
+  attachmentsMonthlyMB: number;
   maxOpenTickets: number;
   maxOpenTasks: number;
-  attachmentsMonthlyMB: number;
   maxAttachmentMB: number;
   maxAttachmentsPerTicket: number;
   retentionDays: number;
@@ -48,9 +48,9 @@ type EntitlementUsage = {
   departmentsCount: number;
   usersCount: number;
   activePreventivesCount: number;
+  attachmentsThisMonthMB: number;
   openTicketsCount: number;
   openTasksCount: number;
-  attachmentsThisMonthMB: number;
 };
 
 type Entitlement = {
@@ -84,6 +84,7 @@ const CREATED_ORG_LIMITS: Record<AccountPlan, number> = {
 };
 
 const DEFAULT_ENTITLEMENT_PROVIDER: EntitlementProvider = 'manual';
+// Base defaults (used for enterprise-like overrides).
 const DEFAULT_ENTITLEMENT_LIMITS: EntitlementLimits = {
   maxUsers: 2,
   maxSites: 1,
@@ -99,7 +100,19 @@ const DEFAULT_ENTITLEMENT_LIMITS: EntitlementLimits = {
 };
 
 const PLAN_DEFAULT_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
-  free: { ...DEFAULT_ENTITLEMENT_LIMITS },
+  free: {
+    maxUsers: 2,
+    maxSites: 1,
+    maxDepartments: 3,
+    maxAssets: 1,
+    maxActivePreventives: 0,
+    maxOpenTickets: 10,
+    maxOpenTasks: 10,
+    attachmentsMonthlyMB: 0,
+    maxAttachmentMB: 0,
+    maxAttachmentsPerTicket: 0,
+    retentionDays: 0,
+  },
   basic: {
     maxUsers: 5,
     maxSites: 2,
@@ -140,16 +153,16 @@ const PLAN_DEFAULT_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
     retentionDays: 365,
   },
   enterprise: {
-    maxUsers: 500,
-    maxSites: 200,
-    maxDepartments: 500,
-    maxAssets: 100000,
-    maxActivePreventives: 5000,
-    maxOpenTickets: 10000,
-    maxOpenTasks: 10000,
-    attachmentsMonthlyMB: 20000,
-    maxAttachmentMB: 50,
-    maxAttachmentsPerTicket: 50,
+    maxUsers: 10_000,
+    maxSites: 10_000,
+    maxDepartments: 10_000,
+    maxAssets: 1_000_000,
+    maxActivePreventives: 100_000,
+    maxOpenTickets: 1_000_000,
+    maxOpenTasks: 1_000_000,
+    attachmentsMonthlyMB: 100_000,
+    maxAttachmentMB: 100,
+    maxAttachmentsPerTicket: 100,
     retentionDays: 3650,
   },
 };
@@ -188,9 +201,9 @@ const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
   departmentsCount: 0,
   usersCount: 0,
   activePreventivesCount: 0,
+  attachmentsThisMonthMB: 0,
   openTicketsCount: 0,
   openTasksCount: 0,
-  attachmentsThisMonthMB: 0,
 };
 
 const DEMO_PREVENTIVE_TEMPLATES_LIMIT = 5;
@@ -512,10 +525,10 @@ function resolveEntitlementPlanId({
   fallbackPlanId?: string;
 }): EntitlementPlanId {
   const normalized = String(metadataPlanId ?? '').trim();
-  if (normalized === 'free' || normalized === 'basic' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
+  if (normalized === 'free' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
     return normalized;
   }
-  if (fallbackPlanId === 'free' || fallbackPlanId === 'basic' || fallbackPlanId === 'starter' || fallbackPlanId === 'pro' || fallbackPlanId === 'enterprise') {
+  if (fallbackPlanId === 'free' || fallbackPlanId === 'starter' || fallbackPlanId === 'pro' || fallbackPlanId === 'enterprise') {
     return fallbackPlanId;
   }
   return 'free';
@@ -1300,6 +1313,28 @@ function normalizeStringArray(value: unknown): string[] {
     .filter((item) => Boolean(item));
 }
 
+function normalizeStatus(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, '_');
+}
+
+function isOpenStatus(status: unknown): boolean {
+  const normalized = normalizeStatus(status);
+  // Tickets/incidencias
+  if (['new', 'open', 'in_progress', 'pending', 'assigned', 'reopened', 'waiting_parts', 'waiting_external'].includes(normalized)) {
+    return true;
+  }
+  // Spanish variants seen in UI
+  if (['abierta', 'en_curso', 'en_espera', 'cierre_solicitado'].includes(normalized)) {
+    return true;
+  }
+  return false;
+}
+
 function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null): MembershipScope {
   const departmentId = String(userData?.departmentId ?? '').trim();
   const locationId = String(userData?.locationId ?? '').trim();
@@ -1309,116 +1344,6 @@ function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null)
     locationId: locationId || undefined,
     locationIds: normalizeStringArray(userData?.locationIds),
   };
-}
-
-function resolveDocLocationId(data: FirebaseFirestore.DocumentData | null | undefined): string | null {
-  const value = String(data?.locationId ?? '').trim();
-  return value || null;
-}
-
-function resolveDocOriginDepartmentId(
-  data: FirebaseFirestore.DocumentData | null | undefined,
-): string | null {
-  const origin = String(data?.originDepartmentId ?? '').trim();
-  if (origin) return origin;
-  const fallback = String(data?.departmentId ?? '').trim();
-  return fallback || null;
-}
-
-function resolveDocTargetDepartmentId(
-  data: FirebaseFirestore.DocumentData | null | undefined,
-): string | null {
-  const target = String(data?.targetDepartmentId ?? '').trim();
-  if (target) return target;
-  const fallback = String(data?.departmentId ?? '').trim();
-  return fallback || null;
-}
-
-function scopeHasDepartment(scope: MembershipScope, departmentId: string | null): boolean {
-  if (!departmentId) return false;
-  const allowed = new Set([scope.departmentId, ...scope.departmentIds].filter(Boolean));
-  return allowed.size > 0 && allowed.has(departmentId);
-}
-
-function scopeHasLocation(scope: MembershipScope, locationId: string | null): boolean {
-  if (!locationId) return false;
-  const allowed = new Set([scope.locationId, ...scope.locationIds].filter(Boolean));
-  return allowed.size > 0 && allowed.has(locationId);
-}
-
-function normalizeMemberIds(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item ?? '').trim()).filter(Boolean);
-}
-
-function resolveMemberDepartmentIds(member: FirebaseFirestore.DocumentData | null): Set<string> {
-  if (!member) return new Set();
-  const ids = [
-    String(member.departmentId ?? '').trim(),
-    ...normalizeMemberIds(member.departmentIds),
-  ].filter(Boolean);
-  return new Set(ids);
-}
-
-function resolveMemberLocationIds(member: FirebaseFirestore.DocumentData | null): Set<string> {
-  if (!member) return new Set();
-  const ids = [
-    String(member.locationId ?? '').trim(),
-    ...normalizeMemberIds(member.locationIds),
-  ].filter(Boolean);
-  return new Set(ids);
-}
-
-function normalizeTicketStatusValue(status: unknown): string {
-  const value = String(status ?? '').trim();
-  switch (value) {
-    case 'Abierta':
-      return 'new';
-    case 'En curso':
-      return 'in_progress';
-    case 'En espera':
-      return 'in_progress';
-    case 'Resuelta':
-      return 'resolved';
-    case 'Cierre solicitado':
-      return 'in_progress';
-    case 'Cerrada':
-      return 'resolved';
-    default:
-      return value;
-  }
-}
-
-function normalizeTaskStatusValue(status: unknown): string {
-  const value = String(status ?? '').trim();
-  switch (value) {
-    case 'pendiente':
-      return 'open';
-    case 'en_progreso':
-      return 'in_progress';
-    case 'completada':
-      return 'done';
-    default:
-      return value;
-  }
-}
-
-function isOpenTicketStatus(status: unknown): boolean {
-  const normalized = normalizeTicketStatusValue(status);
-  const closed = new Set(['resolved', 'closed', 'canceled']);
-  if (closed.has(normalized)) return false;
-  const open = new Set(['new', 'in_progress', 'assigned', 'waiting_parts', 'waiting_external', 'reopened']);
-  if (open.has(normalized)) return true;
-  return true;
-}
-
-function isOpenTaskStatus(status: unknown): boolean {
-  const normalized = normalizeTaskStatusValue(status);
-  const closed = new Set(['done', 'canceled', 'validated']);
-  if (closed.has(normalized)) return false;
-  const open = new Set(['open', 'in_progress', 'blocked']);
-  if (open.has(normalized)) return true;
-  return true;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -1511,52 +1436,6 @@ async function requireActiveMembership(actorUid: string, orgId: string): Promise
   };
 }
 
-function isActiveMembershipData(data: FirebaseFirestore.DocumentData | null | undefined): boolean {
-  if (!data) return false;
-  const status = String(data.status ?? '').trim();
-  if (status) return status === 'active';
-  if (data.active === true || data.isActive === true) return true;
-  return false;
-}
-
-async function getActiveMemberData(
-  orgId: string,
-  uid: string,
-): Promise<FirebaseFirestore.DocumentData | null> {
-  const memberRef = db.collection('organizations').doc(orgId).collection('members').doc(uid);
-  const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
-  const [memberSnap, membershipSnap] = await Promise.all([memberRef.get(), membershipRef.get()]);
-  if (memberSnap.exists && isActiveMembershipData(memberSnap.data())) return memberSnap.data() ?? null;
-  if (membershipSnap.exists && isActiveMembershipData(membershipSnap.data())) return membershipSnap.data() ?? null;
-  return null;
-}
-
-function membersShareDepartment(
-  actor: FirebaseFirestore.DocumentData | null,
-  target: FirebaseFirestore.DocumentData | null,
-): boolean {
-  const actorDepartments = resolveMemberDepartmentIds(actor);
-  const targetDepartments = resolveMemberDepartmentIds(target);
-  if (actorDepartments.size === 0 || targetDepartments.size === 0) return false;
-  for (const dept of actorDepartments) {
-    if (targetDepartments.has(dept)) return true;
-  }
-  return false;
-}
-
-function membersShareLocation(
-  actor: FirebaseFirestore.DocumentData | null,
-  target: FirebaseFirestore.DocumentData | null,
-): boolean {
-  const actorLocations = resolveMemberLocationIds(actor);
-  const targetLocations = resolveMemberLocationIds(target);
-  if (actorLocations.size === 0 || targetLocations.size === 0) return false;
-  for (const loc of actorLocations) {
-    if (targetLocations.has(loc)) return true;
-  }
-  return false;
-}
-
 async function resolvePlanFeaturesForTx(tx: FirebaseFirestore.Transaction, planId: string | undefined) {
   const resolvedPlanId = resolveEntitlementPlanId({ metadataPlanId: planId ?? null });
   const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
@@ -1564,87 +1443,6 @@ async function resolvePlanFeaturesForTx(tx: FirebaseFirestore.Transaction, planI
     ? (planSnap.get('features') as Record<string, boolean> | undefined)
     : undefined;
   return resolveEffectiveFeaturesForPlan(resolvedPlanId, rawFeatures ?? null);
-}
-
-async function resolvePlanLimitsForTx(
-  tx: FirebaseFirestore.Transaction,
-  planId: string | undefined,
-  fallbackLimits: Partial<EntitlementLimits> | null | undefined,
-) {
-  const resolvedPlanId = resolveEntitlementPlanId({ metadataPlanId: planId ?? null });
-  const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
-  const rawLimits = planSnap.exists
-    ? (planSnap.get('limits') as Partial<EntitlementLimits> | undefined)
-    : undefined;
-  return resolveEffectiveLimitsForPlan(resolvedPlanId, rawLimits ?? fallbackLimits ?? null);
-}
-
-function canCreateTicketForRole(
-  role: Role,
-  scope: MembershipScope,
-  locationId: string | null,
-  originDepartmentId: string | null,
-  targetDepartmentId: string | null,
-) {
-  if (role === 'super_admin' || role === 'admin' || role === 'mantenimiento') return true;
-  if (role === 'jefe_departamento') {
-    return scopeHasDepartment(scope, originDepartmentId) || scopeHasDepartment(scope, targetDepartmentId);
-  }
-  if (role === 'jefe_ubicacion' || role === 'operario') {
-    return scopeHasLocation(scope, locationId);
-  }
-  return false;
-}
-
-function canUpdateDocumentForRole(
-  role: Role,
-  scope: MembershipScope,
-  actorUid: string,
-  docData: FirebaseFirestore.DocumentData,
-) {
-  if (role === 'super_admin' || role === 'admin' || role === 'mantenimiento') return true;
-  if (role === 'jefe_departamento') {
-    const origin = resolveDocOriginDepartmentId(docData);
-    const target = resolveDocTargetDepartmentId(docData);
-    return scopeHasDepartment(scope, origin) || scopeHasDepartment(scope, target);
-  }
-  if (role === 'jefe_ubicacion') {
-    return scopeHasLocation(scope, resolveDocLocationId(docData));
-  }
-  if (role === 'operario') {
-    const isCreator = String(docData?.createdBy ?? '') === actorUid;
-    const isAssignee = String(docData?.assignedTo ?? '') === actorUid;
-    const origin = resolveDocOriginDepartmentId(docData);
-    const target = resolveDocTargetDepartmentId(docData);
-    const inDepartment = scopeHasDepartment(scope, origin) || scopeHasDepartment(scope, target);
-    return isCreator || isAssignee || inDepartment;
-  }
-  return false;
-}
-
-function shouldAllowOperarioUpdate(
-  role: Role,
-  actorUid: string,
-  docData: FirebaseFirestore.DocumentData,
-  updateKeys: string[],
-) {
-  if (role !== 'operario') return true;
-  const isCreator = String(docData?.createdBy ?? '') === actorUid;
-  const isAssignee = String(docData?.assignedTo ?? '') === actorUid;
-  if (isCreator || isAssignee) return true;
-  return updateKeys.length > 0 && updateKeys.every((key) => key === 'reportEntry');
-}
-
-function canAssignToTarget(
-  role: Role,
-  actor: FirebaseFirestore.DocumentData | null,
-  target: FirebaseFirestore.DocumentData | null,
-) {
-  if (!actor || !target) return false;
-  if (role === 'super_admin' || role === 'admin' || role === 'mantenimiento') return true;
-  if (role === 'jefe_departamento') return membersShareDepartment(actor, target);
-  if (role === 'jefe_ubicacion') return membersShareLocation(actor, target);
-  return false;
 }
 
 async function resolveFallbackPreventivesEntitlementForTx(
@@ -3689,6 +3487,565 @@ export const createDepartment = functions.https.onCall(async (data, context) => 
   return { ok: true, organizationId: orgId, departmentId: departmentRef.id };
 });
 
+// -----------------------------
+// Tickets & Tasks (server-only writes)
+// -----------------------------
+
+export const createTicketUploadSession = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const ticketId = String(data?.ticketId ?? '').trim();
+  const maxFiles = Math.min(Number(data?.maxFiles ?? 10) || 10, 10);
+
+  if (!orgId || !ticketId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o ticketId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const maxAttachmentMB = Number(entitlement.limits?.maxAttachmentMB ?? 0) || 0;
+    const monthlyMB = Number(entitlement.limits?.attachmentsMonthlyMB ?? 0) || 0;
+    const perTicket = Number(entitlement.limits?.maxAttachmentsPerTicket ?? 0) || 0;
+
+    if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Los adjuntos no están disponibles en tu plan.',
+        'attachments_not_allowed'
+      );
+    }
+
+    // Create short-lived session for Storage rules.
+    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000));
+    const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
+
+    tx.set(sessionRef, {
+      organizationId: orgId,
+      uploaderUid: uid,
+      type: 'ticket',
+      status: 'active',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt,
+      maxFiles,
+    });
+
+    return {
+      ok: true,
+      ticketId,
+      expiresAt: expiresAt.toDate().toISOString(),
+      maxFiles,
+      maxAttachmentMB,
+    };
+  });
+});
+
+export const registerTicketAttachment = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const ticketId = String(data?.ticketId ?? '').trim();
+  const sizeBytes = Number(data?.sizeBytes ?? 0) || 0;
+
+  if (!orgId || !ticketId || sizeBytes <= 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId, ticketId o sizeBytes.');
+  }
+
+  const sizeMB = sizeBytes / (1024 * 1024);
+
+  return await db.runTransaction(async (tx) => {
+    await requireActiveMembershipForTx(tx, orgId, uid);
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const maxAttachmentMB = Number(entitlement.limits?.maxAttachmentMB ?? 0) || 0;
+    const monthlyMB = Number(entitlement.limits?.attachmentsMonthlyMB ?? 0) || 0;
+    const perTicket = Number(entitlement.limits?.maxAttachmentsPerTicket ?? 0) || 0;
+    const usedThisMonth = Number(entitlement.usage?.attachmentsThisMonthMB ?? 0) || 0;
+
+    if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
+      throw new functions.https.HttpsError('failed-precondition', 'Los adjuntos no están disponibles en tu plan.', 'attachments_not_allowed');
+    }
+
+    if (sizeMB > maxAttachmentMB + 1e-6) {
+      throw new functions.https.HttpsError('failed-precondition', `Adjunto supera el tamaño máximo (${maxAttachmentMB} MB).`, 'attachment_too_large');
+    }
+
+    if (usedThisMonth + sizeMB > monthlyMB + 1e-6) {
+      throw new functions.https.HttpsError('failed-precondition', 'Se superó la cuota mensual de adjuntos.', 'attachments_quota_exceeded');
+    }
+
+    const ticketRef = orgRef.collection('tickets').doc(ticketId);
+    const ticketSnap = await tx.get(ticketRef);
+    if (!ticketSnap.exists) {
+      // Ticket could be created right after uploads; allow registering after creation only.
+      throw new functions.https.HttpsError('failed-precondition', 'La incidencia aún no existe para registrar adjuntos.', 'ticket_not_found');
+    }
+
+    const currentUrls = Array.isArray(ticketSnap.get('photoUrls')) ? (ticketSnap.get('photoUrls') as unknown[]) : [];
+    if (currentUrls.length > perTicket) {
+      throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${perTicket}).`, 'attachments_per_ticket_exceeded');
+    }
+
+    tx.update(orgRef, {
+      'entitlement.usage.attachmentsThisMonthMB': admin.firestore.FieldValue.increment(sizeMB),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { ok: true, sizeMB };
+  });
+});
+
+export const createTicket = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const payload = (data?.payload ?? data) as Record<string, any>;
+  const providedTicketId = String(payload?.ticketId ?? data?.ticketId ?? '').trim() || undefined;
+
+  if (!orgId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Falta orgId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const limits = entitlement.limits;
+    const usage = entitlement.usage;
+
+    const locationId = String(payload?.locationId ?? payload?.siteId ?? '').trim();
+    const originDepartmentId = String(payload?.originDepartmentId ?? '').trim() || undefined;
+    const targetDepartmentId = String(payload?.targetDepartmentId ?? '').trim() || undefined;
+    const departmentId = String(payload?.departmentId ?? '').trim() || undefined;
+    const effectiveDepartmentId = targetDepartmentId ?? originDepartmentId ?? departmentId;
+
+    if (!locationId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Falta locationId.');
+    }
+    if (!effectiveDepartmentId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Falta departmentId.');
+    }
+
+    // Scope enforcement (keep existing RBAC model; don't redesign).
+    requireScopedAccessToSite(resolved.role, resolved.scope, locationId);
+    requireScopedAccessToDepartment(resolved.role, resolved.scope, effectiveDepartmentId);
+
+    const status = payload?.status ?? 'new';
+    if (isOpenStatus(status)) {
+      const current = Number(usage?.openTicketsCount ?? 0) || 0;
+      const max = Number(limits?.maxOpenTickets ?? 0) || 0;
+      if (max > 0 && current >= max) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Has alcanzado el límite de incidencias abiertas de tu plan.',
+          'max_open_tickets_reached'
+        );
+      }
+    }
+
+    const ticketRef = providedTicketId
+      ? orgRef.collection('tickets').doc(providedTicketId)
+      : orgRef.collection('tickets').doc();
+
+    const existing = await tx.get(ticketRef);
+    if (existing.exists) {
+      throw new functions.https.HttpsError('already-exists', 'La incidencia ya existe.');
+    }
+
+    const nowYear = new Date().getFullYear();
+    const displayId = payload?.displayId || `INC-${nowYear}-${String(Date.now()).slice(-4)}`;
+
+    const createdByName = String(payload?.createdByName ?? resolved.userData?.displayName ?? resolved.userData?.email ?? uid);
+
+    const docData: Record<string, any> = {
+      organizationId: orgId,
+      locationId,
+      originDepartmentId: originDepartmentId ?? null,
+      targetDepartmentId: targetDepartmentId ?? null,
+      departmentId: departmentId ?? null,
+      title: String(payload?.title ?? '').trim(),
+      description: String(payload?.description ?? '').trim(),
+      type: payload?.type ?? 'correctivo',
+      status,
+      priority: payload?.priority ?? 'Media',
+      assetId: payload?.assetId ?? null,
+      createdBy: uid,
+      createdByName,
+      assignedRole: payload?.assignedRole ?? 'mantenimiento',
+      assignedTo: payload?.assignedTo ?? null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      displayId,
+      photoUrls: Array.isArray(payload?.photoUrls) ? payload.photoUrls : [],
+      hasAttachments: Array.isArray(payload?.photoUrls) && payload.photoUrls.length > 0,
+    };
+
+    // Clean null-ish legacy.
+    if (!docData.assetId) delete docData.assetId;
+
+    tx.set(ticketRef, docData, { merge: false });
+
+    if (isOpenStatus(status)) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    // Clean up upload session if present.
+    const sessionRef = orgRef.collection('uploadSessions').doc(ticketRef.id);
+    const sessionSnap = await tx.get(sessionRef);
+    if (sessionSnap.exists) {
+      tx.delete(sessionRef);
+    }
+
+    return { ok: true, ticketId: ticketRef.id };
+  });
+});
+
+export const updateTicketStatus = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const ticketId = String(data?.ticketId ?? '').trim();
+  const newStatus = data?.newStatus;
+  const patch = (data?.patch ?? {}) as Record<string, any>;
+  const reportAppend = data?.reportAppend as { description?: string } | undefined;
+
+  if (!orgId || !ticketId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o ticketId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const ticketRef = orgRef.collection('tickets').doc(ticketId);
+
+    const [orgSnap, ticketSnap] = await Promise.all([tx.get(orgRef), tx.get(ticketRef)]);
+
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+    if (!ticketSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Incidencia no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const limits = entitlement.limits;
+    const usage = entitlement.usage;
+
+    const oldStatus = ticketSnap.get('status');
+    const effectiveNewStatus = newStatus ?? patch?.status ?? oldStatus;
+
+    const wasOpen = isOpenStatus(oldStatus);
+    const willBeOpen = isOpenStatus(effectiveNewStatus);
+
+    if (!wasOpen && willBeOpen) {
+      const current = Number(usage?.openTicketsCount ?? 0) || 0;
+      const max = Number(limits?.maxOpenTickets ?? 0) || 0;
+      if (max > 0 && current >= max) {
+        throw new functions.https.HttpsError('failed-precondition', 'Has alcanzado el límite de incidencias abiertas de tu plan.', 'max_open_tickets_reached');
+      }
+    }
+
+    // Scope enforcement for scoped roles when changing scope-related fields.
+    const nextLocationId = String((patch?.locationId ?? patch?.siteId ?? ticketSnap.get('locationId') ?? '')).trim();
+    const nextOriginDept = String((patch?.originDepartmentId ?? ticketSnap.get('originDepartmentId') ?? '')).trim();
+    const nextTargetDept = String((patch?.targetDepartmentId ?? ticketSnap.get('targetDepartmentId') ?? '')).trim();
+    const nextLegacyDept = String((patch?.departmentId ?? ticketSnap.get('departmentId') ?? '')).trim();
+    const nextDept = nextTargetDept || nextOriginDept || nextLegacyDept;
+
+    if (nextLocationId) {
+      requireScopedAccessToSite(resolved.role, resolved.scope, nextLocationId);
+    }
+    if (nextDept) {
+      requireScopedAccessToDepartment(resolved.role, resolved.scope, nextDept);
+    }
+
+    const updateData: Record<string, any> = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      organizationId: orgId,
+      ...patch,
+    };
+
+    if (newStatus !== undefined) {
+      updateData.status = effectiveNewStatus;
+    }
+
+    // Closure metadata (keep existing semantics used by UI).
+    const normalizedNew = normalizeStatus(effectiveNewStatus);
+    if (['resolved', 'closed', 'cerrada', 'resuelta', 'canceled', 'cancelled', 'cancelada'].includes(normalizedNew)) {
+      if (!ticketSnap.get('closedAt')) {
+        updateData.closedAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+      updateData.closedBy = uid;
+    }
+
+    // Report append (used by incident details page).
+    if (reportAppend?.description && String(reportAppend.description).trim().length > 0) {
+      const entry = {
+        description: String(reportAppend.description).trim(),
+        createdAt: admin.firestore.Timestamp.now(),
+        createdBy: uid,
+      };
+      updateData.reports = admin.firestore.FieldValue.arrayUnion(entry);
+    }
+
+    tx.update(ticketRef, updateData);
+
+    if (wasOpen !== willBeOpen) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(willBeOpen ? 1 : -1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { ok: true };
+  });
+});
+
+export const createTask = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const payload = (data?.payload ?? data) as Record<string, any>;
+
+  if (!orgId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Falta orgId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const limits = entitlement.limits;
+    const usage = entitlement.usage;
+
+    const status = payload?.status ?? 'open';
+    if (isOpenStatus(status)) {
+      const current = Number(usage?.openTasksCount ?? 0) || 0;
+      const max = Number(limits?.maxOpenTasks ?? 0) || 0;
+      if (max > 0 && current >= max) {
+        throw new functions.https.HttpsError('failed-precondition', 'Has alcanzado el límite de tareas abiertas de tu plan.', 'max_open_tasks_reached');
+      }
+    }
+
+    const locationId = String(payload?.locationId ?? '').trim();
+    const originDepartmentId = String(payload?.originDepartmentId ?? '').trim() || undefined;
+    const targetDepartmentId = String(payload?.targetDepartmentId ?? '').trim() || undefined;
+    const departmentId = String(payload?.departmentId ?? '').trim() || undefined;
+    const effectiveDepartmentId = targetDepartmentId ?? originDepartmentId ?? departmentId;
+
+    if (locationId) {
+      requireScopedAccessToSite(resolved.role, resolved.scope, locationId);
+    }
+    if (effectiveDepartmentId) {
+      requireScopedAccessToDepartment(resolved.role, resolved.scope, effectiveDepartmentId);
+    }
+
+    const taskRef = orgRef.collection('tasks').doc();
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const docData: Record<string, any> = {
+      ...payload,
+      organizationId: orgId,
+      createdBy: uid,
+      status,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    tx.set(taskRef, docData, { merge: false });
+
+    if (isOpenStatus(status)) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTasksCount': admin.firestore.FieldValue.increment(1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { ok: true, taskId: taskRef.id };
+  });
+});
+
+export const updateTaskStatus = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const taskId = String(data?.taskId ?? '').trim();
+  const newStatus = data?.newStatus;
+  const patch = (data?.patch ?? {}) as Record<string, any>;
+  const reportAppend = data?.reportAppend as { description?: string } | undefined;
+
+  if (!orgId || !taskId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o taskId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const taskRef = orgRef.collection('tasks').doc(taskId);
+
+    const [orgSnap, taskSnap] = await Promise.all([tx.get(orgRef), tx.get(taskRef)]);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+    if (!taskSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Tarea no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const limits = entitlement.limits;
+    const usage = entitlement.usage;
+
+    const oldStatus = taskSnap.get('status');
+    const effectiveNewStatus = newStatus ?? patch?.status ?? oldStatus;
+    const wasOpen = isOpenStatus(oldStatus);
+    const willBeOpen = isOpenStatus(effectiveNewStatus);
+
+    if (!wasOpen && willBeOpen) {
+      const current = Number(usage?.openTasksCount ?? 0) || 0;
+      const max = Number(limits?.maxOpenTasks ?? 0) || 0;
+      if (max > 0 && current >= max) {
+        throw new functions.https.HttpsError('failed-precondition', 'Has alcanzado el límite de tareas abiertas de tu plan.', 'max_open_tasks_reached');
+      }
+    }
+
+    const nextLocationId = String((patch?.locationId ?? taskSnap.get('locationId') ?? '')).trim();
+    const nextOriginDept = String((patch?.originDepartmentId ?? taskSnap.get('originDepartmentId') ?? '')).trim();
+    const nextTargetDept = String((patch?.targetDepartmentId ?? taskSnap.get('targetDepartmentId') ?? '')).trim();
+    const nextLegacyDept = String((patch?.departmentId ?? taskSnap.get('departmentId') ?? '')).trim();
+    const nextDept = nextTargetDept || nextOriginDept || nextLegacyDept;
+
+    if (nextLocationId) {
+      requireScopedAccessToSite(resolved.role, resolved.scope, nextLocationId);
+    }
+    if (nextDept) {
+      requireScopedAccessToDepartment(resolved.role, resolved.scope, nextDept);
+    }
+
+    const updateData: Record<string, any> = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      organizationId: orgId,
+      ...patch,
+    };
+
+    if (newStatus !== undefined) {
+      updateData.status = effectiveNewStatus;
+    }
+
+    const normalizedNew = normalizeStatus(effectiveNewStatus);
+    if (['done', 'closed', 'resolved', 'cerrada', 'resuelta', 'canceled', 'cancelled', 'cancelada'].includes(normalizedNew)) {
+      if (!taskSnap.get('closedAt')) {
+        updateData.closedAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+      updateData.closedBy = uid;
+    }
+
+    if (reportAppend?.description && String(reportAppend.description).trim().length > 0) {
+      const entry = {
+        description: String(reportAppend.description).trim(),
+        createdAt: admin.firestore.Timestamp.now(),
+        createdBy: uid,
+      };
+      updateData.reports = admin.firestore.FieldValue.arrayUnion(entry);
+    }
+
+    tx.update(taskRef, updateData);
+
+    if (wasOpen !== willBeOpen) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTasksCount': admin.firestore.FieldValue.increment(willBeOpen ? 1 : -1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { ok: true };
+  });
+});
+
+export const deleteTask = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const taskId = String(data?.taskId ?? '').trim();
+  if (!orgId || !taskId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o taskId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    requireRoleAllowed(resolved.role, TASKS_ROLES, 'No tienes permisos para eliminar tareas.');
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const taskRef = orgRef.collection('tasks').doc(taskId);
+    const [orgSnap, taskSnap] = await Promise.all([tx.get(orgRef), tx.get(taskRef)]);
+    if (!orgSnap.exists) throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    if (!taskSnap.exists) throw new functions.https.HttpsError('not-found', 'Tarea no encontrada.');
+
+    const oldStatus = taskSnap.get('status');
+    const wasOpen = isOpenStatus(oldStatus);
+
+    tx.delete(taskRef);
+
+    if (wasOpen) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTasksCount': admin.firestore.FieldValue.increment(-1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { ok: true };
+  });
+});
+
+
 export const createAsset = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
@@ -3748,661 +4105,6 @@ export const createAsset = functions.https.onCall(async (data, context) => {
   });
 
   return { ok: true, organizationId: orgId, assetId: assetRef.id };
-});
-
-export const createTicket = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
-  const orgId = resolveOrgIdFromData(data);
-  const { role, scope, userData } = await requireActiveMembership(actorUid, orgId);
-
-  requireRoleAllowed(
-    role,
-    new Set<Role>(['super_admin', 'admin', 'mantenimiento', 'jefe_departamento', 'jefe_ubicacion', 'operario']),
-    'No tienes permisos para crear incidencias.',
-  );
-
-  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
-
-  const payload = data.payload;
-  const title = requireStringField(payload.title, 'title');
-  const description = requireStringField(payload.description, 'description');
-  const locationId = requireStringField(payload.locationId, 'locationId');
-  const departmentId = String(payload.departmentId ?? '').trim();
-  const originDepartmentId = String(payload.originDepartmentId ?? '').trim();
-  const targetDepartmentId = String(payload.targetDepartmentId ?? '').trim();
-  const resolvedOrigin = originDepartmentId || departmentId;
-  const resolvedTarget = targetDepartmentId || departmentId;
-  if (!resolvedOrigin) throw httpsError('invalid-argument', 'originDepartmentId requerido.');
-  if (!resolvedTarget) throw httpsError('invalid-argument', 'targetDepartmentId requerido.');
-
-  if (!canCreateTicketForRole(role, scope, locationId, resolvedOrigin, resolvedTarget)) {
-    throw httpsError('permission-denied', 'No tienes permisos para crear incidencias en ese alcance.');
-  }
-
-  const priority = requireStringField(payload.priority, 'priority');
-  const status = String(payload.status ?? 'new').trim() || 'new';
-  const type = String(payload.type ?? 'correctivo').trim() || 'correctivo';
-  const assetId = String(payload.assetId ?? '').trim() || null;
-  const assignedRole = String(payload.assignedRole ?? 'mantenimiento').trim() || 'mantenimiento';
-  const assignedToRaw = String(payload.assignedTo ?? '').trim();
-  const assignedTo = assignedToRaw ? assignedToRaw : null;
-  const ticketId = String(payload.ticketId ?? '').trim();
-  const createdByName =
-    String(userData?.displayName ?? '').trim()
-    || String(userData?.email ?? '').trim()
-    || actorEmail
-    || actorUid;
-  const displayId = `INC-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
-  const photoUrls = Array.isArray(payload.photoUrls)
-    ? payload.photoUrls.map((url: unknown) => String(url ?? '').trim()).filter(Boolean)
-    : [];
-  const attachmentsCountRaw = Number(payload.attachmentsCount ?? photoUrls.length);
-  const attachmentsCount = Number.isFinite(attachmentsCountRaw) && attachmentsCountRaw > 0
-    ? Math.floor(attachmentsCountRaw)
-    : 0;
-  const attachmentsBytesRaw = Number(payload.attachmentsBytes ?? 0);
-  const attachmentsBytes = Number.isFinite(attachmentsBytesRaw) && attachmentsBytesRaw > 0 ? attachmentsBytesRaw : 0;
-  const attachmentsMB = attachmentsBytes / (1024 * 1024);
-
-  const orgRef = db.collection('organizations').doc(orgId);
-  const ticketRef = ticketId ? orgRef.collection('tickets').doc(ticketId) : orgRef.collection('tickets').doc();
-  const now = admin.firestore.FieldValue.serverTimestamp();
-
-  await db.runTransaction(async (tx) => {
-    const [orgSnap, ticketSnap] = await tx.getAll(orgRef, ticketRef);
-    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
-    if (ticketSnap.exists) throw httpsError('already-exists', 'La incidencia ya existe.');
-    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
-    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
-
-    const limits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
-    const usage = (entitlement.usage ?? DEFAULT_ENTITLEMENT_USAGE) as EntitlementUsage;
-    const openTicketsCount = Number(usage.openTicketsCount ?? 0);
-
-    if (photoUrls.length > 0 || attachmentsCount > 0) {
-      if (limits.attachmentsMonthlyMB <= 0 || limits.maxAttachmentsPerTicket <= 0 || limits.maxAttachmentMB <= 0) {
-        throw httpsError('failed-precondition', 'attachments_not_allowed');
-      }
-      if ((attachmentsCount || photoUrls.length) > limits.maxAttachmentsPerTicket) {
-        throw httpsError('failed-precondition', 'Se excedió el máximo de adjuntos por incidencia.');
-      }
-      if (attachmentsMB > 0) {
-        const attachmentsThisMonthMB = Number(usage.attachmentsThisMonthMB ?? 0);
-        const nextUsage = attachmentsThisMonthMB + attachmentsMB;
-        if (Number.isFinite(limits.attachmentsMonthlyMB) && nextUsage > limits.attachmentsMonthlyMB) {
-          throw httpsError('failed-precondition', 'Se superó la cuota mensual de adjuntos.');
-        }
-      }
-    }
-
-    const isOpen = isOpenTicketStatus(status);
-    if (isOpen && Number.isFinite(limits.maxOpenTickets) && openTicketsCount >= limits.maxOpenTickets) {
-      throw httpsError('failed-precondition', 'Has alcanzado el límite de incidencias abiertas de tu plan.');
-    }
-
-    const ticketPayload = stripUndefinedDeep({
-      title,
-      description,
-      locationId,
-      departmentId: departmentId || resolvedTarget,
-      originDepartmentId: resolvedOrigin,
-      targetDepartmentId: resolvedTarget,
-      assetId,
-      status,
-      priority,
-      type,
-      assignedRole,
-      assignedTo,
-      createdBy: actorUid,
-      createdByName,
-      displayId,
-      organizationId: orgId,
-      createdAt: now,
-      updatedAt: now,
-      photoUrls: photoUrls.length > 0 ? photoUrls : undefined,
-      hasAttachments: photoUrls.length > 0 ? true : undefined,
-    });
-
-    tx.create(ticketRef, ticketPayload);
-
-    if (isOpen) {
-      tx.update(orgRef, {
-        'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(1),
-        'entitlement.updatedAt': now,
-      });
-    }
-  });
-
-  await auditLog({
-    action: 'createTicket',
-    actorUid,
-    actorEmail,
-    orgId,
-    after: { ticketId: ticketRef.id, title, priority, status },
-  });
-
-  return { ok: true, organizationId: orgId, ticketId: ticketRef.id };
-});
-
-export const updateTicketStatus = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
-  const orgId = resolveOrgIdFromData(data);
-  const ticketId = requireStringField(data?.ticketId, 'ticketId');
-
-  const { role, scope } = await requireActiveMembership(actorUid, orgId);
-  const newStatusRaw = data?.newStatus ?? data?.status ?? null;
-  const newStatusNormalized = String(newStatusRaw ?? '').trim();
-  const newStatus = newStatusNormalized ? newStatusNormalized : null;
-  const updatesRaw = isPlainObject(data?.updates) ? data.updates : {};
-
-  const allowedUpdates: Record<string, unknown> = {};
-  const updateKeys: string[] = [];
-  const allowField = (key: string) => {
-    if (key in updatesRaw && updatesRaw[key] !== undefined) {
-      allowedUpdates[key] = updatesRaw[key];
-      updateKeys.push(key);
-    }
-  };
-
-  allowField('priority');
-  allowField('assignedTo');
-  allowField('departmentId');
-  allowField('originDepartmentId');
-  allowField('targetDepartmentId');
-  allowField('closedAt');
-  allowField('closedBy');
-  allowField('closedReason');
-  allowField('reopened');
-  allowField('reopenedBy');
-  allowField('reopenedAt');
-  allowField('assignmentEmailSource');
-
-  const reportEntryRaw = isPlainObject(updatesRaw.reportEntry) ? updatesRaw.reportEntry : null;
-  if (newStatus) updateKeys.push('status');
-  if (reportEntryRaw) updateKeys.push('reportEntry');
-
-  const orgRef = db.collection('organizations').doc(orgId);
-  const ticketRef = orgRef.collection('tickets').doc(ticketId);
-  const now = admin.firestore.FieldValue.serverTimestamp();
-
-  await db.runTransaction(async (tx) => {
-    const [orgSnap, ticketSnap] = await tx.getAll(orgRef, ticketRef);
-    if (!ticketSnap.exists) throw httpsError('not-found', 'Incidencia no encontrada.');
-    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
-
-    const ticketData = ticketSnap.data() as FirebaseFirestore.DocumentData;
-    if (!canUpdateDocumentForRole(role, scope, actorUid, ticketData)) {
-      throw httpsError('permission-denied', 'No tienes permisos para actualizar esta incidencia.');
-    }
-    if (!shouldAllowOperarioUpdate(role, actorUid, ticketData, updateKeys)) {
-      throw httpsError('permission-denied', 'No tienes permisos para realizar esta actualización.');
-    }
-
-    const assignedToRaw = allowedUpdates.assignedTo;
-    const assignedTo = assignedToRaw != null ? String(assignedToRaw ?? '').trim() : undefined;
-    if (assignedToRaw !== undefined && assignedTo !== String(ticketData?.assignedTo ?? '').trim()) {
-      if (!assignedTo) {
-        if (!ADMIN_LIKE_ROLES.has(role)) {
-          throw httpsError('permission-denied', 'No tienes permisos para desasignar esta incidencia.');
-        }
-      } else {
-        const [actorMember, targetMember] = await Promise.all([
-          getActiveMemberData(orgId, actorUid),
-          getActiveMemberData(orgId, assignedTo),
-        ]);
-        if (!canAssignToTarget(role, actorMember, targetMember)) {
-          throw httpsError('permission-denied', 'No tienes permisos para asignar esta incidencia.');
-        }
-      }
-    }
-
-    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
-    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
-    const limits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
-    const usage = (entitlement.usage ?? DEFAULT_ENTITLEMENT_USAGE) as EntitlementUsage;
-    const openTicketsCount = Number(usage.openTicketsCount ?? 0);
-
-    const oldStatus = ticketData?.status;
-    const oldOpen = isOpenTicketStatus(oldStatus);
-    const nextStatus = newStatus ?? oldStatus;
-    const newOpen = isOpenTicketStatus(nextStatus);
-
-    if (!oldOpen && newOpen && Number.isFinite(limits.maxOpenTickets) && openTicketsCount >= limits.maxOpenTickets) {
-      throw httpsError('failed-precondition', 'Has alcanzado el límite de incidencias abiertas de tu plan.');
-    }
-
-    const updatePayload: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData> = {
-      ...allowedUpdates,
-      updatedAt: now,
-    };
-
-    if (assignedToRaw !== undefined) {
-      updatePayload.assignedTo = assignedTo ? assignedTo : null;
-    }
-
-    if (newStatus) {
-      updatePayload.status = newStatus;
-    }
-
-    if (reportEntryRaw) {
-      const description = String(reportEntryRaw.description ?? '').trim();
-      if (!description) throw httpsError('invalid-argument', 'description requerido.');
-      updatePayload.reports = admin.firestore.FieldValue.arrayUnion({
-        description,
-        createdAt: admin.firestore.Timestamp.now(),
-        createdBy: String(reportEntryRaw.createdBy ?? actorUid),
-      });
-    }
-
-    if (newStatus && !newOpen) {
-      if (!('closedAt' in updatePayload)) updatePayload.closedAt = now;
-      if (!('closedBy' in updatePayload)) updatePayload.closedBy = actorUid;
-    }
-
-    if (!oldOpen && newOpen) {
-      if (!('reopened' in updatePayload)) updatePayload.reopened = true;
-      if (!('reopenedAt' in updatePayload)) updatePayload.reopenedAt = now;
-      if (!('reopenedBy' in updatePayload)) updatePayload.reopenedBy = actorUid;
-    }
-
-    tx.update(ticketRef, updatePayload);
-
-    if (oldOpen && !newOpen && openTicketsCount > 0) {
-      tx.update(orgRef, {
-        'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(-1),
-        'entitlement.updatedAt': now,
-      });
-    } else if (!oldOpen && newOpen) {
-      tx.update(orgRef, {
-        'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(1),
-        'entitlement.updatedAt': now,
-      });
-    }
-  });
-
-  await auditLog({
-    action: 'updateTicketStatus',
-    actorUid,
-    actorEmail,
-    orgId,
-    after: { ticketId, status: newStatus ?? undefined },
-  });
-
-  return { ok: true, organizationId: orgId, ticketId };
-});
-
-export const createTask = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
-  const orgId = resolveOrgIdFromData(data);
-  const { role, scope } = await requireActiveMembership(actorUid, orgId);
-
-  requireRoleAllowed(
-    role,
-    new Set<Role>(['super_admin', 'admin', 'mantenimiento', 'jefe_departamento', 'jefe_ubicacion', 'operario']),
-    'No tienes permisos para crear tareas.',
-  );
-
-  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
-
-  const payload = data.payload;
-  const title = requireStringField(payload.title, 'title');
-  const priority = requireStringField(payload.priority, 'priority');
-  const taskType = String(payload.taskType ?? 'maintenance').trim() || 'maintenance';
-  const status = String(payload.status ?? 'open').trim() || 'open';
-  const description = String(payload.description ?? '').trim() || null;
-  const locationId = String(payload.locationId ?? '').trim() || null;
-  const departmentId = String(payload.departmentId ?? '').trim();
-  const originDepartmentId = String(payload.originDepartmentId ?? '').trim();
-  const targetDepartmentId = String(payload.targetDepartmentId ?? '').trim();
-  const resolvedOrigin = originDepartmentId || departmentId;
-  const resolvedTarget = targetDepartmentId || departmentId;
-  if (!resolvedOrigin) throw httpsError('invalid-argument', 'originDepartmentId requerido.');
-  if (!resolvedTarget) throw httpsError('invalid-argument', 'targetDepartmentId requerido.');
-
-  if (!canCreateTicketForRole(role, scope, locationId, resolvedOrigin, resolvedTarget)) {
-    throw httpsError('permission-denied', 'No tienes permisos para crear tareas en ese alcance.');
-  }
-
-  const assignedToRaw = String(payload.assignedTo ?? '').trim();
-  const assignedTo = assignedToRaw ? assignedToRaw : null;
-  const dueDate = payload.dueDate ?? null;
-  const category = String(payload.category ?? '').trim() || null;
-
-  const orgRef = db.collection('organizations').doc(orgId);
-  const taskRef = orgRef.collection('tasks').doc();
-  const now = admin.firestore.FieldValue.serverTimestamp();
-
-  await db.runTransaction(async (tx) => {
-    const orgSnap = await tx.get(orgRef);
-    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
-    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
-    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
-
-    const limits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
-    const usage = (entitlement.usage ?? DEFAULT_ENTITLEMENT_USAGE) as EntitlementUsage;
-    const openTasksCount = Number(usage.openTasksCount ?? 0);
-    const isOpen = isOpenTaskStatus(status);
-    if (isOpen && Number.isFinite(limits.maxOpenTasks) && openTasksCount >= limits.maxOpenTasks) {
-      throw httpsError('failed-precondition', 'Has alcanzado el límite de tareas abiertas de tu plan.');
-    }
-
-    const taskPayload = stripUndefinedDeep({
-      title,
-      description,
-      priority,
-      taskType,
-      status,
-      dueDate,
-      assignedTo,
-      originDepartmentId: resolvedOrigin,
-      targetDepartmentId: resolvedTarget,
-      locationId,
-      category,
-      createdBy: actorUid,
-      organizationId: orgId,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    tx.create(taskRef, taskPayload);
-
-    if (isOpen) {
-      tx.update(orgRef, {
-        'entitlement.usage.openTasksCount': admin.firestore.FieldValue.increment(1),
-        'entitlement.updatedAt': now,
-      });
-    }
-  });
-
-  await auditLog({
-    action: 'createTask',
-    actorUid,
-    actorEmail,
-    orgId,
-    after: { taskId: taskRef.id, title, priority, status },
-  });
-
-  return { ok: true, organizationId: orgId, taskId: taskRef.id };
-});
-
-export const updateTaskStatus = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
-  const orgId = resolveOrgIdFromData(data);
-  const taskId = requireStringField(data?.taskId, 'taskId');
-
-  const { role, scope } = await requireActiveMembership(actorUid, orgId);
-  const newStatusRaw = data?.newStatus ?? data?.status ?? null;
-  const newStatusNormalized = String(newStatusRaw ?? '').trim();
-  const newStatus = newStatusNormalized ? newStatusNormalized : null;
-  const updatesRaw = isPlainObject(data?.updates) ? data.updates : {};
-
-  const allowedUpdates: Record<string, unknown> = {};
-  const updateKeys: string[] = [];
-  const allowField = (key: string) => {
-    if (key in updatesRaw && updatesRaw[key] !== undefined) {
-      allowedUpdates[key] = updatesRaw[key];
-      updateKeys.push(key);
-    }
-  };
-
-  allowField('title');
-  allowField('description');
-  allowField('priority');
-  allowField('taskType');
-  allowField('dueDate');
-  allowField('assignedTo');
-  allowField('originDepartmentId');
-  allowField('targetDepartmentId');
-  allowField('departmentId');
-  allowField('locationId');
-  allowField('category');
-  allowField('closedAt');
-  allowField('closedBy');
-  allowField('closedReason');
-  allowField('reopened');
-  allowField('reopenedBy');
-  allowField('reopenedAt');
-  allowField('assignmentEmailSource');
-
-  const reportEntryRaw = isPlainObject(updatesRaw.reportEntry) ? updatesRaw.reportEntry : null;
-  if (newStatus) updateKeys.push('status');
-  if (reportEntryRaw) updateKeys.push('reportEntry');
-
-  const orgRef = db.collection('organizations').doc(orgId);
-  const taskRef = orgRef.collection('tasks').doc(taskId);
-  const now = admin.firestore.FieldValue.serverTimestamp();
-
-  await db.runTransaction(async (tx) => {
-    const [orgSnap, taskSnap] = await tx.getAll(orgRef, taskRef);
-    if (!taskSnap.exists) throw httpsError('not-found', 'Tarea no encontrada.');
-    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
-
-    const taskData = taskSnap.data() as FirebaseFirestore.DocumentData;
-    if (!canUpdateDocumentForRole(role, scope, actorUid, taskData)) {
-      throw httpsError('permission-denied', 'No tienes permisos para actualizar esta tarea.');
-    }
-    if (!shouldAllowOperarioUpdate(role, actorUid, taskData, updateKeys)) {
-      throw httpsError('permission-denied', 'No tienes permisos para realizar esta actualización.');
-    }
-
-    const assignedToRaw = allowedUpdates.assignedTo;
-    const assignedTo = assignedToRaw != null ? String(assignedToRaw ?? '').trim() : undefined;
-    if (assignedToRaw !== undefined && assignedTo !== String(taskData?.assignedTo ?? '').trim()) {
-      if (!assignedTo) {
-        if (!ADMIN_LIKE_ROLES.has(role)) {
-          throw httpsError('permission-denied', 'No tienes permisos para desasignar esta tarea.');
-        }
-      } else {
-        const [actorMember, targetMember] = await Promise.all([
-          getActiveMemberData(orgId, actorUid),
-          getActiveMemberData(orgId, assignedTo),
-        ]);
-        if (!canAssignToTarget(role, actorMember, targetMember)) {
-          throw httpsError('permission-denied', 'No tienes permisos para asignar esta tarea.');
-        }
-      }
-    }
-
-    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
-    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
-    const limits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
-    const usage = (entitlement.usage ?? DEFAULT_ENTITLEMENT_USAGE) as EntitlementUsage;
-    const openTasksCount = Number(usage.openTasksCount ?? 0);
-
-    const oldStatus = taskData?.status;
-    const oldOpen = isOpenTaskStatus(oldStatus);
-    const nextStatus = newStatus ?? oldStatus;
-    const newOpen = isOpenTaskStatus(nextStatus);
-
-    if (!oldOpen && newOpen && Number.isFinite(limits.maxOpenTasks) && openTasksCount >= limits.maxOpenTasks) {
-      throw httpsError('failed-precondition', 'Has alcanzado el límite de tareas abiertas de tu plan.');
-    }
-
-    const updatePayload: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData> = {
-      ...allowedUpdates,
-      updatedAt: now,
-    };
-
-    if (assignedToRaw !== undefined) {
-      updatePayload.assignedTo = assignedTo ? assignedTo : null;
-    }
-
-    if (newStatus) {
-      updatePayload.status = newStatus;
-    }
-
-    if (reportEntryRaw) {
-      const description = String(reportEntryRaw.description ?? '').trim();
-      if (!description) throw httpsError('invalid-argument', 'description requerido.');
-      updatePayload.reports = admin.firestore.FieldValue.arrayUnion({
-        description,
-        createdAt: admin.firestore.Timestamp.now(),
-        createdBy: String(reportEntryRaw.createdBy ?? actorUid),
-      });
-    }
-
-    if (newStatus && !newOpen) {
-      if (!('closedAt' in updatePayload)) updatePayload.closedAt = now;
-      if (!('closedBy' in updatePayload)) updatePayload.closedBy = actorUid;
-    }
-
-    if (!oldOpen && newOpen) {
-      if (!('reopened' in updatePayload)) updatePayload.reopened = true;
-      if (!('reopenedAt' in updatePayload)) updatePayload.reopenedAt = now;
-      if (!('reopenedBy' in updatePayload)) updatePayload.reopenedBy = actorUid;
-    }
-
-    tx.update(taskRef, updatePayload);
-
-    if (oldOpen && !newOpen && openTasksCount > 0) {
-      tx.update(orgRef, {
-        'entitlement.usage.openTasksCount': admin.firestore.FieldValue.increment(-1),
-        'entitlement.updatedAt': now,
-      });
-    } else if (!oldOpen && newOpen) {
-      tx.update(orgRef, {
-        'entitlement.usage.openTasksCount': admin.firestore.FieldValue.increment(1),
-        'entitlement.updatedAt': now,
-      });
-    }
-  });
-
-  await auditLog({
-    action: 'updateTaskStatus',
-    actorUid,
-    actorEmail,
-    orgId,
-    after: { taskId, status: newStatus ?? undefined },
-  });
-
-  return { ok: true, organizationId: orgId, taskId };
-});
-
-export const createTicketUploadSession = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const orgId = resolveOrgIdFromData(data);
-  const ticketId = requireStringField(data?.ticketId ?? data?.payload?.ticketId, 'ticketId');
-  const requestedMaxFilesRaw = data?.maxFiles ?? data?.payload?.maxFiles;
-  const requestedMaxFiles = Number(requestedMaxFilesRaw ?? 0);
-  const { role } = await requireActiveMembership(actorUid, orgId);
-  requireRoleAllowed(
-    role,
-    new Set<Role>(['super_admin', 'admin', 'mantenimiento', 'jefe_departamento', 'jefe_ubicacion', 'operario']),
-    'No tienes permisos para adjuntar archivos.',
-  );
-
-  const orgRef = db.collection('organizations').doc(orgId);
-  const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000));
-
-  await db.runTransaction(async (tx) => {
-    const orgSnap = await tx.get(orgRef);
-    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
-    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
-    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
-
-    const limits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
-    if (limits.attachmentsMonthlyMB <= 0 || limits.maxAttachmentMB <= 0 || limits.maxAttachmentsPerTicket <= 0) {
-      throw httpsError('failed-precondition', 'attachments_not_allowed');
-    }
-
-    const maxFiles = Number.isFinite(requestedMaxFiles) && requestedMaxFiles > 0
-      ? Math.min(requestedMaxFiles, limits.maxAttachmentsPerTicket)
-      : limits.maxAttachmentsPerTicket;
-
-    tx.set(sessionRef, {
-      organizationId: orgId,
-      uploaderUid: actorUid,
-      type: 'ticket',
-      status: 'active',
-      createdAt: now,
-      expiresAt,
-      maxFiles,
-    });
-  });
-
-  return { ok: true, organizationId: orgId, ticketId, expiresAt };
-});
-
-export const registerTicketAttachment = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const orgId = resolveOrgIdFromData(data);
-  const ticketId = requireStringField(data?.ticketId, 'ticketId');
-  const { role, scope } = await requireActiveMembership(actorUid, orgId);
-
-  const bytesRaw = Number(data?.bytes ?? 0);
-  const fileSizesRaw: unknown[] = Array.isArray(data?.fileSizes) ? data.fileSizes : [];
-  const urlsRaw: unknown[] = Array.isArray(data?.photoUrls) ? data.photoUrls : [];
-  const photoUrls = urlsRaw.map((url: unknown) => String(url ?? '').trim()).filter(Boolean);
-  const fileSizes = fileSizesRaw
-    .map((size: unknown) => Number(size ?? 0))
-    .filter((size): size is number => Number.isFinite(size) && size > 0);
-  const totalBytes = Number.isFinite(bytesRaw) && bytesRaw > 0
-    ? bytesRaw
-    : fileSizes.reduce((sum: number, size: number) => sum + size, 0);
-  const totalMB = totalBytes / (1024 * 1024);
-
-  const orgRef = db.collection('organizations').doc(orgId);
-  const ticketRef = orgRef.collection('tickets').doc(ticketId);
-  const now = admin.firestore.FieldValue.serverTimestamp();
-
-  await db.runTransaction(async (tx) => {
-    const [orgSnap, ticketSnap] = await tx.getAll(orgRef, ticketRef);
-    if (!ticketSnap.exists) throw httpsError('not-found', 'Incidencia no encontrada.');
-    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
-    const ticketData = ticketSnap.data() as FirebaseFirestore.DocumentData;
-    if (!canUpdateDocumentForRole(role, scope, actorUid, ticketData)) {
-      throw httpsError('permission-denied', 'No tienes permisos para adjuntar archivos.');
-    }
-
-    const entitlement = orgSnap.get('entitlement') as Entitlement | undefined;
-    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
-
-    const limits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
-    if (limits.attachmentsMonthlyMB <= 0 || limits.maxAttachmentMB <= 0 || limits.maxAttachmentsPerTicket <= 0) {
-      throw httpsError('failed-precondition', 'attachments_not_allowed');
-    }
-
-    if (photoUrls.length > limits.maxAttachmentsPerTicket) {
-      throw httpsError('failed-precondition', 'Se excedió el máximo de adjuntos por incidencia.');
-    }
-
-    if (fileSizes.length > 0) {
-      const maxAttachmentBytes = limits.maxAttachmentMB * 1024 * 1024;
-      const tooLarge = fileSizes.some((size: number) => size > maxAttachmentBytes);
-      if (tooLarge) {
-        throw httpsError('failed-precondition', 'Uno o más adjuntos superan el tamaño máximo permitido.');
-      }
-    }
-
-    const usage = (entitlement.usage ?? DEFAULT_ENTITLEMENT_USAGE) as EntitlementUsage;
-    const attachmentsThisMonthMB = Number(usage.attachmentsThisMonthMB ?? 0);
-    const nextUsage = attachmentsThisMonthMB + totalMB;
-    if (Number.isFinite(limits.attachmentsMonthlyMB) && nextUsage > limits.attachmentsMonthlyMB) {
-      throw httpsError('failed-precondition', 'Se superó la cuota mensual de adjuntos.');
-    }
-
-    const updatePayload: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData> = {
-      updatedAt: now,
-      hasAttachments: photoUrls.length > 0,
-    };
-    if (photoUrls.length > 0) {
-      updatePayload.photoUrls = photoUrls;
-    }
-
-    tx.update(ticketRef, updatePayload);
-    tx.update(orgRef, {
-      'entitlement.usage.attachmentsThisMonthMB': admin.firestore.FieldValue.increment(totalMB),
-      'entitlement.updatedAt': now,
-    });
-  });
-
-  return { ok: true, organizationId: orgId, ticketId };
 });
 
 export const createPreventive = functions.https.onCall(async (data, context) => {
