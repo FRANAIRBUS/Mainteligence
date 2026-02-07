@@ -398,11 +398,8 @@ service cloud.firestore {
           && (resource.data.uploaderUid == request.auth.uid || isAdminInOrg(orgId, request.auth.uid));
         allow list: if false;
 
-        allow create, update: if false;
-
-        allow delete: if isSignedIn()
-          && isActiveMember(orgId, request.auth.uid)
-          && (resource.data.uploaderUid == request.auth.uid || isAdminInOrg(orgId, request.auth.uid));
+        // Server-only writes (created by Cloud Functions).
+        allow create, update, delete: if false;
       }
 
       // Organization-scoped resources (v14+ data model)
@@ -453,6 +450,7 @@ service cloud.firestore {
           && isActiveMember(orgId, request.auth.uid)
           && resourceOrganizationIdMatchesPath(orgId)
           && canReadDoc(orgId, request.auth.uid, resource.data);
+        // Server-only writes: hardened to enforce entitlements and open-count consistency.
         allow create, update, delete: if false;
       }
 
@@ -461,6 +459,7 @@ service cloud.firestore {
           && isActiveMember(orgId, request.auth.uid)
           && resourceOrganizationIdMatchesPath(orgId)
           && canReadDoc(orgId, request.auth.uid, resource.data);
+        // Server-only writes: hardened to enforce entitlements and open-count consistency.
         allow create, update, delete: if false;
       }
 

@@ -1,26 +1,25 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type ChangeEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
   collection,
-  deleteDoc,
   doc,
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
 
 import { useToast } from '@/hooks/use-toast';
-import { useDoc, useFirestore, useFirebaseApp, useUser, useStorage, useCollection } from '@/lib/firebase';
-import type { Site, Department, Asset, Organization } from '@/lib/firebase/models';
+import { useFirestore, useUser, useStorage, useCollection } from '@/lib/firebase';
+import type { Site, Department, Asset } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { orgCollectionPath, orgStoragePath } from '@/lib/organization';
-import { resolveEffectivePlanLimits } from '@/lib/entitlements';
+import { getOrgEntitlement } from '@/lib/entitlements';
+import { getOrgEntitlement } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -121,15 +120,39 @@ export interface AddIncidentFormProps {
 
 export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const { toast } = useToast();
-  const router = useRouter();
-  const app = useFirebaseApp();
   const firestore = useFirestore();
   const storage = useStorage();
-  const { user, organizationId, activeMembership } = useUser();
+  const { user, organizationId, profile, activeMembership } = useUser();
   const [isPending, setIsPending] = useState(false);
   const [attachments, setAttachments] = useState<SelectedAttachment[]>([]);
   const [submitWarning, setSubmitWarning] = useState<string | null>(null);
+  const [canAttach, setCanAttach] = useState<boolean>(false);
+  const [maxAttachmentMB, setMaxAttachmentMB] = useState<number>(0);
   const canSubmit = Boolean(firestore && storage && user && organizationId);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!firestore || !organizationId) return;
+      try {
+        const entitlement = await getOrgEntitlement(firestore, organizationId);
+        const allowed =
+          Number(entitlement?.limits?.attachmentsMonthlyMB ?? 0) > 0 &&
+          Number(entitlement?.limits?.maxAttachmentMB ?? 0) > 0 &&
+          Number(entitlement?.limits?.maxAttachmentsPerTicket ?? 0) > 0;
+        if (!active) return;
+        setCanAttach(allowed);
+        setMaxAttachmentMB(Number(entitlement?.limits?.maxAttachmentMB ?? 0) || 0);
+      } catch {
+        if (!active) return;
+        setCanAttach(false);
+        setMaxAttachmentMB(0);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [firestore, organizationId]);
 
   const { data: sites, loading: sitesLoading } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
@@ -140,23 +163,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const { data: assets, loading: assetsLoading } = useCollection<Asset>(
     organizationId ? orgCollectionPath(organizationId, 'assets') : null
   );
-  const { data: organization } = useDoc<Organization>(
-    organizationId ? `organizations/${organizationId}` : null
-  );
-
-  const entitlement = organization?.entitlement ?? null;
-  const effectiveLimits = entitlement
-    ? resolveEffectivePlanLimits(entitlement.planId, entitlement.limits)
-    : null;
-  const maxAttachmentsPerTicket =
-    effectiveLimits?.maxAttachmentsPerTicket ?? MAX_ATTACHMENTS;
-  const maxAttachmentMB = effectiveLimits?.maxAttachmentMB ?? MAX_ATTACHMENT_BYTES / (1024 * 1024);
-  const maxAttachmentBytes = maxAttachmentMB * 1024 * 1024;
-  const attachmentsAllowed =
-    !effectiveLimits
-    || (effectiveLimits.attachmentsMonthlyMB > 0
-      && effectiveLimits.maxAttachmentMB > 0
-      && effectiveLimits.maxAttachmentsPerTicket > 0);
 
   const form = useForm<AddIncidentFormValues>({
     resolver: zodResolver(formSchema),
@@ -171,22 +177,22 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files) return;
 
-    if (!attachmentsAllowed) {
+    if (!canAttach) {
       toast({
         variant: 'destructive',
-        title: 'Adjuntos no disponibles',
-        description: 'Tu plan actual no permite adjuntar archivos.',
+        title: 'Adjuntos bloqueados',
+        description: 'Los adjuntos están disponibles a partir del plan Starter. Revisa /plans.',
       });
       event.target.value = '';
       return;
     }
 
     const selectedFiles = Array.from(event.target.files);
-    if (selectedFiles.length > maxAttachmentsPerTicket) {
+    if (selectedFiles.length > MAX_ATTACHMENTS) {
       toast({
         variant: 'destructive',
         title: 'Demasiados adjuntos',
-        description: `Puedes subir un máximo de ${maxAttachmentsPerTicket} archivos por incidencia.`,
+        description: `Puedes subir un máximo de ${MAX_ATTACHMENTS} archivos por incidencia.`,
       });
       event.target.value = '';
       return;
@@ -196,7 +202,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : '';
       const allowedByMime = file.type.startsWith('image/') || ALLOWED_ATTACHMENT_MIME_TYPES.has(file.type);
       const allowedByExtension = extension ? ALLOWED_ATTACHMENT_EXTENSIONS.has(extension) : false;
-      const sizeAllowed = file.size > 0 && file.size <= maxAttachmentBytes;
+      const maxBytes = maxAttachmentMB > 0 ? maxAttachmentMB * 1024 * 1024 : MAX_ATTACHMENT_BYTES;
+      const sizeAllowed = file.size > 0 && file.size <= maxBytes;
       return !(sizeAllowed && (allowedByMime || allowedByExtension));
     });
 
@@ -204,8 +211,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       toast({
         variant: 'destructive',
         title: 'Adjuntos inválidos',
-        description:
-          `Revisa formato y tamaño. Permitidos: imágenes, PDF, TXT, DOC, DOCX, XLS, XLSX (máx. ${maxAttachmentMB} MB).`,
+        description: `Revisa formato y tamaño. Permitidos: imágenes, PDF, TXT, DOC, DOCX, XLS, XLSX (máx. ${maxAttachmentMB || 10} MB).`,
       });
       event.target.value = '';
       return;
@@ -391,34 +397,20 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     let uploadSessionRefLocal: ReturnType<typeof doc> | null = null;
 
     try {
-      if (!app) {
-        throw new Error('Firebase no está disponible.');
-      }
-
-      const functions = getFunctions(app);
-      const createTicketFn = httpsCallable(functions, 'createTicket');
-      const createUploadSessionFn = httpsCallable(functions, 'createTicketUploadSession');
-      const registerAttachmentFn = httpsCallable(functions, 'registerTicketAttachment');
-
       const collectionRef = collection(scopedFirestore, orgCollectionPath(scopedOrganizationId, 'tickets'));
       const ticketRef = doc(collectionRef);
       const ticketId = ticketRef.id;
-      const uploadSessionRef = doc(
-        scopedFirestore,
-        orgCollectionPath(scopedOrganizationId, 'uploadSessions'),
-        ticketId
-      );
-      uploadSessionRefLocal = uploadSessionRef;
+      const createdByName = profile?.displayName || scopedUser.email || scopedUser.uid;
+      const functions = getFunctions();
+      const createUploadSession = httpsCallable(functions, 'createTicketUploadSession');
+      const createTicket = httpsCallable(functions, 'createTicket');
+      const registerTicketAttachment = httpsCallable(functions, 'registerTicketAttachment');
 
       const urls: string[] = [];
       const failedUploads: string[] = [];
 
       if (attachments.length > 0) {
-        await createUploadSessionFn({
-          organizationId: scopedOrganizationId,
-          ticketId,
-          maxFiles: maxAttachmentsPerTicket,
-        });
+        await createUploadSession({ orgId: scopedOrganizationId, ticketId, maxFiles: MAX_ATTACHMENTS });
 
         const results = await Promise.allSettled(
           attachments.map(async (attachment) => {
@@ -484,7 +476,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         }
 
         if (failedUploads.length > 0) {
-          await Promise.allSettled([deleteDoc(uploadSessionRef)]);
           setSubmitWarning(`No se creó la incidencia. Corrige o quita los adjuntos con error y reintenta: ${failedUploads.join(', ')}.`);
           toast({
             variant: 'destructive',
@@ -495,42 +486,38 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         }
       }
 
-      const totalBytes = attachments.reduce((sum, attachment) => sum + attachment.file.size, 0);
-      const payload: Record<string, unknown> = {
+      const docData: any = {
         ...data,
         locationId: data.locationId,
-        departmentId: data.departmentId,
         type: 'correctivo' as const,
         status: 'new' as const,
+        createdByName,
         assignedRole: 'mantenimiento',
         assignedTo: null,
         organizationId: scopedOrganizationId,
-        ticketId,
-        attachmentsCount: attachments.length,
-        attachmentsBytes: totalBytes,
+        photoUrls: urls,
+        hasAttachments: urls.length > 0,
+        displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
       };
 
-      if (!payload.assetId) {
-        delete payload.assetId;
+      if (!docData.assetId) {
+        delete docData.assetId;
       }
 
-      const createResult = await createTicketFn({ organizationId: scopedOrganizationId, payload });
-      const createdTicketId =
-        (createResult.data as { ticketId?: string } | undefined)?.ticketId || ticketId;
+      await createTicket({ orgId: scopedOrganizationId, ticketId, payload: docData });
 
       if (attachments.length > 0) {
-        const fileSizes = attachments.map((attachment) => attachment.file.size);
-        await registerAttachmentFn({
-          organizationId: scopedOrganizationId,
-          ticketId: createdTicketId,
-          bytes: totalBytes,
-          fileSizes,
-          photoUrls: urls,
-        });
-      }
-
-      if (attachments.length > 0) {
-        await Promise.allSettled([deleteDoc(uploadSessionRef)]);
+        await Promise.allSettled(
+          attachments.map((attachment) =>
+            registerTicketAttachment({
+              orgId: scopedOrganizationId,
+              ticketId,
+              sizeBytes: attachment.file.size,
+              contentType: attachment.file.type,
+              fileName: attachment.file.name,
+            })
+          )
+        );
       }
 
       onSuccess?.({ title: data.title });
@@ -550,23 +537,19 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           operation: 'write',
         });
         errorEmitter.emit('permission-error', permissionError);
-      } else if (error.code === 'permission-denied' || String(error?.code ?? '').includes('permission-denied')) {
+      } else if (error?.code?.startsWith?.('functions/')) {
+        toast({
+          variant: 'destructive',
+          title: 'No se pudo crear la incidencia',
+          description: error.message || 'Operación rechazada por el servidor.',
+        });
+      } else if (error.code === 'permission-denied') {
         const permissionError = new FirestorePermissionError({
           path: orgCollectionPath(organizationId!, 'tickets'),
           operation: 'create',
           requestResourceData: data,
         });
         errorEmitter.emit('permission-error', permissionError);
-      } else if (String(error?.code ?? '').includes('failed-precondition')) {
-        const message =
-          error?.message?.includes('attachments_not_allowed')
-            ? 'Tu plan actual no permite adjuntar archivos.'
-            : error.message || 'No es posible crear la incidencia con los límites actuales.';
-        toast({
-          variant: 'destructive',
-          title: 'Límite alcanzado',
-          description: message,
-        });
       } else {
         toast({
           variant: 'destructive',
@@ -575,9 +558,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         });
       }
     } finally {
-      if (uploadSessionRefLocal) {
-        await Promise.allSettled([deleteDoc(uploadSessionRefLocal)]);
-      }
       setIsPending(false);
     }
   };
@@ -744,25 +724,16 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
             <Input
               type="file"
               multiple
-              disabled={!attachmentsAllowed || isPending}
               onChange={handlePhotoChange}
+              disabled={isPending || !canAttach}
               accept="image/*,application/pdf,text/plain,.pdf,.doc,.docx,.xls,.xlsx"
             />
           </FormControl>
-          {!attachmentsAllowed && (
-            <div className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-semibold">Adjuntos bloqueados</p>
-                  <p className="text-xs text-amber-100/90">
-                    Disponible en Starter. Actualiza tu plan para adjuntar archivos.
-                  </p>
-                </div>
-                <Button variant="outline" type="button" onClick={() => router.push('/plans')}>
-                  Ver planes
-                </Button>
-              </div>
-            </div>
+          {!canAttach && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Bloqueado por plan. Disponible a partir de Starter.{' '}
+              <Link href="/plans" className="underline">Ver planes</Link>.
+            </p>
           )}
           <FormMessage />
         </FormItem>
