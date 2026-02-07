@@ -422,6 +422,14 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
             );
 
             try {
+              await registerTicketAttachment({
+                orgId: scopedOrganizationId,
+                ticketId,
+                sizeBytes: attachment.file.size,
+                contentType: attachment.file.type,
+                fileName: attachment.file.name,
+              });
+
               const url = await uploadPhotoWithRetry(
                 attachment,
                 scopedOrganizationId,
@@ -504,20 +512,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       }
 
       await createTicket({ orgId: scopedOrganizationId, ticketId, payload: docData });
-
-      if (attachments.length > 0) {
-        await Promise.allSettled(
-          attachments.map((attachment) =>
-            registerTicketAttachment({
-              orgId: scopedOrganizationId,
-              ticketId,
-              sizeBytes: attachment.file.size,
-              contentType: attachment.file.type,
-              fileName: attachment.file.name,
-            })
-          )
-        );
-      }
 
       onSuccess?.({ title: data.title });
       form.reset();
