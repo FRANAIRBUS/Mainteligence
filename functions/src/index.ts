@@ -3973,7 +3973,7 @@ export const updateTicketStatus = functions.https.onCall(async (data, context) =
       throw httpsError('failed-precondition', 'Has alcanzado el límite de incidencias abiertas de tu plan.');
     }
 
-    const updatePayload: Record<string, unknown> = {
+    const updatePayload: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData> = {
       ...allowedUpdates,
       updatedAt: now,
     };
@@ -4222,7 +4222,7 @@ export const updateTaskStatus = functions.https.onCall(async (data, context) => 
       throw httpsError('failed-precondition', 'Has alcanzado el límite de tareas abiertas de tu plan.');
     }
 
-    const updatePayload: Record<string, unknown> = {
+    const updatePayload: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData> = {
       ...allowedUpdates,
       updatedAt: now,
     };
@@ -4339,10 +4339,12 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
   const fileSizesRaw = Array.isArray(data?.fileSizes) ? data.fileSizes : [];
   const urlsRaw = Array.isArray(data?.photoUrls) ? data.photoUrls : [];
   const photoUrls = urlsRaw.map((url: unknown) => String(url ?? '').trim()).filter(Boolean);
-  const fileSizes = fileSizesRaw.map((size: unknown) => Number(size ?? 0)).filter((size) => size > 0);
+  const fileSizes = fileSizesRaw
+    .map((size: unknown) => Number(size ?? 0))
+    .filter((size): size is number => Number.isFinite(size) && size > 0);
   const totalBytes = Number.isFinite(bytesRaw) && bytesRaw > 0
     ? bytesRaw
-    : fileSizes.reduce((sum, size) => sum + size, 0);
+    : fileSizes.reduce((sum: number, size: number) => sum + size, 0);
   const totalMB = totalBytes / (1024 * 1024);
 
   const orgRef = db.collection('organizations').doc(orgId);
@@ -4372,7 +4374,7 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
 
     if (fileSizes.length > 0) {
       const maxAttachmentBytes = limits.maxAttachmentMB * 1024 * 1024;
-      const tooLarge = fileSizes.some((size) => size > maxAttachmentBytes);
+      const tooLarge = fileSizes.some((size: number) => size > maxAttachmentBytes);
       if (tooLarge) {
         throw httpsError('failed-precondition', 'Uno o más adjuntos superan el tamaño máximo permitido.');
       }
@@ -4385,7 +4387,7 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
       throw httpsError('failed-precondition', 'Se superó la cuota mensual de adjuntos.');
     }
 
-    const updatePayload: Record<string, unknown> = {
+    const updatePayload: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData> = {
       updatedAt: now,
       hasAttachments: photoUrls.length > 0,
     };
