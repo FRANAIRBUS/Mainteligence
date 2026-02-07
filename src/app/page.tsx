@@ -142,21 +142,24 @@ export default function Home() {
   const completedTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) === "done");
   const dueSoonTasks = visibleTasks.filter((task) => {
     if (!task.dueDate) return false;
-    const date = task.dueDate.toDate();
+    const date = toDateValue(task.dueDate);
+    if (!date) return false;
     const now = new Date();
     return isBefore(date, addDays(now, 7)) && date >= now && normalizeTaskStatus(task.status) !== "done";
   });
 
   const overdueTasks = visibleTasks.filter((task) => {
     if (!task.dueDate) return false;
-    return isBefore(task.dueDate.toDate(), new Date()) && normalizeTaskStatus(task.status) !== "done";
+    const date = toDateValue(task.dueDate);
+    if (!date) return false;
+    return isBefore(date, new Date()) && normalizeTaskStatus(task.status) !== "done";
   });
 
   const nextInspections = visibleTasks
     .filter((task) => task.dueDate)
     .sort((a, b) => {
       if (!a.dueDate || !b.dueDate) return 0;
-      return a.dueDate.toMillis() - b.dueDate.toMillis();
+      return toMillisValue(a.dueDate) - toMillisValue(b.dueDate);
     })
     .slice(0, 5);
 
@@ -251,9 +254,10 @@ export default function Home() {
                       </p>
                       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                         <span>
-                          {task.dueDate
-                            ? format(task.dueDate.toDate(), "PPP", { locale: es })
-                            : "Sin fecha"}
+                          {(() => {
+                            const dueDate = toDateValue(task.dueDate);
+                            return dueDate ? format(dueDate, "PPP", { locale: es }) : "Sin fecha";
+                          })()}
                         </span>
                         {task.priority && (
                           <Badge variant="secondary">Prioridad {priorityLabel[task.priority]}</Badge>
