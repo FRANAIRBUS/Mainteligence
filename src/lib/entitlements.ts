@@ -107,7 +107,7 @@ const DEFAULT_PLAN_LIMITS: Record<Entitlement["planId"], EntitlementLimits> = {
   },
 };
 
-const normalizePlanId = (
+export const normalizePlanId = (
   planId?: Entitlement["planId"] | string
 ): Entitlement["planId"] => {
   const normalized = String(planId ?? "").trim().toLowerCase();
@@ -141,10 +141,35 @@ export const resolveEffectivePlanFeatures = (
 export const resolveEffectivePlanLimits = (
   planId: Entitlement["planId"],
   rawLimits?: Partial<EntitlementLimits> | null
-): EntitlementLimits => ({
-  ...getDefaultPlanLimits(planId),
-  ...(rawLimits ?? {}),
-});
+): EntitlementLimits => {
+  const defaults = getDefaultPlanLimits(planId);
+  if (!rawLimits) return defaults;
+
+  const coalesceLimit = (key: keyof EntitlementLimits) => {
+    const rawValue = rawLimits[key];
+    if (typeof rawValue !== "number") {
+      return defaults[key];
+    }
+    if (rawValue === 0 && defaults[key] > 0 && !["free", "basic"].includes(planId)) {
+      return defaults[key];
+    }
+    return rawValue;
+  };
+
+  return {
+    maxUsers: coalesceLimit("maxUsers"),
+    maxSites: coalesceLimit("maxSites"),
+    maxDepartments: coalesceLimit("maxDepartments"),
+    maxAssets: coalesceLimit("maxAssets"),
+    maxActivePreventives: coalesceLimit("maxActivePreventives"),
+    maxOpenTickets: coalesceLimit("maxOpenTickets"),
+    maxOpenTasks: coalesceLimit("maxOpenTasks"),
+    attachmentsMonthlyMB: coalesceLimit("attachmentsMonthlyMB"),
+    maxAttachmentMB: coalesceLimit("maxAttachmentMB"),
+    maxAttachmentsPerTicket: coalesceLimit("maxAttachmentsPerTicket"),
+    retentionDays: coalesceLimit("retentionDays"),
+  };
+};
 
 export type EntitlementWithFeatures = Entitlement & {
   features?: Record<EntitlementFeature, boolean>;
