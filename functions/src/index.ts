@@ -235,6 +235,8 @@ type ResolvedMembership = {
 const ADMIN_LIKE_ROLES = new Set<Role>(['super_admin', 'admin', 'mantenimiento']);
 const SCOPED_HEAD_ROLES = new Set<Role>(['jefe_departamento']);
 const MASTER_DATA_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
+// Task management is allowed for the same roles that can operate master data.
+const TASKS_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
 
 const USAGE_FIELDS: Record<'sites' | 'assets' | 'departments' | 'users' | 'preventives', keyof EntitlementUsage> = {
   sites: 'sitesCount',
@@ -1433,6 +1435,75 @@ async function requireActiveMembership(actorUid: string, orgId: string): Promise
     scope: resolveMembershipScope(userData),
     membershipData,
     userData,
+  };
+}
+
+async function requireActiveMembershipForTx(
+  tx: FirebaseFirestore.Transaction,
+  orgId: string,
+  actorUid: string,
+): Promise<ResolvedMembership> {
+  const membershipRef = db.collection('memberships').doc(`${actorUid}_${orgId}`);
+  const userRef = db.collection('users').doc(actorUid);
+
+  const [membershipSnap, userSnap] = await Promise.all([tx.get(membershipRef), tx.get(userRef)]);
+  if (!membershipSnap.exists) {
+    throw httpsError('permission-denied', 'No perteneces a esa organización.');
+  }
+
+  const membershipData = membershipSnap.data() as FirebaseFirestore.DocumentData | null;
+  const status =
+    String(membershipData?.status ?? '') ||
+    (membershipData?.active === true ? 'active' : 'pending');
+
+  if (status !== 'active') {
+    throw httpsError('failed-precondition', 'Tu membresía no está activa.');
+  }
+
+  const role = normalizeRole(membershipData?.role);
+  const userData = userSnap.exists ? (userSnap.data() as FirebaseFirestore.DocumentData) : null;
+
+  return {
+    role,
+    status,
+    scope: resolveMembershipScope(userData),
+    membershipData,
+    userData,
+  };
+}
+
+function resolveEffectiveEntitlementForTx(orgSnap: FirebaseFirestore.DocumentSnapshot): {
+  planId: EntitlementPlanId;
+  limits: EntitlementLimits;
+  usage: EntitlementUsage;
+  provider: EntitlementProvider;
+} {
+  const orgData = orgSnap.data() as FirebaseFirestore.DocumentData | undefined;
+  const rawEnt = (orgData?.entitlement ?? null) as Partial<Entitlement> | null;
+
+  const resolvedPlanId = resolveEntitlementPlanId({ metadataPlanId: (rawEnt?.planId as string | null) ?? null });
+  const effectiveLimits = resolveEffectiveLimitsForPlan(
+    resolvedPlanId,
+    (rawEnt?.limits as Partial<EntitlementLimits> | null) ?? DEFAULT_ENTITLEMENT_LIMITS,
+  );
+
+  const usageBase: EntitlementUsage = {
+    sitesCount: 0,
+    assetsCount: 0,
+    departmentsCount: 0,
+    usersCount: 0,
+    activePreventivesCount: 0,
+    attachmentsThisMonthMB: 0,
+    openTicketsCount: 0,
+    openTasksCount: 0,
+    ...(rawEnt?.usage as Partial<EntitlementUsage> | null),
+  };
+
+  return {
+    planId: resolvedPlanId,
+    limits: effectiveLimits,
+    usage: usageBase,
+    provider: (rawEnt?.provider as EntitlementProvider) ?? DEFAULT_ENTITLEMENT_PROVIDER,
   };
 }
 
@@ -3506,7 +3577,7 @@ export const createTicketUploadSession = functions.https.onCall(async (data, con
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
 
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
@@ -3630,7 +3701,7 @@ export const createTicket = functions.https.onCall(async (data, context) => {
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
 
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
@@ -3749,7 +3820,7 @@ export const updateTicketStatus = functions.https.onCall(async (data, context) =
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const ticketRef = orgRef.collection('tickets').doc(ticketId);
 
@@ -3850,7 +3921,7 @@ export const createTask = functions.https.onCall(async (data, context) => {
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
     if (!orgSnap.exists) {
@@ -3925,7 +3996,7 @@ export const updateTaskStatus = functions.https.onCall(async (data, context) => 
   }
 
   return await db.runTransaction(async (tx) => {
-    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const taskRef = orgRef.collection('tasks').doc(taskId);
 
