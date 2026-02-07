@@ -183,14 +183,6 @@ export default function ReportsPage() {
     canReadMembers && organizationId ? orgCollectionPath(organizationId, 'members') : null
   );
 
-  if (loading || !user) {
-    return (
-      <div className="flex h-screen w-full max-w-full items-center justify-center">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
   const visibleTickets = rbacUser
     ? tickets.filter((ticket) => getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView)
     : tickets;
@@ -457,6 +449,14 @@ export default function ReportsPage() {
     if (!isMobile) return label;
     return label.length > 14 ? `${label.slice(0, 14)}…` : label;
   };
+
+  if (loading || !user) {
+    return (
+      <div className="flex h-screen w-full max-w-full items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <AppShell
