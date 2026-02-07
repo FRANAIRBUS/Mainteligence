@@ -82,6 +82,18 @@ service firebase.storage {
         && session.data.expiresAt > request.time;
     }
 
+    function hasRegisteredTicketUpload(orgId, id, fileName) {
+      let session = uploadSession(orgId, id);
+      return session != null
+        && session.data != null
+        && session.data.allowedFiles != null
+        && session.data.allowedFiles[fileName] != null
+        && session.data.allowedFiles[fileName].sizeBytes is number
+        && session.data.allowedFiles[fileName].contentType is string
+        && session.data.allowedFiles[fileName].sizeBytes == request.resource.size
+        && session.data.allowedFiles[fileName].contentType == request.resource.contentType;
+    }
+
     function isAllowedTicketContentType() {
       return request.resource.contentType.matches('image/.*')
         || request.resource.contentType == 'application/pdf'
@@ -147,6 +159,7 @@ service firebase.storage {
         && isValidOrgId(orgId)
         && attachmentsAllowed(orgId)
         && hasActiveUploadSession(orgId, ticketId)
+        && hasRegisteredTicketUpload(orgId, ticketId, fileName)
         && isValidUpload(maxTicketAttachmentBytes(orgId))
         && isAllowedTicketContentType();
     }

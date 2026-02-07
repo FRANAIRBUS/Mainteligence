@@ -114,7 +114,7 @@ export const createTask = async (
   const taskId = doc(tasksCollection(db, payload.organizationId)).id;
   const functions = getFunctions(getApp());
   const createTaskFn = httpsCallable(functions, 'createTask');
-  await createTaskFn({
+  const result = await createTaskFn({
     orgId: payload.organizationId,
     taskId,
     payload: {
@@ -125,7 +125,8 @@ export const createTask = async (
     },
   });
 
-  return taskId;
+  const resolvedTaskId = (result.data as { taskId?: string } | undefined)?.taskId;
+  return resolvedTaskId || taskId;
 };
 
 export const updateTask = async (
