@@ -62,10 +62,9 @@ import type {
   Organization,
   PreventiveTemplate,
   Site,
-  Ticket,
+  WorkOrder,
 } from '@/lib/firebase/models';
-import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organization';
-import { ticketStatusLabel } from '@/lib/status';
+import { orgCollectionPath, orgPreventiveTemplatesPath, orgWorkOrdersPath } from '@/lib/organization';
 import { isFeatureEnabled, normalizePlanId, resolveEffectivePlanFeatures } from '@/lib/entitlements';
 
 const normalizeOptional = (value?: string) =>
@@ -115,7 +114,7 @@ const formatDateTime = (value: any) => {
   });
 };
 
-function PreventiveTable({ tickets, loading }: { tickets: Ticket[]; loading: boolean }) {
+function WorkOrdersTable({ workOrders, loading }: { workOrders: WorkOrder[]; loading: boolean }) {
   if (loading) {
     return (
       <div className="flex h-64 w-full items-center justify-center">
@@ -139,19 +138,19 @@ function PreventiveTable({ tickets, loading }: { tickets: Ticket[]; loading: boo
         </TableRow>
       </TableHeader>
       <TableBody>
-        {tickets.length > 0 ? (
-          tickets.map((ticket) => (
-            <TableRow key={ticket.id}>
-              <TableCell className="font-medium">{ticket.displayId || ticket.id.substring(0, 6)}</TableCell>
-              <TableCell>{ticket.title}</TableCell>
+        {workOrders.length > 0 ? (
+          workOrders.map((wo) => (
+            <TableRow key={wo.id}>
+              <TableCell className="font-medium">{wo.id.substring(0, 10)}</TableCell>
+              <TableCell>{wo.title}</TableCell>
               <TableCell>
-                <Badge variant="outline">{ticketStatusLabel(ticket.status)}</Badge>
+                <Badge variant="outline">{wo.status === 'open' ? 'Abierta' : 'Cerrada'}</Badge>
               </TableCell>
               <TableCell>
-                <Badge variant="secondary">{ticket.priority}</Badge>
+                <Badge variant="secondary">{wo.priority ?? 'Media'}</Badge>
               </TableCell>
               <TableCell>
-                {ticket.createdAt?.toDate ? ticket.createdAt.toDate().toLocaleDateString() : 'N/A'}
+                {wo.createdAt?.toDate ? wo.createdAt.toDate().toLocaleDateString() : 'N/A'}
               </TableCell>
               <TableCell>
                 <DropdownMenu>
@@ -273,12 +272,12 @@ function PreventiveTemplatesTable({
 
     setSubmitting(true);
     try {
-      const fn = httpsCallable(getFunctions(app), 'generatePreventiveNow');
+      const fn = httpsCallable(getFunctions(app), 'workOrders_generateNow');
       const res = await fn({ organizationId, templateId: template.id });
-      const ticketId = (res.data as any)?.ticketId ?? null;
+      const woId = (res.data as any)?.woId ?? null;
       toast({
         title: 'Preventivo generado',
-        description: ticketId ? `Orden creada (${ticketId}).` : 'Orden creada.',
+        description: woId ? `OT creada (${woId}).` : 'OT creada.',
       });
     } catch (err: any) {
       console.error('generatePreventiveNow failed', err);
@@ -462,7 +461,6 @@ export default function PreventivePage() {
   const router = useRouter();
   const firestore = useFirestore();
   const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
-  const [showClosed, setShowClosed] = useState(false);
 
   useEffect(() => {
     if (!userLoading && !user) {
@@ -512,11 +510,15 @@ export default function PreventivePage() {
     organization?.subscriptionPlan === 'trial' ||
     (organizationId ? organizationId.startsWith('demo-') : false);
 
-  const preventiveTicketsFilter = useMemo(() => where('type', '==', 'preventivo'), []);
+    const [showClosed, setShowClosed] = useState(false);
 
-  const { data: tickets, loading: ticketsLoading } = useCollectionQuery<Ticket>(
-    organizationId ? orgCollectionPath(organizationId, 'tickets') : null,
-    preventiveTicketsFilter
+  const workOrdersConstraints = useMemo(() => {
+    return showClosed ? [] : [where('isOpen', '==', true)];
+  }, [showClosed]);
+
+  const { data: workOrders, loading: workOrdersLoading } = useCollectionQuery<WorkOrder>(
+    organizationId ? orgWorkOrdersPath(organizationId) : null,
+    ...workOrdersConstraints
   );
 
   const { data: templates, loading: templatesLoading } = useCollectionQuery<PreventiveTemplate>(
@@ -615,16 +617,14 @@ export default function PreventivePage() {
                 Visualiza y gestiona todas las órdenes de mantenimiento preventivo.
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => setShowClosed((v) => !v)}>
-                {showClosed ? 'Ocultar cerradas' : 'Mostrar cerradas'}
-              </Button>
-            </div>
+            <Button variant="outline" onClick={() => setShowClosed((v) => !v)}>
+              {showClosed ? 'Ocultar cerradas' : 'Mostrar cerradas'}
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
           <div className="w-full overflow-x-auto">
-            <PreventiveTable tickets={tickets} loading={ticketsLoading} />
+            <WorkOrdersTable workOrders={workOrders} loading={workOrdersLoading} />
           </div>
         </CardContent>
       </Card>
