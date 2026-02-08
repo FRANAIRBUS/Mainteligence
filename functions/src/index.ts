@@ -511,12 +511,19 @@ function resolveEntitlementPlanId({
   metadataPlanId?: string | null;
   fallbackPlanId?: string;
 }): EntitlementPlanId {
-  const normalized = String(metadataPlanId ?? '').trim();
-  if (normalized === 'free' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
-    return normalized;
+  const normalized = String(metadataPlanId ?? '').trim().toLowerCase();
+  if (normalized === 'free' || normalized === 'basic' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
+    return normalized as EntitlementPlanId;
   }
-  if (fallbackPlanId === 'free' || fallbackPlanId === 'starter' || fallbackPlanId === 'pro' || fallbackPlanId === 'enterprise') {
-    return fallbackPlanId;
+  const fallbackNormalized = String(fallbackPlanId ?? '').trim().toLowerCase();
+  if (
+    fallbackNormalized === 'free' ||
+    fallbackNormalized === 'basic' ||
+    fallbackNormalized === 'starter' ||
+    fallbackNormalized === 'pro' ||
+    fallbackNormalized === 'enterprise'
+  ) {
+    return fallbackNormalized as EntitlementPlanId;
   }
   return 'free';
 }
@@ -530,9 +537,35 @@ function resolveDefaultFeaturesForPlan(planId: EntitlementPlanId): Record<string
 }
 
 function resolveEffectiveLimitsForPlan(planId: EntitlementPlanId, limits?: Partial<EntitlementLimits> | null): EntitlementLimits {
+  const defaults = resolveDefaultLimitsForPlan(planId);
+  if (!limits) return defaults;
+
+  const coalesceLimit = (key: keyof EntitlementLimits) => {
+    const rawValue = limits[key];
+    if (typeof rawValue !== 'number') {
+      return defaults[key];
+    }
+    if (rawValue <= 0 && defaults[key] > 0 && !['free', 'basic'].includes(planId)) {
+      return defaults[key];
+    }
+    if (rawValue < defaults[key] && !['free', 'basic'].includes(planId)) {
+      return defaults[key];
+    }
+    return rawValue;
+  };
+
   return {
-    ...resolveDefaultLimitsForPlan(planId),
-    ...(limits ?? {}),
+    maxUsers: coalesceLimit('maxUsers'),
+    maxSites: coalesceLimit('maxSites'),
+    maxDepartments: coalesceLimit('maxDepartments'),
+    maxAssets: coalesceLimit('maxAssets'),
+    maxActivePreventives: coalesceLimit('maxActivePreventives'),
+    maxOpenTickets: coalesceLimit('maxOpenTickets'),
+    maxOpenTasks: coalesceLimit('maxOpenTasks'),
+    attachmentsMonthlyMB: coalesceLimit('attachmentsMonthlyMB'),
+    maxAttachmentMB: coalesceLimit('maxAttachmentMB'),
+    maxAttachmentsPerTicket: coalesceLimit('maxAttachmentsPerTicket'),
+    retentionDays: coalesceLimit('retentionDays'),
   };
 }
 

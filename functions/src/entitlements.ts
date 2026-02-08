@@ -155,6 +155,11 @@ const DEFAULT_PLAN_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
   },
 };
 
+const normalizePlanId = (planId?: string | null): EntitlementPlanId => {
+  const normalized = String(planId ?? '').trim().toLowerCase();
+  return (normalized in DEFAULT_PLAN_LIMITS ? normalized : 'free') as EntitlementPlanId;
+};
+
 const resolveEffectivePlanFeatures = (
   planId: EntitlementPlanId,
   features?: Partial<Record<EntitlementFeature, boolean>> | null
@@ -210,13 +215,15 @@ export const getOrgEntitlement = async (orgId: string): Promise<EntitlementWithF
   const entitlement = orgData?.entitlement ?? null;
   if (!entitlement) return null;
 
-  const planCatalogSnap = await db.collection('planCatalog').doc(entitlement.planId).get();
+  const normalizedPlanId = normalizePlanId(entitlement.planId);
+  const planCatalogSnap = await db.collection('planCatalog').doc(normalizedPlanId).get();
   const planCatalogData = planCatalogSnap.exists ? (planCatalogSnap.data() as PlanCatalogEntry) : null;
 
   return {
     ...entitlement,
-    limits: resolveEffectivePlanLimits(entitlement.planId, planCatalogData?.limits ?? entitlement.limits),
-    features: resolveEffectivePlanFeatures(entitlement.planId, planCatalogData?.features ?? undefined),
+    planId: normalizedPlanId,
+    limits: resolveEffectivePlanLimits(normalizedPlanId, planCatalogData?.limits ?? entitlement.limits),
+    features: resolveEffectivePlanFeatures(normalizedPlanId, planCatalogData?.features ?? undefined),
   };
 };
 

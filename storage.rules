@@ -84,12 +84,12 @@ service firebase.storage {
 
     function defaultAttachmentLimits(planId) {
       return planId == "starter" || planId == "Starter" || planId == "STARTER"
-        ? 500
+        ? { attachmentsMonthlyMB: 500, maxAttachmentMB: 10, maxAttachmentsPerTicket: 10 }
         : planId == "pro" || planId == "Pro" || planId == "PRO"
-          ? 5000
+          ? { attachmentsMonthlyMB: 5000, maxAttachmentMB: 25, maxAttachmentsPerTicket: 25 }
           : planId == "enterprise" || planId == "Enterprise" || planId == "ENTERPRISE"
-            ? 100000
-            : 0;
+            ? { attachmentsMonthlyMB: 100000, maxAttachmentMB: 100, maxAttachmentsPerTicket: 100 }
+            : { attachmentsMonthlyMB: 0, maxAttachmentMB: 0, maxAttachmentsPerTicket: 0 };
     }
 
     function effectiveAttachmentLimits(orgId) {
@@ -116,6 +116,32 @@ service firebase.storage {
           : defaults;
     }
 
+    function effectiveAttachmentsMonthlyMB(orgId) {
+      let limits = effectiveAttachmentLimits(orgId);
+      return limits != null
+        && limits.attachmentsMonthlyMB is number
+        && limits.attachmentsMonthlyMB > 0
+        ? limits.attachmentsMonthlyMB
+        : 0;
+    }
+
+    function effectiveMaxAttachmentMB(orgId) {
+      let limits = effectiveAttachmentLimits(orgId);
+      return limits != null
+        && limits.maxAttachmentMB is number
+        && limits.maxAttachmentMB > 0
+        ? limits.maxAttachmentMB
+        : 0;
+    }
+
+    function defaultMaxAttachmentMB(planId) {
+      return defaultAttachmentLimits(planId).maxAttachmentMB;
+    }
+
+    function defaultMaxAttachmentsPerTicket(planId) {
+      return defaultAttachmentLimits(planId).maxAttachmentsPerTicket;
+    }
+
     function attachmentsAllowedByEntitlement(orgId) {
       let status = orgEntitlementStatus(orgId);
       let limits = effectiveAttachmentLimits(orgId);
@@ -123,19 +149,19 @@ service firebase.storage {
         && limits != null
         && limits.attachmentsMonthlyMB is number
         && limits.maxAttachmentMB is number
+        && limits.maxAttachmentsPerTicket is number
+        && limits.attachmentsMonthlyMB > 0
         && limits.maxAttachmentMB > 0
-        ? limits.maxAttachmentMB
-        : defaultMaxAttachmentMB(planId);
+        && limits.maxAttachmentsPerTicket > 0;
     }
 
     function effectiveMaxAttachmentsPerTicket(orgId) {
-      let limits = orgEntitlementLimits(orgId);
-      let planId = orgPlanId(orgId);
+      let limits = effectiveAttachmentLimits(orgId);
       return limits != null
         && limits.maxAttachmentsPerTicket is number
         && limits.maxAttachmentsPerTicket > 0
         ? limits.maxAttachmentsPerTicket
-        : defaultMaxAttachmentsPerTicket(planId);
+        : 0;
     }
 
     function attachmentsAllowed(orgId) {
