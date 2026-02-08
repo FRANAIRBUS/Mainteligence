@@ -170,8 +170,6 @@ export default function PlansPage() {
   const normalizedPlanId = entitlement?.planId ? normalizePlanId(entitlement.planId) : 'free';
   const planLabel = entitlement?.planId ? PLAN_LABELS[normalizedPlanId] ?? normalizedPlanId : '—';
   const currentPlanId = normalizedPlanId;
-  const currentPlanLimits = getDefaultPlanLimits(currentPlanId);
-  const currentPlanFeatures = getDefaultPlanFeatures(currentPlanId);
 
   const effectiveLimits = entitlement
     ? resolveEffectivePlanLimits(normalizedPlanId, (planLimits as any) ?? entitlement.limits)
@@ -179,8 +177,8 @@ export default function PlansPage() {
   const effectiveFeatures = entitlement
     ? resolveEffectivePlanFeatures(normalizedPlanId, (planFeatures as any) ?? null)
     : null;
-  const currentPlanLimits = effectiveLimits ?? getDefaultPlanLimits(currentPlanId);
-  const currentPlanFeatures = effectiveFeatures ?? getDefaultPlanFeatures(currentPlanId);
+  const basePlanLimits = effectiveLimits ?? getDefaultPlanLimits(currentPlanId);
+  const basePlanFeatures = effectiveFeatures ?? getDefaultPlanFeatures(currentPlanId);
   const preventivesEnabled = entitlement
     ? isFeatureEnabled({ ...entitlement, features: effectiveFeatures ?? undefined }, 'PREVENTIVES')
     : false;
@@ -284,7 +282,7 @@ export default function PlansPage() {
       ? resolveEffectivePlanFeatures(planId, catalogEntry.features)
       : getDefaultPlanFeatures(planId);
     const improvements = LIMIT_LABELS.flatMap(({ key, label }) => {
-      const currentValue = currentPlanLimits[key];
+      const currentValue = basePlanLimits[key];
       const nextValue = limits[key];
       if (!Number.isFinite(currentValue) || !Number.isFinite(nextValue)) return [];
       if (nextValue > currentValue) {
@@ -294,7 +292,7 @@ export default function PlansPage() {
     });
 
     (Object.keys(FEATURE_LABELS) as Array<keyof typeof FEATURE_LABELS>).forEach((featureKey) => {
-      if (features[featureKey] && !currentPlanFeatures[featureKey]) {
+      if (features[featureKey] && !basePlanFeatures[featureKey]) {
         improvements.push(`Incluye ${FEATURE_LABELS[featureKey]}`);
       }
     });
