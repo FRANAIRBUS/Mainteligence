@@ -53,8 +53,33 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.limits;
     }
 
+    function orgEntitlementStatus(orgId) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.status;
+    }
+
     function orgPlanId(orgId) {
       return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.planId;
+    }
+
+    function normalizedPlanId(planId) {
+      return planId == "starter" || planId == "Starter" || planId == "STARTER"
+        ? "starter"
+        : planId == "pro" || planId == "Pro" || planId == "PRO"
+          ? "pro"
+          : planId == "enterprise" || planId == "Enterprise" || planId == "ENTERPRISE"
+            ? "enterprise"
+            : planId == "basic" || planId == "Basic" || planId == "BASIC"
+              ? "basic"
+              : "free";
+    }
+
+    function planCatalogDoc(planId) {
+      return firestore.get(/databases/(default)/documents/planCatalog/$(planId));
+    }
+
+    function planCatalogLimits(planId) {
+      let catalog = planCatalogDoc(normalizedPlanId(planId));
+      return catalog != null && catalog.data != null ? catalog.data.limits : null;
     }
 
     function defaultAttachmentLimits(planId) {
@@ -68,21 +93,34 @@ service firebase.storage {
     }
 
     function effectiveAttachmentLimits(orgId) {
-      let limits = orgEntitlementLimits(orgId);
       let planId = orgPlanId(orgId);
+      let catalogLimits = planCatalogLimits(planId);
+      let limits = orgEntitlementLimits(orgId);
       let defaults = defaultAttachmentLimits(planId);
-      return limits != null
-        && limits.attachmentsMonthlyMB is number
-        && limits.maxAttachmentMB is number
-        && limits.maxAttachmentsPerTicket is number
-        && limits.attachmentsMonthlyMB > 0
-        && limits.maxAttachmentMB > 0
-        && limits.maxAttachmentsPerTicket > 0
-        ? limits
-        : defaults;
+      return catalogLimits != null
+        && catalogLimits.attachmentsMonthlyMB is number
+        && catalogLimits.maxAttachmentMB is number
+        && catalogLimits.maxAttachmentsPerTicket is number
+        && catalogLimits.attachmentsMonthlyMB > 0
+        && catalogLimits.maxAttachmentMB > 0
+        && catalogLimits.maxAttachmentsPerTicket > 0
+        ? catalogLimits
+        : limits != null
+          && limits.attachmentsMonthlyMB is number
+          && limits.maxAttachmentMB is number
+          && limits.maxAttachmentsPerTicket is number
+          && limits.attachmentsMonthlyMB > 0
+          && limits.maxAttachmentMB > 0
+          && limits.maxAttachmentsPerTicket > 0
+          ? limits
+          : defaults;
     }
 
     function attachmentsAllowed(orgId) {
+      let status = orgEntitlementStatus(orgId);
+      if (status != "active" && status != "trialing") {
+        return false;
+      }
       let limits = effectiveAttachmentLimits(orgId);
       return limits != null
         && limits.attachmentsMonthlyMB is number

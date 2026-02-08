@@ -135,13 +135,16 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       if (!firestore || !organizationId) return;
       try {
         const entitlement = await getOrgEntitlement(firestore, organizationId);
+        const limits = entitlement?.limits;
+        const status = entitlement?.status;
         const allowed =
-          Number(entitlement?.limits?.attachmentsMonthlyMB ?? 0) > 0 &&
-          Number(entitlement?.limits?.maxAttachmentMB ?? 0) > 0 &&
-          Number(entitlement?.limits?.maxAttachmentsPerTicket ?? 0) > 0;
+          (status === 'active' || status === 'trialing') &&
+          Number(limits?.attachmentsMonthlyMB ?? 0) > 0 &&
+          Number(limits?.maxAttachmentMB ?? 0) > 0 &&
+          Number(limits?.maxAttachmentsPerTicket ?? 0) > 0;
         if (!active) return;
         setCanAttach(allowed);
-        setMaxAttachmentMB(Number(entitlement?.limits?.maxAttachmentMB ?? 0) || 0);
+        setMaxAttachmentMB(Number(limits?.maxAttachmentMB ?? 0) || 0);
       } catch {
         if (!active) return;
         setCanAttach(false);
