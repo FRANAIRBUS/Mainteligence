@@ -366,6 +366,24 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
   };
 
+  const logUploadError = (payload: {
+    fileName: string;
+    orgId: string;
+    ticketId: string;
+    error: any;
+  }) => {
+    const { fileName, orgId, ticketId, error } = payload;
+    console.error('Attachment upload failed', {
+      fileName,
+      orgId,
+      ticketId,
+      code: error?.code,
+      message: error?.message,
+      customData: error?.customData,
+      serverResponse: error?.serverResponse,
+    });
+  };
+
   const onSubmit = async (data: AddIncidentFormValues) => {
     if (!canSubmit) {
       toast({
@@ -409,7 +427,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const registerTicketAttachment = httpsCallable(functions, 'registerTicketAttachment');
 
       const urls: string[] = [];
-      const failedUploads: string[] = [];
+      const failedUploads: Array<{ fileName: string; message: string }> = [];
 
       if (attachments.length > 0) {
         await createUploadSession({ orgId: scopedOrganizationId, ticketId, maxFiles: MAX_ATTACHMENTS });
@@ -461,6 +479,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
               return { url, fileName: attachment.file.name };
             } catch (error: any) {
               const errorMessage = mapUploadErrorMessage(error);
+              logUploadError({
+                fileName: attachment.file.name,
+                orgId: scopedOrganizationId,
+                ticketId,
+                error,
+              });
               setAttachments((current) =>
                 current.map((item) =>
                   item.id === attachment.id
@@ -477,8 +501,17 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           if (result.status === 'fulfilled') {
             urls.push(result.value.url);
           } else {
-            failedUploads.push(`${result.reason.fileName || 'archivo'} (${result.reason.message || 'error'})`);
+            failedUploads.push({
+              fileName: result.reason.fileName || 'archivo',
+              message: result.reason.message || 'error',
+            });
             const error = result.reason.error;
+            logUploadError({
+              fileName: result.reason.fileName || 'archivo',
+              orgId: scopedOrganizationId,
+              ticketId,
+              error,
+            });
             if (error?.code === 'storage/unauthorized') {
               const permissionError = new StoragePermissionError({
                 path: error.customData?.['path'] || orgStoragePath(scopedOrganizationId, 'tickets', ticketId),
@@ -490,7 +523,10 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         }
 
         if (failedUploads.length > 0) {
-          setSubmitWarning(`No se creó la incidencia. Corrige o quita los adjuntos con error y reintenta: ${failedUploads.join(', ')}.`);
+          const failedList = failedUploads
+            .map((item) => `- ${item.fileName} (${item.message})`)
+            .join('\n');
+          setSubmitWarning(`No se creó la incidencia. Corrige o quita los adjuntos con error y reintenta:\n${failedList}`);
           toast({
             variant: 'destructive',
             title: 'Falló la subida de adjuntos',
@@ -531,6 +567,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         return [];
       });
     } catch (error: any) {
+      console.error('Incident creation failed', {
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        customData: error?.customData,
+      });
       if (error.code === 'storage/unauthorized') {
         const permissionError = new StoragePermissionError({
           path: error.customData?.['path'] || orgStoragePath(organizationId!, 'tickets', 'photos'),
@@ -758,7 +800,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         </FormItem>
         {submitWarning && (
           <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-            <p className="font-medium text-destructive">{submitWarning}</p>
+            <p className="font-medium text-destructive whitespace-pre-line">{submitWarning}</p>
           </div>
         )}
 
