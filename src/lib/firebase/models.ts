@@ -201,6 +201,7 @@ export interface PreventiveTemplate extends BaseEntity {
   name: string;
   description?: string;
   status: PreventiveTemplateStatus;
+  pausedReason?: string;
   automatic: boolean;
   schedule: PreventiveSchedule;
   priority: Ticket["priority"];
