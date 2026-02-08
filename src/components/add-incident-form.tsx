@@ -18,7 +18,7 @@ import type { Site, Department, Asset } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { orgCollectionPath, orgStoragePath } from '@/lib/organization';
-import { getOrgEntitlement } from '@/lib/entitlements';
+import { getOrgEntitlement, resolveEffectivePlanLimits } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -135,16 +135,18 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       if (!firestore || !organizationId) return;
       try {
         const entitlement = await getOrgEntitlement(firestore, organizationId);
-        const limits = entitlement?.limits;
         const status = entitlement?.status;
+        const effectiveLimits = entitlement
+          ? resolveEffectivePlanLimits(entitlement.planId, entitlement.limits ?? null)
+          : null;
         const allowed =
           (status === 'active' || status === 'trialing') &&
-          Number(limits?.attachmentsMonthlyMB ?? 0) > 0 &&
-          Number(limits?.maxAttachmentMB ?? 0) > 0 &&
-          Number(limits?.maxAttachmentsPerTicket ?? 0) > 0;
+          Number(effectiveLimits?.attachmentsMonthlyMB ?? 0) > 0 &&
+          Number(effectiveLimits?.maxAttachmentMB ?? 0) > 0 &&
+          Number(effectiveLimits?.maxAttachmentsPerTicket ?? 0) > 0;
         if (!active) return;
         setCanAttach(allowed);
-        setMaxAttachmentMB(Number(limits?.maxAttachmentMB ?? 0) || 0);
+        setMaxAttachmentMB(Number(effectiveLimits?.maxAttachmentMB ?? 0) || 0);
       } catch {
         if (!active) return;
         setCanAttach(false);
