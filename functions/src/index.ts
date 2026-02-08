@@ -4995,7 +4995,6 @@ export const generatePreventiveTickets = functions.pubsub
       if (!orgId) continue;
 
       if (!template.schedule?.type) continue;
-      if (!template.siteId || !template.departmentId) continue;
 
       const orgRef = db.collection('organizations').doc(orgId);
       const templateRef = templateDoc.ref;
@@ -5015,9 +5014,19 @@ export const generatePreventiveTickets = functions.pubsub
         const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
         if (!isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) return;
 
-        const freshTemplate = templateSnap.data() as PreventiveTemplate;
-        if (!freshTemplate.automatic || freshTemplate.status !== 'active') return;
-        if (!freshTemplate.siteId || !freshTemplate.departmentId) return;
+		const freshTemplate = templateSnap.data() as PreventiveTemplate;
+		if (!freshTemplate.automatic || freshTemplate.status !== 'active') return;
+		if (!freshTemplate.siteId || !freshTemplate.departmentId) {
+		  // Plantilla mal configurada (normalmente creada antes de validar campos obligatorios).
+		  // Sin site/department no podemos generar tickets preventivos. La pausamos para que el UI lo refleje.
+		  tx.update(templateRef, {
+		    status: 'paused',
+		    'schedule.nextRunAt': null,
+		    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+		    pausedReason: 'missing_site_or_department',
+		  });
+		  return;
+		}
 
         const schedule = freshTemplate.schedule;
         if (!schedule?.type) return;
