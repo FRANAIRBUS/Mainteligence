@@ -150,7 +150,10 @@ export const resolveEffectivePlanLimits = (
     if (typeof rawValue !== "number") {
       return defaults[key];
     }
-    if (rawValue === 0 && defaults[key] > 0 && !["free", "basic"].includes(planId)) {
+    if (rawValue <= 0 && defaults[key] > 0 && !["free", "basic"].includes(planId)) {
+      return defaults[key];
+    }
+    if (rawValue < defaults[key] && !["free", "basic"].includes(planId)) {
       return defaults[key];
     }
     return rawValue;

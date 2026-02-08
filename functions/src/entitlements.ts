@@ -166,10 +166,38 @@ const resolveEffectivePlanFeatures = (
 const resolveEffectivePlanLimits = (
   planId: EntitlementPlanId,
   limits?: Partial<EntitlementLimits> | null
-): EntitlementLimits => ({
-  ...(DEFAULT_PLAN_LIMITS[planId] ?? DEFAULT_PLAN_LIMITS.free),
-  ...(limits ?? {}),
-});
+): EntitlementLimits => {
+  const defaults = DEFAULT_PLAN_LIMITS[planId] ?? DEFAULT_PLAN_LIMITS.free;
+  if (!limits) return defaults;
+
+  const coalesceLimit = (key: keyof EntitlementLimits) => {
+    const rawValue = limits[key];
+    if (typeof rawValue !== 'number') {
+      return defaults[key];
+    }
+    if (rawValue <= 0 && defaults[key] > 0 && !['free', 'basic'].includes(planId)) {
+      return defaults[key];
+    }
+    if (rawValue < defaults[key] && !['free', 'basic'].includes(planId)) {
+      return defaults[key];
+    }
+    return rawValue;
+  };
+
+  return {
+    maxUsers: coalesceLimit('maxUsers'),
+    maxSites: coalesceLimit('maxSites'),
+    maxDepartments: coalesceLimit('maxDepartments'),
+    maxAssets: coalesceLimit('maxAssets'),
+    maxActivePreventives: coalesceLimit('maxActivePreventives'),
+    maxOpenTickets: coalesceLimit('maxOpenTickets'),
+    maxOpenTasks: coalesceLimit('maxOpenTasks'),
+    attachmentsMonthlyMB: coalesceLimit('attachmentsMonthlyMB'),
+    maxAttachmentMB: coalesceLimit('maxAttachmentMB'),
+    maxAttachmentsPerTicket: coalesceLimit('maxAttachmentsPerTicket'),
+    retentionDays: coalesceLimit('retentionDays'),
+  };
+};
 
 
 export const getOrgEntitlement = async (orgId: string): Promise<EntitlementWithFeatures | null> => {

@@ -66,7 +66,7 @@ import type {
 } from '@/lib/firebase/models';
 import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organization';
 import { ticketStatusLabel } from '@/lib/status';
-import { isFeatureEnabled, resolveEffectivePlanFeatures } from '@/lib/entitlements';
+import { isFeatureEnabled, normalizePlanId, resolveEffectivePlanFeatures } from '@/lib/entitlements';
 
 const normalizeOptional = (value?: string) =>
   value && value !== '__none__' ? value : undefined;
@@ -421,7 +421,8 @@ export default function PreventivePage() {
       return;
     }
     let cancelled = false;
-    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+    const normalizedPlanId = normalizePlanId(organization.entitlement.planId);
+    getDoc(doc(firestore, 'planCatalog', normalizedPlanId))
       .then((snap) => {
         if (cancelled) return;
         const features = (snap.exists()
@@ -443,7 +444,7 @@ export default function PreventivePage() {
   const preventivesAllowed = entitlement
     ? isFeatureEnabled({
         ...entitlement,
-        features: resolveEffectivePlanFeatures(entitlement.planId, planFeatures),
+        features: resolveEffectivePlanFeatures(normalizePlanId(entitlement.planId), planFeatures),
       }, 'PREVENTIVES')
     : false;
   const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);
