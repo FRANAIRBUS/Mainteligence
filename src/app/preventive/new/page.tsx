@@ -15,7 +15,7 @@ import {
 } from '@/components/preventive-template-form';
 import { useCollection, useDoc, useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
 import type { Asset, Department, Organization, PreventiveTemplate, Site } from '@/lib/firebase/models';
-import { isFeatureEnabled, resolveEffectivePlanFeatures } from '@/lib/entitlements';
+import { isFeatureEnabled, normalizePlanId, resolveEffectivePlanFeatures } from '@/lib/entitlements';
 import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organization';
 
 const normalizeOptional = (value?: string) =>
@@ -60,7 +60,8 @@ export default function NewPreventiveTemplatePage() {
 
     let cancelled = false;
 
-    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+    const normalizedPlanId = normalizePlanId(organization.entitlement.planId);
+    getDoc(doc(firestore, 'planCatalog', normalizedPlanId))
       .then((snap) => {
         if (cancelled) {
           return;
@@ -86,7 +87,7 @@ export default function NewPreventiveTemplatePage() {
   const preventivesAllowed = entitlement
     ? isFeatureEnabled({
         ...entitlement,
-        features: resolveEffectivePlanFeatures(entitlement.planId, planFeatures),
+        features: resolveEffectivePlanFeatures(normalizePlanId(entitlement.planId), planFeatures),
       }, 'PREVENTIVES')
     : false;
   const preventivesPaused = Boolean(organization?.preventivesPausedByEntitlement);

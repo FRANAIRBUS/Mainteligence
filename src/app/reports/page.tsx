@@ -84,7 +84,7 @@ import {
 
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { isFeatureEnabled, resolveEffectivePlanFeatures } from '@/lib/entitlements';
+import { isFeatureEnabled, normalizePlanId, resolveEffectivePlanFeatures } from '@/lib/entitlements';
 import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus } from '@/lib/status';
 import { buildRbacUser, getTaskPermissions, getTicketPermissions, normalizeRole } from '@/lib/rbac';
@@ -140,18 +140,19 @@ export default function ReportsPage() {
     }
     let cancelled = false;
     setPlanFeaturesLoading(true);
-    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+    const normalizedPlanId = normalizePlanId(organization.entitlement.planId);
+    getDoc(doc(firestore, 'planCatalog', normalizedPlanId))
       .then((snap) => {
         if (cancelled) return;
         const rawFeatures = snap.exists()
           ? (snap.data()?.features as Record<string, boolean> | null | undefined)
           : null;
-        setPlanFeatures(resolveEffectivePlanFeatures(organization.entitlement.planId, rawFeatures));
+        setPlanFeatures(resolveEffectivePlanFeatures(normalizedPlanId, rawFeatures));
         setPlanFeaturesLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
-        setPlanFeatures(resolveEffectivePlanFeatures(organization.entitlement.planId, null));
+        setPlanFeatures(resolveEffectivePlanFeatures(normalizedPlanId, null));
         setPlanFeaturesLoading(false);
       });
 
