@@ -30,6 +30,7 @@ service cloud.firestore {
         && (
           doc.data.status == "active"
           || doc.data.active == true
+          || doc.data.isActive == true
         );
     }
 
