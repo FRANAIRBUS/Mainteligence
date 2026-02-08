@@ -8,7 +8,7 @@ Validaciones efectivas (backend):
 
 - Estado de entitlement (`trialing|active|past_due|canceled`).
 - Vencimiento de trial (`trialEndsAt`).
-- Límites (`entitlement.limits`) vs consumo (`entitlement.usage`).
+- Límites efectivos (resueltos desde `planCatalog/{planId}` con fallback a defaults y `entitlement.limits`) vs consumo (`entitlement.usage`).
 - Features por plan desde `planCatalog/{planId}`.
 
 La pantalla `/plans` en frontend sigue siendo informativa/comercial; no muta plan directamente.

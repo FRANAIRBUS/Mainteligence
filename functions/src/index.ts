@@ -1513,6 +1513,19 @@ async function resolvePlanFeaturesForTx(tx: FirebaseFirestore.Transaction, planI
   return resolveEffectiveFeaturesForPlan(resolvedPlanId, rawFeatures ?? null);
 }
 
+async function resolvePlanLimitsForTx(
+  tx: FirebaseFirestore.Transaction,
+  planId: string | undefined,
+  rawLimits?: Partial<EntitlementLimits> | null
+): Promise<EntitlementLimits> {
+  const resolvedPlanId = resolveEntitlementPlanId({ metadataPlanId: planId ?? null });
+  const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
+  const planLimits = planSnap.exists
+    ? (planSnap.get('limits') as Partial<EntitlementLimits> | undefined)
+    : undefined;
+  return resolveEffectiveLimitsForPlan(resolvedPlanId, planLimits ?? rawLimits ?? null);
+}
+
 async function resolveFallbackPreventivesEntitlementForTx(
   tx: FirebaseFirestore.Transaction,
   orgData: FirebaseFirestore.DocumentData | undefined,
@@ -3603,9 +3616,10 @@ export const createTicketUploadSession = functions.https.onCall(async (data, con
     }
 
     const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
-    const maxAttachmentMB = Number(entitlement.limits?.maxAttachmentMB ?? 0) || 0;
-    const monthlyMB = Number(entitlement.limits?.attachmentsMonthlyMB ?? 0) || 0;
-    const perTicket = Number(entitlement.limits?.maxAttachmentsPerTicket ?? 0) || 0;
+    const effectiveLimits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
+    const maxAttachmentMB = Number(effectiveLimits.maxAttachmentMB ?? 0) || 0;
+    const monthlyMB = Number(effectiveLimits.attachmentsMonthlyMB ?? 0) || 0;
+    const perTicket = Number(effectiveLimits.maxAttachmentsPerTicket ?? 0) || 0;
 
     if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
       throw new functions.https.HttpsError(
@@ -3668,9 +3682,10 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
     }
 
     const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
-    const maxAttachmentMB = Number(entitlement.limits?.maxAttachmentMB ?? 0) || 0;
-    const monthlyMB = Number(entitlement.limits?.attachmentsMonthlyMB ?? 0) || 0;
-    const perTicket = Number(entitlement.limits?.maxAttachmentsPerTicket ?? 0) || 0;
+    const effectiveLimits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
+    const maxAttachmentMB = Number(effectiveLimits.maxAttachmentMB ?? 0) || 0;
+    const monthlyMB = Number(effectiveLimits.attachmentsMonthlyMB ?? 0) || 0;
+    const perTicket = Number(effectiveLimits.maxAttachmentsPerTicket ?? 0) || 0;
     const usedThisMonth = Number(entitlement.usage?.attachmentsThisMonthMB ?? 0) || 0;
 
     if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
