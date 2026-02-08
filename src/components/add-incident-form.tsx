@@ -366,6 +366,24 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
   };
 
+  const logUploadError = (payload: {
+    fileName: string;
+    orgId: string;
+    ticketId: string;
+    error: any;
+  }) => {
+    const { fileName, orgId, ticketId, error } = payload;
+    console.error('Attachment upload failed', {
+      fileName,
+      orgId,
+      ticketId,
+      code: error?.code,
+      message: error?.message,
+      customData: error?.customData,
+      serverResponse: error?.serverResponse,
+    });
+  };
+
   const onSubmit = async (data: AddIncidentFormValues) => {
     if (!canSubmit) {
       toast({
@@ -461,6 +479,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
               return { url, fileName: attachment.file.name };
             } catch (error: any) {
               const errorMessage = mapUploadErrorMessage(error);
+              logUploadError({
+                fileName: attachment.file.name,
+                orgId: scopedOrganizationId,
+                ticketId,
+                error,
+              });
               setAttachments((current) =>
                 current.map((item) =>
                   item.id === attachment.id
@@ -482,6 +506,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
               message: result.reason.message || 'error',
             });
             const error = result.reason.error;
+            logUploadError({
+              fileName: result.reason.fileName || 'archivo',
+              orgId: scopedOrganizationId,
+              ticketId,
+              error,
+            });
             if (error?.code === 'storage/unauthorized') {
               const permissionError = new StoragePermissionError({
                 path: error.customData?.['path'] || orgStoragePath(scopedOrganizationId, 'tickets', ticketId),
@@ -537,6 +567,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         return [];
       });
     } catch (error: any) {
+      console.error('Incident creation failed', {
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        customData: error?.customData,
+      });
       if (error.code === 'storage/unauthorized') {
         const permissionError = new StoragePermissionError({
           path: error.customData?.['path'] || orgStoragePath(organizationId!, 'tickets', 'photos'),

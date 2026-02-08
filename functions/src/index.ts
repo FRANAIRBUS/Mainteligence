@@ -3644,6 +3644,15 @@ export const createTicketUploadSession = functions.https.onCall(async (data, con
       maxFiles,
     });
 
+    functions.logger.info('Created ticket upload session', {
+      orgId,
+      ticketId,
+      uploaderUid: uid,
+      maxFiles,
+      maxAttachmentMB,
+      expiresAt: expiresAt.toDate().toISOString(),
+    });
+
     return {
       ok: true,
       ticketId,
@@ -3703,9 +3712,23 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
     const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
     const sessionSnap = await tx.get(sessionRef);
     if (!sessionSnap.exists || sessionSnap.get('status') !== 'active' || sessionSnap.get('type') !== 'ticket') {
+      functions.logger.warn('Upload session inactive or missing', {
+        orgId,
+        ticketId,
+        uploaderUid: uid,
+        sessionExists: sessionSnap.exists,
+        sessionStatus: sessionSnap.get('status'),
+        sessionType: sessionSnap.get('type'),
+      });
       throw new functions.https.HttpsError('failed-precondition', 'La sesión de carga no está activa.', 'upload_session_inactive');
     }
     if (sessionSnap.get('uploaderUid') !== uid) {
+      functions.logger.warn('Upload session uploader mismatch', {
+        orgId,
+        ticketId,
+        uploaderUid: uid,
+        sessionUploaderUid: sessionSnap.get('uploaderUid'),
+      });
       throw new functions.https.HttpsError('permission-denied', 'Sesión de carga inválida.');
     }
 

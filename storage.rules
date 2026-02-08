@@ -263,7 +263,6 @@ service firebase.storage {
       // This prevents bypassing plan limits and enforces a server-side approval step.
       allow write: if isSignedIn()
         && isValidOrgId(orgId)
-        && attachmentsAllowedByEntitlement(orgId)
         && hasActiveUploadSession(orgId, ticketId)
         && hasRegisteredTicketUpload(orgId, ticketId, fileName)
         && isValidUpload(maxTicketAttachmentBytes(orgId))
