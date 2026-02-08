@@ -1,4 +1,24 @@
-import type { Timestamp } from "firebase/firestore";
+impexport type WorkOrderStatus = "open" | "closed";
+export type WorkOrderKind = "preventive";
+
+export interface WorkOrder extends BaseEntity {
+  kind: WorkOrderKind;
+  status: WorkOrderStatus;
+  isOpen: boolean;
+  priority?: string;
+  siteId?: string | null;
+  departmentId?: string | null;
+  assetId?: string | null;
+  title: string;
+  description?: string;
+  createdBy?: string;
+  assignedTo?: string | null;
+  preventiveTemplateId?: string;
+  checklistRequired?: boolean;
+  closedAt?: Timestamp | null;
+  closedBy?: string | null;
+}
+ort type { Timestamp } from "firebase/firestore";
 
 export interface BaseEntity {
   id: string;
