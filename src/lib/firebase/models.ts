@@ -1,4 +1,13 @@
-impexport type WorkOrderStatus = "open" | "closed";
+import type { Timestamp } from "firebase/firestore";
+
+export interface BaseEntity {
+  id: string;
+  organizationId: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export type WorkOrderStatus = "open" | "closed";
 export type WorkOrderKind = "preventive";
 
 export interface WorkOrder extends BaseEntity {
@@ -18,14 +27,7 @@ export interface WorkOrder extends BaseEntity {
   closedAt?: Timestamp | null;
   closedBy?: string | null;
 }
-ort type { Timestamp } from "firebase/firestore";
 
-export interface BaseEntity {
-  id: string;
-  organizationId: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
-}
 
 export type OrganizationType = "demo" | "standard" | "enterprise" | "partner";
 export type OrganizationStatus = "active" | "suspended" | "deleted";
