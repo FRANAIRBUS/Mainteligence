@@ -3677,7 +3677,7 @@ export const createTicketUploadSession = functions.https.onCall(async (data, con
   }
 });
 
-export const registerTicketAttachment = functions.https.onCall(async (data, context) => {
+export const createTicket = functions.https.onCall(async (data, context) => {
   try {
     const uid = context.auth?.uid;
     if (!uid) {
@@ -3685,19 +3685,15 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
     }
 
     const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
-    const ticketId = String(data?.ticketId ?? '').trim();
-    const sizeBytes = Number(data?.sizeBytes ?? 0) || 0;
-    const fileName = String(data?.fileName ?? '').trim();
-    const contentType = String(data?.contentType ?? '').trim();
+    const payload = (data?.payload ?? data) as Record<string, any>;
+    const providedTicketId = String(payload?.ticketId ?? data?.ticketId ?? '').trim() || undefined;
 
-    if (!orgId || !ticketId || sizeBytes <= 0 || !fileName || !contentType) {
-      throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId, ticketId, sizeBytes, fileName o contentType.');
+    if (!orgId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Falta orgId.');
     }
 
-    const sizeMB = sizeBytes / (1024 * 1024);
-
     return await db.runTransaction(async (tx) => {
-      await requireActiveMembershipForTx(tx, orgId, uid);
+      const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
 
       const orgRef = db.collection('organizations').doc(orgId);
       const orgSnap = await tx.get(orgRef);
@@ -3706,92 +3702,112 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
       }
 
       const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
-      const effectiveLimits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
-      const maxAttachmentMB = Number(effectiveLimits.maxAttachmentMB ?? 0) || 0;
-      const monthlyMB = Number(effectiveLimits.attachmentsMonthlyMB ?? 0) || 0;
-      const perTicket = Number(effectiveLimits.maxAttachmentsPerTicket ?? 0) || 0;
-      const usedThisMonth = Number(entitlement.usage?.attachmentsThisMonthMB ?? 0) || 0;
+      const limits = entitlement.limits;
+      const usage = entitlement.usage;
 
-      if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
-        throw new functions.https.HttpsError('failed-precondition', 'Los adjuntos no están disponibles en tu plan.', 'attachments_not_allowed');
+      const locationId = String(payload?.locationId ?? payload?.siteId ?? '').trim();
+      const originDepartmentId = String(payload?.originDepartmentId ?? '').trim() || undefined;
+      const targetDepartmentId = String(payload?.targetDepartmentId ?? '').trim() || undefined;
+      const departmentId = String(payload?.departmentId ?? '').trim() || undefined;
+      const effectiveDepartmentId = targetDepartmentId ?? originDepartmentId ?? departmentId;
+
+      if (!locationId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Falta locationId.');
+      }
+      if (!effectiveDepartmentId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Falta departmentId.');
       }
 
-      if (sizeMB > maxAttachmentMB + 1e-6) {
-        throw new functions.https.HttpsError('failed-precondition', `Adjunto supera el tamaño máximo (${maxAttachmentMB} MB).`, 'attachment_too_large');
-      }
+      // Scope enforcement (keep existing RBAC model; don't redesign).
+      requireScopedAccessToSite(resolved.role, resolved.scope, locationId);
+      requireScopedAccessToDepartment(resolved.role, resolved.scope, effectiveDepartmentId);
 
-      if (usedThisMonth + sizeMB > monthlyMB + 1e-6) {
-        throw new functions.https.HttpsError('failed-precondition', 'Se superó la cuota mensual de adjuntos.', 'attachments_quota_exceeded');
-      }
-
-      const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
-      const sessionSnap = await tx.get(sessionRef);
-      if (!sessionSnap.exists || sessionSnap.get('status') !== 'active' || sessionSnap.get('type') !== 'ticket') {
-        functions.logger.warn('Upload session inactive or missing', {
-          orgId,
-          ticketId,
-          uploaderUid: uid,
-          sessionExists: sessionSnap.exists,
-          sessionStatus: sessionSnap.get('status'),
-          sessionType: sessionSnap.get('type'),
-        });
-        throw new functions.https.HttpsError('failed-precondition', 'La sesión de carga no está activa.', 'upload_session_inactive');
-      }
-      if (sessionSnap.get('uploaderUid') !== uid) {
-        functions.logger.warn('Upload session uploader mismatch', {
-          orgId,
-          ticketId,
-          uploaderUid: uid,
-          sessionUploaderUid: sessionSnap.get('uploaderUid'),
-        });
-        throw new functions.https.HttpsError('permission-denied', 'Sesión de carga inválida.');
-      }
-
-      const allowedFiles = (sessionSnap.get('allowedFiles') || {}) as Record<string, { sizeBytes?: number }>;
-      if (allowedFiles[fileName]) {
-        throw new functions.https.HttpsError('already-exists', 'El archivo ya fue registrado.');
-      }
-
-      const maxFiles = Number(sessionSnap.get('maxFiles') ?? 0) || 0;
-      const registeredCount = Object.keys(allowedFiles).length;
-      if (maxFiles > 0 && registeredCount >= maxFiles) {
-        throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${maxFiles}).`, 'attachments_per_ticket_exceeded');
-      }
-
-      const ticketRef = orgRef.collection('tickets').doc(ticketId);
-      const ticketSnap = await tx.get(ticketRef);
-      if (ticketSnap.exists) {
-        const currentUrls = Array.isArray(ticketSnap.get('photoUrls')) ? (ticketSnap.get('photoUrls') as unknown[]) : [];
-        if (currentUrls.length >= perTicket) {
-          throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${perTicket}).`, 'attachments_per_ticket_exceeded');
+      const status = payload?.status ?? 'new';
+      if (isOpenStatus(status)) {
+        const current = Number(usage?.openTicketsCount ?? 0) || 0;
+        const max = Number(limits?.maxOpenTickets ?? 0) || 0;
+        if (max > 0 && current >= max) {
+          throw new functions.https.HttpsError(
+            'failed-precondition',
+            'Has alcanzado el límite de incidencias abiertas de tu plan.',
+            'max_open_tickets_reached'
+          );
         }
       }
 
-      tx.update(orgRef, {
-        'entitlement.usage.attachmentsThisMonthMB': admin.firestore.FieldValue.increment(sizeMB),
+      const ticketRef = providedTicketId
+        ? orgRef.collection('tickets').doc(providedTicketId)
+        : orgRef.collection('tickets').doc();
+
+      const existing = await tx.get(ticketRef);
+      if (existing.exists) {
+        throw new functions.https.HttpsError('already-exists', 'La incidencia ya existe.');
+      }
+
+      const nowYear = new Date().getFullYear();
+      const displayId = payload?.displayId || `INC-${nowYear}-${String(Date.now()).slice(-4)}`;
+
+      const createdByName = String(payload?.createdByName ?? resolved.userData?.displayName ?? resolved.userData?.email ?? uid);
+
+      const docData: Record<string, any> = {
+        organizationId: orgId,
+        locationId,
+        originDepartmentId: originDepartmentId ?? null,
+        targetDepartmentId: targetDepartmentId ?? null,
+        departmentId: departmentId ?? null,
+        title: String(payload?.title ?? '').trim(),
+        description: String(payload?.description ?? '').trim(),
+        type: payload?.type ?? 'correctivo',
+        status,
+        priority: payload?.priority ?? 'Media',
+        assetId: payload?.assetId ?? null,
+        createdBy: uid,
+        createdByName,
+        assignedRole: payload?.assignedRole ?? 'mantenimiento',
+        assignedTo: payload?.assignedTo ?? null,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+        displayId,
+        photoUrls: Array.isArray(payload?.photoUrls) ? payload.photoUrls : [],
+        hasAttachments: Array.isArray(payload?.photoUrls) && payload.photoUrls.length > 0,
+      };
 
-      tx.update(
-        sessionRef,
-        new admin.firestore.FieldPath('allowedFiles', fileName),
-        {
-          sizeBytes,
-          contentType,
-          registeredAt: admin.firestore.FieldValue.serverTimestamp(),
-        }
-      );
+      // Clean null-ish legacy.
+      if (!docData.assetId) delete docData.assetId;
 
-      return { ok: true, sizeMB };
+      // Clean up upload session if present (read before writes).
+      const sessionRef = orgRef.collection('uploadSessions').doc(ticketRef.id);
+      const sessionSnap = await tx.get(sessionRef);
+
+      tx.set(ticketRef, docData, { merge: false });
+
+      if (isOpenStatus(status)) {
+        tx.update(orgRef, {
+          'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(1),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+
+
+      if (sessionSnap.exists) {
+        tx.delete(sessionRef);
+      }
+      return { ok: true, ticketId: ticketRef.id };
     });
   } catch (error: any) {
-    functions.logger.error('registerTicketAttachment failed', {
+    functions.logger.error('createTicket failed', {
       code: error?.code,
       message: error?.message,
       stack: error?.stack,
     });
     if (error instanceof functions.https.HttpsError || error?.constructor?.name === 'HttpsError') {
       throw error;
+    }
+    throw new functions.https.HttpsError('internal', 'Error interno creando incidencia.', {
+      reason: 'createTicket_failed',
+    });
+  }
+});or;
     }
     throw new functions.https.HttpsError('internal', 'Error interno registrando adjunto.', {
       reason: 'registerTicketAttachment_failed',
