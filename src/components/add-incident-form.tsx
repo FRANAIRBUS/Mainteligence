@@ -409,7 +409,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const registerTicketAttachment = httpsCallable(functions, 'registerTicketAttachment');
 
       const urls: string[] = [];
-      const failedUploads: string[] = [];
+      const failedUploads: Array<{ fileName: string; message: string }> = [];
 
       if (attachments.length > 0) {
         await createUploadSession({ orgId: scopedOrganizationId, ticketId, maxFiles: MAX_ATTACHMENTS });
@@ -477,7 +477,10 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           if (result.status === 'fulfilled') {
             urls.push(result.value.url);
           } else {
-            failedUploads.push(`${result.reason.fileName || 'archivo'} (${result.reason.message || 'error'})`);
+            failedUploads.push({
+              fileName: result.reason.fileName || 'archivo',
+              message: result.reason.message || 'error',
+            });
             const error = result.reason.error;
             if (error?.code === 'storage/unauthorized') {
               const permissionError = new StoragePermissionError({
@@ -490,7 +493,10 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         }
 
         if (failedUploads.length > 0) {
-          setSubmitWarning(`No se creó la incidencia. Corrige o quita los adjuntos con error y reintenta: ${failedUploads.join(', ')}.`);
+          const failedList = failedUploads
+            .map((item) => `- ${item.fileName} (${item.message})`)
+            .join('\n');
+          setSubmitWarning(`No se creó la incidencia. Corrige o quita los adjuntos con error y reintenta:\n${failedList}`);
           toast({
             variant: 'destructive',
             title: 'Falló la subida de adjuntos',
@@ -758,7 +764,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         </FormItem>
         {submitWarning && (
           <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-            <p className="font-medium text-destructive">{submitWarning}</p>
+            <p className="font-medium text-destructive whitespace-pre-line">{submitWarning}</p>
           </div>
         )}
 
