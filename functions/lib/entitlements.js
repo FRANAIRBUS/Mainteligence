@@ -67,18 +67,22 @@ const DEFAULT_PLAN_LIMITS = {
         retentionDays: 365,
     },
     enterprise: {
-        maxUsers: 500,
-        maxSites: 200,
-        maxDepartments: 500,
-        maxAssets: 100000,
-        maxActivePreventives: 5000,
-        maxOpenTickets: 10000,
-        maxOpenTasks: 10000,
-        attachmentsMonthlyMB: 20000,
-        maxAttachmentMB: 50,
-        maxAttachmentsPerTicket: 50,
+        maxUsers: 10000,
+        maxSites: 10000,
+        maxDepartments: 10000,
+        maxAssets: 1000000,
+        maxActivePreventives: 100000,
+        maxOpenTickets: 1000000,
+        maxOpenTasks: 1000000,
+        attachmentsMonthlyMB: 100000,
+        maxAttachmentMB: 100,
+        maxAttachmentsPerTicket: 100,
         retentionDays: 3650,
     },
+};
+const normalizePlanId = (planId) => {
+    const normalized = String(planId !== null && planId !== void 0 ? planId : '').trim().toLowerCase();
+    return (normalized in DEFAULT_PLAN_LIMITS ? normalized : 'free');
 };
 const resolveEffectivePlanFeatures = (planId, features) => {
     var _a;
@@ -86,7 +90,35 @@ const resolveEffectivePlanFeatures = (planId, features) => {
 };
 const resolveEffectivePlanLimits = (planId, limits) => {
     var _a;
-    return (Object.assign(Object.assign({}, ((_a = DEFAULT_PLAN_LIMITS[planId]) !== null && _a !== void 0 ? _a : DEFAULT_PLAN_LIMITS.free)), (limits !== null && limits !== void 0 ? limits : {})));
+    const defaults = (_a = DEFAULT_PLAN_LIMITS[planId]) !== null && _a !== void 0 ? _a : DEFAULT_PLAN_LIMITS.free;
+    if (!limits)
+        return defaults;
+    const coalesceLimit = (key) => {
+        const rawValue = limits[key];
+        if (typeof rawValue !== 'number') {
+            return defaults[key];
+        }
+        if (rawValue <= 0 && defaults[key] > 0 && !['free', 'basic'].includes(planId)) {
+            return defaults[key];
+        }
+        if (rawValue < defaults[key] && !['free', 'basic'].includes(planId)) {
+            return defaults[key];
+        }
+        return rawValue;
+    };
+    return {
+        maxUsers: coalesceLimit('maxUsers'),
+        maxSites: coalesceLimit('maxSites'),
+        maxDepartments: coalesceLimit('maxDepartments'),
+        maxAssets: coalesceLimit('maxAssets'),
+        maxActivePreventives: coalesceLimit('maxActivePreventives'),
+        maxOpenTickets: coalesceLimit('maxOpenTickets'),
+        maxOpenTasks: coalesceLimit('maxOpenTasks'),
+        attachmentsMonthlyMB: coalesceLimit('attachmentsMonthlyMB'),
+        maxAttachmentMB: coalesceLimit('maxAttachmentMB'),
+        maxAttachmentsPerTicket: coalesceLimit('maxAttachmentsPerTicket'),
+        retentionDays: coalesceLimit('retentionDays'),
+    };
 };
 const getOrgEntitlement = async (orgId) => {
     var _a, _b, _c;
@@ -99,9 +131,10 @@ const getOrgEntitlement = async (orgId) => {
     const entitlement = (_a = orgData === null || orgData === void 0 ? void 0 : orgData.entitlement) !== null && _a !== void 0 ? _a : null;
     if (!entitlement)
         return null;
-    const planCatalogSnap = await db.collection('planCatalog').doc(entitlement.planId).get();
+    const normalizedPlanId = normalizePlanId(entitlement.planId);
+    const planCatalogSnap = await db.collection('planCatalog').doc(normalizedPlanId).get();
     const planCatalogData = planCatalogSnap.exists ? planCatalogSnap.data() : null;
-    return Object.assign(Object.assign({}, entitlement), { limits: resolveEffectivePlanLimits(entitlement.planId, (_b = planCatalogData === null || planCatalogData === void 0 ? void 0 : planCatalogData.limits) !== null && _b !== void 0 ? _b : entitlement.limits), features: resolveEffectivePlanFeatures(entitlement.planId, (_c = planCatalogData === null || planCatalogData === void 0 ? void 0 : planCatalogData.features) !== null && _c !== void 0 ? _c : undefined) });
+    return Object.assign(Object.assign({}, entitlement), { planId: normalizedPlanId, limits: resolveEffectivePlanLimits(normalizedPlanId, (_b = planCatalogData === null || planCatalogData === void 0 ? void 0 : planCatalogData.limits) !== null && _b !== void 0 ? _b : entitlement.limits), features: resolveEffectivePlanFeatures(normalizedPlanId, (_c = planCatalogData === null || planCatalogData === void 0 ? void 0 : planCatalogData.features) !== null && _c !== void 0 ? _c : undefined) });
 };
 exports.getOrgEntitlement = getOrgEntitlement;
 const isFeatureEnabled = (entitlement, feature) => {
