@@ -157,6 +157,7 @@ const DEFAULT_PLAN_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
 
 const normalizePlanId = (planId?: string | null): EntitlementPlanId => {
   const normalized = String(planId ?? '').trim().toLowerCase();
+  if (normalized.startsWith('standard')) return 'starter';
   return (normalized in DEFAULT_PLAN_LIMITS ? normalized : 'free') as EntitlementPlanId;
 };
 

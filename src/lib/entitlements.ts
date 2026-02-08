@@ -110,6 +110,7 @@ const DEFAULT_PLAN_LIMITS: Record<Entitlement["planId"], EntitlementLimits> = {
 const resolvePlanAlias = (planId: string): Entitlement["planId"] | null => {
   if (planId.startsWith("free")) return "free";
   if (planId.startsWith("basic")) return "basic";
+  if (planId.startsWith("standard")) return "starter";
   if (planId.startsWith("starter")) return "starter";
   if (planId.startsWith("pro")) return "pro";
   if (planId.startsWith("enterprise")) return "enterprise";
