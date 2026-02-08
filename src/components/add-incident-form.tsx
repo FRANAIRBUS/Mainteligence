@@ -8,17 +8,18 @@ import { z } from 'zod';
 import {
   collection,
   doc,
+  getDoc,
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
 
 import { useToast } from '@/hooks/use-toast';
-import { useFirestore, useUser, useStorage, useCollection } from '@/lib/firebase';
-import type { Site, Department, Asset } from '@/lib/firebase/models';
+import { useFirestore, useUser, useStorage, useCollection, useDoc } from '@/lib/firebase';
+import type { Site, Department, Asset, Organization } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { orgCollectionPath, orgStoragePath } from '@/lib/organization';
-import { getOrgEntitlement } from '@/lib/entitlements';
+import { normalizePlanId, resolveEffectivePlanLimits } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -122,47 +123,45 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const firestore = useFirestore();
   const storage = useStorage();
   const { user, organizationId, profile, activeMembership } = useUser();
+  const { data: organization, error: organizationError } = useDoc<Organization>(
+    organizationId ? `organizations/${organizationId}` : null
+  );
   const [isPending, setIsPending] = useState(false);
   const [attachments, setAttachments] = useState<SelectedAttachment[]>([]);
   const [submitWarning, setSubmitWarning] = useState<string | null>(null);
   const [canAttach, setCanAttach] = useState<boolean>(false);
   const [maxAttachmentMB, setMaxAttachmentMB] = useState<number>(0);
-  const canSubmit = Boolean(firestore && storage && user && organizationId);
 
   useEffect(() => {
-    let active = true;
-    (async () => {
-      if (!firestore || !organizationId) return;
-      try {
-        const entitlement = await getOrgEntitlement(firestore, organizationId);
-        const limits = entitlement?.limits;
-        const status = entitlement?.status;
-        const allowed =
-          (status === 'active' || status === 'trialing') &&
-          Number(limits?.attachmentsMonthlyMB ?? 0) > 0 &&
-          Number(limits?.maxAttachmentMB ?? 0) > 0 &&
-          Number(limits?.maxAttachmentsPerTicket ?? 0) > 0;
-        if (!active) return;
-        setCanAttach(allowed);
-        setMaxAttachmentMB(Number(limits?.maxAttachmentMB ?? 0) || 0);
-      } catch {
-        if (!active) return;
-        setCanAttach(false);
-        setMaxAttachmentMB(0);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [firestore, organizationId]);
+    if (!organization?.entitlement || organizationError) {
+      setCanAttach(false);
+      setMaxAttachmentMB(0);
+      return;
+    }
 
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(
+    const status = organization.entitlement.status;
+    const normalizedPlanId = normalizePlanId(organization.entitlement.planId);
+    const effectiveLimits = resolveEffectivePlanLimits(
+      normalizedPlanId,
+      organization.entitlement.limits ?? null
+    );
+    const allowed =
+      (status === 'active' || status === 'trialing') &&
+      Number(effectiveLimits?.attachmentsMonthlyMB ?? 0) > 0 &&
+      Number(effectiveLimits?.maxAttachmentMB ?? 0) > 0 &&
+      Number(effectiveLimits?.maxAttachmentsPerTicket ?? 0) > 0;
+
+    setCanAttach(allowed);
+    setMaxAttachmentMB(Number(effectiveLimits?.maxAttachmentMB ?? 0) || 0);
+  }, [organization, organizationError]);
+
+  const { data: sites, loading: sitesLoading, error: sitesError } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(
+  const { data: departments, loading: deptsLoading, error: deptsError } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(
+  const { data: assets, loading: assetsLoading, error: assetsError } = useCollection<Asset>(
     organizationId ? orgCollectionPath(organizationId, 'assets') : null
   );
 
@@ -274,10 +273,43 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     return extension ? CONTENT_TYPE_BY_EXTENSION[extension] || 'application/octet-stream' : 'application/octet-stream';
   };
 
+  const waitForUploadRegistration = async (payload: {
+    orgId: string;
+    ticketId: string;
+    fileName: string;
+    attempts?: number;
+  }) => {
+    const { orgId, ticketId, fileName, attempts = 6 } = payload;
+
+    if (!firestore) return;
+
+    const sessionRef = doc(firestore, orgCollectionPath(orgId, 'uploadSessions'), ticketId);
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const snapshot = await getDoc(sessionRef);
+      const allowedFiles = snapshot.exists()
+        ? (snapshot.get('allowedFiles') as Record<string, { sizeBytes?: number; contentType?: string }> | undefined)
+        : undefined;
+
+      if (allowedFiles?.[fileName]) {
+        return;
+      }
+
+      await sleep(250 * attempt);
+    }
+
+    throw {
+      code: 'storage/retry-limit-exceeded',
+      message: 'No se pudo confirmar el registro del adjunto.',
+    };
+  };
+
   const uploadPhotoWithRetry = async (
     attachment: SelectedAttachment,
     scopedOrganizationId: string,
     ticketId: string,
+    objectName: string,
+    contentType: string,
     onProgress: (progress: number) => void,
     attempts = 3
   ) => {
@@ -285,12 +317,11 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        const objectName = uniqueFileName(attachment.file.name);
         const photoRef = ref(storage!, orgStoragePath(scopedOrganizationId, 'tickets', ticketId, objectName));
 
         const snapshot = await new Promise<UploadTaskSnapshot>((resolve, reject) => {
           const task = uploadBytesResumable(photoRef, attachment.file, {
-            contentType: resolveAttachmentContentType(attachment.file),
+            contentType,
           });
 
           let stallTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
@@ -344,7 +375,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         if (!retryable || attempt === attempts) {
           break;
         }
-        await sleep(750 * attempt);
+        await sleep(900 * attempt);
       }
     }
 
@@ -365,6 +396,24 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       default:
         return error?.message || 'No se pudo subir el archivo.';
     }
+  };
+
+  const logUploadError = (payload: {
+    fileName: string;
+    orgId: string;
+    ticketId: string;
+    error: any;
+  }) => {
+    const { fileName, orgId, ticketId, error } = payload;
+    console.error('Attachment upload failed', {
+      fileName,
+      orgId,
+      ticketId,
+      code: error?.code,
+      message: error?.message,
+      customData: error?.customData,
+      serverResponse: error?.serverResponse,
+    });
   };
 
   const onSubmit = async (data: AddIncidentFormValues) => {
@@ -410,13 +459,15 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const registerTicketAttachment = httpsCallable(functions, 'registerTicketAttachment');
 
       const urls: string[] = [];
-      const failedUploads: string[] = [];
+      const failedUploads: Array<{ fileName: string; message: string }> = [];
 
       if (attachments.length > 0) {
         await createUploadSession({ orgId: scopedOrganizationId, ticketId, maxFiles: MAX_ATTACHMENTS });
 
         const results = await Promise.allSettled(
           attachments.map(async (attachment) => {
+            const objectName = uniqueFileName(attachment.file.name);
+            const contentType = resolveAttachmentContentType(attachment.file);
             setAttachments((current) =>
               current.map((item) =>
                 item.id === attachment.id
@@ -430,14 +481,22 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                 orgId: scopedOrganizationId,
                 ticketId,
                 sizeBytes: attachment.file.size,
-                contentType: attachment.file.type,
-                fileName: attachment.file.name,
+                contentType,
+                fileName: objectName,
+              });
+
+              await waitForUploadRegistration({
+                orgId: scopedOrganizationId,
+                ticketId,
+                fileName: objectName,
               });
 
               const url = await uploadPhotoWithRetry(
                 attachment,
                 scopedOrganizationId,
                 ticketId,
+                objectName,
+                contentType,
                 (progress) => {
                   setAttachments((current) =>
                     current.map((item) =>
@@ -458,6 +517,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
               return { url, fileName: attachment.file.name };
             } catch (error: any) {
               const errorMessage = mapUploadErrorMessage(error);
+              logUploadError({
+                fileName: attachment.file.name,
+                orgId: scopedOrganizationId,
+                ticketId,
+                error,
+              });
               setAttachments((current) =>
                 current.map((item) =>
                   item.id === attachment.id
@@ -474,8 +539,17 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           if (result.status === 'fulfilled') {
             urls.push(result.value.url);
           } else {
-            failedUploads.push(`${result.reason.fileName || 'archivo'} (${result.reason.message || 'error'})`);
+            failedUploads.push({
+              fileName: result.reason.fileName || 'archivo',
+              message: result.reason.message || 'error',
+            });
             const error = result.reason.error;
+            logUploadError({
+              fileName: result.reason.fileName || 'archivo',
+              orgId: scopedOrganizationId,
+              ticketId,
+              error,
+            });
             if (error?.code === 'storage/unauthorized') {
               const permissionError = new StoragePermissionError({
                 path: error.customData?.['path'] || orgStoragePath(scopedOrganizationId, 'tickets', ticketId),
@@ -487,7 +561,10 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         }
 
         if (failedUploads.length > 0) {
-          setSubmitWarning(`No se creó la incidencia. Corrige o quita los adjuntos con error y reintenta: ${failedUploads.join(', ')}.`);
+          const failedList = failedUploads
+            .map((item) => `- ${item.fileName} (${item.message})`)
+            .join('\n');
+          setSubmitWarning(`No se creó la incidencia. Corrige o quita los adjuntos con error y reintenta:\n${failedList}`);
           toast({
             variant: 'destructive',
             title: 'Falló la subida de adjuntos',
@@ -528,6 +605,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         return [];
       });
     } catch (error: any) {
+      console.error('Incident creation failed', {
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        customData: error?.customData,
+      });
       if (error.code === 'storage/unauthorized') {
         const permissionError = new StoragePermissionError({
           path: error.customData?.['path'] || orgStoragePath(organizationId!, 'tickets', 'photos'),
@@ -560,11 +643,30 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   };
 
   const isLoading = sitesLoading || deptsLoading || assetsLoading;
+  const catalogError = sitesError || deptsError || assetsError;
+  const isPermissionDenied = catalogError && (catalogError as { code?: string }).code === 'permission-denied';
+  const canSubmit = Boolean(firestore && storage && user && organizationId && !catalogError);
 
   if (isLoading) {
     return (
       <div className="flex h-96 items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (isPermissionDenied) {
+    return (
+      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        No tienes permisos para cargar ubicaciones, departamentos o activos. Verifica tu rol y organización activa.
+      </div>
+    );
+  }
+
+  if (catalogError) {
+    return (
+      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        No se pudieron cargar los catálogos necesarios para crear la incidencia. Intenta nuevamente o contacta soporte.
       </div>
     );
   }
@@ -736,7 +838,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         </FormItem>
         {submitWarning && (
           <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-            <p className="font-medium text-destructive">{submitWarning}</p>
+            <p className="font-medium text-destructive whitespace-pre-line">{submitWarning}</p>
           </div>
         )}
 

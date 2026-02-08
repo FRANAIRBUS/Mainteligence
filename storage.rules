@@ -70,7 +70,9 @@ service firebase.storage {
             ? "enterprise"
             : planId == "basic" || planId == "Basic" || planId == "BASIC"
               ? "basic"
-              : "free";
+              : planId == "standard" || planId == "Standard" || planId == "STANDARD"
+                ? "starter"
+                : "free";
     }
 
     function planCatalogDoc(planId) {
@@ -84,6 +86,7 @@ service firebase.storage {
 
     function defaultAttachmentLimits(planId) {
       return planId == "starter" || planId == "Starter" || planId == "STARTER"
+        || planId == "standard" || planId == "Standard" || planId == "STANDARD"
         ? { attachmentsMonthlyMB: 500, maxAttachmentMB: 10, maxAttachmentsPerTicket: 10 }
         : planId == "pro" || planId == "Pro" || planId == "PRO"
           ? { attachmentsMonthlyMB: 5000, maxAttachmentMB: 25, maxAttachmentsPerTicket: 25 }
@@ -260,10 +263,8 @@ service firebase.storage {
       // This prevents bypassing plan limits and enforces a server-side approval step.
       allow write: if isSignedIn()
         && isValidOrgId(orgId)
-        && attachmentsAllowedByEntitlement(orgId)
         && hasActiveUploadSession(orgId, ticketId)
         && hasRegisteredTicketUpload(orgId, ticketId, fileName)
-        && isValidUpload(maxTicketAttachmentBytes(orgId))
         && isAllowedTicketContentType();
     }
 

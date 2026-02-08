@@ -8,7 +8,7 @@ Validaciones efectivas (backend):
 
 - Estado de entitlement (`trialing|active|past_due|canceled`).
 - Vencimiento de trial (`trialEndsAt`).
-- Límites (`entitlement.limits`) vs consumo (`entitlement.usage`).
+- Límites efectivos (resueltos desde `planCatalog/{planId}` con fallback a defaults y `entitlement.limits`) vs consumo (`entitlement.usage`).
 - Features por plan desde `planCatalog/{planId}`.
 
 La pantalla `/plans` en frontend sigue siendo informativa/comercial; no muta plan directamente.
@@ -58,6 +58,7 @@ Los límites efectivos se normalizan en backend por `planId` para evitar inconsi
 Notas:
 - La habilitación de preventivos se rige por `features.PREVENTIVES` en `planCatalog/{planId}` con fallback seguro por defecto en backend.
 - El límite efectivo se normaliza en backend por `planId` para evitar inconsistencias históricas en `entitlement.limits`.
+- Los `planId` con sufijos comerciales (p.ej. `starter_monthly`, `pro_annual`) se normalizan por prefijo al plan base (`starter`, `pro`, `enterprise`) antes de resolver límites.
 
 ## 3) Cambio de plan como usuario de organización
 
