@@ -276,6 +276,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     attachment: SelectedAttachment,
     scopedOrganizationId: string,
     ticketId: string,
+    objectName: string,
+    contentType: string,
     onProgress: (progress: number) => void,
     attempts = 3
   ) => {
@@ -283,12 +285,11 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        const objectName = uniqueFileName(attachment.file.name);
         const photoRef = ref(storage!, orgStoragePath(scopedOrganizationId, 'tickets', ticketId, objectName));
 
         const snapshot = await new Promise<UploadTaskSnapshot>((resolve, reject) => {
           const task = uploadBytesResumable(photoRef, attachment.file, {
-            contentType: resolveAttachmentContentType(attachment.file),
+            contentType,
           });
 
           let stallTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
@@ -415,6 +416,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
         const results = await Promise.allSettled(
           attachments.map(async (attachment) => {
+            const objectName = uniqueFileName(attachment.file.name);
+            const contentType = resolveAttachmentContentType(attachment.file);
             setAttachments((current) =>
               current.map((item) =>
                 item.id === attachment.id
@@ -428,14 +431,16 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                 orgId: scopedOrganizationId,
                 ticketId,
                 sizeBytes: attachment.file.size,
-                contentType: attachment.file.type,
-                fileName: attachment.file.name,
+                contentType,
+                fileName: objectName,
               });
 
               const url = await uploadPhotoWithRetry(
                 attachment,
                 scopedOrganizationId,
                 ticketId,
+                objectName,
+                contentType,
                 (progress) => {
                   setAttachments((current) =>
                     current.map((item) =>
