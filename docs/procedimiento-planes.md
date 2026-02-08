@@ -58,6 +58,7 @@ Los límites efectivos se normalizan en backend por `planId` para evitar inconsi
 Notas:
 - La habilitación de preventivos se rige por `features.PREVENTIVES` en `planCatalog/{planId}` con fallback seguro por defecto en backend.
 - El límite efectivo se normaliza en backend por `planId` para evitar inconsistencias históricas en `entitlement.limits`.
+- Los `planId` con sufijos comerciales (p.ej. `starter_monthly`, `pro_annual`) se normalizan por prefijo al plan base (`starter`, `pro`, `enterprise`) antes de resolver límites.
 
 ## 3) Cambio de plan como usuario de organización
 

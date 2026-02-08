@@ -511,10 +511,21 @@ function resolveEntitlementPlanId({
   metadataPlanId?: string | null;
   fallbackPlanId?: string;
 }): EntitlementPlanId {
+  const resolvePlanAlias = (planId: string): EntitlementPlanId | null => {
+    if (planId.startsWith('free')) return 'free';
+    if (planId.startsWith('basic')) return 'basic';
+    if (planId.startsWith('starter')) return 'starter';
+    if (planId.startsWith('pro')) return 'pro';
+    if (planId.startsWith('enterprise')) return 'enterprise';
+    return null;
+  };
+
   const normalized = String(metadataPlanId ?? '').trim().toLowerCase();
   if (normalized === 'free' || normalized === 'basic' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
     return normalized as EntitlementPlanId;
   }
+  const alias = resolvePlanAlias(normalized);
+  if (alias) return alias;
   const fallbackNormalized = String(fallbackPlanId ?? '').trim().toLowerCase();
   if (
     fallbackNormalized === 'free' ||
@@ -525,6 +536,8 @@ function resolveEntitlementPlanId({
   ) {
     return fallbackNormalized as EntitlementPlanId;
   }
+  const fallbackAlias = resolvePlanAlias(fallbackNormalized);
+  if (fallbackAlias) return fallbackAlias;
   return 'free';
 }
 
