@@ -116,7 +116,7 @@ service firebase.storage {
           : defaults;
     }
 
-    function attachmentsAllowed(orgId) {
+    function attachmentsAllowedByEntitlement(orgId) {
       let status = orgEntitlementStatus(orgId);
       let limits = effectiveAttachmentLimits(orgId);
       return (status == "active" || status == "trialing")
@@ -234,7 +234,7 @@ service firebase.storage {
       // This prevents bypassing plan limits and enforces a server-side approval step.
       allow write: if isSignedIn()
         && isValidOrgId(orgId)
-        && attachmentsAllowed(orgId)
+        && attachmentsAllowedByEntitlement(orgId)
         && hasActiveUploadSession(orgId, ticketId)
         && hasRegisteredTicketUpload(orgId, ticketId, fileName)
         && isValidUpload(maxTicketAttachmentBytes(orgId))
