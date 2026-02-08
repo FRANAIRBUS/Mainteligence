@@ -462,6 +462,7 @@ export default function PreventivePage() {
   const router = useRouter();
   const firestore = useFirestore();
   const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
 
   useEffect(() => {
     if (!userLoading && !user) {
