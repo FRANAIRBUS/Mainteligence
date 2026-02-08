@@ -53,22 +53,78 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.limits;
     }
 
-    function attachmentsAllowed(orgId) {
+    function orgPlanId(orgId) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.planId;
+    }
+
+    function defaultAttachmentsMonthlyMB(planId) {
+      return planId == "starter" || planId == "Starter" || planId == "STARTER"
+        ? 500
+        : planId == "pro" || planId == "Pro" || planId == "PRO"
+          ? 5000
+          : planId == "enterprise" || planId == "Enterprise" || planId == "ENTERPRISE"
+            ? 100000
+            : 0;
+    }
+
+    function defaultMaxAttachmentMB(planId) {
+      return planId == "starter" || planId == "Starter" || planId == "STARTER"
+        ? 10
+        : planId == "pro" || planId == "Pro" || planId == "PRO"
+          ? 25
+          : planId == "enterprise" || planId == "Enterprise" || planId == "ENTERPRISE"
+            ? 100
+            : 0;
+    }
+
+    function defaultMaxAttachmentsPerTicket(planId) {
+      return planId == "starter" || planId == "Starter" || planId == "STARTER"
+        ? 10
+        : planId == "pro" || planId == "Pro" || planId == "PRO"
+          ? 25
+          : planId == "enterprise" || planId == "Enterprise" || planId == "ENTERPRISE"
+            ? 100
+            : 0;
+    }
+
+    function effectiveAttachmentsMonthlyMB(orgId) {
       let limits = orgEntitlementLimits(orgId);
+      let planId = orgPlanId(orgId);
       return limits != null
         && limits.attachmentsMonthlyMB is number
-        && limits.maxAttachmentMB is number
-        && limits.maxAttachmentsPerTicket is number
         && limits.attachmentsMonthlyMB > 0
+        ? limits.attachmentsMonthlyMB
+        : defaultAttachmentsMonthlyMB(planId);
+    }
+
+    function effectiveMaxAttachmentMB(orgId) {
+      let limits = orgEntitlementLimits(orgId);
+      let planId = orgPlanId(orgId);
+      return limits != null
+        && limits.maxAttachmentMB is number
         && limits.maxAttachmentMB > 0
-        && limits.maxAttachmentsPerTicket > 0;
+        ? limits.maxAttachmentMB
+        : defaultMaxAttachmentMB(planId);
+    }
+
+    function effectiveMaxAttachmentsPerTicket(orgId) {
+      let limits = orgEntitlementLimits(orgId);
+      let planId = orgPlanId(orgId);
+      return limits != null
+        && limits.maxAttachmentsPerTicket is number
+        && limits.maxAttachmentsPerTicket > 0
+        ? limits.maxAttachmentsPerTicket
+        : defaultMaxAttachmentsPerTicket(planId);
+    }
+
+    function attachmentsAllowed(orgId) {
+      return effectiveAttachmentsMonthlyMB(orgId) > 0
+        && effectiveMaxAttachmentMB(orgId) > 0
+        && effectiveMaxAttachmentsPerTicket(orgId) > 0;
     }
 
     function maxTicketAttachmentBytes(orgId) {
-      let limits = orgEntitlementLimits(orgId);
-      return (limits != null && limits.maxAttachmentMB is number)
-        ? limits.maxAttachmentMB * 1024 * 1024
-        : 0;
+      return effectiveMaxAttachmentMB(orgId) * 1024 * 1024;
     }
 
     function hasActiveUploadSession(orgId, id) {
