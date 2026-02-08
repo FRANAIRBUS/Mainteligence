@@ -233,10 +233,22 @@ type ResolvedMembership = {
 };
 
 const ADMIN_LIKE_ROLES = new Set<Role>(['super_admin', 'admin', 'mantenimiento']);
-const SCOPED_HEAD_ROLES = new Set<Role>(['jefe_departamento']);
+
+// Scoped heads are split by scope semantics:
+// - jefe_departamento is scoped by department (origin/target/departmentId), and MUST NOT be forced to match locationId.
+// - jefe_ubicacion is scoped by locationId.
+const SCOPED_DEPARTMENT_ROLES = new Set<Role>(['jefe_departamento']);
+const SCOPED_LOCATION_ROLES = new Set<Role>(['jefe_ubicacion']);
+const SCOPED_HEAD_ROLES = new Set<Role>([...SCOPED_DEPARTMENT_ROLES, ...SCOPED_LOCATION_ROLES]);
+
 const MASTER_DATA_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
-// Task management is allowed for the same roles that can operate master data.
-const TASKS_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
+
+// Tickets & tasks callable access control
+const TICKETS_MANAGE_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
+const TICKETS_UPDATE_ROLES = new Set<Role>([...TICKETS_MANAGE_ROLES, 'operario']);
+
+const TASKS_MANAGE_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
+const TASKS_UPDATE_ROLES = new Set<Role>([...TASKS_MANAGE_ROLES, 'operario']);
 
 const USAGE_FIELDS: Record<'sites' | 'assets' | 'departments' | 'users' | 'preventives', keyof EntitlementUsage> = {
   sites: 'sitesCount',
@@ -1381,7 +1393,7 @@ function requireRoleAllowed(role: Role, allowed: Set<Role>, message: string) {
 }
 
 function requireScopedAccessToDepartment(role: Role, scope: MembershipScope, departmentId: string) {
-  if (!SCOPED_HEAD_ROLES.has(role)) return;
+  if (!SCOPED_DEPARTMENT_ROLES.has(role)) return;
   const allowedDepartmentIds = new Set([scope.departmentId, ...scope.departmentIds].filter(Boolean));
   if (!departmentId) {
     throw httpsError('invalid-argument', 'departmentId requerido para validar alcance.');
@@ -1391,8 +1403,22 @@ function requireScopedAccessToDepartment(role: Role, scope: MembershipScope, dep
   }
 }
 
+
+function requireScopedAccessToAnyDepartment(role: Role, scope: MembershipScope, departmentIds: Array<string | undefined>) {
+  if (!SCOPED_DEPARTMENT_ROLES.has(role)) return;
+  const allowedDepartmentIds = new Set([scope.departmentId, ...scope.departmentIds].filter(Boolean));
+  const candidates = departmentIds.map((d) => String(d ?? '').trim()).filter(Boolean);
+  if (candidates.length === 0) {
+    throw httpsError('invalid-argument', 'departmentId requerido para validar alcance.');
+  }
+  if (allowedDepartmentIds.size === 0 || !candidates.some((d) => allowedDepartmentIds.has(d))) {
+    throw httpsError('permission-denied', 'No tienes acceso a ese departamento.');
+  }
+}
+
+
 function requireScopedAccessToSite(role: Role, scope: MembershipScope, siteId: string) {
-  if (!SCOPED_HEAD_ROLES.has(role)) return;
+  if (!SCOPED_LOCATION_ROLES.has(role)) return;
   const allowedSiteIds = new Set([scope.locationId, ...scope.locationIds].filter(Boolean));
   if (!siteId) {
     throw httpsError('invalid-argument', 'siteId requerido para validar alcance.');
@@ -3570,7 +3596,8 @@ export const createTicketUploadSession = functions.https.onCall(async (data, con
 
   const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
   const ticketId = String(data?.ticketId ?? '').trim();
-  const maxFiles = Math.min(Number(data?.maxFiles ?? 10) || 10, 10);
+  const maxFilesRequested = Math.max(1, Number(data?.maxFiles ?? 0) || 0);
+  const maxFiles = maxFilesRequested > 0 ? maxFilesRequested : 10;
 
   if (!orgId || !ticketId) {
     throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o ticketId.');
@@ -3589,6 +3616,8 @@ export const createTicketUploadSession = functions.https.onCall(async (data, con
     const maxAttachmentMB = Number(entitlement.limits?.maxAttachmentMB ?? 0) || 0;
     const monthlyMB = Number(entitlement.limits?.attachmentsMonthlyMB ?? 0) || 0;
     const perTicket = Number(entitlement.limits?.maxAttachmentsPerTicket ?? 0) || 0;
+
+    const effectiveMaxFiles = Math.min(Math.max(1, maxFiles), perTicket);
 
     if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
       throw new functions.https.HttpsError(
@@ -3609,14 +3638,15 @@ export const createTicketUploadSession = functions.https.onCall(async (data, con
       status: 'active',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt,
-      maxFiles,
+      maxFiles: effectiveMaxFiles,
+      allowedFiles: {},
     });
 
     return {
       ok: true,
       ticketId,
       expiresAt: expiresAt.toDate().toISOString(),
-      maxFiles,
+      maxFiles: effectiveMaxFiles,
       maxAttachmentMB,
     };
   });
@@ -3630,10 +3660,11 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
 
   const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
   const ticketId = String(data?.ticketId ?? '').trim();
+  const fileName = String(data?.fileName ?? '').trim();
   const sizeBytes = Number(data?.sizeBytes ?? 0) || 0;
 
-  if (!orgId || !ticketId || sizeBytes <= 0) {
-    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId, ticketId o sizeBytes.');
+  if (!orgId || !ticketId || !fileName || sizeBytes <= 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId, ticketId, fileName o sizeBytes.');
   }
 
   const sizeMB = sizeBytes / (1024 * 1024);
@@ -3665,27 +3696,49 @@ export const registerTicketAttachment = functions.https.onCall(async (data, cont
       throw new functions.https.HttpsError('failed-precondition', 'Se superó la cuota mensual de adjuntos.', 'attachments_quota_exceeded');
     }
 
-    const ticketRef = orgRef.collection('tickets').doc(ticketId);
-    const ticketSnap = await tx.get(ticketRef);
-    if (!ticketSnap.exists) {
-      // Ticket could be created right after uploads; allow registering after creation only.
-      throw new functions.https.HttpsError('failed-precondition', 'La incidencia aún no existe para registrar adjuntos.', 'ticket_not_found');
+    // Enforce per-ticket limit and bind allowed file names to an active upload session.
+    const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
+    const sessionSnap = await tx.get(sessionRef);
+    if (!sessionSnap.exists) {
+      throw new functions.https.HttpsError('failed-precondition', 'No existe sesión de subida para esta incidencia.', 'upload_session_missing');
     }
 
-    const currentUrls = Array.isArray(ticketSnap.get('photoUrls')) ? (ticketSnap.get('photoUrls') as unknown[]) : [];
-    if (currentUrls.length > perTicket) {
-      throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${perTicket}).`, 'attachments_per_ticket_exceeded');
+    const session = sessionSnap.data() as any;
+    if (session?.type !== 'ticket' || session?.status !== 'active' || session?.uploaderUid !== uid) {
+      throw new functions.https.HttpsError('permission-denied', 'Sesión de subida inválida.');
     }
 
-    tx.update(orgRef, {
-      'entitlement.usage.attachmentsThisMonthMB': admin.firestore.FieldValue.increment(sizeMB),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    const expiresAt = session?.expiresAt as admin.firestore.Timestamp | undefined;
+    if (!expiresAt || expiresAt.toDate().getTime() <= Date.now()) {
+      throw new functions.https.HttpsError('failed-precondition', 'La sesión de subida expiró.', 'upload_session_expired');
+    }
 
-    return { ok: true, sizeMB };
+    const allowedFiles = (session?.allowedFiles ?? {}) as Record<string, number>;
+    const currentCount = Object.keys(allowedFiles).length;
+    const maxFiles = Number(session?.maxFiles ?? perTicket) || perTicket;
+
+    if (!allowedFiles[fileName]) {
+      if (currentCount >= Math.min(perTicket, maxFiles)) {
+        throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${Math.min(perTicket, maxFiles)}).`, 'attachments_per_ticket_exceeded');
+      }
+      // Reserve file size in session allowlist to be enforced by Storage rules
+      allowedFiles[fileName] = sizeBytes;
+
+      tx.update(sessionRef, {
+        allowedFiles,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Reserve monthly quota only once per fileName
+      tx.update(orgRef, {
+        'entitlement.usage.attachmentsThisMonthMB': admin.firestore.FieldValue.increment(sizeMB),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { ok: true, sizeMB, fileName };
   });
 });
-
 export const createTicket = functions.https.onCall(async (data, context) => {
   const uid = context.auth?.uid;
   if (!uid) {
@@ -3701,7 +3754,10 @@ export const createTicket = functions.https.onCall(async (data, context) => {
   }
 
   return await db.runTransaction(async (tx) => {
-    await requireActiveMembershipForTx(tx, orgId, uid);
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    requireRoleAllowed(resolved.role, TASKS_UPDATE_ROLES, 'No tienes permisos para crear tareas.');
+    requireRoleAllowed(resolved.role, TICKETS_UPDATE_ROLES, 'No tienes permisos para editar incidencias.');
+    requireRoleAllowed(resolved.role, TICKETS_UPDATE_ROLES, 'No tienes permisos para crear incidencias.');
 
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
@@ -3728,7 +3784,7 @@ export const createTicket = functions.https.onCall(async (data, context) => {
 
     // Scope enforcement (keep existing RBAC model; don't redesign).
     requireScopedAccessToSite(resolved.role, resolved.scope, locationId);
-    requireScopedAccessToDepartment(resolved.role, resolved.scope, effectiveDepartmentId);
+    requireScopedAccessToAnyDepartment(resolved.role, resolved.scope, [originDepartmentId, targetDepartmentId, departmentId, effectiveDepartmentId]);
 
     const status = payload?.status ?? 'new';
     if (isOpenStatus(status)) {
@@ -3820,7 +3876,7 @@ export const updateTicketStatus = functions.https.onCall(async (data, context) =
   }
 
   return await db.runTransaction(async (tx) => {
-    await requireActiveMembershipForTx(tx, orgId, uid);
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
     const orgRef = db.collection('organizations').doc(orgId);
     const ticketRef = orgRef.collection('tickets').doc(ticketId);
 
@@ -3837,8 +3893,89 @@ export const updateTicketStatus = functions.https.onCall(async (data, context) =
     const limits = entitlement.limits;
     const usage = entitlement.usage;
 
+
+    // Scoped access validation (read permission is in Firestore rules, but callable must enforce scope too)
+    const currentLocationId = String(ticketSnap.get('locationId') ?? ticketSnap.get('siteId') ?? '').trim();
+    const currentOriginDept = String(ticketSnap.get('originDepartmentId') ?? '').trim();
+    const currentTargetDept = String(ticketSnap.get('targetDepartmentId') ?? '').trim();
+    const currentDept = String(ticketSnap.get('departmentId') ?? '').trim();
+
+    requireScopedAccessToSite(resolved.role, resolved.scope, currentLocationId);
+    requireScopedAccessToAnyDepartment(resolved.role, resolved.scope, [currentOriginDept, currentTargetDept, currentDept]);
+
+    const currentCreatedBy = String(ticketSnap.get('createdBy') ?? ticketSnap.get('creatorUid') ?? '').trim();
+    const currentAssignedTo = ticketSnap.get('assignedTo') === null ? '' : String(ticketSnap.get('assignedTo') ?? '').trim();
+    const isCreatorOrAssignee = uid === currentCreatedBy || (currentAssignedTo && uid === currentAssignedTo);
+
+    // Operario: only status/priority changes when creator/assignee; assignment only self/unassign self; scope changes blocked.
+    if (resolved.role === 'operario' && !isCreatorOrAssignee) {
+      throw httpsError('permission-denied', 'No tienes permisos para editar esta incidencia.');
+    }
+
+    const incomingPatch = isPlainObject(patch) ? patch : {};
+    const safePatch: Record<string, any> = {};
+
+    // Never allow scope moves from client for non-admin roles
+    const scopeKeys = new Set(['locationId', 'siteId', 'originDepartmentId', 'targetDepartmentId', 'departmentId', 'orgId', 'organizationId', 'organizationIdPath', 'createdAt', 'createdBy', 'createdByName', 'updatedAt']);
+
+    const allowPriority = resolved.role !== 'auditor' && (resolved.role !== 'operario' || isCreatorOrAssignee);
+    const allowStatus = resolved.role !== 'auditor' && (resolved.role !== 'operario' || isCreatorOrAssignee);
+
+    if (allowPriority && incomingPatch.priority !== undefined) safePatch.priority = incomingPatch.priority;
+    if (allowStatus && incomingPatch.status !== undefined) safePatch.status = incomingPatch.status;
+
+    // Close reason is allowed for roles that can close (same as allowStatus)
+    if (allowStatus && incomingPatch.closedReason !== undefined) safePatch.closedReason = incomingPatch.closedReason;
+
+    // Assignment rules
+    if (incomingPatch.assignedTo !== undefined) {
+      const requestedAssignee = incomingPatch.assignedTo === null ? null : String(incomingPatch.assignedTo ?? '').trim();
+      if (resolved.role === 'operario') {
+        if (requestedAssignee === uid) {
+          safePatch.assignedTo = uid;
+          safePatch.assignmentEmailSource = 'client';
+        } else if (requestedAssignee === null && currentAssignedTo === uid) {
+          safePatch.assignedTo = null;
+        } else {
+          throw httpsError('permission-denied', 'No puedes asignar a otros usuarios.');
+        }
+      } else {
+        // Non-operario: allow assignment changes, but block scope manipulation
+        safePatch.assignedTo = requestedAssignee || null;
+        if (requestedAssignee) safePatch.assignmentEmailSource = incomingPatch.assignmentEmailSource ?? 'client';
+      }
+    }
+
+    // Department edits: only admin-like or scoped dept heads, and must stay within scope
+    if (incomingPatch.departmentId !== undefined) {
+      const nextDept = String(incomingPatch.departmentId ?? '').trim();
+      if (ADMIN_LIKE_ROLES.has(resolved.role)) {
+        safePatch.departmentId = nextDept || null;
+      } else if (SCOPED_DEPARTMENT_ROLES.has(resolved.role)) {
+        requireScopedAccessToAnyDepartment(resolved.role, resolved.scope, [nextDept]);
+        safePatch.departmentId = nextDept || null;
+      } else {
+        throw httpsError('permission-denied', 'No puedes cambiar el departamento de la incidencia.');
+      }
+    }
+
+    // Reject any scope-changing fields for non-admins (defense-in-depth)
+    if (!ADMIN_LIKE_ROLES.has(resolved.role)) {
+      for (const key of Object.keys(incomingPatch)) {
+        if (scopeKeys.has(key)) {
+          const nextVal = incomingPatch[key];
+          if (nextVal !== undefined && nextVal !== null && String(nextVal).trim().length > 0) {
+            // If caller tries to move scope, block explicitly.
+            if (['locationId', 'siteId', 'originDepartmentId', 'targetDepartmentId'].includes(key)) {
+              throw httpsError('permission-denied', 'No puedes cambiar el alcance de la incidencia.');
+            }
+          }
+        }
+      }
+    }
+
     const oldStatus = ticketSnap.get('status');
-    const effectiveNewStatus = newStatus ?? patch?.status ?? oldStatus;
+    const effectiveNewStatus = newStatus ?? safePatch?.status ?? oldStatus;
 
     const wasOpen = isOpenStatus(oldStatus);
     const willBeOpen = isOpenStatus(effectiveNewStatus);
@@ -3852,10 +3989,10 @@ export const updateTicketStatus = functions.https.onCall(async (data, context) =
     }
 
     // Scope enforcement for scoped roles when changing scope-related fields.
-    const nextLocationId = String((patch?.locationId ?? patch?.siteId ?? ticketSnap.get('locationId') ?? '')).trim();
-    const nextOriginDept = String((patch?.originDepartmentId ?? ticketSnap.get('originDepartmentId') ?? '')).trim();
-    const nextTargetDept = String((patch?.targetDepartmentId ?? ticketSnap.get('targetDepartmentId') ?? '')).trim();
-    const nextLegacyDept = String((patch?.departmentId ?? ticketSnap.get('departmentId') ?? '')).trim();
+    const nextLocationId = String((safePatch?.locationId ?? patch?.siteId ?? ticketSnap.get('locationId') ?? '')).trim();
+    const nextOriginDept = String((safePatch?.originDepartmentId ?? ticketSnap.get('originDepartmentId') ?? '')).trim();
+    const nextTargetDept = String((safePatch?.targetDepartmentId ?? ticketSnap.get('targetDepartmentId') ?? '')).trim();
+    const nextLegacyDept = String((safePatch?.departmentId ?? ticketSnap.get('departmentId') ?? '')).trim();
     const nextDept = nextTargetDept || nextOriginDept || nextLegacyDept;
 
     if (nextLocationId) {
@@ -3868,7 +4005,7 @@ export const updateTicketStatus = functions.https.onCall(async (data, context) =
     const updateData: Record<string, any> = {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       organizationId: orgId,
-      ...patch,
+      ...safePatch,
     };
 
     if (newStatus !== undefined) {
@@ -3921,7 +4058,8 @@ export const createTask = functions.https.onCall(async (data, context) => {
   }
 
   return await db.runTransaction(async (tx) => {
-    await requireActiveMembershipForTx(tx, orgId, uid);
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    requireRoleAllowed(resolved.role, TASKS_UPDATE_ROLES, 'No tienes permisos para crear tareas.');
     const orgRef = db.collection('organizations').doc(orgId);
     const orgSnap = await tx.get(orgRef);
     if (!orgSnap.exists) {
@@ -3996,7 +4134,8 @@ export const updateTaskStatus = functions.https.onCall(async (data, context) => 
   }
 
   return await db.runTransaction(async (tx) => {
-    await requireActiveMembershipForTx(tx, orgId, uid);
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    requireRoleAllowed(resolved.role, TASKS_UPDATE_ROLES, 'No tienes permisos para editar tareas.');
     const orgRef = db.collection('organizations').doc(orgId);
     const taskRef = orgRef.collection('tasks').doc(taskId);
 
@@ -4012,8 +4151,76 @@ export const updateTaskStatus = functions.https.onCall(async (data, context) => 
     const limits = entitlement.limits;
     const usage = entitlement.usage;
 
+
+    const currentLocationId = String(taskSnap.get('locationId') ?? taskSnap.get('siteId') ?? '').trim();
+    const currentDept = String(taskSnap.get('departmentId') ?? taskSnap.get('originDepartmentId') ?? taskSnap.get('targetDepartmentId') ?? '').trim();
+
+    requireScopedAccessToSite(resolved.role, resolved.scope, currentLocationId);
+    requireScopedAccessToAnyDepartment(resolved.role, resolved.scope, [currentDept]);
+
+    const currentCreatedBy = String(taskSnap.get('createdBy') ?? taskSnap.get('creatorUid') ?? '').trim();
+    const currentAssignedTo = taskSnap.get('assignedTo') === null ? '' : String(taskSnap.get('assignedTo') ?? '').trim();
+    const isCreatorOrAssignee = uid === currentCreatedBy || (currentAssignedTo && uid === currentAssignedTo);
+
+    if (resolved.role === 'operario' && !isCreatorOrAssignee) {
+      throw httpsError('permission-denied', 'No tienes permisos para editar esta tarea.');
+    }
+
+    const incomingPatch = isPlainObject(patch) ? patch : {};
+    const safePatch: Record<string, any> = {};
+
+    const scopeKeys = new Set(['locationId', 'siteId', 'originDepartmentId', 'targetDepartmentId', 'departmentId', 'orgId', 'organizationId', 'createdAt', 'createdBy', 'updatedAt']);
+
+    // Status & priority
+    if (incomingPatch.status !== undefined) safePatch.status = incomingPatch.status;
+    if (incomingPatch.priority !== undefined) safePatch.priority = incomingPatch.priority;
+
+    // Assignment rules
+    if (incomingPatch.assignedTo !== undefined) {
+      const requestedAssignee = incomingPatch.assignedTo === null ? null : String(incomingPatch.assignedTo ?? '').trim();
+      if (resolved.role === 'operario') {
+        if (requestedAssignee === uid) {
+          safePatch.assignedTo = uid;
+          safePatch.assignmentEmailSource = 'client';
+        } else if (requestedAssignee === null && currentAssignedTo === uid) {
+          safePatch.assignedTo = null;
+        } else {
+          throw httpsError('permission-denied', 'No puedes asignar a otros usuarios.');
+        }
+      } else {
+        safePatch.assignedTo = requestedAssignee || null;
+        if (requestedAssignee) safePatch.assignmentEmailSource = incomingPatch.assignmentEmailSource ?? 'client';
+      }
+    }
+
+    // Department edits: only admin-like or scoped dept heads, must stay within scope
+    if (incomingPatch.departmentId !== undefined) {
+      const nextDept = String(incomingPatch.departmentId ?? '').trim();
+      if (ADMIN_LIKE_ROLES.has(resolved.role)) {
+        safePatch.departmentId = nextDept || null;
+      } else if (SCOPED_DEPARTMENT_ROLES.has(resolved.role)) {
+        requireScopedAccessToAnyDepartment(resolved.role, resolved.scope, [nextDept]);
+        safePatch.departmentId = nextDept || null;
+      } else {
+        throw httpsError('permission-denied', 'No puedes cambiar el departamento de la tarea.');
+      }
+    }
+
+    if (!ADMIN_LIKE_ROLES.has(resolved.role)) {
+      for (const key of Object.keys(incomingPatch)) {
+        if (scopeKeys.has(key)) {
+          const nextVal = incomingPatch[key];
+          if (nextVal !== undefined && nextVal !== null && String(nextVal).trim().length > 0) {
+            if (['locationId', 'siteId', 'originDepartmentId', 'targetDepartmentId'].includes(key)) {
+              throw httpsError('permission-denied', 'No puedes cambiar el alcance de la tarea.');
+            }
+          }
+        }
+      }
+    }
+
     const oldStatus = taskSnap.get('status');
-    const effectiveNewStatus = newStatus ?? patch?.status ?? oldStatus;
+    const effectiveNewStatus = newStatus ?? safePatch?.status ?? oldStatus;
     const wasOpen = isOpenStatus(oldStatus);
     const willBeOpen = isOpenStatus(effectiveNewStatus);
 
@@ -4025,10 +4232,10 @@ export const updateTaskStatus = functions.https.onCall(async (data, context) => 
       }
     }
 
-    const nextLocationId = String((patch?.locationId ?? taskSnap.get('locationId') ?? '')).trim();
-    const nextOriginDept = String((patch?.originDepartmentId ?? taskSnap.get('originDepartmentId') ?? '')).trim();
-    const nextTargetDept = String((patch?.targetDepartmentId ?? taskSnap.get('targetDepartmentId') ?? '')).trim();
-    const nextLegacyDept = String((patch?.departmentId ?? taskSnap.get('departmentId') ?? '')).trim();
+    const nextLocationId = String((safePatch?.locationId ?? taskSnap.get('locationId') ?? '')).trim();
+    const nextOriginDept = String((safePatch?.originDepartmentId ?? taskSnap.get('originDepartmentId') ?? '')).trim();
+    const nextTargetDept = String((safePatch?.targetDepartmentId ?? taskSnap.get('targetDepartmentId') ?? '')).trim();
+    const nextLegacyDept = String((safePatch?.departmentId ?? taskSnap.get('departmentId') ?? '')).trim();
     const nextDept = nextTargetDept || nextOriginDept || nextLegacyDept;
 
     if (nextLocationId) {
@@ -4041,7 +4248,7 @@ export const updateTaskStatus = functions.https.onCall(async (data, context) => 
     const updateData: Record<string, any> = {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       organizationId: orgId,
-      ...patch,
+      ...safePatch,
     };
 
     if (newStatus !== undefined) {
@@ -4092,7 +4299,7 @@ export const deleteTask = functions.https.onCall(async (data, context) => {
 
   return await db.runTransaction(async (tx) => {
     const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
-    requireRoleAllowed(resolved.role, TASKS_ROLES, 'No tienes permisos para eliminar tareas.');
+    requireRoleAllowed(resolved.role, TASKS_MANAGE_ROLES, 'No tienes permisos para eliminar tareas.');
 
     const orgRef = db.collection('organizations').doc(orgId);
     const taskRef = orgRef.collection('tasks').doc(taskId);

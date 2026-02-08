@@ -19,7 +19,6 @@ import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { orgCollectionPath, orgStoragePath } from '@/lib/organization';
 import { getOrgEntitlement } from '@/lib/entitlements';
-import { getOrgEntitlement } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -275,6 +274,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     attachment: SelectedAttachment,
     scopedOrganizationId: string,
     ticketId: string,
+    objectName: string,
     onProgress: (progress: number) => void,
     attempts = 3
   ) => {
@@ -282,8 +282,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        const objectName = uniqueFileName(attachment.file.name);
-        const photoRef = ref(storage!, orgStoragePath(scopedOrganizationId, 'tickets', ticketId, objectName));
+            const photoRef = ref(storage!, orgStoragePath(scopedOrganizationId, 'tickets', ticketId, objectName));
 
         const snapshot = await new Promise<UploadTaskSnapshot>((resolve, reject) => {
           const task = uploadBytesResumable(photoRef, attachment.file, {
@@ -414,6 +413,15 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
 
         const results = await Promise.allSettled(
           attachments.map(async (attachment) => {
+            const objectName = uniqueFileName(attachment.file.name);
+            await registerTicketAttachment({
+              orgId: scopedOrganizationId,
+              ticketId,
+              sizeBytes: attachment.file.size,
+              contentType: resolveAttachmentContentType(attachment.file),
+              fileName: objectName,
+            });
+
             setAttachments((current) =>
               current.map((item) =>
                 item.id === attachment.id
@@ -427,6 +435,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                 attachment,
                 scopedOrganizationId,
                 ticketId,
+                objectName,
                 (progress) => {
                   setAttachments((current) =>
                     current.map((item) =>
@@ -444,7 +453,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                 )
               );
 
-              return { url, fileName: attachment.file.name };
+              return { url, fileName: objectName };
             } catch (error: any) {
               const errorMessage = mapUploadErrorMessage(error);
               setAttachments((current) =>
@@ -505,20 +514,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       }
 
       await createTicket({ orgId: scopedOrganizationId, ticketId, payload: docData });
-
-      if (attachments.length > 0) {
-        await Promise.allSettled(
-          attachments.map((attachment) =>
-            registerTicketAttachment({
-              orgId: scopedOrganizationId,
-              ticketId,
-              sizeBytes: attachment.file.size,
-              contentType: attachment.file.type,
-              fileName: attachment.file.name,
-            })
-          )
-        );
-      }
 
       onSuccess?.({ title: data.title });
       form.reset();
