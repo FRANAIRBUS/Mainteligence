@@ -127,7 +127,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const [submitWarning, setSubmitWarning] = useState<string | null>(null);
   const [canAttach, setCanAttach] = useState<boolean>(false);
   const [maxAttachmentMB, setMaxAttachmentMB] = useState<number>(0);
-  const canSubmit = Boolean(firestore && storage && user && organizationId);
 
   useEffect(() => {
     let active = true;
@@ -158,13 +157,13 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     };
   }, [firestore, organizationId]);
 
-  const { data: sites, loading: sitesLoading } = useCollection<Site>(
+  const { data: sites, loading: sitesLoading, error: sitesError } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );
-  const { data: departments, loading: deptsLoading } = useCollection<Department>(
+  const { data: departments, loading: deptsLoading, error: deptsError } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );
-  const { data: assets, loading: assetsLoading } = useCollection<Asset>(
+  const { data: assets, loading: assetsLoading, error: assetsError } = useCollection<Asset>(
     organizationId ? orgCollectionPath(organizationId, 'assets') : null
   );
 
@@ -562,11 +561,30 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   };
 
   const isLoading = sitesLoading || deptsLoading || assetsLoading;
+  const catalogError = sitesError || deptsError || assetsError;
+  const isPermissionDenied = catalogError && (catalogError as { code?: string }).code === 'permission-denied';
+  const canSubmit = Boolean(firestore && storage && user && organizationId && !catalogError);
 
   if (isLoading) {
     return (
       <div className="flex h-96 items-center justify-center">
         <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (isPermissionDenied) {
+    return (
+      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        No tienes permisos para cargar ubicaciones, departamentos o activos. Verifica tu rol y organización activa.
+      </div>
+    );
+  }
+
+  if (catalogError) {
+    return (
+      <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        No se pudieron cargar los catálogos necesarios para crear la incidencia. Intenta nuevamente o contacta soporte.
       </div>
     );
   }
