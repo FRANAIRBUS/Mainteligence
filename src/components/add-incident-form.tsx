@@ -13,12 +13,12 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
 
 import { useToast } from '@/hooks/use-toast';
-import { useFirestore, useUser, useStorage, useCollection } from '@/lib/firebase';
-import type { Site, Department, Asset } from '@/lib/firebase/models';
+import { useFirestore, useUser, useStorage, useCollection, useDoc } from '@/lib/firebase';
+import type { Site, Department, Asset, Organization } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { orgCollectionPath, orgStoragePath } from '@/lib/organization';
-import { getOrgEntitlement, resolveEffectivePlanLimits } from '@/lib/entitlements';
+import { normalizePlanId, resolveEffectivePlanLimits } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -122,6 +122,9 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const firestore = useFirestore();
   const storage = useStorage();
   const { user, organizationId, profile, activeMembership } = useUser();
+  const { data: organization, error: organizationError } = useDoc<Organization>(
+    organizationId ? `organizations/${organizationId}` : null
+  );
   const [isPending, setIsPending] = useState(false);
   const [attachments, setAttachments] = useState<SelectedAttachment[]>([]);
   const [submitWarning, setSubmitWarning] = useState<string | null>(null);
@@ -129,33 +132,27 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const [maxAttachmentMB, setMaxAttachmentMB] = useState<number>(0);
 
   useEffect(() => {
-    let active = true;
-    (async () => {
-      if (!firestore || !organizationId) return;
-      try {
-        const entitlement = await getOrgEntitlement(firestore, organizationId);
-        const status = entitlement?.status;
-        const effectiveLimits = entitlement
-          ? resolveEffectivePlanLimits(entitlement.planId, entitlement.limits ?? null)
-          : null;
-        const allowed =
-          (status === 'active' || status === 'trialing') &&
-          Number(effectiveLimits?.attachmentsMonthlyMB ?? 0) > 0 &&
-          Number(effectiveLimits?.maxAttachmentMB ?? 0) > 0 &&
-          Number(effectiveLimits?.maxAttachmentsPerTicket ?? 0) > 0;
-        if (!active) return;
-        setCanAttach(allowed);
-        setMaxAttachmentMB(Number(effectiveLimits?.maxAttachmentMB ?? 0) || 0);
-      } catch {
-        if (!active) return;
-        setCanAttach(false);
-        setMaxAttachmentMB(0);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [firestore, organizationId]);
+    if (!organization?.entitlement || organizationError) {
+      setCanAttach(false);
+      setMaxAttachmentMB(0);
+      return;
+    }
+
+    const status = organization.entitlement.status;
+    const normalizedPlanId = normalizePlanId(organization.entitlement.planId);
+    const effectiveLimits = resolveEffectivePlanLimits(
+      normalizedPlanId,
+      organization.entitlement.limits ?? null
+    );
+    const allowed =
+      (status === 'active' || status === 'trialing') &&
+      Number(effectiveLimits?.attachmentsMonthlyMB ?? 0) > 0 &&
+      Number(effectiveLimits?.maxAttachmentMB ?? 0) > 0 &&
+      Number(effectiveLimits?.maxAttachmentsPerTicket ?? 0) > 0;
+
+    setCanAttach(allowed);
+    setMaxAttachmentMB(Number(effectiveLimits?.maxAttachmentMB ?? 0) || 0);
+  }, [organization, organizationError]);
 
   const { data: sites, loading: sitesLoading, error: sitesError } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
