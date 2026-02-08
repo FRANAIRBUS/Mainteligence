@@ -90,19 +90,19 @@ export default function IncidentsPage() {
     profile: userProfile ?? null,
   });
 
-  const { data: tickets = [], loading: ticketsLoading } = useScopedTickets({
+  const { data: tickets = [], loading: ticketsLoading, error: ticketsError } = useScopedTickets({
     organizationId,
     rbacUser,
     uid: user?.uid ?? null,
   });
-  const { data: sites = [], loading: sitesLoading } = useCollection<Site>(
+  const { data: sites = [], loading: sitesLoading, error: sitesError } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
   );
-  const { data: departments = [], loading: deptsLoading } = useCollection<Department>(
+  const { data: departments = [], loading: deptsLoading, error: deptsError } = useCollection<Department>(
     organizationId ? orgCollectionPath(organizationId, 'departments') : null
   );
   // Only fetch users if the current user is an admin or mantenimiento staff.
-  const { data: users = [], loading: usersLoading } = useCollection<OrganizationMember>(
+  const { data: users = [], loading: usersLoading, error: usersError } = useCollection<OrganizationMember>(
     isMantenimiento && organizationId ? orgCollectionPath(organizationId, 'members') : null
   );
 
@@ -177,6 +177,8 @@ export default function IncidentsPage() {
   }
   
   const tableDataIsLoading = ticketsLoading || sitesLoading || deptsLoading || (isMantenimiento && usersLoading);
+  const permissionError = ticketsError || sitesError || deptsError || usersError;
+  const isPermissionDenied = permissionError && (permissionError as { code?: string }).code === 'permission-denied';
 
   return (
     <>
@@ -291,12 +293,17 @@ export default function IncidentsPage() {
                   Cargando incidencias...
                 </div>
               )}
-              {!tableDataIsLoading && filteredTickets.length === 0 && (
+              {!tableDataIsLoading && isPermissionDenied && (
+                <div className="flex h-24 items-center justify-center rounded-lg border border-destructive/40 bg-destructive/5 text-sm text-destructive">
+                  No tienes permisos para ver incidencias o datos maestros asociados. Verifica tu rol y organización activa.
+                </div>
+              )}
+              {!tableDataIsLoading && !isPermissionDenied && filteredTickets.length === 0 && (
                 <div className="flex h-24 items-center justify-center rounded-lg border border-white/20 bg-background text-muted-foreground">
                   No se encontraron incidencias con esos filtros.
                 </div>
               )}
-              {!tableDataIsLoading &&
+              {!tableDataIsLoading && !isPermissionDenied &&
                 filteredTickets.map((ticket) => {
                   const permissions = getTicketPermissions(ticket, rbacUser, user?.uid ?? null);
                   const createdAtLabel = ticket.createdAt?.toDate
