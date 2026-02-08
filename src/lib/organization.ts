@@ -9,6 +9,10 @@ export const orgDocPath = (orgId: string, collection: string, docId: string) =>
 
 export const orgPreventiveTemplatesPath = (orgId: string) =>
   orgCollectionPath(orgId, "preventiveTemplates");
+export const orgWorkOrdersPath = (orgId: string) =>
+  orgCollectionPath(orgId, "workOrders");
+
+
 
 export const orgStoragePath = (orgId: string, ...parts: string[]) =>
   `orgs/${orgId}/${parts.filter(Boolean).join("/")}`;

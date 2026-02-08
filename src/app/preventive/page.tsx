@@ -614,6 +614,11 @@ export default function PreventivePage() {
                 Visualiza y gestiona todas las órdenes de mantenimiento preventivo.
               </CardDescription>
             </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setShowClosed((v) => !v)}>
+                {showClosed ? 'Ocultar cerradas' : 'Mostrar cerradas'}
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
