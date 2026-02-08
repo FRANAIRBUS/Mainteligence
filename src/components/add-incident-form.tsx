@@ -8,6 +8,7 @@ import { z } from 'zod';
 import {
   collection,
   doc,
+  getDoc,
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
@@ -272,8 +273,35 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     return extension ? CONTENT_TYPE_BY_EXTENSION[extension] || 'application/octet-stream' : 'application/octet-stream';
   };
 
-  const waitForUploadRegistration = async () => {
-    await sleep(400);
+  const waitForUploadRegistration = async (payload: {
+    orgId: string;
+    ticketId: string;
+    fileName: string;
+    attempts?: number;
+  }) => {
+    const { orgId, ticketId, fileName, attempts = 6 } = payload;
+
+    if (!firestore) return;
+
+    const sessionRef = doc(firestore, orgCollectionPath(orgId, 'uploadSessions'), ticketId);
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const snapshot = await getDoc(sessionRef);
+      const allowedFiles = snapshot.exists()
+        ? (snapshot.get('allowedFiles') as Record<string, { sizeBytes?: number; contentType?: string }> | undefined)
+        : undefined;
+
+      if (allowedFiles?.[fileName]) {
+        return;
+      }
+
+      await sleep(250 * attempt);
+    }
+
+    throw {
+      code: 'storage/retry-limit-exceeded',
+      message: 'No se pudo confirmar el registro del adjunto.',
+    };
   };
 
   const uploadPhotoWithRetry = async (
@@ -457,7 +485,11 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                 fileName: objectName,
               });
 
-              await waitForUploadRegistration();
+              await waitForUploadRegistration({
+                orgId: scopedOrganizationId,
+                ticketId,
+                fileName: objectName,
+              });
 
               const url = await uploadPhotoWithRetry(
                 attachment,
