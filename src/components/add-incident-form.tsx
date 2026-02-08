@@ -272,6 +272,10 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     return extension ? CONTENT_TYPE_BY_EXTENSION[extension] || 'application/octet-stream' : 'application/octet-stream';
   };
 
+  const waitForUploadRegistration = async () => {
+    await sleep(400);
+  };
+
   const uploadPhotoWithRetry = async (
     attachment: SelectedAttachment,
     scopedOrganizationId: string,
@@ -343,7 +347,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         if (!retryable || attempt === attempts) {
           break;
         }
-        await sleep(750 * attempt);
+        await sleep(900 * attempt);
       }
     }
 
@@ -452,6 +456,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                 contentType,
                 fileName: objectName,
               });
+
+              await waitForUploadRegistration();
 
               const url = await uploadPhotoWithRetry(
                 attachment,
