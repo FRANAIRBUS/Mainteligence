@@ -118,11 +118,10 @@ service firebase.storage {
 
     function attachmentsAllowed(orgId) {
       let status = orgEntitlementStatus(orgId);
-      if (status != "active" && status != "trialing") {
-        return false;
-      }
       let limits = effectiveAttachmentLimits(orgId);
-      return limits != null
+      return (status == "active" || status == "trialing")
+        && limits != null
+        && limits.attachmentsMonthlyMB is number
         && limits.maxAttachmentMB is number
         && limits.maxAttachmentMB > 0
         ? limits.maxAttachmentMB
