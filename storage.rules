@@ -84,12 +84,12 @@ service firebase.storage {
 
     function defaultAttachmentLimits(planId) {
       return planId == "starter" || planId == "Starter" || planId == "STARTER"
-        ? { attachmentsMonthlyMB: 500, maxAttachmentMB: 10, maxAttachmentsPerTicket: 10 }
+        ? 500
         : planId == "pro" || planId == "Pro" || planId == "PRO"
-          ? { attachmentsMonthlyMB: 5000, maxAttachmentMB: 25, maxAttachmentsPerTicket: 25 }
+          ? 5000
           : planId == "enterprise" || planId == "Enterprise" || planId == "ENTERPRISE"
-            ? { attachmentsMonthlyMB: 100000, maxAttachmentMB: 100, maxAttachmentsPerTicket: 100 }
-            : { attachmentsMonthlyMB: 0, maxAttachmentMB: 0, maxAttachmentsPerTicket: 0 };
+            ? 100000
+            : 0;
     }
 
     function effectiveAttachmentLimits(orgId) {
@@ -123,19 +123,30 @@ service firebase.storage {
       }
       let limits = effectiveAttachmentLimits(orgId);
       return limits != null
-        && limits.attachmentsMonthlyMB is number
         && limits.maxAttachmentMB is number
-        && limits.maxAttachmentsPerTicket is number
-        && limits.attachmentsMonthlyMB > 0
         && limits.maxAttachmentMB > 0
-        && limits.maxAttachmentsPerTicket > 0;
+        ? limits.maxAttachmentMB
+        : defaultMaxAttachmentMB(planId);
+    }
+
+    function effectiveMaxAttachmentsPerTicket(orgId) {
+      let limits = orgEntitlementLimits(orgId);
+      let planId = orgPlanId(orgId);
+      return limits != null
+        && limits.maxAttachmentsPerTicket is number
+        && limits.maxAttachmentsPerTicket > 0
+        ? limits.maxAttachmentsPerTicket
+        : defaultMaxAttachmentsPerTicket(planId);
+    }
+
+    function attachmentsAllowed(orgId) {
+      return effectiveAttachmentsMonthlyMB(orgId) > 0
+        && effectiveMaxAttachmentMB(orgId) > 0
+        && effectiveMaxAttachmentsPerTicket(orgId) > 0;
     }
 
     function maxTicketAttachmentBytes(orgId) {
-      let limits = effectiveAttachmentLimits(orgId);
-      return (limits != null && limits.maxAttachmentMB is number)
-        ? limits.maxAttachmentMB * 1024 * 1024
-        : 0;
+      return effectiveMaxAttachmentMB(orgId) * 1024 * 1024;
     }
 
     function hasActiveUploadSession(orgId, id) {
