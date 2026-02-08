@@ -103,6 +103,18 @@ const formatSchedule = (template: PreventiveTemplate) => {
   }
 };
 
+const formatDateTime = (value: any) => {
+  if (!value?.toDate) return 'N/A';
+  const d: Date = value.toDate();
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 function PreventiveTable({ tickets, loading }: { tickets: Ticket[]; loading: boolean }) {
   if (loading) {
     return (
@@ -249,6 +261,37 @@ function PreventiveTemplatesTable({
     }
   };
 
+  const handleGenerateNow = async (template: PreventiveTemplate) => {
+    if (!app) {
+      toast({
+        title: 'Firebase',
+        description: 'No se pudo inicializar Firebase App.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const fn = httpsCallable(getFunctions(app), 'generatePreventiveNow');
+      const res = await fn({ organizationId, templateId: template.id });
+      const ticketId = (res.data as any)?.ticketId ?? null;
+      toast({
+        title: 'Preventivo generado',
+        description: ticketId ? `Orden creada (${ticketId}).` : 'Orden creada.',
+      });
+    } catch (err: any) {
+      console.error('generatePreventiveNow failed', err);
+      toast({
+        title: 'No se pudo generar',
+        description: err?.message || 'Error inesperado.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleUpdate = async (values: PreventiveTemplateFormValues) => {
     if (!app) {
       setErrorMessage('No se pudo inicializar Firebase App.');
@@ -324,6 +367,7 @@ function PreventiveTemplatesTable({
               <TableHead>Programación</TableHead>
               <TableHead>Automático</TableHead>
               <TableHead>Próxima ejecución</TableHead>
+              <TableHead>Motivo pausa</TableHead>
               <TableHead>
                 <span className="sr-only">Acciones</span>
               </TableHead>
@@ -344,9 +388,12 @@ function PreventiveTemplatesTable({
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {template.schedule?.nextRunAt?.toDate
-                      ? template.schedule.nextRunAt.toDate().toLocaleDateString()
-                      : 'N/A'}
+                    {formatDateTime(template.schedule?.nextRunAt)}
+                  </TableCell>
+                  <TableCell>
+                    {template.status === 'paused'
+                      ? template.pausedReason || '—'
+                      : '—'}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -358,6 +405,17 @@ function PreventiveTemplatesTable({
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuLabel>Acciones</DropdownMenuLabel>
+                        <DropdownMenuItem
+                          onClick={() => handleGenerateNow(template)}
+                          disabled={
+                            submitting ||
+                            template.status !== 'active' ||
+                            !template.siteId ||
+                            !template.departmentId
+                          }
+                        >
+                          Generar ahora
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEdit(template)}>Editar</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleDuplicate(template)}>Duplicar</DropdownMenuItem>
                       </DropdownMenuContent>
@@ -367,7 +425,7 @@ function PreventiveTemplatesTable({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={6} className="h-24 text-center">
+                <TableCell colSpan={7} className="h-24 text-center">
                   No se encontraron plantillas preventivas.
                 </TableCell>
               </TableRow>

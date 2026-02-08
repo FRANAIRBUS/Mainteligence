@@ -257,6 +257,7 @@ type PreventiveTemplate = {
   name: string;
   description?: string;
   status: PreventiveTemplateStatus;
+  pausedReason?: string;
   automatic: boolean;
   schedule: PreventiveSchedule;
   priority?: string;
@@ -4726,6 +4727,17 @@ export const updatePreventiveTemplate = functions.https.onCall(async (data, cont
         source: 'updatePreventiveTemplate_v1',
       }),
     );
+
+    // Keep pausedReason only when template remains paused.
+    if (status !== 'paused') {
+      tx.update(templateRef, {
+        pausedReason: admin.firestore.FieldValue.delete(),
+      });
+    } else if (typeof (data as any).pausedReason === 'string' && String((data as any).pausedReason).trim()) {
+      tx.update(templateRef, {
+        pausedReason: String((data as any).pausedReason).trim(),
+      });
+    }
   });
 
   await auditLog({
@@ -4811,6 +4823,124 @@ export const duplicatePreventiveTemplate = functions.https.onCall(async (data, c
   });
 
   return { ok: true, organizationId: orgId, templateId: targetRef.id };
+});
+
+export const generatePreventiveNow = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+  const templateId = requireStringField(data.templateId, 'templateId');
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para generar preventivos manualmente.');
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const templateRef = orgRef.collection('preventiveTemplates').doc(templateId);
+
+  const nowServer = admin.firestore.FieldValue.serverTimestamp();
+  const nowMillis = Date.now();
+  const ticketId = `prev_${templateId}_${nowMillis}`;
+  const ticketRef = orgRef.collection('tickets').doc(ticketId);
+
+  await db.runTransaction(async (tx) => {
+    const [orgSnap, templateSnap, existingTicket] = await Promise.all([
+      tx.get(orgRef),
+      tx.get(templateRef),
+      tx.get(ticketRef),
+    ]);
+
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    if (!templateSnap.exists) throw httpsError('not-found', 'Plantilla no encontrada.');
+    if (String(templateSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('permission-denied', 'Plantilla fuera de la organización.');
+    }
+    if (existingTicket.exists) {
+      throw httpsError('already-exists', 'La orden ya existe.');
+    }
+
+    const orgData = orgSnap.data() as any;
+    if (orgData?.preventivesPausedByEntitlement === true) {
+      throw httpsError('failed-precondition', 'Los preventivos están pausados por el plan actual.');
+    }
+
+    const entitlement = orgData?.entitlement as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    if (!isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) {
+      throw httpsError('failed-precondition', 'Tu plan actual no incluye preventivos.');
+    }
+
+    const template = templateSnap.data() as PreventiveTemplate;
+    if (template.status !== 'active') {
+      throw httpsError('failed-precondition', 'La plantilla no está activa.');
+    }
+    if (!template.siteId || !template.departmentId) {
+      throw httpsError('failed-precondition', 'La plantilla necesita siteId y departmentId para generar una orden.');
+    }
+
+    const schedule = template.schedule;
+    if (!schedule?.type) throw httpsError('failed-precondition', 'La plantilla no tiene programación válida.');
+
+    const runAtDate = resolveZonedDate(schedule.timezone);
+    const runAtTimestamp = admin.firestore.Timestamp.fromDate(runAtDate);
+
+    const nextBase = new Date(runAtDate.getTime() + 60 * 1000);
+    const followingRunDate = schedule.type === 'date' ? null : computeNextRunAt(schedule, nextBase);
+    const frequencyDays = resolveFrequencyDays(schedule);
+
+    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+
+    const ticketPayload = {
+      organizationId: orgId,
+      type: 'preventivo',
+      status: 'new',
+      priority: template.priority ?? 'Media',
+      siteId: template.siteId,
+      departmentId: template.departmentId,
+      assetId: template.assetId ?? null,
+      title: template.name,
+      description: template.description ?? '',
+      createdBy: actorUid,
+      assignedRole: 'mantenimiento',
+      assignedTo: null,
+      createdAt: nowServer,
+      updatedAt: nowServer,
+      preventiveTemplateId: templateRef.id,
+      templateSnapshot: {
+        name: template.name,
+        frequencyDays,
+      },
+      preventive: {
+        frequencyDays,
+        scheduledFor: runAtTimestamp,
+        checklist: template.checklist ?? [],
+      },
+      source: 'generatePreventiveNow_v1',
+    };
+
+    tx.create(ticketRef, ticketPayload);
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.preventives}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': nowServer,
+    });
+
+    tx.update(templateRef, {
+      'schedule.lastRunAt': runAtTimestamp,
+      'schedule.nextRunAt': followingRunDate ? admin.firestore.Timestamp.fromDate(followingRunDate) : null,
+      updatedAt: nowServer,
+    });
+  });
+
+  await auditLog({
+    action: 'generatePreventiveNow',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { templateId, ticketId },
+  });
+
+  return { ok: true, organizationId: orgId, templateId, ticketId };
 });
 
 export const inviteUserToOrg = functions.https.onCall(async (data, context) => {
@@ -4994,10 +5124,20 @@ export const generatePreventiveTickets = functions.pubsub
       const orgId = resolveTemplateOrgId(templateDoc.ref, template);
       if (!orgId) continue;
 
+      const templateRef = templateDoc.ref;
+
       if (!template.schedule?.type) continue;
+      if (!template.siteId || !template.departmentId) {
+        await templateRef.update({
+          status: 'paused',
+          pausedReason: 'missing_site_or_department',
+          'schedule.nextRunAt': null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        continue;
+      }
 
       const orgRef = db.collection('organizations').doc(orgId);
-      const templateRef = templateDoc.ref;
 
       let createdTicketId: string | null = null;
 
@@ -5014,19 +5154,9 @@ export const generatePreventiveTickets = functions.pubsub
         const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
         if (!isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) return;
 
-		const freshTemplate = templateSnap.data() as PreventiveTemplate;
-		if (!freshTemplate.automatic || freshTemplate.status !== 'active') return;
-		if (!freshTemplate.siteId || !freshTemplate.departmentId) {
-		  // Plantilla mal configurada (normalmente creada antes de validar campos obligatorios).
-		  // Sin site/department no podemos generar tickets preventivos. La pausamos para que el UI lo refleje.
-		  tx.update(templateRef, {
-		    status: 'paused',
-		    'schedule.nextRunAt': null,
-		    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-		    pausedReason: 'missing_site_or_department',
-		  });
-		  return;
-		}
+        const freshTemplate = templateSnap.data() as PreventiveTemplate;
+        if (!freshTemplate.automatic || freshTemplate.status !== 'active') return;
+        if (!freshTemplate.siteId || !freshTemplate.departmentId) return;
 
         const schedule = freshTemplate.schedule;
         if (!schedule?.type) return;
