@@ -3,7 +3,7 @@
 import type { FormEvent } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { AppShell } from '@/components/app-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +16,7 @@ import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useDoc, useFirestore, useUser } from '@/lib/firebase';
-import type { EntitlementPlanId, Organization } from '@/lib/firebase/models';
+import type { EntitlementPlanId, Organization, PlanCatalogEntry } from '@/lib/firebase/models';
 import {
   getDefaultPlanFeatures,
   getDefaultPlanLimits,
@@ -91,6 +91,9 @@ export default function PlansPage() {
   const firestore = useFirestore();
   const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
   const [planLimits, setPlanLimits] = useState<Record<string, number> | null>(null);
+  const [planCatalogById, setPlanCatalogById] = useState<
+    Partial<Record<EntitlementPlanId, PlanCatalogEntry>>
+  >({});
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<EntitlementPlanId>('free');
   const { data: organization, loading: orgLoading } = useDoc<Organization>(
@@ -131,12 +134,42 @@ export default function PlansPage() {
     };
   }, [firestore, organization?.entitlement?.planId]);
 
+  useEffect(() => {
+    if (!firestore) {
+      setPlanCatalogById({});
+      return;
+    }
+
+    let cancelled = false;
+    getDocs(collection(firestore, 'planCatalog'))
+      .then((snapshot) => {
+        if (cancelled) return;
+        const entries = snapshot.docs.reduce<Partial<Record<EntitlementPlanId, PlanCatalogEntry>>>(
+          (acc, docSnap) => {
+            const data = docSnap.data() as PlanCatalogEntry;
+            if (data?.planId) {
+              acc[data.planId] = data;
+            }
+            return acc;
+          },
+          {}
+        );
+        setPlanCatalogById(entries);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPlanCatalogById({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firestore]);
+
   const entitlement = organization?.entitlement ?? null;
   const normalizedPlanId = entitlement?.planId ? normalizePlanId(entitlement.planId) : 'free';
   const planLabel = entitlement?.planId ? PLAN_LABELS[normalizedPlanId] ?? normalizedPlanId : '—';
   const currentPlanId = normalizedPlanId;
-  const currentPlanLimits = getDefaultPlanLimits(currentPlanId);
-  const currentPlanFeatures = getDefaultPlanFeatures(currentPlanId);
 
   const effectiveLimits = entitlement
     ? resolveEffectivePlanLimits(normalizedPlanId, (planLimits as any) ?? entitlement.limits)
@@ -144,6 +177,8 @@ export default function PlansPage() {
   const effectiveFeatures = entitlement
     ? resolveEffectivePlanFeatures(normalizedPlanId, (planFeatures as any) ?? null)
     : null;
+  const basePlanLimits = effectiveLimits ?? getDefaultPlanLimits(currentPlanId);
+  const basePlanFeatures = effectiveFeatures ?? getDefaultPlanFeatures(currentPlanId);
   const preventivesEnabled = entitlement
     ? isFeatureEnabled({ ...entitlement, features: effectiveFeatures ?? undefined }, 'PREVENTIVES')
     : false;
@@ -239,10 +274,15 @@ export default function PlansPage() {
   };
 
   const planCards = PLAN_ORDER.map((planId) => {
-    const limits = getDefaultPlanLimits(planId);
-    const features = getDefaultPlanFeatures(planId);
+    const catalogEntry = planCatalogById[planId];
+    const limits = catalogEntry?.limits
+      ? resolveEffectivePlanLimits(planId, catalogEntry.limits)
+      : getDefaultPlanLimits(planId);
+    const features = catalogEntry?.features
+      ? resolveEffectivePlanFeatures(planId, catalogEntry.features)
+      : getDefaultPlanFeatures(planId);
     const improvements = LIMIT_LABELS.flatMap(({ key, label }) => {
-      const currentValue = currentPlanLimits[key];
+      const currentValue = basePlanLimits[key];
       const nextValue = limits[key];
       if (!Number.isFinite(currentValue) || !Number.isFinite(nextValue)) return [];
       if (nextValue > currentValue) {
@@ -252,7 +292,7 @@ export default function PlansPage() {
     });
 
     (Object.keys(FEATURE_LABELS) as Array<keyof typeof FEATURE_LABELS>).forEach((featureKey) => {
-      if (features[featureKey] && !currentPlanFeatures[featureKey]) {
+      if (features[featureKey] && !basePlanFeatures[featureKey]) {
         improvements.push(`Incluye ${FEATURE_LABELS[featureKey]}`);
       }
     });
