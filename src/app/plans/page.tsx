@@ -170,6 +170,8 @@ export default function PlansPage() {
   const normalizedPlanId = entitlement?.planId ? normalizePlanId(entitlement.planId) : 'free';
   const planLabel = entitlement?.planId ? PLAN_LABELS[normalizedPlanId] ?? normalizedPlanId : '—';
   const currentPlanId = normalizedPlanId;
+  const currentPlanLimits = getDefaultPlanLimits(currentPlanId);
+  const currentPlanFeatures = getDefaultPlanFeatures(currentPlanId);
 
   const effectiveLimits = entitlement
     ? resolveEffectivePlanLimits(normalizedPlanId, (planLimits as any) ?? entitlement.limits)
