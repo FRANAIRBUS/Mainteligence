@@ -22,13 +22,10 @@ import {
 } from "@/lib/firebase";
 import type { Department, Site, Ticket, OrganizationMember } from "@/lib/firebase/models";
 import {
-  addDoc,
   collection,
   doc,
-  serverTimestamp,
-  Timestamp,
-  updateDoc,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { useToast } from "@/hooks/use-toast";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 import { format } from "date-fns";
@@ -167,13 +164,17 @@ export default function ClosedIncidentsPage() {
     }
 
     try {
-      await updateDoc(doc(firestore, orgDocPath(organizationId, "tickets", ticket.id)), {
-        status: "new",
-        reopened: true,
-        reopenedBy: user.uid,
-        reopenedAt: Timestamp.now(),
-        organizationId,
-        updatedAt: serverTimestamp(),
+      const functions = getFunctions();
+      const updateTicket = httpsCallable(functions, 'updateTicketStatus');
+      await updateTicket({
+        orgId: organizationId,
+        ticketId: ticket.id,
+        newStatus: 'new',
+        patch: {
+          reopened: true,
+          reopenedBy: user.uid,
+          reopenedAt: new Date(),
+        },
       });
       toast({ title: "Incidencia reabierta", description: "Se movió al listado activo." });
     } catch (error) {
@@ -200,24 +201,25 @@ export default function ClosedIncidentsPage() {
 
     try {
       const createdByName = userProfile?.displayName || user.email || user.uid;
-      await addDoc(collection(firestore, orgCollectionPath(organizationId, "tickets")), {
-        title: ticket.title,
-        description: ticket.description,
-        status: "new",
-        priority: ticket.priority,
-        locationId: ticket.locationId ?? null,
-        originDepartmentId: ticket.originDepartmentId ?? ticket.departmentId ?? null,
-        targetDepartmentId: ticket.targetDepartmentId ?? ticket.departmentId ?? null,
-        assetId: ticket.assetId ?? null,
-        type: ticket.type,
-        assignedRole: ticket.assignedRole ?? null,
-        assignedTo: ticket.assignedTo ?? null,
-        createdBy: user.uid,
-        createdByName,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        reopened: false,
-        organizationId,
+      const functions = getFunctions();
+      const createTicket = httpsCallable(functions, 'createTicket');
+      await createTicket({
+        orgId: organizationId,
+        payload: {
+          title: ticket.title,
+          description: ticket.description,
+          status: 'new',
+          priority: ticket.priority,
+          locationId: ticket.locationId ?? null,
+          originDepartmentId: ticket.originDepartmentId ?? ticket.departmentId ?? null,
+          targetDepartmentId: ticket.targetDepartmentId ?? ticket.departmentId ?? null,
+          assetId: ticket.assetId ?? null,
+          type: ticket.type,
+          assignedRole: ticket.assignedRole ?? null,
+          assignedTo: ticket.assignedTo ?? null,
+          createdByName,
+          reopened: false,
+        },
       });
       toast({ title: "Incidencia duplicada", description: "Se creó una nueva incidencia a partir de la cerrada." });
     } catch (error) {

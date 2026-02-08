@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ElementType } from "react";
-import { Timestamp, serverTimestamp } from "firebase/firestore";
+import { Timestamp } from "firebase/firestore";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -535,8 +535,6 @@ const assignableUsers = useMemo(() => {
       }
       await updateTask(firestore, auth, targetOrgId, task.id, {
         status: "done",
-        closedAt: serverTimestamp(),
-        closedBy: user.uid,
         closedReason: reason,
       });
 

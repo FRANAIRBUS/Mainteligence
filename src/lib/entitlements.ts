@@ -8,6 +8,172 @@ import type {
   PlanCatalogEntry,
 } from "@/lib/firebase/models";
 
+const DEFAULT_PLAN_FEATURES: Record<
+  Entitlement["planId"],
+  Record<EntitlementFeature, boolean>
+> = {
+  free: {
+    EXPORT_PDF: false,
+    AUDIT_TRAIL: false,
+    PREVENTIVES: false,
+  },
+  basic: {
+    EXPORT_PDF: false,
+    AUDIT_TRAIL: false,
+    PREVENTIVES: false,
+  },
+  starter: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: false,
+    PREVENTIVES: true,
+  },
+  pro: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
+  enterprise: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
+};
+
+const DEFAULT_PLAN_LIMITS: Record<Entitlement["planId"], EntitlementLimits> = {
+  free: {
+    maxUsers: 2,
+    maxSites: 1,
+    maxDepartments: 3,
+    maxAssets: 1,
+    maxActivePreventives: 0,
+    maxOpenTickets: 10,
+    maxOpenTasks: 10,
+    attachmentsMonthlyMB: 0,
+    maxAttachmentMB: 0,
+    maxAttachmentsPerTicket: 0,
+    retentionDays: 0,
+  },
+  basic: {
+    maxUsers: 5,
+    maxSites: 2,
+    maxDepartments: 5,
+    maxAssets: 5,
+    maxActivePreventives: 0,
+    maxOpenTickets: 50,
+    maxOpenTasks: 50,
+    attachmentsMonthlyMB: 0,
+    maxAttachmentMB: 0,
+    maxAttachmentsPerTicket: 0,
+    retentionDays: 0,
+  },
+  starter: {
+    maxUsers: 10,
+    maxSites: 5,
+    maxDepartments: 15,
+    maxAssets: 200,
+    maxActivePreventives: 50,
+    maxOpenTickets: 200,
+    maxOpenTasks: 200,
+    attachmentsMonthlyMB: 500,
+    maxAttachmentMB: 10,
+    maxAttachmentsPerTicket: 10,
+    retentionDays: 180,
+  },
+  pro: {
+    maxUsers: 25,
+    maxSites: 15,
+    maxDepartments: 50,
+    maxAssets: 1000,
+    maxActivePreventives: 250,
+    maxOpenTickets: 1000,
+    maxOpenTasks: 1000,
+    attachmentsMonthlyMB: 5000,
+    maxAttachmentMB: 25,
+    maxAttachmentsPerTicket: 25,
+    retentionDays: 365,
+  },
+  enterprise: {
+    maxUsers: 10_000,
+    maxSites: 10_000,
+    maxDepartments: 10_000,
+    maxAssets: 1_000_000,
+    maxActivePreventives: 100_000,
+    maxOpenTickets: 1_000_000,
+    maxOpenTasks: 1_000_000,
+    attachmentsMonthlyMB: 100_000,
+    maxAttachmentMB: 100,
+    maxAttachmentsPerTicket: 100,
+    retentionDays: 3650,
+  },
+};
+
+export const normalizePlanId = (
+  planId?: Entitlement["planId"] | string
+): Entitlement["planId"] => {
+  const normalized = String(planId ?? "").trim().toLowerCase();
+  return (normalized in DEFAULT_PLAN_LIMITS
+    ? normalized
+    : "free") as Entitlement["planId"];
+};
+
+export const getDefaultPlanFeatures = (
+  planId?: Entitlement["planId"] | string
+): Record<EntitlementFeature, boolean> => {
+  const normalized = normalizePlanId(planId);
+  return DEFAULT_PLAN_FEATURES[normalized];
+};
+
+export const getDefaultPlanLimits = (
+  planId?: Entitlement["planId"] | string
+): EntitlementLimits => {
+  const normalized = normalizePlanId(planId);
+  return DEFAULT_PLAN_LIMITS[normalized];
+};
+
+export const resolveEffectivePlanFeatures = (
+  planId: Entitlement["planId"],
+  rawFeatures?: Partial<Record<EntitlementFeature, boolean>> | null
+): Record<EntitlementFeature, boolean> => ({
+  ...getDefaultPlanFeatures(planId),
+  ...(rawFeatures ?? {}),
+});
+
+export const resolveEffectivePlanLimits = (
+  planId: Entitlement["planId"],
+  rawLimits?: Partial<EntitlementLimits> | null
+): EntitlementLimits => {
+  const defaults = getDefaultPlanLimits(planId);
+  if (!rawLimits) return defaults;
+
+  const coalesceLimit = (key: keyof EntitlementLimits) => {
+    const rawValue = rawLimits[key];
+    if (typeof rawValue !== "number") {
+      return defaults[key];
+    }
+    if (rawValue <= 0 && defaults[key] > 0 && !["free", "basic"].includes(planId)) {
+      return defaults[key];
+    }
+    if (rawValue < defaults[key] && !["free", "basic"].includes(planId)) {
+      return defaults[key];
+    }
+    return rawValue;
+  };
+
+  return {
+    maxUsers: coalesceLimit("maxUsers"),
+    maxSites: coalesceLimit("maxSites"),
+    maxDepartments: coalesceLimit("maxDepartments"),
+    maxAssets: coalesceLimit("maxAssets"),
+    maxActivePreventives: coalesceLimit("maxActivePreventives"),
+    maxOpenTickets: coalesceLimit("maxOpenTickets"),
+    maxOpenTasks: coalesceLimit("maxOpenTasks"),
+    attachmentsMonthlyMB: coalesceLimit("attachmentsMonthlyMB"),
+    maxAttachmentMB: coalesceLimit("maxAttachmentMB"),
+    maxAttachmentsPerTicket: coalesceLimit("maxAttachmentsPerTicket"),
+    retentionDays: coalesceLimit("retentionDays"),
+  };
+};
+
 export type EntitlementWithFeatures = Entitlement & {
   features?: Record<EntitlementFeature, boolean>;
 };
@@ -33,7 +199,8 @@ export const getOrgEntitlement = async (
   const entitlement = orgData?.entitlement ?? null;
   if (!entitlement) return null;
 
-  const planCatalogRef = doc(db, "planCatalog", entitlement.planId);
+  const normalizedPlanId = normalizePlanId(entitlement.planId);
+  const planCatalogRef = doc(db, "planCatalog", normalizedPlanId);
   const planCatalogSnap = await getDoc(planCatalogRef);
   const planCatalogData = planCatalogSnap.exists()
     ? (planCatalogSnap.data() as PlanCatalogEntry)
@@ -41,7 +208,9 @@ export const getOrgEntitlement = async (
 
   return {
     ...entitlement,
-    features: planCatalogData?.features ?? undefined,
+    planId: normalizedPlanId,
+    limits: resolveEffectivePlanLimits(normalizedPlanId, planCatalogData?.limits ?? entitlement.limits),
+    features: resolveEffectivePlanFeatures(normalizedPlanId, planCatalogData?.features ?? null),
   };
 };
 

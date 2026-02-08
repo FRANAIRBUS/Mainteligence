@@ -23,7 +23,7 @@ type Role =
   | 'auditor';
 
 type AccountPlan = 'free' | 'personal_plus' | 'business_creator' | 'enterprise';
-type EntitlementPlanId = 'free' | 'starter' | 'pro' | 'enterprise';
+type EntitlementPlanId = 'free' | 'basic' | 'starter' | 'pro' | 'enterprise';
 type EntitlementStatus = 'trialing' | 'active' | 'past_due' | 'canceled';
 type EntitlementProvider = 'stripe' | 'google_play' | 'apple_app_store' | 'manual';
 type OrganizationStatus = 'active' | 'suspended' | 'deleted';
@@ -35,6 +35,11 @@ type EntitlementLimits = {
   maxUsers: number;
   maxActivePreventives: number;
   attachmentsMonthlyMB: number;
+  maxOpenTickets: number;
+  maxOpenTasks: number;
+  maxAttachmentMB: number;
+  maxAttachmentsPerTicket: number;
+  retentionDays: number;
 };
 
 type EntitlementUsage = {
@@ -44,6 +49,8 @@ type EntitlementUsage = {
   usersCount: number;
   activePreventivesCount: number;
   attachmentsThisMonthMB: number;
+  openTicketsCount: number;
+  openTasksCount: number;
 };
 
 type Entitlement = {
@@ -77,13 +84,101 @@ const CREATED_ORG_LIMITS: Record<AccountPlan, number> = {
 };
 
 const DEFAULT_ENTITLEMENT_PROVIDER: EntitlementProvider = 'manual';
-const DEFAULT_ENTITLEMENT_LIMITS: EntitlementLimits = {
-  maxSites: 100,
-  maxAssets: 5000,
-  maxDepartments: 100,
-  maxUsers: 50,
-  maxActivePreventives: 1000,
-  attachmentsMonthlyMB: 1024,
+
+const PLAN_DEFAULT_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
+  free: {
+    maxUsers: 2,
+    maxSites: 1,
+    maxDepartments: 3,
+    maxAssets: 1,
+    maxActivePreventives: 0,
+    maxOpenTickets: 10,
+    maxOpenTasks: 10,
+    attachmentsMonthlyMB: 0,
+    maxAttachmentMB: 0,
+    maxAttachmentsPerTicket: 0,
+    retentionDays: 0,
+  },
+  basic: {
+    maxUsers: 5,
+    maxSites: 2,
+    maxDepartments: 5,
+    maxAssets: 5,
+    maxActivePreventives: 0,
+    maxOpenTickets: 50,
+    maxOpenTasks: 50,
+    attachmentsMonthlyMB: 0,
+    maxAttachmentMB: 0,
+    maxAttachmentsPerTicket: 0,
+    retentionDays: 0,
+  },
+  starter: {
+    maxUsers: 10,
+    maxSites: 5,
+    maxDepartments: 15,
+    maxAssets: 200,
+    maxActivePreventives: 50,
+    maxOpenTickets: 200,
+    maxOpenTasks: 200,
+    attachmentsMonthlyMB: 500,
+    maxAttachmentMB: 10,
+    maxAttachmentsPerTicket: 10,
+    retentionDays: 180,
+  },
+  pro: {
+    maxUsers: 25,
+    maxSites: 15,
+    maxDepartments: 50,
+    maxAssets: 1000,
+    maxActivePreventives: 250,
+    maxOpenTickets: 1000,
+    maxOpenTasks: 1000,
+    attachmentsMonthlyMB: 5000,
+    maxAttachmentMB: 25,
+    maxAttachmentsPerTicket: 25,
+    retentionDays: 365,
+  },
+  enterprise: {
+    maxUsers: 10_000,
+    maxSites: 10_000,
+    maxDepartments: 10_000,
+    maxAssets: 1_000_000,
+    maxActivePreventives: 100_000,
+    maxOpenTickets: 1_000_000,
+    maxOpenTasks: 1_000_000,
+    attachmentsMonthlyMB: 100_000,
+    maxAttachmentMB: 100,
+    maxAttachmentsPerTicket: 100,
+    retentionDays: 3650,
+  },
+};
+
+const PLAN_DEFAULT_FEATURES: Record<EntitlementPlanId, Record<'EXPORT_PDF' | 'AUDIT_TRAIL' | 'PREVENTIVES', boolean>> = {
+  free: {
+    EXPORT_PDF: false,
+    AUDIT_TRAIL: false,
+    PREVENTIVES: false,
+  },
+  basic: {
+    EXPORT_PDF: false,
+    AUDIT_TRAIL: false,
+    PREVENTIVES: false,
+  },
+  starter: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: false,
+    PREVENTIVES: true,
+  },
+  pro: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
+  enterprise: {
+    EXPORT_PDF: true,
+    AUDIT_TRAIL: true,
+    PREVENTIVES: true,
+  },
 };
 
 const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
@@ -93,9 +188,11 @@ const DEFAULT_ENTITLEMENT_USAGE: EntitlementUsage = {
   usersCount: 0,
   activePreventivesCount: 0,
   attachmentsThisMonthMB: 0,
+  openTicketsCount: 0,
+  openTasksCount: 0,
 };
 
-const DEMO_PREVENTIVE_TEMPLATES_LIMIT = 2;
+const DEMO_PREVENTIVE_TEMPLATES_LIMIT = 5;
 
 // Basic rentable org settings (Pro-ready).
 // Stored in organizations/{orgId}/settings/main.
@@ -122,8 +219,9 @@ type ResolvedMembership = {
 };
 
 const ADMIN_LIKE_ROLES = new Set<Role>(['super_admin', 'admin', 'mantenimiento']);
-const SCOPED_HEAD_ROLES = new Set<Role>(['jefe_departamento']);
+const SCOPED_HEAD_ROLES = new Set<Role>(['jefe_departamento', 'jefe_ubicacion', 'operario']);
 const MASTER_DATA_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
+const TASKS_ROLES = new Set<Role>([...ADMIN_LIKE_ROLES, ...SCOPED_HEAD_ROLES]);
 
 const USAGE_FIELDS: Record<'sites' | 'assets' | 'departments' | 'users' | 'preventives', keyof EntitlementUsage> = {
   sites: 'sitesCount',
@@ -177,7 +275,7 @@ function buildEntitlementPayload({
   currentPeriodEnd,
   provider = DEFAULT_ENTITLEMENT_PROVIDER,
   now,
-  limits = DEFAULT_ENTITLEMENT_LIMITS,
+  limits,
   usage = DEFAULT_ENTITLEMENT_USAGE,
 }: {
   planId: EntitlementPlanId;
@@ -189,12 +287,14 @@ function buildEntitlementPayload({
   limits?: EntitlementLimits;
   usage?: EntitlementUsage;
 }) {
+  const resolvedLimits = resolveEffectiveLimitsForPlan(planId, limits ?? null);
+
   const payload: Record<string, unknown> = {
     planId,
     status,
     provider,
     updatedAt: now,
-    limits,
+    limits: resolvedLimits,
     usage,
   };
 
@@ -222,7 +322,11 @@ function resolveTemplateOrgId(docRef: FirebaseFirestore.DocumentReference, data?
 
 function resolveZonedDate(timeZone?: string) {
   if (!timeZone) return new Date();
-  return new Date(new Date().toLocaleString('en-US', { timeZone }));
+  try {
+    return new Date(new Date().toLocaleString('en-US', { timeZone }));
+  } catch {
+    return new Date();
+  }
 }
 
 function parseTimeOfDay(timeOfDay?: string) {
@@ -407,14 +511,69 @@ function resolveEntitlementPlanId({
   metadataPlanId?: string | null;
   fallbackPlanId?: string;
 }): EntitlementPlanId {
-  const normalized = String(metadataPlanId ?? '').trim();
-  if (normalized === 'free' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
-    return normalized;
+  const normalized = String(metadataPlanId ?? '').trim().toLowerCase();
+  if (normalized === 'free' || normalized === 'basic' || normalized === 'starter' || normalized === 'pro' || normalized === 'enterprise') {
+    return normalized as EntitlementPlanId;
   }
-  if (fallbackPlanId === 'free' || fallbackPlanId === 'starter' || fallbackPlanId === 'pro' || fallbackPlanId === 'enterprise') {
-    return fallbackPlanId;
+  const fallbackNormalized = String(fallbackPlanId ?? '').trim().toLowerCase();
+  if (
+    fallbackNormalized === 'free' ||
+    fallbackNormalized === 'basic' ||
+    fallbackNormalized === 'starter' ||
+    fallbackNormalized === 'pro' ||
+    fallbackNormalized === 'enterprise'
+  ) {
+    return fallbackNormalized as EntitlementPlanId;
   }
   return 'free';
+}
+
+function resolveDefaultLimitsForPlan(planId: EntitlementPlanId): EntitlementLimits {
+  return PLAN_DEFAULT_LIMITS[planId] ?? PLAN_DEFAULT_LIMITS.free;
+}
+
+function resolveDefaultFeaturesForPlan(planId: EntitlementPlanId): Record<string, boolean> {
+  return PLAN_DEFAULT_FEATURES[planId] ?? PLAN_DEFAULT_FEATURES.free;
+}
+
+function resolveEffectiveLimitsForPlan(planId: EntitlementPlanId, limits?: Partial<EntitlementLimits> | null): EntitlementLimits {
+  const defaults = resolveDefaultLimitsForPlan(planId);
+  if (!limits) return defaults;
+
+  const coalesceLimit = (key: keyof EntitlementLimits) => {
+    const rawValue = limits[key];
+    if (typeof rawValue !== 'number') {
+      return defaults[key];
+    }
+    if (rawValue <= 0 && defaults[key] > 0 && !['free', 'basic'].includes(planId)) {
+      return defaults[key];
+    }
+    if (rawValue < defaults[key] && !['free', 'basic'].includes(planId)) {
+      return defaults[key];
+    }
+    return rawValue;
+  };
+
+  return {
+    maxUsers: coalesceLimit('maxUsers'),
+    maxSites: coalesceLimit('maxSites'),
+    maxDepartments: coalesceLimit('maxDepartments'),
+    maxAssets: coalesceLimit('maxAssets'),
+    maxActivePreventives: coalesceLimit('maxActivePreventives'),
+    maxOpenTickets: coalesceLimit('maxOpenTickets'),
+    maxOpenTasks: coalesceLimit('maxOpenTasks'),
+    attachmentsMonthlyMB: coalesceLimit('attachmentsMonthlyMB'),
+    maxAttachmentMB: coalesceLimit('maxAttachmentMB'),
+    maxAttachmentsPerTicket: coalesceLimit('maxAttachmentsPerTicket'),
+    retentionDays: coalesceLimit('retentionDays'),
+  };
+}
+
+function resolveEffectiveFeaturesForPlan(planId: EntitlementPlanId, features?: Record<string, boolean> | null): Record<string, boolean> {
+  return {
+    ...resolveDefaultFeaturesForPlan(planId),
+    ...(features ?? {}),
+  };
 }
 
 function resolveEntitlementStatusFromApple(notificationType?: string, renewal?: AppleRenewalPayload | null): EntitlementStatus {
@@ -592,7 +751,6 @@ async function updateOrganizationStripeEntitlement({
 
     const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
     const entitlement = orgData?.entitlement;
-    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
     const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -600,6 +758,7 @@ async function updateOrganizationStripeEntitlement({
       metadataPlanId: planId ?? null,
       fallbackPlanId: entitlement?.planId,
     });
+    const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement?.limits);
 
     const shouldBlock = shouldBlockProviderUpdate(entitlement, 'stripe');
     const billingProviderPayload: Record<string, unknown> = shouldBlock
@@ -819,7 +978,6 @@ async function updateOrganizationAppleEntitlement({
 
     const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
     const entitlement = orgData?.entitlement;
-    const limits = entitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
     const usage = entitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -827,6 +985,7 @@ async function updateOrganizationAppleEntitlement({
       metadataPlanId: planId ?? null,
       fallbackPlanId: entitlement?.planId,
     });
+    const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement?.limits);
 
     const shouldBlock = shouldBlockProviderUpdate(entitlement, 'apple_app_store');
     const billingProviderPayload: Record<string, unknown> = shouldBlock
@@ -1174,6 +1333,28 @@ function normalizeStringArray(value: unknown): string[] {
     .filter((item) => Boolean(item));
 }
 
+function normalizeStatus(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/\s+/g, '_');
+}
+
+function isOpenStatus(status: unknown): boolean {
+  const normalized = normalizeStatus(status);
+  // Tickets/incidencias
+  if (['new', 'open', 'in_progress', 'pending', 'assigned', 'reopened', 'waiting_parts', 'waiting_external'].includes(normalized)) {
+    return true;
+  }
+  // Spanish variants seen in UI
+  if (['abierta', 'en_curso', 'en_espera', 'cierre_solicitado'].includes(normalized)) {
+    return true;
+  }
+  return false;
+}
+
 function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null): MembershipScope {
   const departmentId = String(userData?.departmentId ?? '').trim();
   const locationId = String(userData?.locationId ?? '').trim();
@@ -1187,6 +1368,28 @@ function resolveMembershipScope(userData: FirebaseFirestore.DocumentData | null)
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stripUndefinedDeep<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => stripUndefinedDeep(item))
+      .filter((item) => item !== undefined) as unknown as T;
+  }
+
+  if (isPlainObject(value)) {
+    const entries = Object.entries(value);
+    const cleaned = entries.reduce<Record<string, unknown>>((acc, [key, nestedValue]) => {
+      const normalized = stripUndefinedDeep(nestedValue as unknown);
+      if (normalized !== undefined) {
+        acc[key] = normalized;
+      }
+      return acc;
+    }, {});
+    return cleaned as T;
+  }
+
+  return value;
 }
 
 function requireRoleAllowed(role: Role, allowed: Set<Role>, message: string) {
@@ -1253,18 +1456,54 @@ async function requireActiveMembership(actorUid: string, orgId: string): Promise
   };
 }
 
+async function requireActiveMembershipForTx(
+  tx: FirebaseFirestore.Transaction,
+  orgId: string,
+  actorUid: string
+): Promise<ResolvedMembership> {
+  const membershipRef = db.collection('memberships').doc(`${actorUid}_${orgId}`);
+  const userRef = db.collection('users').doc(actorUid);
+
+  const [membershipSnap, userSnap] = await Promise.all([tx.get(membershipRef), tx.get(userRef)]);
+  if (!membershipSnap.exists) {
+    throw httpsError('permission-denied', 'No perteneces a esa organización.');
+  }
+
+  const membershipData = membershipSnap.data() as FirebaseFirestore.DocumentData | null;
+  const status =
+    String(membershipData?.status ?? '') ||
+    (membershipData?.active === true ? 'active' : 'pending');
+
+  if (status !== 'active') {
+    throw httpsError('failed-precondition', 'Tu membresía no está activa.');
+  }
+
+  const role = normalizeRole(membershipData?.role);
+  const userData = userSnap.exists ? (userSnap.data() as FirebaseFirestore.DocumentData) : null;
+
+  return {
+    role,
+    status,
+    scope: resolveMembershipScope(userData),
+    membershipData,
+    userData,
+  };
+}
+
 async function resolvePlanFeaturesForTx(tx: FirebaseFirestore.Transaction, planId: string | undefined) {
-  if (!planId) return undefined;
-  const planSnap = await tx.get(db.collection('planCatalog').doc(planId));
-  if (!planSnap.exists) return undefined;
-  return planSnap.get('features') as Record<string, boolean> | undefined;
+  const resolvedPlanId = resolveEntitlementPlanId({ metadataPlanId: planId ?? null });
+  const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
+  const rawFeatures = planSnap.exists
+    ? (planSnap.get('features') as Record<string, boolean> | undefined)
+    : undefined;
+  return resolveEffectiveFeaturesForPlan(resolvedPlanId, rawFeatures ?? null);
 }
 
 async function resolveFallbackPreventivesEntitlementForTx(
   tx: FirebaseFirestore.Transaction,
   orgData: FirebaseFirestore.DocumentData | undefined,
   baseEntitlement: Entitlement,
-): Promise<{ entitlement: Entitlement; features?: Record<string, boolean> } | null> {
+): Promise<{ entitlement: Entitlement; features: Record<string, boolean> } | null> {
   const providersRaw = (orgData?.billingProviders ?? null) as
     | Partial<Record<EntitlementProvider, BillingProviderEntitlement>>
     | null;
@@ -1304,6 +1543,26 @@ async function resolveFallbackPreventivesEntitlementForTx(
   return null;
 }
 
+function resolveEffectiveEntitlementForTx(orgSnap: FirebaseFirestore.DocumentSnapshot): Entitlement {
+  const orgData = orgSnap.data() as { entitlement?: Entitlement } | undefined;
+  const entitlement = orgData?.entitlement;
+  if (!entitlement) {
+    throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+  }
+
+  const resolvedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: entitlement.planId ?? null,
+    fallbackPlanId: entitlement.planId,
+  });
+
+  return {
+    ...entitlement,
+    planId: resolvedPlanId,
+    limits: resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement.limits),
+    usage: entitlement.usage ?? DEFAULT_ENTITLEMENT_USAGE,
+  };
+}
+
 function ensureEntitlementAllowsCreate({
   kind,
   entitlement,
@@ -1335,7 +1594,11 @@ function ensureEntitlementAllowsCreate({
 
   const isDemoOrg = orgType === 'demo';
 
-  if (kind === 'preventives' && !isDemoOrg && String(entitlement?.planId ?? '') === 'free') {
+  const normalizedPlanId = resolveEntitlementPlanId({
+    metadataPlanId: entitlement?.planId ?? null,
+  });
+
+  if (kind === 'preventives' && !isDemoOrg && normalizedPlanId === 'free') {
     throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
   }
 
@@ -1347,7 +1610,9 @@ function ensureEntitlementAllowsCreate({
     throw httpsError('failed-precondition', 'Tu plan no incluye preventivos.');
   }
 
-  if (!canCreate(kind, entitlement?.usage, entitlement?.limits)) {
+  const effectiveLimits = resolveEffectiveLimitsForPlan(normalizedPlanId, entitlement?.limits);
+
+  if (!canCreate(kind, entitlement?.usage, effectiveLimits)) {
     throw httpsError('failed-precondition', LIMIT_MESSAGES[kind]);
   }
 }
@@ -2073,7 +2338,7 @@ export const rootSetOrganizationPlan = functions.https.onCall(async (data, conte
       throw httpsError('invalid-argument', 'entitlementStatus inválido.');
     }
 
-    const limits = currentEntitlement?.limits ?? DEFAULT_ENTITLEMENT_LIMITS;
+    const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, currentEntitlement?.limits);
     const usage = currentEntitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
 
     const nextEntitlement = buildEntitlementPayload({
@@ -2522,76 +2787,90 @@ export const checkOrganizationAvailability = functions.https.onCall(async (data)
 export const bootstrapFromInvites = functions.https.onCall(async (_data, context) => {
   const uid = requireAuth(context);
 
-  const authUser = await admin.auth().getUser(uid).catch(() => null);
-  const email = (authUser?.email ?? '').trim().toLowerCase();
-  if (!email) {
-    throw httpsError('failed-precondition', 'Email requerido.');
+  try {
+    const authUser = await admin.auth().getUser(uid).catch(() => null);
+    const email = (authUser?.email ?? '').trim().toLowerCase();
+    if (!email) {
+      throw httpsError('failed-precondition', 'Email requerido.');
+    }
+
+    const joinReqByEmail = db
+      .collectionGroup('joinRequests')
+      .where('email', '==', email)
+      .where('status', '==', 'pending');
+    const joinReqByUid = db
+      .collectionGroup('joinRequests')
+      .where('userId', '==', uid)
+      .where('status', '==', 'pending');
+
+    const [emailSnap, uidSnap] = await Promise.all([joinReqByEmail.get(), joinReqByUid.get()]);
+    const joinReqDocs = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+    emailSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
+    uidSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
+
+    if (joinReqDocs.size === 0) {
+      return { ok: true, created: 0, claimed: 0 };
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const batch = db.batch();
+    let created = 0;
+
+    for (const docSnap of joinReqDocs.values()) {
+      const data = docSnap.data() as any;
+      const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
+      if (!orgId) continue;
+
+      const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
+      const membershipSnap = await membershipRef.get();
+      if (membershipSnap.exists) continue;
+
+      batch.set(
+        membershipRef,
+        {
+          userId: uid,
+          organizationId: orgId,
+          organizationName: String(data?.organizationName ?? orgId),
+          role: normalizeRole(data?.requestedRole) ?? 'operario',
+          status: 'pending',
+          createdAt: now,
+          updatedAt: now,
+          source: 'bootstrapFromInvites_v1',
+        },
+        { merge: true },
+      );
+
+      batch.set(
+        docSnap.ref,
+        {
+          userId: uid,
+          updatedAt: now,
+          source: 'bootstrapFromInvites_v1',
+        },
+        { merge: true },
+      );
+
+      created += 1;
+    }
+
+    if (created > 0) {
+      await batch.commit();
+    }
+
+    return { ok: true, created, claimed: created };
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
+    console.error('bootstrapFromInvites: unexpected error', {
+      uid,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    return { ok: false, created: 0, claimed: 0 };
   }
-
-  const joinReqByEmail = db
-    .collectionGroup('joinRequests')
-    .where('email', '==', email)
-    .where('status', '==', 'pending');
-  const joinReqByUid = db
-    .collectionGroup('joinRequests')
-    .where('userId', '==', uid)
-    .where('status', '==', 'pending');
-
-  const [emailSnap, uidSnap] = await Promise.all([joinReqByEmail.get(), joinReqByUid.get()]);
-  const joinReqDocs = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
-  emailSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
-  uidSnap.docs.forEach((docSnap) => joinReqDocs.set(docSnap.ref.path, docSnap));
-
-  if (joinReqDocs.size === 0) {
-    return { ok: true, created: 0 };
-  }
-
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  const batch = db.batch();
-  let created = 0;
-
-  for (const docSnap of joinReqDocs.values()) {
-    const data = docSnap.data() as any;
-    const orgId = sanitizeOrganizationId(String(data?.organizationId ?? ''));
-    if (!orgId) continue;
-
-    const membershipRef = db.collection('memberships').doc(`${uid}_${orgId}`);
-    const membershipSnap = await membershipRef.get();
-    if (membershipSnap.exists) continue;
-
-    batch.set(
-      membershipRef,
-      {
-        userId: uid,
-        organizationId: orgId,
-        organizationName: String(data?.organizationName ?? orgId),
-        role: normalizeRole(data?.requestedRole) ?? 'operario',
-        status: 'pending',
-        createdAt: now,
-        updatedAt: now,
-        source: 'bootstrapFromInvites_v1',
-      },
-      { merge: true },
-    );
-
-    batch.set(
-      docSnap.ref,
-      {
-        userId: uid,
-        updatedAt: now,
-        source: 'bootstrapFromInvites_v1',
-      },
-      { merge: true },
-    );
-
-    created += 1;
-  }
-
-  if (created > 0) {
-    await batch.commit();
-  }
-
-  return { ok: true, created };
 });
 
 export const bootstrapSignup = functions.https.onCall(async (data, context) => {
@@ -3282,6 +3561,600 @@ export const createDepartment = functions.https.onCall(async (data, context) => 
   return { ok: true, organizationId: orgId, departmentId: departmentRef.id };
 });
 
+// -----------------------------
+// Tickets & Tasks (server-only writes)
+// -----------------------------
+
+export const createTicketUploadSession = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const ticketId = String(data?.ticketId ?? '').trim();
+  const maxFiles = Math.min(Number(data?.maxFiles ?? 10) || 10, 10);
+
+  if (!orgId || !ticketId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o ticketId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    await requireActiveMembershipForTx(tx, orgId, uid);
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const maxAttachmentMB = Number(entitlement.limits?.maxAttachmentMB ?? 0) || 0;
+    const monthlyMB = Number(entitlement.limits?.attachmentsMonthlyMB ?? 0) || 0;
+    const perTicket = Number(entitlement.limits?.maxAttachmentsPerTicket ?? 0) || 0;
+
+    if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Los adjuntos no están disponibles en tu plan.',
+        'attachments_not_allowed'
+      );
+    }
+
+    // Create short-lived session for Storage rules.
+    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000));
+    const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
+
+    tx.set(sessionRef, {
+      organizationId: orgId,
+      uploaderUid: uid,
+      type: 'ticket',
+      status: 'active',
+      allowedFiles: {},
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt,
+      maxFiles,
+    });
+
+    return {
+      ok: true,
+      ticketId,
+      expiresAt: expiresAt.toDate().toISOString(),
+      maxFiles,
+      maxAttachmentMB,
+    };
+  });
+});
+
+export const registerTicketAttachment = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const ticketId = String(data?.ticketId ?? '').trim();
+  const sizeBytes = Number(data?.sizeBytes ?? 0) || 0;
+  const fileName = String(data?.fileName ?? '').trim();
+  const contentType = String(data?.contentType ?? '').trim();
+
+  if (!orgId || !ticketId || sizeBytes <= 0 || !fileName || !contentType) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId, ticketId, sizeBytes, fileName o contentType.');
+  }
+
+  const sizeMB = sizeBytes / (1024 * 1024);
+
+  return await db.runTransaction(async (tx) => {
+    await requireActiveMembershipForTx(tx, orgId, uid);
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const maxAttachmentMB = Number(entitlement.limits?.maxAttachmentMB ?? 0) || 0;
+    const monthlyMB = Number(entitlement.limits?.attachmentsMonthlyMB ?? 0) || 0;
+    const perTicket = Number(entitlement.limits?.maxAttachmentsPerTicket ?? 0) || 0;
+    const usedThisMonth = Number(entitlement.usage?.attachmentsThisMonthMB ?? 0) || 0;
+
+    if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
+      throw new functions.https.HttpsError('failed-precondition', 'Los adjuntos no están disponibles en tu plan.', 'attachments_not_allowed');
+    }
+
+    if (sizeMB > maxAttachmentMB + 1e-6) {
+      throw new functions.https.HttpsError('failed-precondition', `Adjunto supera el tamaño máximo (${maxAttachmentMB} MB).`, 'attachment_too_large');
+    }
+
+    if (usedThisMonth + sizeMB > monthlyMB + 1e-6) {
+      throw new functions.https.HttpsError('failed-precondition', 'Se superó la cuota mensual de adjuntos.', 'attachments_quota_exceeded');
+    }
+
+    const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
+    const sessionSnap = await tx.get(sessionRef);
+    if (!sessionSnap.exists || sessionSnap.get('status') !== 'active' || sessionSnap.get('type') !== 'ticket') {
+      throw new functions.https.HttpsError('failed-precondition', 'La sesión de carga no está activa.', 'upload_session_inactive');
+    }
+    if (sessionSnap.get('uploaderUid') !== uid) {
+      throw new functions.https.HttpsError('permission-denied', 'Sesión de carga inválida.');
+    }
+
+    const allowedFiles = (sessionSnap.get('allowedFiles') || {}) as Record<string, { sizeBytes?: number }>;
+    if (allowedFiles[fileName]) {
+      throw new functions.https.HttpsError('already-exists', 'El archivo ya fue registrado.');
+    }
+
+    const maxFiles = Number(sessionSnap.get('maxFiles') ?? 0) || 0;
+    const registeredCount = Object.keys(allowedFiles).length;
+    if (maxFiles > 0 && registeredCount >= maxFiles) {
+      throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${maxFiles}).`, 'attachments_per_ticket_exceeded');
+    }
+
+    const ticketRef = orgRef.collection('tickets').doc(ticketId);
+    const ticketSnap = await tx.get(ticketRef);
+    if (ticketSnap.exists) {
+      const currentUrls = Array.isArray(ticketSnap.get('photoUrls')) ? (ticketSnap.get('photoUrls') as unknown[]) : [];
+      if (currentUrls.length >= perTicket) {
+        throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${perTicket}).`, 'attachments_per_ticket_exceeded');
+      }
+    }
+
+    tx.update(orgRef, {
+      'entitlement.usage.attachmentsThisMonthMB': admin.firestore.FieldValue.increment(sizeMB),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    tx.update(
+      sessionRef,
+      new admin.firestore.FieldPath('allowedFiles', fileName),
+      {
+        sizeBytes,
+        contentType,
+        registeredAt: admin.firestore.FieldValue.serverTimestamp(),
+      }
+    );
+
+    return { ok: true, sizeMB };
+  });
+});
+
+export const createTicket = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const payload = (data?.payload ?? data) as Record<string, any>;
+  const providedTicketId = String(payload?.ticketId ?? data?.ticketId ?? '').trim() || undefined;
+
+  if (!orgId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Falta orgId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const limits = entitlement.limits;
+    const usage = entitlement.usage;
+
+    const locationId = String(payload?.locationId ?? payload?.siteId ?? '').trim();
+    const originDepartmentId = String(payload?.originDepartmentId ?? '').trim() || undefined;
+    const targetDepartmentId = String(payload?.targetDepartmentId ?? '').trim() || undefined;
+    const departmentId = String(payload?.departmentId ?? '').trim() || undefined;
+    const effectiveDepartmentId = targetDepartmentId ?? originDepartmentId ?? departmentId;
+
+    if (!locationId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Falta locationId.');
+    }
+    if (!effectiveDepartmentId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Falta departmentId.');
+    }
+
+    // Scope enforcement (keep existing RBAC model; don't redesign).
+    requireScopedAccessToSite(resolved.role, resolved.scope, locationId);
+    requireScopedAccessToDepartment(resolved.role, resolved.scope, effectiveDepartmentId);
+
+    const status = payload?.status ?? 'new';
+    if (isOpenStatus(status)) {
+      const current = Number(usage?.openTicketsCount ?? 0) || 0;
+      const max = Number(limits?.maxOpenTickets ?? 0) || 0;
+      if (max > 0 && current >= max) {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'Has alcanzado el límite de incidencias abiertas de tu plan.',
+          'max_open_tickets_reached'
+        );
+      }
+    }
+
+    const ticketRef = providedTicketId
+      ? orgRef.collection('tickets').doc(providedTicketId)
+      : orgRef.collection('tickets').doc();
+
+    const existing = await tx.get(ticketRef);
+    if (existing.exists) {
+      throw new functions.https.HttpsError('already-exists', 'La incidencia ya existe.');
+    }
+
+    const nowYear = new Date().getFullYear();
+    const displayId = payload?.displayId || `INC-${nowYear}-${String(Date.now()).slice(-4)}`;
+
+    const createdByName = String(payload?.createdByName ?? resolved.userData?.displayName ?? resolved.userData?.email ?? uid);
+
+    const docData: Record<string, any> = {
+      organizationId: orgId,
+      locationId,
+      originDepartmentId: originDepartmentId ?? null,
+      targetDepartmentId: targetDepartmentId ?? null,
+      departmentId: departmentId ?? null,
+      title: String(payload?.title ?? '').trim(),
+      description: String(payload?.description ?? '').trim(),
+      type: payload?.type ?? 'correctivo',
+      status,
+      priority: payload?.priority ?? 'Media',
+      assetId: payload?.assetId ?? null,
+      createdBy: uid,
+      createdByName,
+      assignedRole: payload?.assignedRole ?? 'mantenimiento',
+      assignedTo: payload?.assignedTo ?? null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      displayId,
+      photoUrls: Array.isArray(payload?.photoUrls) ? payload.photoUrls : [],
+      hasAttachments: Array.isArray(payload?.photoUrls) && payload.photoUrls.length > 0,
+    };
+
+    // Clean null-ish legacy.
+    if (!docData.assetId) delete docData.assetId;
+
+    tx.set(ticketRef, docData, { merge: false });
+
+    if (isOpenStatus(status)) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    // Clean up upload session if present.
+    const sessionRef = orgRef.collection('uploadSessions').doc(ticketRef.id);
+    const sessionSnap = await tx.get(sessionRef);
+    if (sessionSnap.exists) {
+      tx.delete(sessionRef);
+    }
+
+    return { ok: true, ticketId: ticketRef.id };
+  });
+});
+
+export const updateTicketStatus = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const ticketId = String(data?.ticketId ?? '').trim();
+  const newStatus = data?.newStatus;
+  const patch = (data?.patch ?? {}) as Record<string, any>;
+  const reportAppend = data?.reportAppend as { description?: string } | undefined;
+
+  if (!orgId || !ticketId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o ticketId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const ticketRef = orgRef.collection('tickets').doc(ticketId);
+
+    const [orgSnap, ticketSnap] = await Promise.all([tx.get(orgRef), tx.get(ticketRef)]);
+
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+    if (!ticketSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Incidencia no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const limits = entitlement.limits;
+    const usage = entitlement.usage;
+
+    const oldStatus = ticketSnap.get('status');
+    const effectiveNewStatus = newStatus ?? patch?.status ?? oldStatus;
+
+    const wasOpen = isOpenStatus(oldStatus);
+    const willBeOpen = isOpenStatus(effectiveNewStatus);
+
+    if (!wasOpen && willBeOpen) {
+      const current = Number(usage?.openTicketsCount ?? 0) || 0;
+      const max = Number(limits?.maxOpenTickets ?? 0) || 0;
+      if (max > 0 && current >= max) {
+        throw new functions.https.HttpsError('failed-precondition', 'Has alcanzado el límite de incidencias abiertas de tu plan.', 'max_open_tickets_reached');
+      }
+    }
+
+    // Scope enforcement for scoped roles when changing scope-related fields.
+    const nextLocationId = String((patch?.locationId ?? patch?.siteId ?? ticketSnap.get('locationId') ?? '')).trim();
+    const nextOriginDept = String((patch?.originDepartmentId ?? ticketSnap.get('originDepartmentId') ?? '')).trim();
+    const nextTargetDept = String((patch?.targetDepartmentId ?? ticketSnap.get('targetDepartmentId') ?? '')).trim();
+    const nextLegacyDept = String((patch?.departmentId ?? ticketSnap.get('departmentId') ?? '')).trim();
+    const nextDept = nextTargetDept || nextOriginDept || nextLegacyDept;
+
+    if (nextLocationId) {
+      requireScopedAccessToSite(resolved.role, resolved.scope, nextLocationId);
+    }
+    if (nextDept) {
+      requireScopedAccessToDepartment(resolved.role, resolved.scope, nextDept);
+    }
+
+    const updateData: Record<string, any> = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      organizationId: orgId,
+      ...patch,
+    };
+
+    if (newStatus !== undefined) {
+      updateData.status = effectiveNewStatus;
+    }
+
+    // Closure metadata (keep existing semantics used by UI).
+    const normalizedNew = normalizeStatus(effectiveNewStatus);
+    if (['resolved', 'closed', 'cerrada', 'resuelta', 'canceled', 'cancelled', 'cancelada'].includes(normalizedNew)) {
+      if (!ticketSnap.get('closedAt')) {
+        updateData.closedAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+      updateData.closedBy = uid;
+    }
+
+    // Report append (used by incident details page).
+    if (reportAppend?.description && String(reportAppend.description).trim().length > 0) {
+      const entry = {
+        description: String(reportAppend.description).trim(),
+        createdAt: admin.firestore.Timestamp.now(),
+        createdBy: uid,
+      };
+      updateData.reports = admin.firestore.FieldValue.arrayUnion(entry);
+    }
+
+    tx.update(ticketRef, updateData);
+
+    if (wasOpen !== willBeOpen) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(willBeOpen ? 1 : -1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { ok: true };
+  });
+});
+
+export const createTask = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const payload = (data?.payload ?? data) as Record<string, any>;
+  const providedTaskId = String(payload?.taskId ?? data?.taskId ?? '').trim() || undefined;
+
+  if (!orgId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Falta orgId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const orgSnap = await tx.get(orgRef);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const limits = entitlement.limits;
+    const usage = entitlement.usage;
+
+    const status = payload?.status ?? 'open';
+    if (isOpenStatus(status)) {
+      const current = Number(usage?.openTasksCount ?? 0) || 0;
+      const max = Number(limits?.maxOpenTasks ?? 0) || 0;
+      if (max > 0 && current >= max) {
+        throw new functions.https.HttpsError('failed-precondition', 'Has alcanzado el límite de tareas abiertas de tu plan.', 'max_open_tasks_reached');
+      }
+    }
+
+    const locationId = String(payload?.locationId ?? '').trim();
+    const originDepartmentId = String(payload?.originDepartmentId ?? '').trim() || undefined;
+    const targetDepartmentId = String(payload?.targetDepartmentId ?? '').trim() || undefined;
+    const departmentId = String(payload?.departmentId ?? '').trim() || undefined;
+    const effectiveDepartmentId = targetDepartmentId ?? originDepartmentId ?? departmentId;
+
+    if (locationId) {
+      requireScopedAccessToSite(resolved.role, resolved.scope, locationId);
+    }
+    if (effectiveDepartmentId) {
+      requireScopedAccessToDepartment(resolved.role, resolved.scope, effectiveDepartmentId);
+    }
+
+    const taskRef = providedTaskId ? orgRef.collection('tasks').doc(providedTaskId) : orgRef.collection('tasks').doc();
+    const existing = await tx.get(taskRef);
+    if (existing.exists) {
+      throw new functions.https.HttpsError('already-exists', 'La tarea ya existe.');
+    }
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const docData: Record<string, any> = {
+      ...payload,
+      organizationId: orgId,
+      createdBy: uid,
+      status,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    tx.set(taskRef, docData, { merge: false });
+
+    if (isOpenStatus(status)) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTasksCount': admin.firestore.FieldValue.increment(1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { ok: true, taskId: taskRef.id };
+  });
+});
+
+export const updateTaskStatus = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const taskId = String(data?.taskId ?? '').trim();
+  const newStatus = data?.newStatus;
+  const patch = (data?.patch ?? {}) as Record<string, any>;
+  const reportAppend = data?.reportAppend as { description?: string } | undefined;
+
+  if (!orgId || !taskId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o taskId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const taskRef = orgRef.collection('tasks').doc(taskId);
+
+    const [orgSnap, taskSnap] = await Promise.all([tx.get(orgRef), tx.get(taskRef)]);
+    if (!orgSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    }
+    if (!taskSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Tarea no encontrada.');
+    }
+
+    const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+    const limits = entitlement.limits;
+    const usage = entitlement.usage;
+
+    const oldStatus = taskSnap.get('status');
+    const effectiveNewStatus = newStatus ?? patch?.status ?? oldStatus;
+    const wasOpen = isOpenStatus(oldStatus);
+    const willBeOpen = isOpenStatus(effectiveNewStatus);
+
+    if (!wasOpen && willBeOpen) {
+      const current = Number(usage?.openTasksCount ?? 0) || 0;
+      const max = Number(limits?.maxOpenTasks ?? 0) || 0;
+      if (max > 0 && current >= max) {
+        throw new functions.https.HttpsError('failed-precondition', 'Has alcanzado el límite de tareas abiertas de tu plan.', 'max_open_tasks_reached');
+      }
+    }
+
+    const nextLocationId = String((patch?.locationId ?? taskSnap.get('locationId') ?? '')).trim();
+    const nextOriginDept = String((patch?.originDepartmentId ?? taskSnap.get('originDepartmentId') ?? '')).trim();
+    const nextTargetDept = String((patch?.targetDepartmentId ?? taskSnap.get('targetDepartmentId') ?? '')).trim();
+    const nextLegacyDept = String((patch?.departmentId ?? taskSnap.get('departmentId') ?? '')).trim();
+    const nextDept = nextTargetDept || nextOriginDept || nextLegacyDept;
+
+    if (nextLocationId) {
+      requireScopedAccessToSite(resolved.role, resolved.scope, nextLocationId);
+    }
+    if (nextDept) {
+      requireScopedAccessToDepartment(resolved.role, resolved.scope, nextDept);
+    }
+
+    const updateData: Record<string, any> = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      organizationId: orgId,
+      ...patch,
+    };
+
+    if (newStatus !== undefined) {
+      updateData.status = effectiveNewStatus;
+    }
+
+    const normalizedNew = normalizeStatus(effectiveNewStatus);
+    if (['done', 'closed', 'resolved', 'cerrada', 'resuelta', 'canceled', 'cancelled', 'cancelada'].includes(normalizedNew)) {
+      if (!taskSnap.get('closedAt')) {
+        updateData.closedAt = admin.firestore.FieldValue.serverTimestamp();
+      }
+      updateData.closedBy = uid;
+    }
+
+    if (reportAppend?.description && String(reportAppend.description).trim().length > 0) {
+      const entry = {
+        description: String(reportAppend.description).trim(),
+        createdAt: admin.firestore.Timestamp.now(),
+        createdBy: uid,
+      };
+      updateData.reports = admin.firestore.FieldValue.arrayUnion(entry);
+    }
+
+    tx.update(taskRef, updateData);
+
+    if (wasOpen !== willBeOpen) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTasksCount': admin.firestore.FieldValue.increment(willBeOpen ? 1 : -1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { ok: true };
+  });
+});
+
+export const deleteTask = functions.https.onCall(async (data, context) => {
+  const uid = context.auth?.uid;
+  if (!uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  }
+
+  const orgId = String(data?.orgId ?? data?.organizationId ?? '').trim();
+  const taskId = String(data?.taskId ?? '').trim();
+  if (!orgId || !taskId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o taskId.');
+  }
+
+  return await db.runTransaction(async (tx) => {
+    const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+    requireRoleAllowed(resolved.role, TASKS_ROLES, 'No tienes permisos para eliminar tareas.');
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const taskRef = orgRef.collection('tasks').doc(taskId);
+    const [orgSnap, taskSnap] = await Promise.all([tx.get(orgRef), tx.get(taskRef)]);
+    if (!orgSnap.exists) throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    if (!taskSnap.exists) throw new functions.https.HttpsError('not-found', 'Tarea no encontrada.');
+
+    const oldStatus = taskSnap.get('status');
+    const wasOpen = isOpenStatus(oldStatus);
+
+    tx.delete(taskRef);
+
+    if (wasOpen) {
+      tx.update(orgRef, {
+        'entitlement.usage.openTasksCount': admin.firestore.FieldValue.increment(-1),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    return { ok: true };
+  });
+});
+
+
 export const createAsset = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
@@ -3432,9 +4305,10 @@ export const createPreventive = functions.https.onCall(async (data, context) => 
 
 
 export const createPreventiveTemplate = functions.https.onCall(async (data, context) => {
-  const actorUid = requireAuth(context);
-  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
-  const orgId = resolveOrgIdFromData(data);
+  try {
+    const actorUid = requireAuth(context);
+    const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+    const orgId = resolveOrgIdFromData(data);
 
   const { role, scope } = await requireActiveMembership(actorUid, orgId);
   requireRoleAllowed(
@@ -3562,40 +4436,54 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
     const zonedNow = resolveZonedDate(schedule.timezone);
     const computed = automatic && status === 'active' ? computeNextRunAt(schedule, zonedNow) : null;
 
-    const storedSchedule: PreventiveSchedule = {
+    const storedSchedule: PreventiveSchedule = stripUndefinedDeep({
       ...schedule,
       nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined,
       lastRunAt: undefined,
-    };
-
-    tx.create(templateRef, {
-      name,
-      description: description || undefined,
-      status,
-      automatic,
-      schedule: storedSchedule,
-      priority,
-      siteId: siteId || undefined,
-      departmentId: departmentId || undefined,
-      assetId: assetId || undefined,
-      createdBy: actorUid,
-      updatedBy: actorUid,
-      organizationId: orgId,
-      createdAt: now,
-      updatedAt: now,
-      source: 'createPreventiveTemplate_v1',
     });
+
+    tx.create(
+      templateRef,
+      stripUndefinedDeep({
+        name,
+        description: description || undefined,
+        status,
+        automatic,
+        schedule: storedSchedule,
+        priority,
+        siteId: siteId || undefined,
+        departmentId: departmentId || undefined,
+        assetId: assetId || undefined,
+        createdBy: actorUid,
+        updatedBy: actorUid,
+        organizationId: orgId,
+        createdAt: now,
+        updatedAt: now,
+        source: 'createPreventiveTemplate_v1',
+      }),
+    );
   });
 
-  await auditLog({
-    action: 'createPreventiveTemplate',
-    actorUid,
-    actorEmail,
-    orgId,
-    after: { templateId: templateRef.id, name, status, automatic },
-  });
+    await auditLog({
+      action: 'createPreventiveTemplate',
+      actorUid,
+      actorEmail,
+      orgId,
+      after: { templateId: templateRef.id, name, status, automatic },
+    });
 
-  return { ok: true, organizationId: orgId, templateId: templateRef.id };
+    return { ok: true, organizationId: orgId, templateId: templateRef.id };
+  } catch (error) {
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
+    console.error('createPreventiveTemplate: unexpected error', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw httpsError('internal', 'Error interno al crear la plantilla preventiva. Inténtalo de nuevo o contacta soporte.');
+  }
 });
 
 export const updatePreventiveTemplate = functions.https.onCall(async (data, context) => {
@@ -3719,26 +4607,29 @@ export const updatePreventiveTemplate = functions.https.onCall(async (data, cont
     const zonedNow = resolveZonedDate(schedule.timezone);
     const computed = automatic && status === 'active' ? computeNextRunAt(schedule, zonedNow) : null;
 
-    const storedSchedule: PreventiveSchedule = {
+    const storedSchedule: PreventiveSchedule = stripUndefinedDeep({
       ...schedule,
       nextRunAt: computed ? admin.firestore.Timestamp.fromDate(computed) : undefined,
       lastRunAt: schedule.type === 'date' ? undefined : (templateSnap.get('schedule.lastRunAt') as any),
-    };
-
-    tx.update(templateRef, {
-      name,
-      description: description || undefined,
-      status,
-      automatic,
-      schedule: storedSchedule,
-      priority,
-      siteId: siteId || undefined,
-      departmentId: departmentId || undefined,
-      assetId: assetId || undefined,
-      updatedBy: actorUid,
-      updatedAt: now,
-      source: 'updatePreventiveTemplate_v1',
     });
+
+    tx.update(
+      templateRef,
+      stripUndefinedDeep({
+        name,
+        description: description || undefined,
+        status,
+        automatic,
+        schedule: storedSchedule,
+        priority,
+        siteId: siteId || undefined,
+        departmentId: departmentId || undefined,
+        assetId: assetId || undefined,
+        updatedBy: actorUid,
+        updatedAt: now,
+        source: 'updatePreventiveTemplate_v1',
+      }),
+    );
   });
 
   await auditLog({
@@ -4576,6 +5467,7 @@ export const registerGooglePlayPurchase = functions.https.onCall(async (data, co
   const now = admin.firestore.FieldValue.serverTimestamp();
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(purchaseRef);
+
     const payload: Record<string, unknown> = {
       organizationId: orgId,
       subscriptionId,
@@ -4624,6 +5516,7 @@ export const registerAppleAppAccountToken = functions.https.onCall(async (data, 
   const now = admin.firestore.FieldValue.serverTimestamp();
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(tokenRef);
+
     const payload: Record<string, unknown> = {
       organizationId: orgId,
       uid,

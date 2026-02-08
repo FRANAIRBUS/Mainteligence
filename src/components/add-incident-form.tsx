@@ -1,18 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, type ChangeEvent } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
   collection,
-  deleteDoc,
   doc,
-  getDoc,
-  serverTimestamp,
-  setDoc,
 } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getDownloadURL, ref, uploadBytesResumable, type UploadTaskSnapshot } from 'firebase/storage';
 
 import { useToast } from '@/hooks/use-toast';
@@ -21,6 +18,7 @@ import type { Site, Department, Asset } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { orgCollectionPath, orgStoragePath } from '@/lib/organization';
+import { getOrgEntitlement } from '@/lib/entitlements';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -127,7 +125,36 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const [isPending, setIsPending] = useState(false);
   const [attachments, setAttachments] = useState<SelectedAttachment[]>([]);
   const [submitWarning, setSubmitWarning] = useState<string | null>(null);
+  const [canAttach, setCanAttach] = useState<boolean>(false);
+  const [maxAttachmentMB, setMaxAttachmentMB] = useState<number>(0);
   const canSubmit = Boolean(firestore && storage && user && organizationId);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!firestore || !organizationId) return;
+      try {
+        const entitlement = await getOrgEntitlement(firestore, organizationId);
+        const limits = entitlement?.limits;
+        const status = entitlement?.status;
+        const allowed =
+          (status === 'active' || status === 'trialing') &&
+          Number(limits?.attachmentsMonthlyMB ?? 0) > 0 &&
+          Number(limits?.maxAttachmentMB ?? 0) > 0 &&
+          Number(limits?.maxAttachmentsPerTicket ?? 0) > 0;
+        if (!active) return;
+        setCanAttach(allowed);
+        setMaxAttachmentMB(Number(limits?.maxAttachmentMB ?? 0) || 0);
+      } catch {
+        if (!active) return;
+        setCanAttach(false);
+        setMaxAttachmentMB(0);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [firestore, organizationId]);
 
   const { data: sites, loading: sitesLoading } = useCollection<Site>(
     organizationId ? orgCollectionPath(organizationId, 'sites') : null
@@ -152,6 +179,17 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files) return;
 
+    if (!canAttach) {
+      toast({
+        variant: 'destructive',
+        title: 'Adjuntos bloqueados',
+        description:
+          'Los adjuntos no están habilitados para tu plan actual o el catálogo de planes tiene límites en 0. Revisa /plans.',
+      });
+      event.target.value = '';
+      return;
+    }
+
     const selectedFiles = Array.from(event.target.files);
     if (selectedFiles.length > MAX_ATTACHMENTS) {
       toast({
@@ -167,7 +205,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : '';
       const allowedByMime = file.type.startsWith('image/') || ALLOWED_ATTACHMENT_MIME_TYPES.has(file.type);
       const allowedByExtension = extension ? ALLOWED_ATTACHMENT_EXTENSIONS.has(extension) : false;
-      const sizeAllowed = file.size > 0 && file.size <= MAX_ATTACHMENT_BYTES;
+      const maxBytes = maxAttachmentMB > 0 ? maxAttachmentMB * 1024 * 1024 : MAX_ATTACHMENT_BYTES;
+      const sizeAllowed = file.size > 0 && file.size <= maxBytes;
       return !(sizeAllowed && (allowedByMime || allowedByExtension));
     });
 
@@ -175,8 +214,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       toast({
         variant: 'destructive',
         title: 'Adjuntos inválidos',
-        description:
-          'Revisa formato y tamaño. Permitidos: imágenes, PDF, TXT, DOC, DOCX, XLS, XLSX (máx. 10 MB).',
+        description: `Revisa formato y tamaño. Permitidos: imágenes, PDF, TXT, DOC, DOCX, XLS, XLSX (máx. ${maxAttachmentMB || 10} MB).`,
       });
       event.target.value = '';
       return;
@@ -366,33 +404,16 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       const ticketRef = doc(collectionRef);
       const ticketId = ticketRef.id;
       const createdByName = profile?.displayName || scopedUser.email || scopedUser.uid;
-      const uploadSessionRef = doc(
-        scopedFirestore,
-        orgCollectionPath(scopedOrganizationId, 'uploadSessions'),
-        ticketId
-      );
-      uploadSessionRefLocal = uploadSessionRef;
+      const functions = getFunctions();
+      const createUploadSession = httpsCallable(functions, 'createTicketUploadSession');
+      const createTicket = httpsCallable(functions, 'createTicket');
+      const registerTicketAttachment = httpsCallable(functions, 'registerTicketAttachment');
 
       const urls: string[] = [];
       const failedUploads: string[] = [];
 
       if (attachments.length > 0) {
-        const now = new Date();
-        const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
-        await setDoc(uploadSessionRef, {
-          organizationId: scopedOrganizationId,
-          uploaderUid: scopedUser.uid,
-          type: 'ticket',
-          status: 'active',
-          createdAt: serverTimestamp(),
-          expiresAt,
-          maxFiles: MAX_ATTACHMENTS,
-        });
-
-        const uploadSessionSnapshot = await getDoc(uploadSessionRef);
-        if (!uploadSessionSnapshot.exists()) {
-          throw new Error('No se pudo inicializar la sesión de subida para los adjuntos.');
-        }
+        await createUploadSession({ orgId: scopedOrganizationId, ticketId, maxFiles: MAX_ATTACHMENTS });
 
         const results = await Promise.allSettled(
           attachments.map(async (attachment) => {
@@ -405,6 +426,14 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
             );
 
             try {
+              await registerTicketAttachment({
+                orgId: scopedOrganizationId,
+                ticketId,
+                sizeBytes: attachment.file.size,
+                contentType: attachment.file.type,
+                fileName: attachment.file.name,
+              });
+
               const url = await uploadPhotoWithRetry(
                 attachment,
                 scopedOrganizationId,
@@ -458,7 +487,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         }
 
         if (failedUploads.length > 0) {
-          await Promise.allSettled([deleteDoc(uploadSessionRef)]);
           setSubmitWarning(`No se creó la incidencia. Corrige o quita los adjuntos con error y reintenta: ${failedUploads.join(', ')}.`);
           toast({
             variant: 'destructive',
@@ -474,13 +502,10 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         locationId: data.locationId,
         type: 'correctivo' as const,
         status: 'new' as const,
-        createdBy: scopedUser.uid,
         createdByName,
         assignedRole: 'mantenimiento',
         assignedTo: null,
         organizationId: scopedOrganizationId,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
         photoUrls: urls,
         hasAttachments: urls.length > 0,
         displayId: `INC-${new Date().getFullYear()}-${String(new Date().getTime()).slice(-4)}`,
@@ -490,10 +515,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         delete docData.assetId;
       }
 
-      await setDoc(ticketRef, docData);
-      if (attachments.length > 0) {
-        await Promise.allSettled([deleteDoc(uploadSessionRef)]);
-      }
+      await createTicket({ orgId: scopedOrganizationId, ticketId, payload: docData });
 
       onSuccess?.({ title: data.title });
       form.reset();
@@ -512,6 +534,12 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
           operation: 'write',
         });
         errorEmitter.emit('permission-error', permissionError);
+      } else if (error?.code?.startsWith?.('functions/')) {
+        toast({
+          variant: 'destructive',
+          title: 'No se pudo crear la incidencia',
+          description: error.message || 'Operación rechazada por el servidor.',
+        });
       } else if (error.code === 'permission-denied') {
         const permissionError = new FirestorePermissionError({
           path: orgCollectionPath(organizationId!, 'tickets'),
@@ -527,9 +555,6 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         });
       }
     } finally {
-      if (uploadSessionRefLocal) {
-        await Promise.allSettled([deleteDoc(uploadSessionRefLocal)]);
-      }
       setIsPending(false);
     }
   };
@@ -691,15 +716,22 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         </div>
 
         <FormItem>
-          <FormLabel>Fotos (Opcional)</FormLabel>
+          <FormLabel>Adjuntos (Opcional)</FormLabel>
           <FormControl>
             <Input
               type="file"
               multiple
               onChange={handlePhotoChange}
+              disabled={isPending || !canAttach}
               accept="image/*,application/pdf,text/plain,.pdf,.doc,.docx,.xls,.xlsx"
             />
           </FormControl>
+          {!canAttach && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Adjuntos no disponibles para tu plan actual o límites configurados en 0.{' '}
+              <Link href="/plans" className="underline">Ver planes</Link>.
+            </p>
+          )}
           <FormMessage />
         </FormItem>
         {submitWarning && (

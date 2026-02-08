@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirestore, useUser, useDoc } from '@/lib/firebase';
 import type { Ticket, User, Department, OrganizationMember } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
@@ -113,22 +113,12 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
 
     setIsPending(true);
     
-    const ticketRef = doc(firestore, orgDocPath(organizationId, 'tickets', ticket.id));
     const newAssignee = data.assignedTo === 'null' ? null : data.assignedTo ?? null;
 
-    const updateData: Record<string, unknown> = {
-      organizationId,
-      updatedAt: serverTimestamp(),
-    };
+    const updateData: Record<string, unknown> = {};
 
     if (canEditStatus) {
       updateData.status = data.status;
-
-      // When closing, stamp closure metadata for reporting.
-      if (data.status === 'resolved') {
-        updateData.closedAt = serverTimestamp();
-        updateData.closedBy = currentUser.uid;
-      }
     }
 
     if (canEditPriority) {
@@ -150,7 +140,9 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
     }
     
     try {
-      await updateDoc(ticketRef, updateData);
+      const functions = getFunctions();
+      const updateTicket = httpsCallable(functions, 'updateTicketStatus');
+      await updateTicket({ orgId: organizationId, ticketId: ticket.id, patch: updateData });
 
       if (assignmentChanged && newAssignee) {
         const baseUrl =
@@ -191,9 +183,15 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       });
       onOpenChange(false);
     } catch(error: any) {
-        if (error.code === 'permission-denied') {
+        if (error?.code?.startsWith?.('functions/')) {
+          toast({
+            variant: 'destructive',
+            title: 'No se pudo actualizar la incidencia',
+            description: error.message || 'Ocurrió un error inesperado.',
+          });
+        } else if (error.code === 'permission-denied') {
           const permissionError = new FirestorePermissionError({
-            path: ticketRef.path,
+            path: orgDocPath(organizationId, 'tickets', ticket.id),
             operation: 'update',
             requestResourceData: updateData,
           });

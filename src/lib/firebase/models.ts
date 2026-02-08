@@ -10,7 +10,7 @@ export interface BaseEntity {
 export type OrganizationType = "demo" | "standard" | "enterprise" | "partner";
 export type OrganizationStatus = "active" | "suspended" | "deleted";
 export type SubscriptionPlan = "trial" | "standard" | "enterprise";
-export type EntitlementPlanId = "free" | "starter" | "pro" | "enterprise";
+export type EntitlementPlanId = "free" | "basic" | "starter" | "pro" | "enterprise";
 export type EntitlementStatus = "trialing" | "active" | "past_due" | "canceled";
 export type EntitlementProvider = "stripe" | "google_play" | "apple_app_store" | "manual";
 export type EntitlementFeature = "EXPORT_PDF" | "AUDIT_TRAIL" | "PREVENTIVES";
@@ -24,6 +24,11 @@ export interface EntitlementLimits {
   maxUsers: number;
   maxActivePreventives: number;
   attachmentsMonthlyMB: number;
+  maxOpenTickets: number;
+  maxOpenTasks: number;
+  maxAttachmentMB: number;
+  maxAttachmentsPerTicket: number;
+  retentionDays: number;
 }
 
 export interface EntitlementUsage {
@@ -33,6 +38,8 @@ export interface EntitlementUsage {
   usersCount: number;
   activePreventivesCount: number;
   attachmentsThisMonthMB: number;
+  openTicketsCount: number;
+  openTasksCount: number;
 }
 
 export interface Entitlement {

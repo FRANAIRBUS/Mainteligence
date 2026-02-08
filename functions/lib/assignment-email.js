@@ -124,11 +124,12 @@ const loadOrganizationData = async (organizationId) => {
     if (!organizationId) {
         return { users: [], departments: [] };
     }
-    const [usersSnap, departmentsSnap] = await Promise.all([
-        admin.firestore().collection('users').where('organizationId', '==', organizationId).get(),
-        admin.firestore().collection('departments').where('organizationId', '==', organizationId).get(),
+    const orgRef = admin.firestore().collection('organizations').doc(organizationId);
+    const [membersSnap, departmentsSnap] = await Promise.all([
+        orgRef.collection('members').get(),
+        orgRef.collection('departments').get(),
     ]);
-    const users = usersSnap.docs.map((doc) => {
+    const users = membersSnap.docs.map((doc) => {
         var _a, _b, _c, _d;
         const data = doc.data();
         return {

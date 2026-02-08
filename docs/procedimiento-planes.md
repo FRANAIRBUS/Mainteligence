@@ -18,6 +18,7 @@ La pantalla `/plans` en frontend sigue siendo informativa/comercial; no muta pla
 `planId` soportados:
 
 - `free`
+- `basic`
 - `starter`
 - `pro`
 - `enterprise`
@@ -34,6 +35,29 @@ La pantalla `/plans` en frontend sigue siendo informativa/comercial; no muta pla
 - `active`
 - `suspended`
 - `deleted`
+
+
+## 2.1) Límites por plan (defaults backend/frontend)
+
+Los límites efectivos se normalizan en backend por `planId` para evitar inconsistencias históricas en `entitlement.limits`.
+
+| Límite | free | basic | starter | pro | enterprise |
+| --- | --- | --- | --- | --- | --- |
+| Usuarios | 2 | 5 | 10 | 25 | 10.000 |
+| Ubicaciones | 1 | 2 | 5 | 15 | 10.000 |
+| Departamentos | 3 | 5 | 15 | 50 | 10.000 |
+| Activos | 1 | 5 | 200 | 1.000 | 1.000.000 |
+| Preventivos activos | 0 | 0 | 50 | 250 | 100.000 |
+| Tickets abiertos | 10 | 50 | 200 | 1.000 | 1.000.000 |
+| Tareas abiertas | 10 | 50 | 200 | 1.000 | 1.000.000 |
+| Adjuntos al mes (MB) | 0 | 0 | 500 | 5.000 | 100.000 |
+| Tamaño máx. por adjunto (MB) | 0 | 0 | 10 | 25 | 100 |
+| Adjuntos por ticket | 0 | 0 | 10 | 25 | 100 |
+| Retención (días) | 0 | 0 | 180 | 365 | 3.650 |
+
+Notas:
+- La habilitación de preventivos se rige por `features.PREVENTIVES` en `planCatalog/{planId}` con fallback seguro por defecto en backend.
+- El límite efectivo se normaliza en backend por `planId` para evitar inconsistencias históricas en `entitlement.limits`.
 
 ## 3) Cambio de plan como usuario de organización
 
@@ -55,7 +79,7 @@ Existe UI root en `/root` para ejecutar esta operación en “Zona peligrosa” 
 
 Campos operativos:
 
-- `planId`: `free|starter|pro|enterprise`
+- `planId`: `free|basic|starter|pro|enterprise`
 - `entitlementStatus`: `trialing|active|past_due|canceled`
 - `organizationStatus`: `active|suspended|deleted`
 - `reason`: obligatorio (auditoría)

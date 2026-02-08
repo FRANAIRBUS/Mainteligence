@@ -31,7 +31,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { arrayUnion, doc, serverTimestamp, Timestamp, updateDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 import { AppShell } from '@/components/app-shell';
 
@@ -247,15 +247,12 @@ export default function IncidentDetailPage() {
     setReportSubmitting(true);
 
     try {
-      const ticketRef = doc(firestore, orgDocPath(targetOrganizationId, 'tickets', ticket.id));
-      await updateDoc(ticketRef, {
-        reports: arrayUnion({
-          description,
-          createdAt: Timestamp.now(),
-          createdBy: user.uid,
-        }),
-        organizationId: targetOrganizationId,
-        updatedAt: serverTimestamp(),
+      const functions = getFunctions();
+      const updateTicket = httpsCallable(functions, 'updateTicketStatus');
+      await updateTicket({
+        orgId: targetOrganizationId,
+        ticketId: ticket.id,
+        reportAppend: { description },
       });
 
       setReportDescription('');
@@ -327,14 +324,13 @@ export default function IncidentDetailPage() {
     setCloseSubmitting(true);
 
     try {
-      const ticketRef = doc(firestore, orgDocPath(targetOrganizationId, 'tickets', ticket.id));
-      await updateDoc(ticketRef, {
-        status: 'resolved',
-        closedAt: serverTimestamp(),
-        closedBy: user.uid,
-        closedReason: reason,
-        organizationId: targetOrganizationId,
-        updatedAt: serverTimestamp(),
+      const functions = getFunctions();
+      const updateTicket = httpsCallable(functions, 'updateTicketStatus');
+      await updateTicket({
+        orgId: targetOrganizationId,
+        ticketId: ticket.id,
+        newStatus: 'resolved',
+        patch: { closedReason: reason },
       });
 
       setCloseReason('');

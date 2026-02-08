@@ -49,6 +49,131 @@ service firebase.storage {
       return firestore.get(/databases/(default)/documents/organizations/$(orgId)/uploadSessions/$(id));
     }
 
+    function orgEntitlementLimits(orgId) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.limits;
+    }
+
+    function orgEntitlementStatus(orgId) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.status;
+    }
+
+    function orgPlanId(orgId) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.entitlement.planId;
+    }
+
+    function normalizedPlanId(planId) {
+      return planId == "starter" || planId == "Starter" || planId == "STARTER"
+        ? "starter"
+        : planId == "pro" || planId == "Pro" || planId == "PRO"
+          ? "pro"
+          : planId == "enterprise" || planId == "Enterprise" || planId == "ENTERPRISE"
+            ? "enterprise"
+            : planId == "basic" || planId == "Basic" || planId == "BASIC"
+              ? "basic"
+              : "free";
+    }
+
+    function planCatalogDoc(planId) {
+      return firestore.get(/databases/(default)/documents/planCatalog/$(planId));
+    }
+
+    function planCatalogLimits(planId) {
+      let catalog = planCatalogDoc(normalizedPlanId(planId));
+      return catalog != null && catalog.data != null ? catalog.data.limits : null;
+    }
+
+    function defaultAttachmentLimits(planId) {
+      return planId == "starter" || planId == "Starter" || planId == "STARTER"
+        ? { attachmentsMonthlyMB: 500, maxAttachmentMB: 10, maxAttachmentsPerTicket: 10 }
+        : planId == "pro" || planId == "Pro" || planId == "PRO"
+          ? { attachmentsMonthlyMB: 5000, maxAttachmentMB: 25, maxAttachmentsPerTicket: 25 }
+          : planId == "enterprise" || planId == "Enterprise" || planId == "ENTERPRISE"
+            ? { attachmentsMonthlyMB: 100000, maxAttachmentMB: 100, maxAttachmentsPerTicket: 100 }
+            : { attachmentsMonthlyMB: 0, maxAttachmentMB: 0, maxAttachmentsPerTicket: 0 };
+    }
+
+    function effectiveAttachmentLimits(orgId) {
+      let planId = orgPlanId(orgId);
+      let catalogLimits = planCatalogLimits(planId);
+      let limits = orgEntitlementLimits(orgId);
+      let defaults = defaultAttachmentLimits(planId);
+      return catalogLimits != null
+        && catalogLimits.attachmentsMonthlyMB is number
+        && catalogLimits.maxAttachmentMB is number
+        && catalogLimits.maxAttachmentsPerTicket is number
+        && catalogLimits.attachmentsMonthlyMB > 0
+        && catalogLimits.maxAttachmentMB > 0
+        && catalogLimits.maxAttachmentsPerTicket > 0
+        ? catalogLimits
+        : limits != null
+          && limits.attachmentsMonthlyMB is number
+          && limits.maxAttachmentMB is number
+          && limits.maxAttachmentsPerTicket is number
+          && limits.attachmentsMonthlyMB > 0
+          && limits.maxAttachmentMB > 0
+          && limits.maxAttachmentsPerTicket > 0
+          ? limits
+          : defaults;
+    }
+
+    function effectiveAttachmentsMonthlyMB(orgId) {
+      let limits = effectiveAttachmentLimits(orgId);
+      return limits != null
+        && limits.attachmentsMonthlyMB is number
+        && limits.attachmentsMonthlyMB > 0
+        ? limits.attachmentsMonthlyMB
+        : 0;
+    }
+
+    function effectiveMaxAttachmentMB(orgId) {
+      let limits = effectiveAttachmentLimits(orgId);
+      return limits != null
+        && limits.maxAttachmentMB is number
+        && limits.maxAttachmentMB > 0
+        ? limits.maxAttachmentMB
+        : 0;
+    }
+
+    function defaultMaxAttachmentMB(planId) {
+      return defaultAttachmentLimits(planId).maxAttachmentMB;
+    }
+
+    function defaultMaxAttachmentsPerTicket(planId) {
+      return defaultAttachmentLimits(planId).maxAttachmentsPerTicket;
+    }
+
+    function attachmentsAllowedByEntitlement(orgId) {
+      let status = orgEntitlementStatus(orgId);
+      let limits = effectiveAttachmentLimits(orgId);
+      return (status == "active" || status == "trialing")
+        && limits != null
+        && limits.attachmentsMonthlyMB is number
+        && limits.maxAttachmentMB is number
+        && limits.maxAttachmentsPerTicket is number
+        && limits.attachmentsMonthlyMB > 0
+        && limits.maxAttachmentMB > 0
+        && limits.maxAttachmentsPerTicket > 0;
+    }
+
+    function effectiveMaxAttachmentsPerTicket(orgId) {
+      let limits = effectiveAttachmentLimits(orgId);
+      return limits != null
+        && limits.maxAttachmentsPerTicket is number
+        && limits.maxAttachmentsPerTicket > 0
+        ? limits.maxAttachmentsPerTicket
+        : 0;
+    }
+
+    function attachmentsAllowed(orgId) {
+      return effectiveAttachmentsMonthlyMB(orgId) > 0
+        && effectiveMaxAttachmentMB(orgId) > 0
+        && effectiveMaxAttachmentsPerTicket(orgId) > 0;
+    }
+
+    function maxTicketAttachmentBytes(orgId) {
+      return effectiveMaxAttachmentMB(orgId) * 1024 * 1024;
+    }
+
     function hasActiveUploadSession(orgId, id) {
       let session = uploadSession(orgId, id);
       return session != null
@@ -58,6 +183,18 @@ service firebase.storage {
         && session.data.uploaderUid == request.auth.uid
         && session.data.expiresAt is timestamp
         && session.data.expiresAt > request.time;
+    }
+
+    function hasRegisteredTicketUpload(orgId, id, fileName) {
+      let session = uploadSession(orgId, id);
+      return session != null
+        && session.data != null
+        && session.data.allowedFiles != null
+        && session.data.allowedFiles[fileName] != null
+        && session.data.allowedFiles[fileName].sizeBytes is number
+        && session.data.allowedFiles[fileName].contentType is string
+        && session.data.allowedFiles[fileName].sizeBytes == request.resource.size
+        && session.data.allowedFiles[fileName].contentType == request.resource.contentType;
     }
 
     function isAllowedTicketContentType() {
@@ -119,13 +256,14 @@ service firebase.storage {
           (ticketBelongsToOrg(orgId, ticketId) && isActiveMember(orgId, request.auth.uid))
           || hasActiveUploadSession(orgId, ticketId)
         );
+      // Writes are only allowed through a short-lived upload session created by Cloud Functions.
+      // This prevents bypassing plan limits and enforces a server-side approval step.
       allow write: if isSignedIn()
         && isValidOrgId(orgId)
-        && (
-          (ticketBelongsToOrg(orgId, ticketId) && isActiveMember(orgId, request.auth.uid))
-          || hasActiveUploadSession(orgId, ticketId)
-        )
-        && isValidUpload(10 * 1024 * 1024)
+        && attachmentsAllowedByEntitlement(orgId)
+        && hasActiveUploadSession(orgId, ticketId)
+        && hasRegisteredTicketUpload(orgId, ticketId, fileName)
+        && isValidUpload(maxTicketAttachmentBytes(orgId))
         && isAllowedTicketContentType();
     }
 

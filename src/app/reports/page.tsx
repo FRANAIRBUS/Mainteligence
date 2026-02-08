@@ -84,7 +84,7 @@ import {
 
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { isFeatureEnabled } from '@/lib/entitlements';
+import { isFeatureEnabled, normalizePlanId, resolveEffectivePlanFeatures } from '@/lib/entitlements';
 import { orgCollectionPath, orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus } from '@/lib/status';
 import { buildRbacUser, getTaskPermissions, getTicketPermissions, normalizeRole } from '@/lib/rbac';
@@ -103,6 +103,7 @@ export default function ReportsPage() {
     useState<ExportSortOrder>('desc');
   const [isExporting, setIsExporting] = useState(false);
   const [planFeatures, setPlanFeatures] = useState<Record<string, boolean> | null>(null);
+  const [planFeaturesLoading, setPlanFeaturesLoading] = useState(false);
 
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -134,18 +135,25 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!firestore || !organization?.entitlement?.planId) {
       setPlanFeatures(null);
+      setPlanFeaturesLoading(false);
       return;
     }
     let cancelled = false;
-    getDoc(doc(firestore, 'planCatalog', organization.entitlement.planId))
+    setPlanFeaturesLoading(true);
+    const normalizedPlanId = normalizePlanId(organization.entitlement.planId);
+    getDoc(doc(firestore, 'planCatalog', normalizedPlanId))
       .then((snap) => {
         if (cancelled) return;
-        const features = (snap.exists() ? (snap.data()?.features as Record<string, boolean>) : null) ?? null;
-        setPlanFeatures(features);
+        const rawFeatures = snap.exists()
+          ? (snap.data()?.features as Record<string, boolean> | null | undefined)
+          : null;
+        setPlanFeatures(resolveEffectivePlanFeatures(normalizedPlanId, rawFeatures));
+        setPlanFeaturesLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
-        setPlanFeatures(null);
+        setPlanFeatures(resolveEffectivePlanFeatures(normalizedPlanId, null));
+        setPlanFeaturesLoading(false);
       });
 
     return () => {
@@ -154,7 +162,6 @@ export default function ReportsPage() {
   }, [firestore, organization?.entitlement?.planId]);
 
   const entitlement = organization?.entitlement ?? null;
-  const planFeaturesLoading = Boolean(entitlement) && planFeatures === null;
   const exportAllowed =
     !entitlement
       ? true
@@ -182,14 +189,6 @@ export default function ReportsPage() {
   const { data: members = [], loading: membersLoading } = useCollection<OrganizationMember>(
     canReadMembers && organizationId ? orgCollectionPath(organizationId, 'members') : null
   );
-
-  if (loading || !user) {
-    return (
-      <div className="flex h-screen w-full max-w-full items-center justify-center">
-        <Icons.spinner className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
 
   const visibleTickets = rbacUser
     ? tickets.filter((ticket) => getTicketPermissions(ticket, rbacUser, user?.uid ?? null).canView)
@@ -457,6 +456,14 @@ export default function ReportsPage() {
     if (!isMobile) return label;
     return label.length > 14 ? `${label.slice(0, 14)}…` : label;
   };
+
+  if (loading || !user) {
+    return (
+      <div className="flex h-screen w-full max-w-full items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <AppShell

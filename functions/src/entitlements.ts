@@ -3,7 +3,7 @@ import * as admin from 'firebase-admin';
 if (admin.apps.length === 0) {
   admin.initializeApp();
 }
-type EntitlementPlanId = 'free' | 'starter' | 'pro' | 'enterprise';
+type EntitlementPlanId = 'free' | 'basic' | 'starter' | 'pro' | 'enterprise';
 type EntitlementFeature = 'EXPORT_PDF' | 'AUDIT_TRAIL' | 'PREVENTIVES';
 
 type EntitlementLimits = {
@@ -13,6 +13,11 @@ type EntitlementLimits = {
   maxUsers: number;
   maxActivePreventives: number;
   attachmentsMonthlyMB: number;
+  maxOpenTickets: number;
+  maxOpenTasks: number;
+  maxAttachmentMB: number;
+  maxAttachmentsPerTicket: number;
+  retentionDays: number;
 };
 
 type EntitlementUsage = {
@@ -22,6 +27,8 @@ type EntitlementUsage = {
   usersCount: number;
   activePreventivesCount: number;
   attachmentsThisMonthMB: number;
+  openTicketsCount: number;
+  openTasksCount: number;
 };
 
 type Entitlement = {
@@ -72,6 +79,132 @@ export type EntitlementCreateKind =
 
 const db = admin.firestore();
 
+const DEFAULT_PLAN_FEATURES: Record<EntitlementPlanId, Record<EntitlementFeature, boolean>> = {
+  free: { EXPORT_PDF: false, AUDIT_TRAIL: false, PREVENTIVES: false },
+  basic: { EXPORT_PDF: false, AUDIT_TRAIL: false, PREVENTIVES: false },
+  starter: { EXPORT_PDF: true, AUDIT_TRAIL: false, PREVENTIVES: true },
+  pro: { EXPORT_PDF: true, AUDIT_TRAIL: true, PREVENTIVES: true },
+  enterprise: { EXPORT_PDF: true, AUDIT_TRAIL: true, PREVENTIVES: true },
+};
+
+const DEFAULT_PLAN_LIMITS: Record<EntitlementPlanId, EntitlementLimits> = {
+  free: {
+    maxUsers: 2,
+    maxSites: 1,
+    maxDepartments: 3,
+    maxAssets: 1,
+    maxActivePreventives: 0,
+    maxOpenTickets: 10,
+    maxOpenTasks: 10,
+    attachmentsMonthlyMB: 0,
+    maxAttachmentMB: 0,
+    maxAttachmentsPerTicket: 0,
+    retentionDays: 0,
+  },
+  basic: {
+    maxUsers: 5,
+    maxSites: 2,
+    maxDepartments: 5,
+    maxAssets: 5,
+    maxActivePreventives: 0,
+    maxOpenTickets: 50,
+    maxOpenTasks: 50,
+    attachmentsMonthlyMB: 0,
+    maxAttachmentMB: 0,
+    maxAttachmentsPerTicket: 0,
+    retentionDays: 0,
+  },
+  starter: {
+    maxUsers: 10,
+    maxSites: 5,
+    maxDepartments: 15,
+    maxAssets: 200,
+    maxActivePreventives: 50,
+    maxOpenTickets: 200,
+    maxOpenTasks: 200,
+    attachmentsMonthlyMB: 500,
+    maxAttachmentMB: 10,
+    maxAttachmentsPerTicket: 10,
+    retentionDays: 180,
+  },
+  pro: {
+    maxUsers: 25,
+    maxSites: 15,
+    maxDepartments: 50,
+    maxAssets: 1000,
+    maxActivePreventives: 250,
+    maxOpenTickets: 1000,
+    maxOpenTasks: 1000,
+    attachmentsMonthlyMB: 5000,
+    maxAttachmentMB: 25,
+    maxAttachmentsPerTicket: 25,
+    retentionDays: 365,
+  },
+  enterprise: {
+    maxUsers: 10_000,
+    maxSites: 10_000,
+    maxDepartments: 10_000,
+    maxAssets: 1_000_000,
+    maxActivePreventives: 100_000,
+    maxOpenTickets: 1_000_000,
+    maxOpenTasks: 1_000_000,
+    attachmentsMonthlyMB: 100_000,
+    maxAttachmentMB: 100,
+    maxAttachmentsPerTicket: 100,
+    retentionDays: 3650,
+  },
+};
+
+const normalizePlanId = (planId?: string | null): EntitlementPlanId => {
+  const normalized = String(planId ?? '').trim().toLowerCase();
+  return (normalized in DEFAULT_PLAN_LIMITS ? normalized : 'free') as EntitlementPlanId;
+};
+
+const resolveEffectivePlanFeatures = (
+  planId: EntitlementPlanId,
+  features?: Partial<Record<EntitlementFeature, boolean>> | null
+): Record<EntitlementFeature, boolean> => ({
+  ...(DEFAULT_PLAN_FEATURES[planId] ?? DEFAULT_PLAN_FEATURES.free),
+  ...(features ?? {}),
+});
+
+const resolveEffectivePlanLimits = (
+  planId: EntitlementPlanId,
+  limits?: Partial<EntitlementLimits> | null
+): EntitlementLimits => {
+  const defaults = DEFAULT_PLAN_LIMITS[planId] ?? DEFAULT_PLAN_LIMITS.free;
+  if (!limits) return defaults;
+
+  const coalesceLimit = (key: keyof EntitlementLimits) => {
+    const rawValue = limits[key];
+    if (typeof rawValue !== 'number') {
+      return defaults[key];
+    }
+    if (rawValue <= 0 && defaults[key] > 0 && !['free', 'basic'].includes(planId)) {
+      return defaults[key];
+    }
+    if (rawValue < defaults[key] && !['free', 'basic'].includes(planId)) {
+      return defaults[key];
+    }
+    return rawValue;
+  };
+
+  return {
+    maxUsers: coalesceLimit('maxUsers'),
+    maxSites: coalesceLimit('maxSites'),
+    maxDepartments: coalesceLimit('maxDepartments'),
+    maxAssets: coalesceLimit('maxAssets'),
+    maxActivePreventives: coalesceLimit('maxActivePreventives'),
+    maxOpenTickets: coalesceLimit('maxOpenTickets'),
+    maxOpenTasks: coalesceLimit('maxOpenTasks'),
+    attachmentsMonthlyMB: coalesceLimit('attachmentsMonthlyMB'),
+    maxAttachmentMB: coalesceLimit('maxAttachmentMB'),
+    maxAttachmentsPerTicket: coalesceLimit('maxAttachmentsPerTicket'),
+    retentionDays: coalesceLimit('retentionDays'),
+  };
+};
+
+
 export const getOrgEntitlement = async (orgId: string): Promise<EntitlementWithFeatures | null> => {
   if (!orgId) return null;
 
@@ -82,12 +215,15 @@ export const getOrgEntitlement = async (orgId: string): Promise<EntitlementWithF
   const entitlement = orgData?.entitlement ?? null;
   if (!entitlement) return null;
 
-  const planCatalogSnap = await db.collection('planCatalog').doc(entitlement.planId).get();
+  const normalizedPlanId = normalizePlanId(entitlement.planId);
+  const planCatalogSnap = await db.collection('planCatalog').doc(normalizedPlanId).get();
   const planCatalogData = planCatalogSnap.exists ? (planCatalogSnap.data() as PlanCatalogEntry) : null;
 
   return {
     ...entitlement,
-    features: planCatalogData?.features ?? undefined,
+    planId: normalizedPlanId,
+    limits: resolveEffectivePlanLimits(normalizedPlanId, planCatalogData?.limits ?? entitlement.limits),
+    features: resolveEffectivePlanFeatures(normalizedPlanId, planCatalogData?.features ?? undefined),
   };
 };
 

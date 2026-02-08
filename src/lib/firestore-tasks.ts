@@ -1,18 +1,11 @@
 import {
-  addDoc,
-  arrayUnion,
   collection,
-  deleteDoc,
   doc,
-  getDoc,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   startAfter,
-  updateDoc,
-  Timestamp,
   type DocumentData,
   type Firestore,
   type FirestoreDataConverter,
@@ -21,6 +14,8 @@ import {
   type Unsubscribe,
   limit,
 } from "firebase/firestore";
+import { getApp } from 'firebase/app';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import type { Auth } from "firebase/auth";
 import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-task";
 import type { User, Department } from "@/lib/firebase/models";
@@ -116,29 +111,22 @@ export const createTask = async (
 
   const user = await ensureAuthenticatedUser(auth);
 
-  const docRef = await addDoc(tasksCollection(db, payload.organizationId), {
-    ...payload,
-    createdBy: user.uid,
-    status: payload.status || "open",
-    priority: payload.priority || "media",
+  const taskId = doc(tasksCollection(db, payload.organizationId)).id;
+  const functions = getFunctions(getApp());
+  const createTaskFn = httpsCallable(functions, 'createTask');
+  const result = await createTaskFn({
+    orgId: payload.organizationId,
+    taskId,
+    payload: {
+      ...payload,
+      createdBy: user.uid,
+      status: payload.status || 'open',
+      priority: payload.priority || 'media',
+    },
   });
 
-  return docRef.id;
-};
-
-export const upsertTask = async (
-  db: Firestore,
-  auth: Auth,
-  organizationId: string,
-  id: string,
-  payload: MaintenanceTaskInput
-) => {
-  await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id).withConverter(
-    taskConverter
-  );
-  await setDoc(docRef, payload, { merge: true });
-  return id;
+  const resolvedTaskId = (result.data as { taskId?: string } | undefined)?.taskId;
+  return resolvedTaskId || taskId;
 };
 
 export const updateTask = async (
@@ -150,8 +138,9 @@ export const updateTask = async (
   options?: { users: User[]; departments: Department[] }
 ) => {
   await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id);
-  await updateDoc(docRef, { ...updates, updatedAt: serverTimestamp() });
+  const functions = getFunctions(getApp());
+  const updateTaskFn = httpsCallable(functions, 'updateTaskStatus');
+  await updateTaskFn({ orgId: organizationId, taskId: id, patch: updates });
 
   return id;
 };
@@ -164,27 +153,11 @@ export const addTaskReport = async (
   report: { description: string; createdBy?: string }
 ) => {
   const user = await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id);
-
-  const reportEntry = {
-    description: report.description,
-    createdAt: Timestamp.now(),
-    createdBy: report.createdBy || user.uid,
-  };
-
-  await updateDoc(docRef, {
-    reports: arrayUnion(reportEntry),
-    updatedAt: serverTimestamp(),
+  const functions = getFunctions(getApp());
+  const updateTaskFn = httpsCallable(functions, 'updateTaskStatus');
+  await updateTaskFn({
+    orgId: organizationId,
+    taskId: id,
+    reportAppend: { description: report.description, createdBy: report.createdBy || user.uid },
   });
-};
-
-export const deleteTask = async (
-  db: Firestore,
-  auth: Auth,
-  organizationId: string,
-  id: string
-) => {
-  await ensureAuthenticatedUser(auth);
-  const docRef = doc(db, `organizations/${organizationId}/${TASKS_COLLECTION}`, id);
-  await deleteDoc(docRef);
 };

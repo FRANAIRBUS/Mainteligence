@@ -398,24 +398,8 @@ service cloud.firestore {
           && (resource.data.uploaderUid == request.auth.uid || isAdminInOrg(orgId, request.auth.uid));
         allow list: if false;
 
-        allow create: if isSignedIn()
-          && isActiveMember(orgId, request.auth.uid)
-          && !isAuditorInOrg(orgId, request.auth.uid)
-          && organizationIdMatchesPath(orgId)
-          && request.resource.data.organizationId == orgId
-          && request.resource.data.uploaderUid == request.auth.uid
-          && request.resource.data.type == 'ticket'
-          && request.resource.data.status == 'active'
-          && request.resource.data.expiresAt is timestamp
-          && request.resource.data.expiresAt > request.time
-          && request.resource.data.expiresAt <= request.time + duration.value(15, 'm')
-          && ( !('maxFiles' in request.resource.data) || request.resource.data.maxFiles <= 10 );
-
-        allow update: if false;
-
-        allow delete: if isSignedIn()
-          && isActiveMember(orgId, request.auth.uid)
-          && (resource.data.uploaderUid == request.auth.uid || isAdminInOrg(orgId, request.auth.uid));
+        // Server-only writes (created by Cloud Functions).
+        allow create, update, delete: if false;
       }
 
       // Organization-scoped resources (v14+ data model)
@@ -466,20 +450,8 @@ service cloud.firestore {
           && isActiveMember(orgId, request.auth.uid)
           && resourceOrganizationIdMatchesPath(orgId)
           && canReadDoc(orgId, request.auth.uid, resource.data);
-        allow create: if isSignedIn()
-          && isActiveMember(orgId, request.auth.uid)
-          && !isAuditorInOrg(orgId, request.auth.uid)
-          && organizationIdMatchesPath(orgId)
-          && canCreateDoc(orgId, request.auth.uid, request.resource.data);
-        allow update: if isSignedIn()
-          && !isAuditorInOrg(orgId, request.auth.uid)
-          && organizationIdUnchanged()
-          && resourceOrganizationIdMatchesPath(orgId)
-          && canUpdateDoc(orgId, request.auth.uid, resource.data)
-          && coreImmutableKeysUnchanged()
-          && assignmentChangeAllowed(orgId, request.auth.uid)
-          && operarioUpdateAllowed(orgId, request.auth.uid, resource.data);
-        allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+        // Server-only writes: hardened to enforce entitlements and open-count consistency.
+        allow create, update, delete: if false;
       }
 
       match /tasks/{taskId} {
@@ -487,20 +459,8 @@ service cloud.firestore {
           && isActiveMember(orgId, request.auth.uid)
           && resourceOrganizationIdMatchesPath(orgId)
           && canReadDoc(orgId, request.auth.uid, resource.data);
-        allow create: if isSignedIn()
-          && isActiveMember(orgId, request.auth.uid)
-          && !isAuditorInOrg(orgId, request.auth.uid)
-          && organizationIdMatchesPath(orgId)
-          && canCreateDoc(orgId, request.auth.uid, request.resource.data);
-        allow update: if isSignedIn()
-          && !isAuditorInOrg(orgId, request.auth.uid)
-          && organizationIdUnchanged()
-          && resourceOrganizationIdMatchesPath(orgId)
-          && canUpdateDoc(orgId, request.auth.uid, resource.data)
-          && coreImmutableKeysUnchanged()
-          && assignmentChangeAllowed(orgId, request.auth.uid)
-          && operarioUpdateAllowed(orgId, request.auth.uid, resource.data);
-        allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+        // Server-only writes: hardened to enforce entitlements and open-count consistency.
+        allow create, update, delete: if false;
       }
 
       match /preventiveTemplates/{templateId} {

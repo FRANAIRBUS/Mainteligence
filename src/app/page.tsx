@@ -46,6 +46,43 @@ const incidentPriorityOrder: Record<Ticket["priority"], number> = {
   Baja: 0,
 };
 
+type FirestoreDateValue =
+  | {
+      toDate?: () => Date;
+      toMillis?: () => number;
+    }
+  | Date
+  | string
+  | number
+  | null
+  | undefined;
+
+const toDateValue = (value: FirestoreDateValue): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? null : date;
+  }
+  const maybeTimestamp = value as { toDate?: () => Date; toMillis?: () => number };
+  if (typeof maybeTimestamp.toDate === "function") {
+    const date = maybeTimestamp.toDate();
+    return date instanceof Date && !isNaN(date.getTime()) ? date : null;
+  }
+  if (typeof maybeTimestamp.toMillis === "function") {
+    const date = new Date(maybeTimestamp.toMillis());
+    return isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+};
+
+const toMillisValue = (value: FirestoreDateValue): number => {
+  const date = toDateValue(value);
+  return date ? date.getTime() : 0;
+};
+
 export default function Home() {
   const {
     user,
@@ -105,21 +142,24 @@ export default function Home() {
   const completedTasks = visibleTasks.filter((task) => normalizeTaskStatus(task.status) === "done");
   const dueSoonTasks = visibleTasks.filter((task) => {
     if (!task.dueDate) return false;
-    const date = task.dueDate.toDate();
+    const date = toDateValue(task.dueDate);
+    if (!date) return false;
     const now = new Date();
     return isBefore(date, addDays(now, 7)) && date >= now && normalizeTaskStatus(task.status) !== "done";
   });
 
   const overdueTasks = visibleTasks.filter((task) => {
     if (!task.dueDate) return false;
-    return isBefore(task.dueDate.toDate(), new Date()) && normalizeTaskStatus(task.status) !== "done";
+    const date = toDateValue(task.dueDate);
+    if (!date) return false;
+    return isBefore(date, new Date()) && normalizeTaskStatus(task.status) !== "done";
   });
 
   const nextInspections = visibleTasks
     .filter((task) => task.dueDate)
     .sort((a, b) => {
       if (!a.dueDate || !b.dueDate) return 0;
-      return a.dueDate.toMillis() - b.dueDate.toMillis();
+      return toMillisValue(a.dueDate) - toMillisValue(b.dueDate);
     })
     .slice(0, 5);
 
@@ -132,8 +172,8 @@ export default function Home() {
       return incidentPriorityOrder[b.priority] - incidentPriorityOrder[a.priority];
     }
 
-    const aCreatedAt = a.createdAt?.toMillis?.() ?? 0;
-    const bCreatedAt = b.createdAt?.toMillis?.() ?? 0;
+    const aCreatedAt = toMillisValue(a.createdAt);
+    const bCreatedAt = toMillisValue(b.createdAt);
 
     return bCreatedAt - aCreatedAt;
   });
@@ -214,9 +254,10 @@ export default function Home() {
                       </p>
                       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                         <span>
-                          {task.dueDate
-                            ? format(task.dueDate.toDate(), "PPP", { locale: es })
-                            : "Sin fecha"}
+                          {(() => {
+                            const dueDate = toDateValue(task.dueDate);
+                            return dueDate ? format(dueDate, "PPP", { locale: es }) : "Sin fecha";
+                          })()}
                         </span>
                         {task.priority && (
                           <Badge variant="secondary">Prioridad {priorityLabel[task.priority]}</Badge>
@@ -264,11 +305,15 @@ export default function Home() {
                         <Badge variant="outline" className="border-destructive text-destructive">
                           {ticketStatusLabel(ticket.status)}
                         </Badge>
-                        {ticket.createdAt && (
-                          <span>
-                            Creada: {format(ticket.createdAt.toDate(), "PPP", { locale: es })}
-                          </span>
-                        )}
+                        {(() => {
+                          const createdAt = toDateValue(ticket.createdAt);
+                          if (!createdAt) return null;
+                          return (
+                            <span>
+                              Creada: {format(createdAt, "PPP", { locale: es })}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                     <Badge variant="destructive">{ticket.priority}</Badge>

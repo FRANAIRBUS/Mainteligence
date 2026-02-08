@@ -25,7 +25,6 @@ import {
 } from "@/lib/firebase";
 import type { MaintenanceTask } from "@/types/maintenance-task";
 import type { Department, OrganizationMember } from "@/lib/firebase/models";
-import { Timestamp } from "firebase/firestore";
 import { createTask, updateTask } from "@/lib/firestore-tasks";
 import { useToast } from "@/hooks/use-toast";
 import { buildRbacUser, getTaskPermissions, normalizeRole } from "@/lib/rbac";
@@ -158,9 +157,6 @@ export default function ClosedTasksPage() {
       if (!targetOrgId) return;
       await updateTask(firestore, auth, targetOrgId, task.id, {
         status: "open",
-        reopened: true,
-        reopenedBy: user.uid,
-        reopenedAt: Timestamp.now(),
       });
       toast({ title: "Tarea reabierta", description: "Se movió la tarea a abiertas." });
     } catch (error) {
