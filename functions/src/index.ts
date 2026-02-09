@@ -4871,6 +4871,8 @@ export const generatePreventiveNow = functions.https.onCall(async (data, context
       throw httpsError('failed-precondition', 'Los preventivos están pausados por el plan actual.');
     }
 
+    const orgType = String(orgData?.type ?? '').trim();
+
     const entitlement = orgData?.entitlement as Entitlement | undefined;
     if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
 
@@ -4897,7 +4899,23 @@ export const generatePreventiveNow = functions.https.onCall(async (data, context
     const followingRunDate = schedule.type === 'date' ? null : computeNextRunAt(schedule, nextBase);
     const frequencyDays = resolveFrequencyDays(schedule);
 
-    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features, orgType });
+
+    // Enforce limit by OPEN preventives (workOrders where isOpen==true), not by lifetime created.
+    // This is the high-ROI guardrail that avoids plan bypass even if usage counters drift.
+    const effectiveLimits = resolveEffectiveLimitsForPlan(entitlement.planId, entitlement.limits);
+    const maxOpenPreventives = Number(effectiveLimits?.maxActivePreventives ?? 0) || 0;
+    if (maxOpenPreventives > 0) {
+      const openQuery = orgRef
+        .collection('workOrders')
+        .where('kind', '==', 'preventive')
+        .where('isOpen', '==', true)
+        .limit(maxOpenPreventives);
+      const openSnap = await tx.get(openQuery);
+      if (openSnap.size >= maxOpenPreventives) {
+        throw httpsError('failed-precondition', 'Has alcanzado el límite de preventivos abiertos de tu plan.');
+      }
+    }
 
     const ticketPayload = {
       organizationId: orgId,
@@ -4992,6 +5010,13 @@ export const workOrders_generateNow = functions.https.onCall(async (data, contex
   const orgId = resolveOrgIdFromData(data);
   const templateId = requireStringField(data.templateId, 'templateId');
 
+  // Optional idempotency key (recommended). Allows safe retries without duplicating work orders.
+  const providedIdempotencyKey = String(data?.idempotencyKey ?? '').trim();
+  const idempotencyKey = providedIdempotencyKey.length > 0 ? providedIdempotencyKey.slice(0, 128) : null;
+  const idempotencyHash = idempotencyKey
+    ? crypto.createHash('sha256').update(`${orgId}|${templateId}|${idempotencyKey}`).digest('hex').slice(0, 24)
+    : null;
+
   const { role } = await requireActiveMembership(actorUid, orgId);
   requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para generar OTs de preventivo manualmente.');
 
@@ -5000,10 +5025,10 @@ export const workOrders_generateNow = functions.https.onCall(async (data, contex
 
   const nowServer = admin.firestore.FieldValue.serverTimestamp();
   const nowMillis = Date.now();
-  const woId = `wo_prev_${templateId}_${nowMillis}`;
+  const woId = idempotencyHash ? `wo_prev_${templateId}_${idempotencyHash}` : `wo_prev_${templateId}_${nowMillis}`;
   const woRef = orgRef.collection('workOrders').doc(woId);
 
-  await db.runTransaction(async (tx) => {
+  const txResult = await db.runTransaction(async (tx) => {
     const [orgSnap, templateSnap, existingWo] = await Promise.all([
       tx.get(orgRef),
       tx.get(templateRef),
@@ -5016,6 +5041,10 @@ export const workOrders_generateNow = functions.https.onCall(async (data, contex
       throw httpsError('permission-denied', 'Plantilla fuera de la organización.');
     }
     if (existingWo.exists) {
+      // If idempotencyKey was provided and the existing doc matches, treat as idempotent replay.
+      if (idempotencyKey && String(existingWo.get('idempotencyKey') ?? '') === idempotencyKey) {
+        return { alreadyExisted: true };
+      }
       throw httpsError('already-exists', 'La OT ya existe.');
     }
 
@@ -5023,6 +5052,8 @@ export const workOrders_generateNow = functions.https.onCall(async (data, contex
     if (orgData?.preventivesPausedByEntitlement === true) {
       throw httpsError('failed-precondition', 'Los preventivos están pausados por el plan actual.');
     }
+
+    const orgType = String(orgData?.type ?? '').trim();
 
     const entitlement = orgData?.entitlement as Entitlement | undefined;
     if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
@@ -5050,7 +5081,25 @@ export const workOrders_generateNow = functions.https.onCall(async (data, contex
     const followingRunDate = schedule.type === 'date' ? null : computeNextRunAt(schedule, nextBase);
     const frequencyDays = resolveFrequencyDays(schedule);
 
-    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features, orgType });
+
+    // Enforce limits by *open* preventives (high ROI): avoid relying solely on entitlement.usage which may drift.
+    const effectiveLimits = resolveEffectiveLimitsForPlan(entitlement.planId, entitlement.limits);
+    const maxOpenPreventives = Number(effectiveLimits?.maxActivePreventives ?? 0) || 0;
+    if (maxOpenPreventives > 0) {
+      const openWosQuery = orgRef
+        .collection('workOrders')
+        .where('kind', '==', 'preventive')
+        .where('isOpen', '==', true)
+        .limit(maxOpenPreventives + 1);
+      const openWosSnap = await tx.get(openWosQuery);
+      if (openWosSnap.size >= maxOpenPreventives) {
+        throw httpsError('failed-precondition', 'Has alcanzado el límite de OTs preventivas abiertas de tu plan.');
+      }
+    } else {
+      // If max is 0, block creation (plan doesn't allow any active preventives).
+      throw httpsError('failed-precondition', 'Tu plan actual no permite OTs preventivas activas.');
+    }
 
     const checklistItems = normalizeChecklistItems(template.checklist as any);
     const checklistRequired = checklistItems.length > 0;
@@ -5070,6 +5119,7 @@ export const workOrders_generateNow = functions.https.onCall(async (data, contex
       assignedTo: null,
       createdAt: nowServer,
       updatedAt: nowServer,
+      idempotencyKey: idempotencyKey,
       preventiveTemplateId: templateRef.id,
       templateSnapshot: {
         name: template.name,
@@ -5113,7 +5163,13 @@ export const workOrders_generateNow = functions.https.onCall(async (data, contex
       'schedule.nextRunAt': followingRunDate ? admin.firestore.Timestamp.fromDate(followingRunDate) : null,
       updatedAt: nowServer,
     });
+
+    return { alreadyExisted: false };
   });
+
+  if (txResult?.alreadyExisted) {
+    return { ok: true, organizationId: orgId, templateId, woId, idempotentReplay: true };
+  }
 
   await auditLog({
     action: 'workOrders_generateNow',
@@ -5235,6 +5291,12 @@ export const workOrders_close = functions.https.onCall(async (data, context) => 
     closedAt: nowServer,
     closedBy: actorUid,
     updatedAt: nowServer,
+  });
+
+  // Keep entitlement open-preventives counter in sync (best-effort, no migration).
+  await orgRef.update({
+    [`entitlement.usage.${USAGE_FIELDS.preventives}`]: admin.firestore.FieldValue.increment(-1),
+    'entitlement.updatedAt': nowServer,
   });
 
   await auditLog({
