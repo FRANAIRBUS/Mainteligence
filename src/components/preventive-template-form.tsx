@@ -70,6 +70,7 @@ const formSchema = z
     siteId: z.string().optional(),
     departmentId: z.string().optional(),
     assetId: z.string().optional(),
+    checklistText: z.string().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.scheduleType === 'weekly') {
@@ -159,6 +160,7 @@ export function PreventiveTemplateForm({
       siteId: '__none__',
       departmentId: '__none__',
       assetId: '__none__',
+      checklistText: '',
       ...defaultValues,
     },
   });
@@ -201,6 +203,29 @@ export function PreventiveTemplateForm({
                 <FormControl>
                   <Textarea placeholder="Describe el alcance de la plantilla" {...field} />
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="checklistText"
+            render={({ field }) => (
+              <FormItem className="sm:col-span-2">
+                <FormLabel>Checklist (una línea por ítem)</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder={
+                      'Ej.\nRevisar niveles de aceite\n? Comprobar limpieza del filtro (opcional)'
+                    }
+                    rows={5}
+                    {...field}
+                  />
+                </FormControl>
+                <p className="text-xs text-muted-foreground">
+                  Prefijo <span className="font-mono">?</span> = ítem opcional. Si hay ítems, el cierre de la OT se bloquea hasta completar los obligatorios.
+                </p>
                 <FormMessage />
               </FormItem>
             )}

@@ -4425,7 +4425,10 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
   const departmentId = String(data.departmentId ?? '').trim();
   const assetId = String(data.assetId ?? '').trim();
 
-  if (!isPlainObject(data.schedule)) throw httpsError('invalid-argument', 'schedule requerido.');
+  const checklistRaw = Array.isArray((data as any).checklist) ? (data as any).checklist : [];
+  const checklist = normalizeChecklistItems(checklistRaw);
+
+    if (!isPlainObject(data.schedule)) throw httpsError('invalid-argument', 'schedule requerido.');
 
   const scheduleType = String(data.schedule.type ?? '').trim();
   if (!['daily', 'weekly', 'monthly', 'date'].includes(scheduleType)) {
@@ -4546,6 +4549,7 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
         description: description || undefined,
         status,
         automatic,
+        checklist: checklist.length ? checklist : undefined,
         schedule: storedSchedule,
         priority,
         siteId: siteId || undefined,
@@ -4606,6 +4610,9 @@ export const updatePreventiveTemplate = functions.https.onCall(async (data, cont
   const siteId = String(data.siteId ?? '').trim();
   const departmentId = String(data.departmentId ?? '').trim();
   const assetId = String(data.assetId ?? '').trim();
+
+  const checklistRaw = Array.isArray((data as any).checklist) ? (data as any).checklist : [];
+  const checklist = normalizeChecklistItems(checklistRaw);
 
   if (!isPlainObject(data.schedule)) throw httpsError('invalid-argument', 'schedule requerido.');
 
@@ -4717,6 +4724,7 @@ export const updatePreventiveTemplate = functions.https.onCall(async (data, cont
         description: description || undefined,
         status,
         automatic,
+        checklist: checklist.length ? checklist : undefined,
         schedule: storedSchedule,
         priority,
         siteId: siteId || undefined,
@@ -4942,6 +4950,305 @@ export const generatePreventiveNow = functions.https.onCall(async (data, context
 
   return { ok: true, organizationId: orgId, templateId, ticketId };
 });
+
+// --- Work Orders (Preventivos como OT) ---
+type WorkOrderStatus = 'open' | 'closed';
+type WorkOrderKind = 'preventive';
+
+type WorkOrderChecklistItem = {
+  label: string;
+  required: boolean;
+  order: number;
+};
+
+function normalizeChecklistItems(raw: unknown[] | undefined | null): WorkOrderChecklistItem[] {
+  const items: WorkOrderChecklistItem[] = [];
+  const arr = Array.isArray(raw) ? raw : [];
+  let order = 0;
+  for (const it of arr) {
+    order += 1;
+    if (typeof it === 'string') {
+      const label = it.trim();
+      if (!label) continue;
+      items.push({ label, required: true, order });
+      continue;
+    }
+    if (it && typeof it === 'object') {
+      const anyIt = it as any;
+      const label = String(anyIt.label ?? anyIt.text ?? anyIt.name ?? '').trim();
+      if (!label) continue;
+      const required = Boolean(anyIt.required ?? true);
+      items.push({ label, required, order: Number(anyIt.order ?? order) });
+      continue;
+    }
+  }
+  return items;
+}
+
+export const workOrders_generateNow = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = resolveOrgIdFromData(data);
+  const templateId = requireStringField(data.templateId, 'templateId');
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para generar OTs de preventivo manualmente.');
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const templateRef = orgRef.collection('preventiveTemplates').doc(templateId);
+
+  const nowServer = admin.firestore.FieldValue.serverTimestamp();
+  const nowMillis = Date.now();
+  const woId = `wo_prev_${templateId}_${nowMillis}`;
+  const woRef = orgRef.collection('workOrders').doc(woId);
+
+  await db.runTransaction(async (tx) => {
+    const [orgSnap, templateSnap, existingWo] = await Promise.all([
+      tx.get(orgRef),
+      tx.get(templateRef),
+      tx.get(woRef),
+    ]);
+
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    if (!templateSnap.exists) throw httpsError('not-found', 'Plantilla no encontrada.');
+    if (String(templateSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('permission-denied', 'Plantilla fuera de la organización.');
+    }
+    if (existingWo.exists) {
+      throw httpsError('already-exists', 'La OT ya existe.');
+    }
+
+    const orgData = orgSnap.data() as any;
+    if (orgData?.preventivesPausedByEntitlement === true) {
+      throw httpsError('failed-precondition', 'Los preventivos están pausados por el plan actual.');
+    }
+
+    const entitlement = orgData?.entitlement as Entitlement | undefined;
+    if (!entitlement) throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+
+    const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+    if (!isFeatureEnabled({ ...(entitlement as any), features }, 'PREVENTIVES')) {
+      throw httpsError('failed-precondition', 'Tu plan actual no incluye preventivos.');
+    }
+
+    const template = templateSnap.data() as PreventiveTemplate;
+    if (template.status !== 'active') {
+      throw httpsError('failed-precondition', 'La plantilla no está activa.');
+    }
+    if (!template.siteId || !template.departmentId) {
+      throw httpsError('failed-precondition', 'La plantilla necesita siteId y departmentId para generar una OT.');
+    }
+
+    const schedule = template.schedule;
+    if (!schedule?.type) throw httpsError('failed-precondition', 'La plantilla no tiene programación válida.');
+
+    const runAtDate = resolveZonedDate(schedule.timezone);
+    const runAtTimestamp = admin.firestore.Timestamp.fromDate(runAtDate);
+
+    const nextBase = new Date(runAtDate.getTime() + 60 * 1000);
+    const followingRunDate = schedule.type === 'date' ? null : computeNextRunAt(schedule, nextBase);
+    const frequencyDays = resolveFrequencyDays(schedule);
+
+    ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+
+    const checklistItems = normalizeChecklistItems(template.checklist as any);
+    const checklistRequired = checklistItems.length > 0;
+
+    const woPayload = {
+      organizationId: orgId,
+      kind: 'preventive' as WorkOrderKind,
+      status: 'open' as WorkOrderStatus,
+      isOpen: true,
+      priority: template.priority ?? 'Media',
+      siteId: template.siteId,
+      departmentId: template.departmentId,
+      assetId: template.assetId ?? null,
+      title: template.name,
+      description: template.description ?? '',
+      createdBy: actorUid,
+      assignedTo: null,
+      createdAt: nowServer,
+      updatedAt: nowServer,
+      preventiveTemplateId: templateRef.id,
+      templateSnapshot: {
+        name: template.name,
+        frequencyDays,
+      },
+      preventive: {
+        frequencyDays,
+        scheduledFor: runAtTimestamp,
+      },
+      checklistRequired,
+      source: 'workOrders_generateNow_v1',
+    };
+
+    tx.create(woRef, woPayload);
+
+    // Crear checklist en subcolección (server-only)
+    if (checklistItems.length) {
+      for (const item of checklistItems) {
+        const itemRef = woRef.collection('checklistItems').doc();
+        tx.create(itemRef, {
+          organizationId: orgId,
+          label: item.label,
+          required: item.required,
+          order: item.order,
+          done: false,
+          doneAt: null,
+          doneBy: null,
+          createdAt: nowServer,
+          updatedAt: nowServer,
+        });
+      }
+    }
+
+    tx.update(orgRef, {
+      [`entitlement.usage.${USAGE_FIELDS.preventives}`]: admin.firestore.FieldValue.increment(1),
+      'entitlement.updatedAt': nowServer,
+    });
+
+    tx.update(templateRef, {
+      'schedule.lastRunAt': runAtTimestamp,
+      'schedule.nextRunAt': followingRunDate ? admin.firestore.Timestamp.fromDate(followingRunDate) : null,
+      updatedAt: nowServer,
+    });
+  });
+
+  await auditLog({
+    action: 'workOrders_generateNow',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { templateId, woId },
+  });
+
+  return { ok: true, organizationId: orgId, templateId, woId };
+});
+
+export const workOrders_start = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = resolveOrgIdFromData(data);
+  const woId = requireStringField(data.woId, 'woId');
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const woRef = orgRef.collection('workOrders').doc(woId);
+
+  const woSnap = await woRef.get();
+  if (!woSnap.exists) throw httpsError('not-found', 'OT no encontrada.');
+  if (String(woSnap.get('organizationId') ?? '') !== orgId) {
+    throw httpsError('permission-denied', 'OT fuera de la organización.');
+  }
+
+  const wo = woSnap.data() as any;
+  const createdBy = String(wo?.createdBy ?? '');
+  const assignedTo = String(wo?.assignedTo ?? '');
+  const isAdminLike = ADMIN_LIKE_ROLES.has(role);
+  const isActorRelated = actorUid === createdBy || (assignedTo && actorUid === assignedTo);
+
+  if (!isAdminLike && !isActorRelated) {
+    throw httpsError('permission-denied', 'Solo el creador/asignado o admin/mantenimiento puede iniciar esta OT.');
+  }
+
+  if (wo?.isOpen !== true) {
+    throw httpsError('failed-precondition', 'La OT está cerrada.');
+  }
+
+  const currentStatus = String(wo?.status ?? 'open');
+  if (currentStatus === 'in_progress') {
+    return { ok: true, organizationId: orgId, woId, status: 'in_progress' };
+  }
+
+  const nowServer = admin.firestore.FieldValue.serverTimestamp();
+  await woRef.update({
+    status: 'in_progress',
+    startedAt: nowServer,
+    startedBy: actorUid,
+    updatedAt: nowServer,
+  });
+
+  await auditLog({
+    action: 'workOrders_start',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { woId },
+  });
+
+  return { ok: true, organizationId: orgId, woId, status: 'in_progress' };
+});
+
+export const workOrders_close = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = resolveOrgIdFromData(data);
+  const woId = requireStringField(data.woId, 'woId');
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const woRef = orgRef.collection('workOrders').doc(woId);
+
+  const woSnap = await woRef.get();
+  if (!woSnap.exists) throw httpsError('not-found', 'OT no encontrada.');
+  if (String(woSnap.get('organizationId') ?? '') !== orgId) {
+    throw httpsError('permission-denied', 'OT fuera de la organización.');
+  }
+
+  const wo = woSnap.data() as any;
+  const createdBy = String(wo?.createdBy ?? '');
+  const assignedTo = String(wo?.assignedTo ?? '');
+  const isAdminLike = ADMIN_LIKE_ROLES.has(role);
+  const isActorRelated = actorUid === createdBy || (assignedTo && actorUid === assignedTo);
+
+  if (!isAdminLike && !isActorRelated) {
+    throw httpsError('permission-denied', 'Solo el creador/asignado o admin/mantenimiento puede cerrar esta OT.');
+  }
+
+  if (wo?.isOpen !== true) {
+    throw httpsError('failed-precondition', 'La OT ya está cerrada.');
+  }
+
+  const checklistRequired = Boolean(wo?.checklistRequired === true);
+  if (checklistRequired) {
+    const incomplete = await woRef
+      .collection('checklistItems')
+      .where('required', '==', true)
+      .where('done', '==', false)
+      .limit(1)
+      .get();
+
+    if (!incomplete.empty) {
+      throw httpsError('failed-precondition', 'No se puede cerrar: hay items obligatorios sin completar.');
+    }
+  }
+
+  const nowServer = admin.firestore.FieldValue.serverTimestamp();
+  await woRef.update({
+    status: 'closed',
+    isOpen: false,
+    closedAt: nowServer,
+    closedBy: actorUid,
+    updatedAt: nowServer,
+  });
+
+  await auditLog({
+    action: 'workOrders_close',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { woId },
+  });
+
+  return { ok: true, organizationId: orgId, woId };
+});
+
+// Back-compat: generatePreventiveNow sigue existiendo, pero se recomienda migrar a workOrders_generateNow.
 
 export const inviteUserToOrg = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);

@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { limit, orderBy } from "firebase/firestore";
 import { format, isBefore, addDays } from "date-fns";
 import { es } from "date-fns/locale";
-import { AlertTriangle, CalendarDays, CheckCircle2, Inbox, ListChecks } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, Inbox, ListChecks, ClipboardList } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   normalizeTaskStatus,
@@ -17,10 +18,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icons } from "@/components/icons";
 import { AppShell } from "@/components/app-shell";
-import { useCollection, useDoc, useUser } from "@/lib/firebase";
-import type { OrganizationMember, Ticket } from "@/lib/firebase/models";
+import { useCollection, useCollectionQuery, useDoc, useUser } from "@/lib/firebase";
+import type { OrganizationMember, Ticket, WorkOrder } from "@/lib/firebase/models";
 import type { MaintenanceTask } from "@/types/maintenance-task";
-import { orgCollectionPath, orgDocPath } from "@/lib/organization";
+import { orgCollectionPath, orgDocPath, orgWorkOrdersPath } from "@/lib/organization";
 import { buildRbacUser, getTaskPermissions, getTicketPermissions } from "@/lib/rbac";
 import { useScopedTasks, useScopedTickets } from "@/lib/scoped-collections";
 
@@ -131,6 +132,12 @@ export default function Home() {
     uid: user?.uid ?? null,
   });
 
+  const { data: workOrders = [] } = useCollectionQuery<WorkOrder>(
+    organizationId ? orgWorkOrdersPath(organizationId) : null,
+    orderBy("createdAt", "desc"),
+    limit(50)
+  );
+
   const visibleTasks = rbacUser
     ? tasks.filter((task) => getTaskPermissions(task, rbacUser, user?.uid ?? null).canView)
     : tasks;
@@ -163,6 +170,7 @@ export default function Home() {
     })
     .slice(0, 5);
 
+  const openWorkOrders = workOrders.filter((wo) => wo.isOpen === true);
   const openTickets = visibleTickets.filter(
     (ticket) => normalizeTicketStatus(ticket.status) !== "resolved"
   );
@@ -215,10 +223,11 @@ export default function Home() {
           highlight
         />
         <DashboardCard
-          title="Completadas"
-          value={completedTasks.length}
-          icon={<CheckCircle2 className="h-4 w-4" />}
-          subtitle="Cerradas este periodo"
+          title="Preventivos abiertos"
+          value={openWorkOrders.length}
+          icon={<ClipboardList className="h-4 w-4" />}
+          subtitle="Órdenes preventivas abiertas"
+          href="/preventive"
         />
       </div>
 
@@ -333,17 +342,17 @@ function DashboardCard({
   subtitle,
   icon,
   highlight,
+  href,
 }: {
   title: string;
   value: number;
   subtitle: string;
   icon: React.ReactNode;
   highlight?: boolean;
+  href?: string;
 }) {
-  return (
-    <Card
-      className="border-white/80 bg-sky-300/20"
-    >
+  const card = (
+    <Card className="border-white/80 bg-sky-300/20 transition hover:bg-sky-300/30">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <div className={highlight ? "text-white" : "text-muted-foreground"}>{icon}</div>
@@ -354,6 +363,16 @@ function DashboardCard({
       </CardContent>
     </Card>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="block">
+        {card}
+      </Link>
+    );
+  }
+
+  return card;
 }
 
 function EmptyState({ message }: { message: string }) {

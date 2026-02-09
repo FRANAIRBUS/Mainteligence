@@ -473,6 +473,38 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+
+      match /workOrders/{woId} {
+        allow read: if isSignedIn()
+          && isActiveMember(orgId, request.auth.uid)
+          && resourceOrganizationIdMatchesPath(orgId)
+          && canReadDoc(orgId, request.auth.uid, resource.data);
+
+        // Server-only writes: enforced by callable + checklist logic.
+        allow create, update, delete: if false;
+
+        match /checklistItems/{itemId} {
+          allow read: if isSignedIn()
+            && isActiveMember(orgId, request.auth.uid)
+            && resourceOrganizationIdMatchesPath(orgId)
+            && canReadDoc(orgId, request.auth.uid,
+              get(/databases/$(database)/documents/organizations/$(orgId)/workOrders/$(woId)).data
+            );
+
+          // Client can only toggle completion fields; no create/delete from client.
+          allow create, delete: if false;
+
+          allow update: if isSignedIn()
+            && isActiveMember(orgId, request.auth.uid)
+            && resourceOrganizationIdMatchesPath(orgId)
+            && canReadDoc(orgId, request.auth.uid,
+              get(/databases/$(database)/documents/organizations/$(orgId)/workOrders/$(woId)).data
+            )
+            && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['done', 'doneAt', 'doneBy', 'updatedAt']);
+        }
+      }
+
     } // match /organizations/{orgId}
 
   } // match /databases/{database}/documents

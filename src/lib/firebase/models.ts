@@ -7,6 +7,51 @@ export interface BaseEntity {
   updatedAt: Timestamp;
 }
 
+export type WorkOrderStatus = "open" | "in_progress" | "closed";
+export type WorkOrderKind = "preventive";
+
+export interface WorkOrder extends BaseEntity {
+  kind: WorkOrderKind;
+  status: WorkOrderStatus;
+  isOpen: boolean;
+  priority?: "Baja" | "Media" | "Alta" | "Crítica";
+  siteId?: string | null;
+  departmentId?: string | null;
+  assetId?: string | null;
+  title: string;
+  description?: string;
+  createdBy?: string;
+  assignedTo?: string | null;
+  preventiveTemplateId?: string;
+  templateSnapshot?: {
+    name: string;
+    frequencyDays: number;
+  };
+  preventive?: {
+    frequencyDays: number;
+    scheduledFor: Timestamp;
+  };
+  checklistRequired?: boolean;
+  startedAt?: Timestamp | null;
+  startedBy?: string | null;
+  closedAt?: Timestamp | null;
+  closedBy?: string | null;
+}
+
+export interface WorkOrderChecklistItem {
+  id: string;
+  organizationId: string;
+  label: string;
+  required: boolean;
+  order: number;
+  done: boolean;
+  doneAt?: Timestamp | null;
+  doneBy?: string | null;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+
 export type OrganizationType = "demo" | "standard" | "enterprise" | "partner";
 export type OrganizationStatus = "active" | "suspended" | "deleted";
 export type SubscriptionPlan = "trial" | "standard" | "enterprise";
@@ -197,6 +242,12 @@ export interface PreventiveSchedule {
   lastRunAt?: Timestamp;
 }
 
+export interface PreventiveChecklistItem {
+  label: string;
+  required: boolean;
+  order?: number;
+}
+
 export interface PreventiveTemplate extends BaseEntity {
   name: string;
   description?: string;
@@ -208,7 +259,7 @@ export interface PreventiveTemplate extends BaseEntity {
   siteId?: string;
   departmentId?: string;
   assetId?: string;
-  checklist?: unknown[];
+  checklist?: PreventiveChecklistItem[];
   createdBy: string;
   updatedBy?: string;
 }
