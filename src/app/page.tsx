@@ -227,6 +227,7 @@ export default function Home() {
           value={openWorkOrders.length}
           icon={<ClipboardList className="h-4 w-4" />}
           subtitle="Órdenes preventivas abiertas"
+          href="/preventive"
         />
       </div>
 
@@ -341,17 +342,17 @@ function DashboardCard({
   subtitle,
   icon,
   highlight,
+  href,
 }: {
   title: string;
   value: number;
   subtitle: string;
   icon: React.ReactNode;
   highlight?: boolean;
+  href?: string;
 }) {
-  return (
-    <Card
-      className="border-white/80 bg-sky-300/20"
-    >
+  const card = (
+    <Card className="border-white/80 bg-sky-300/20 transition hover:bg-sky-300/30">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium">{title}</CardTitle>
         <div className={highlight ? "text-white" : "text-muted-foreground"}>{icon}</div>
@@ -362,6 +363,16 @@ function DashboardCard({
       </CardContent>
     </Card>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="block">
+        {card}
+      </Link>
+    );
+  }
+
+  return card;
 }
 
 function EmptyState({ message }: { message: string }) {

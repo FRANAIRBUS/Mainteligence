@@ -114,6 +114,36 @@ const formatDateTime = (value: any) => {
   });
 };
 
+type TemplateChecklistItem = { label: string; required?: boolean };
+
+const serializeChecklistToText = (items?: unknown[]) => {
+  if (!Array.isArray(items) || items.length === 0) return '';
+  return items
+    .map((it: any) => {
+      const label = String(it?.label ?? it ?? '').trim();
+      if (!label) return null;
+      const required = it?.required !== false;
+      return required ? label : `? ${label}`;
+    })
+    .filter(Boolean)
+    .join('\n');
+};
+
+const parseChecklistText = (text?: string): TemplateChecklistItem[] => {
+  const raw = String(text ?? '').split(/\r?\n/);
+  const out: TemplateChecklistItem[] = [];
+  let order = 0;
+  for (const line of raw) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const optional = trimmed.startsWith('?');
+    const label = trimmed.replace(/^\?\s*/, '').trim();
+    if (!label) continue;
+    out.push({ label, required: optional ? false : true, order: order++ } as any);
+  }
+  return out;
+};
+
 function WorkOrdersTable({ workOrders, loading }: { workOrders: WorkOrder[]; loading: boolean }) {
   const router = useRouter();
   if (loading) {
@@ -141,7 +171,11 @@ function WorkOrdersTable({ workOrders, loading }: { workOrders: WorkOrder[]; loa
       <TableBody>
         {workOrders.length > 0 ? (
           workOrders.map((wo) => (
-            <TableRow key={wo.id}>
+            <TableRow
+              key={wo.id}
+              className="cursor-pointer"
+              onClick={() => router.push(`/preventive/work-orders/${wo.id}`)}
+            >
               <TableCell className="font-medium">{wo.id.substring(0, 10)}</TableCell>
               <TableCell>{wo.title}</TableCell>
               <TableCell>
@@ -156,7 +190,12 @@ function WorkOrdersTable({ workOrders, loading }: { workOrders: WorkOrder[]; loa
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button aria-haspopup="true" size="icon" variant="ghost">
+                    <Button
+                      aria-haspopup="true"
+                      size="icon"
+                      variant="ghost"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <MoreHorizontal className="h-4 w-4" />
                       <span className="sr-only">Menú de acciones</span>
                     </Button>
@@ -225,6 +264,7 @@ function PreventiveTemplatesTable({
       siteId: activeTemplate.siteId ?? '__none__',
       departmentId: activeTemplate.departmentId ?? '__none__',
       assetId: activeTemplate.assetId ?? '__none__',
+      checklistText: serializeChecklistToText((activeTemplate as any).checklist),
     } as Partial<PreventiveTemplateFormValues>;
   }, [activeTemplate]);
 
@@ -309,6 +349,8 @@ function PreventiveTemplatesTable({
     try {
       const fn = httpsCallable(getFunctions(app), 'updatePreventiveTemplate');
 
+      const checklist = parseChecklistText((values as any).checklistText);
+
       await fn({
         organizationId,
         templateId: activeTemplate.id,
@@ -316,6 +358,7 @@ function PreventiveTemplatesTable({
         description: values.description?.trim() || null,
         status: values.status,
         automatic: values.automatic,
+        checklist: parseChecklistText(values.checklistText),
         schedule: {
           type: values.scheduleType,
           timezone:
@@ -334,6 +377,7 @@ function PreventiveTemplatesTable({
         siteId: normalizeOptional(values.siteId),
         departmentId: normalizeOptional(values.departmentId),
         assetId: normalizeOptional(values.assetId),
+        checklist,
       });
 
       toast({ title: 'Plantilla actualizada' });

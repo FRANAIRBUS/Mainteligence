@@ -242,6 +242,12 @@ export interface PreventiveSchedule {
   lastRunAt?: Timestamp;
 }
 
+export interface PreventiveChecklistItem {
+  label: string;
+  required: boolean;
+  order?: number;
+}
+
 export interface PreventiveTemplate extends BaseEntity {
   name: string;
   description?: string;
@@ -253,7 +259,7 @@ export interface PreventiveTemplate extends BaseEntity {
   siteId?: string;
   departmentId?: string;
   assetId?: string;
-  checklist?: unknown[];
+  checklist?: PreventiveChecklistItem[];
   createdBy: string;
   updatedBy?: string;
 }
