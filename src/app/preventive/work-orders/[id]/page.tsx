@@ -32,9 +32,12 @@ export default function WorkOrderDetailPage() {
     woId && organizationId ? orgDocPath(organizationId, "workOrders", woId) : null
   );
 
+  // IMPORTANT: memoize QueryConstraint objects to avoid re-subscribe loops.
+  const checklistConstraints = useMemo(() => [orderBy("order", "asc")], []);
+
   const { data: checklistItems, loading: checklistLoading } = useCollectionQuery<WorkOrderChecklistItem>(
     woId && organizationId ? orgWorkOrderChecklistItemsPath(organizationId, woId) : null,
-    orderBy("order", "asc")
+    ...checklistConstraints
   );
 
   const isLoading = userLoading || workOrderLoading;
@@ -134,6 +137,11 @@ export default function WorkOrderDetailPage() {
         </Button>
       }
     >
+      <div className="mb-4">
+        <Button variant="outline" asChild>
+          <Link href="/preventive">Volver a preventivos</Link>
+        </Button>
+      </div>
       {isLoading ? (
         <div className="flex h-64 w-full items-center justify-center">
           <Icons.spinner className="h-8 w-8 animate-spin" />
@@ -147,11 +155,6 @@ export default function WorkOrderDetailPage() {
         </Card>
       ) : (
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-3">
-            <Button variant="outline" asChild className="mb-2">
-              <Link href="/preventive">Volver a la lista</Link>
-            </Button>
-          </div>
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-4">
