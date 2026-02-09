@@ -391,6 +391,17 @@ service cloud.firestore {
         allow create, update, delete: if false;
       }
 
+      // Organization access requests (pending/approved/rejected).
+      // Readable only by super_admin to manage approvals from the UI.
+      // Writes are server-only to avoid privilege escalation.
+      match /joinRequests/{requestId} {
+        allow read: if isSignedIn()
+          && isSuperAdminInOrg(orgId, request.auth.uid)
+          && resourceOrganizationIdMatchesPath(orgId);
+
+        allow create, update, delete: if false;
+      }
+
       // Short-lived upload sessions (used to harden Storage writes before an incident exists).
       // Client creates a session owned by itself, uploads files, then creates the ticket and deletes the session.
       match /uploadSessions/{sessionId} {
