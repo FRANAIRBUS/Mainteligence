@@ -167,6 +167,8 @@ function PreventiveTemplatesTable({
 
   const [editOpen, setEditOpen] = useState(false);
   const [activeTemplate, setActiveTemplate] = useState<PreventiveTemplate | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<PreventiveTemplate | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -199,6 +201,12 @@ function PreventiveTemplatesTable({
     setEditOpen(true);
   };
 
+  const openDelete = (template: PreventiveTemplate) => {
+    setErrorMessage(null);
+    setDeleteTarget(template);
+    setDeleteOpen(true);
+  };
+
   const handleDuplicate = async (template: PreventiveTemplate) => {
     if (!app) {
       toast({ title: 'Firebase', description: 'No se pudo inicializar Firebase App.', variant: 'destructive' });
@@ -219,6 +227,35 @@ function PreventiveTemplatesTable({
       toast({
         title: 'No se pudo duplicar',
         description: err?.message || 'Error inesperado.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!app) {
+      toast({ title: 'Firebase', description: 'No se pudo inicializar Firebase App.', variant: 'destructive' });
+      return;
+    }
+    if (!deleteTarget) return;
+
+    setSubmitting(true);
+    try {
+      const fn = httpsCallable(getFunctions(app), 'deletePreventiveTemplate');
+      await fn({ organizationId, templateId: deleteTarget.id });
+      toast({
+        title: 'Plantilla eliminada',
+        description: `Se eliminó la plantilla "${deleteTarget.name}".`,
+      });
+      setDeleteOpen(false);
+      setDeleteTarget(null);
+    } catch (err: any) {
+      console.error('deletePreventiveTemplate failed', err);
+      toast({
+        title: 'No se pudo eliminar',
+        description: err?.message ?? 'Error inesperado',
         variant: 'destructive',
       });
     } finally {
@@ -382,6 +419,13 @@ function PreventiveTemplatesTable({
                         <DropdownMenuItem onClick={() => handleDuplicate(template)} disabled={submitting}>
                           Duplicar
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => openDelete(template)}
+                          disabled={submitting}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          Eliminar
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -423,6 +467,45 @@ function PreventiveTemplatesTable({
               departments={departments}
               assets={assets}
             />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open);
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Eliminar plantilla</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              Vas a eliminar la plantilla{' '}
+              <span className="font-semibold">{deleteTarget?.name ?? '—'}</span>.
+            </p>
+            <p className="text-muted-foreground">
+              Esta acción no se puede deshacer. Si existen OTs preventivas abiertas asociadas, se bloqueará.
+            </p>
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteOpen(false);
+                setDeleteTarget(null);
+              }}
+              disabled={submitting}
+            >
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={submitting || !deleteTarget}>
+              {submitting ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Eliminar
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

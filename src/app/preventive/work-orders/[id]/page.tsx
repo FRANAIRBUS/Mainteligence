@@ -32,9 +32,12 @@ export default function WorkOrderDetailPage() {
     woId && organizationId ? orgDocPath(organizationId, "workOrders", woId) : null
   );
 
+  // IMPORTANT: memoize QueryConstraint objects to avoid re-subscribe loops.
+  const checklistConstraints = useMemo(() => [orderBy("order", "asc")], []);
+
   const { data: checklistItems, loading: checklistLoading } = useCollectionQuery<WorkOrderChecklistItem>(
     woId && organizationId ? orgWorkOrderChecklistItemsPath(organizationId, woId) : null,
-    orderBy("order", "asc")
+    ...checklistConstraints
   );
 
   const isLoading = userLoading || workOrderLoading;
@@ -126,19 +129,19 @@ export default function WorkOrderDetailPage() {
 
   return (
     <AppShell
-      headerContent={
-        <div className="flex w-full items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/preventive" className="flex items-center gap-2">
-                <span>Volver</span>
-              </Link>
-            </Button>
-            <h1 className="text-lg font-semibold leading-tight md:text-xl">Detalle de OT</h1>
-          </div>
-        </div>
+      title="Detalle de OT"
+      description="Mantenimiento preventivo"
+      action={
+        <Button variant="outline" onClick={() => router.back()}>
+          Volver
+        </Button>
       }
     >
+      <div className="mb-4">
+        <Button variant="outline" asChild>
+          <Link href="/preventive">Volver a preventivos</Link>
+        </Button>
+      </div>
       {isLoading ? (
         <div className="flex h-64 w-full items-center justify-center">
           <Icons.spinner className="h-8 w-8 animate-spin" />

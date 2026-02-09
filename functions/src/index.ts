@@ -4833,6 +4833,58 @@ export const duplicatePreventiveTemplate = functions.https.onCall(async (data, c
   return { ok: true, organizationId: orgId, templateId: targetRef.id };
 });
 
+export const deletePreventiveTemplate = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+  const templateId = requireStringField(data.templateId, 'templateId');
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para eliminar plantillas preventivas.');
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const templateRef = orgRef.collection('preventiveTemplates').doc(templateId);
+  const openWorkOrdersQuery = orgRef
+    .collection('workOrders')
+    .where('kind', '==', 'preventive')
+    .where('isOpen', '==', true)
+    .where('preventiveTemplateId', '==', templateId)
+    .limit(1);
+
+  await db.runTransaction(async (tx) => {
+    const [orgSnap, templateSnap, openWosSnap] = await Promise.all([
+      tx.get(orgRef),
+      tx.get(templateRef),
+      tx.get(openWorkOrdersQuery),
+    ]);
+
+    if (!orgSnap.exists) throw httpsError('not-found', 'Organización no encontrada.');
+    if (!templateSnap.exists) throw httpsError('not-found', 'Plantilla no encontrada.');
+    if (String(templateSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('permission-denied', 'Plantilla fuera de la organización.');
+    }
+
+    if (!openWosSnap.empty) {
+      throw httpsError(
+        'failed-precondition',
+        'No se puede eliminar: existen OTs preventivas abiertas asociadas a esta plantilla.',
+      );
+    }
+
+    tx.delete(templateRef);
+  });
+
+  await auditLog({
+    action: 'deletePreventiveTemplate',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { templateId },
+  });
+
+  return { ok: true, organizationId: orgId, templateId };
+});
+
 export const generatePreventiveNow = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;

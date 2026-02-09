@@ -127,6 +127,7 @@ export default function UsersPage() {
 
   const [joinRequests, setJoinRequests] = useState<JoinRequestRow[]>([]);
   const [joinLoading, setJoinLoading] = useState(true);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [joinLoadingMore, setJoinLoadingMore] = useState(false);
   const [joinCursor, setJoinCursor] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [joinHasMore, setJoinHasMore] = useState(false);
@@ -269,15 +270,18 @@ export default function UsersPage() {
     if (!user || !organizationId) {
       setJoinRequests([]);
       setJoinLoading(false);
+      setJoinError(null);
       return;
     }
     if (!canManage) {
       setJoinRequests([]);
       setJoinLoading(false);
+      setJoinError(null);
       return;
     }
 
     setJoinLoading(true);
+    setJoinError(null);
     const colRef = collection(db, 'organizations', organizationId, 'joinRequests');
     const baseQuery = query(colRef, orderBy('createdAt', 'desc'), limit(joinRequestsPageSize));
 
@@ -299,6 +303,7 @@ export default function UsersPage() {
         });
 
         setJoinRequests(rows);
+        setJoinError(null);
         setJoinCursor(snap.docs[snap.docs.length - 1] ?? null);
         setJoinHasMore(snap.size === joinRequestsPageSize);
 
@@ -319,6 +324,11 @@ export default function UsersPage() {
         setJoinLoading(false);
         setJoinCursor(null);
         setJoinHasMore(false);
+        const msg =
+          (err as any)?.code === 'permission-denied'
+            ? 'permission-denied: revisa rules (joinRequests read solo super_admin) y claims del usuario.'
+            : (err as any)?.message ?? 'Error leyendo joinRequests.';
+        setJoinError(msg);
       }
     );
 
@@ -516,6 +526,11 @@ export default function UsersPage() {
                 <CardContent>
                   {joinLoading ? (
                     <div className="text-sm text-muted-foreground">Cargando solicitudes…</div>
+                  ) : joinError ? (
+                    <div className="rounded-md border border-white/20 bg-background p-3 text-sm">
+                      <div className="font-medium">No se pudieron cargar las solicitudes</div>
+                      <div className="mt-1 text-muted-foreground">{joinError}</div>
+                    </div>
                   ) : pendingRequests.length === 0 ? (
                     <div className="text-sm text-muted-foreground">No hay solicitudes pendientes.</div>
                   ) : (
