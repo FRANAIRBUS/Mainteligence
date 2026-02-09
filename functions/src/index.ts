@@ -4428,10 +4428,7 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
   const checklistRaw = Array.isArray((data as any).checklist) ? (data as any).checklist : [];
   const checklist = normalizeChecklistItems(checklistRaw);
 
-  const checklistRaw = Array.isArray((data as any).checklist) ? (data as any).checklist : [];
-  const checklist = normalizeChecklistItems(checklistRaw);
-
-  if (!isPlainObject(data.schedule)) throw httpsError('invalid-argument', 'schedule requerido.');
+    if (!isPlainObject(data.schedule)) throw httpsError('invalid-argument', 'schedule requerido.');
 
   const scheduleType = String(data.schedule.type ?? '').trim();
   if (!['daily', 'weekly', 'monthly', 'date'].includes(scheduleType)) {
@@ -4613,6 +4610,9 @@ export const updatePreventiveTemplate = functions.https.onCall(async (data, cont
   const siteId = String(data.siteId ?? '').trim();
   const departmentId = String(data.departmentId ?? '').trim();
   const assetId = String(data.assetId ?? '').trim();
+
+  const checklistRaw = Array.isArray((data as any).checklist) ? (data as any).checklist : [];
+  const checklist = normalizeChecklistItems(checklistRaw);
 
   if (!isPlainObject(data.schedule)) throw httpsError('invalid-argument', 'schedule requerido.');
 
