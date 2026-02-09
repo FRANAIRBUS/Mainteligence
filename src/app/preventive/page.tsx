@@ -115,6 +115,7 @@ const formatDateTime = (value: any) => {
 };
 
 function WorkOrdersTable({ workOrders, loading }: { workOrders: WorkOrder[]; loading: boolean }) {
+  const router = useRouter();
   if (loading) {
     return (
       <div className="flex h-64 w-full items-center justify-center">
@@ -162,8 +163,8 @@ function WorkOrdersTable({ workOrders, loading }: { workOrders: WorkOrder[]; loa
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem>Ver Detalles</DropdownMenuItem>
-                    <DropdownMenuItem>Ejecutar</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => router.push(`/preventive/work-orders/${wo.id}`)}>Ver Detalles</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => router.push(`/preventive/work-orders/${wo.id}`)}>Ejecutar</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>

@@ -5118,6 +5118,62 @@ export const workOrders_generateNow = functions.https.onCall(async (data, contex
   return { ok: true, organizationId: orgId, templateId, woId };
 });
 
+export const workOrders_start = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = resolveOrgIdFromData(data);
+  const woId = requireStringField(data.woId, 'woId');
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const woRef = orgRef.collection('workOrders').doc(woId);
+
+  const woSnap = await woRef.get();
+  if (!woSnap.exists) throw httpsError('not-found', 'OT no encontrada.');
+  if (String(woSnap.get('organizationId') ?? '') !== orgId) {
+    throw httpsError('permission-denied', 'OT fuera de la organización.');
+  }
+
+  const wo = woSnap.data() as any;
+  const createdBy = String(wo?.createdBy ?? '');
+  const assignedTo = String(wo?.assignedTo ?? '');
+  const isAdminLike = ADMIN_LIKE_ROLES.has(role);
+  const isActorRelated = actorUid === createdBy || (assignedTo && actorUid === assignedTo);
+
+  if (!isAdminLike && !isActorRelated) {
+    throw httpsError('permission-denied', 'Solo el creador/asignado o admin/mantenimiento puede iniciar esta OT.');
+  }
+
+  if (wo?.isOpen !== true) {
+    throw httpsError('failed-precondition', 'La OT está cerrada.');
+  }
+
+  const currentStatus = String(wo?.status ?? 'open');
+  if (currentStatus === 'in_progress') {
+    return { ok: true, organizationId: orgId, woId, status: 'in_progress' };
+  }
+
+  const nowServer = admin.firestore.FieldValue.serverTimestamp();
+  await woRef.update({
+    status: 'in_progress',
+    startedAt: nowServer,
+    startedBy: actorUid,
+    updatedAt: nowServer,
+  });
+
+  await auditLog({
+    action: 'workOrders_start',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { woId },
+  });
+
+  return { ok: true, organizationId: orgId, woId, status: 'in_progress' };
+});
+
 export const workOrders_close = functions.https.onCall(async (data, context) => {
   const actorUid = requireAuth(context);
   const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
