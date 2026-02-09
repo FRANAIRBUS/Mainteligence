@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { limit, orderBy } from "firebase/firestore";
 import { format, isBefore, addDays } from "date-fns";
 import { es } from "date-fns/locale";
@@ -132,10 +132,15 @@ export default function Home() {
     uid: user?.uid ?? null,
   });
 
+  // IMPORTANT: useCollectionQuery depends on QueryConstraint identity.
+  // Memoize constraints to avoid unsubscribe/subscribe loops on every render.
+  const workOrdersConstraints = useMemo(() => {
+    return [orderBy("createdAt", "desc"), limit(50)];
+  }, []);
+
   const { data: workOrders = [] } = useCollectionQuery<WorkOrder>(
     organizationId ? orgWorkOrdersPath(organizationId) : null,
-    orderBy("createdAt", "desc"),
-    limit(50)
+    ...workOrdersConstraints
   );
 
   const visibleTasks = rbacUser
@@ -188,17 +193,16 @@ export default function Home() {
 
   return (
     <AppShell
-      headerContent={
-        <div className="flex w-full flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <h1 className="text-lg font-semibold leading-tight md:text-xl">Panel de Control</h1>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild>
-              <Link href="/tasks/new">Crear tarea</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/incidents/new">Crear incidencia</Link>
-            </Button>
-          </div>
+      title="Panel de Control"
+      description={organizationLabel}
+      action={
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild>
+            <Link href="/tasks/new">Crear tarea</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/incidents/new">Crear incidencia</Link>
+          </Button>
         </div>
       }
     >

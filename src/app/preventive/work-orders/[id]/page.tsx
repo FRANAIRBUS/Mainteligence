@@ -32,13 +32,9 @@ export default function WorkOrderDetailPage() {
     woId && organizationId ? orgDocPath(organizationId, "workOrders", woId) : null
   );
 
-  // NOTE: QueryConstraint instances must be memoized; useCollectionQuery's effect depends on them by reference.
-  // If we create orderBy(...) inline, it re-subscribes on every render and can cause constant loading / UI jank.
-  const checklistConstraints = useMemo(() => [orderBy("order", "asc")], []);
-
   const { data: checklistItems, loading: checklistLoading } = useCollectionQuery<WorkOrderChecklistItem>(
     woId && organizationId ? orgWorkOrderChecklistItemsPath(organizationId, woId) : null,
-    ...checklistConstraints
+    orderBy("order", "asc")
   );
 
   const isLoading = userLoading || workOrderLoading;
@@ -130,17 +126,12 @@ export default function WorkOrderDetailPage() {
 
   return (
     <AppShell
-      headerContent={
-        <div className="flex w-full items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/preventive" className="flex items-center gap-2">
-                <span>Volver</span>
-              </Link>
-            </Button>
-            <h1 className="text-lg font-semibold leading-tight md:text-xl">Detalle de OT</h1>
-          </div>
-        </div>
+      title="Detalle de OT"
+      description="Mantenimiento preventivo"
+      action={
+        <Button variant="outline" onClick={() => router.back()}>
+          Volver
+        </Button>
       }
     >
       {isLoading ? (
@@ -156,6 +147,11 @@ export default function WorkOrderDetailPage() {
         </Card>
       ) : (
         <div className="grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-3">
+            <Button variant="outline" asChild className="mb-2">
+              <Link href="/preventive">Volver a la lista</Link>
+            </Button>
+          </div>
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-4">
