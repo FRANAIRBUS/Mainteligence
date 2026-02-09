@@ -14,5 +14,8 @@ export const orgWorkOrdersPath = (orgId: string) =>
 
 
 
+export const orgWorkOrderChecklistItemsPath = (orgId: string, woId: string) =>
+  `organizations/${orgId}/workOrders/${woId}/checklistItems`;
+
 export const orgStoragePath = (orgId: string, ...parts: string[]) =>
   `orgs/${orgId}/${parts.filter(Boolean).join("/")}`;

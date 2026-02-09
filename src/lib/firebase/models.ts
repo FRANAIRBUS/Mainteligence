@@ -7,14 +7,14 @@ export interface BaseEntity {
   updatedAt: Timestamp;
 }
 
-export type WorkOrderStatus = "open" | "closed";
+export type WorkOrderStatus = "open" | "in_progress" | "closed";
 export type WorkOrderKind = "preventive";
 
 export interface WorkOrder extends BaseEntity {
   kind: WorkOrderKind;
   status: WorkOrderStatus;
   isOpen: boolean;
-  priority?: string;
+  priority?: "Baja" | "Media" | "Alta" | "Crítica";
   siteId?: string | null;
   departmentId?: string | null;
   assetId?: string | null;
@@ -23,9 +23,32 @@ export interface WorkOrder extends BaseEntity {
   createdBy?: string;
   assignedTo?: string | null;
   preventiveTemplateId?: string;
+  templateSnapshot?: {
+    name: string;
+    frequencyDays: number;
+  };
+  preventive?: {
+    frequencyDays: number;
+    scheduledFor: Timestamp;
+  };
   checklistRequired?: boolean;
+  startedAt?: Timestamp | null;
+  startedBy?: string | null;
   closedAt?: Timestamp | null;
   closedBy?: string | null;
+}
+
+export interface WorkOrderChecklistItem {
+  id: string;
+  organizationId: string;
+  label: string;
+  required: boolean;
+  order: number;
+  done: boolean;
+  doneAt?: Timestamp | null;
+  doneBy?: string | null;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
 }
 
 
