@@ -48,7 +48,7 @@ export default function WorkOrderDetailPage() {
   const statusLabel = useMemo(() => {
     const st = workOrder?.status ?? "open";
     if (st === "open") return "Abierta";
-    if (st === "in_progress") return "En curso";
+    if (st === "in_progress") return "En progreso";
     return "Cerrada";
   }, [workOrder?.status]);
 
@@ -91,7 +91,7 @@ export default function WorkOrderDetailPage() {
     try {
       const fn = httpsCallable(getFunctions(app), "workOrders_start");
       await fn({ organizationId, woId });
-      toast({ title: "OT iniciada", description: "Estado actualizado a 'En curso'." });
+      toast({ title: "OT actualizada", description: "Estado actualizado a 'En progreso'." });
     } catch (err: any) {
       console.error("workOrders_start failed", err);
       toast({
@@ -173,7 +173,7 @@ export default function WorkOrderDetailPage() {
               <div className="flex flex-wrap gap-2">
                 <Button onClick={startWorkOrder} disabled={!canStart || starting}>
                   {starting ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Iniciar
+                  En progreso
                 </Button>
                 <Button variant="destructive" onClick={closeWorkOrder} disabled={!canClose || closing}>
                   {closing ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
