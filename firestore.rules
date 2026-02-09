@@ -500,8 +500,22 @@ service cloud.firestore {
             && canReadDoc(orgId, request.auth.uid,
               get(/databases/$(database)/documents/organizations/$(orgId)/workOrders/$(woId)).data
             )
+            // Solo se permite toggle de completado (con auditoría autocontenida) sin poder falsificar a otro usuario.
             && request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['done', 'doneAt', 'doneBy', 'updatedAt']);
+              .hasOnly(['done', 'doneAt', 'doneBy', 'updatedAt'])
+            && request.resource.data.organizationId == resource.data.organizationId
+            && request.resource.data.organizationId == orgId
+            && request.resource.data.done is bool
+            && (
+              // Marcar como completado: el propio usuario se auto-asigna como doneBy.
+              (request.resource.data.done == true
+                && request.resource.data.doneBy == request.auth.uid
+                && request.resource.data.doneAt is timestamp)
+              // Desmarcar: se limpian los campos de auditoría.
+              || (request.resource.data.done == false
+                && request.resource.data.doneBy == null
+                && request.resource.data.doneAt == null)
+            );
         }
       }
 
