@@ -4425,6 +4425,12 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
   const departmentId = String(data.departmentId ?? '').trim();
   const assetId = String(data.assetId ?? '').trim();
 
+  const checklistRaw = Array.isArray((data as any).checklist) ? (data as any).checklist : [];
+  const checklist = normalizeChecklistItems(checklistRaw);
+
+  const checklistRaw = Array.isArray((data as any).checklist) ? (data as any).checklist : [];
+  const checklist = normalizeChecklistItems(checklistRaw);
+
   if (!isPlainObject(data.schedule)) throw httpsError('invalid-argument', 'schedule requerido.');
 
   const scheduleType = String(data.schedule.type ?? '').trim();
@@ -4546,6 +4552,7 @@ export const createPreventiveTemplate = functions.https.onCall(async (data, cont
         description: description || undefined,
         status,
         automatic,
+        checklist: checklist.length ? checklist : undefined,
         schedule: storedSchedule,
         priority,
         siteId: siteId || undefined,
@@ -4717,6 +4724,7 @@ export const updatePreventiveTemplate = functions.https.onCall(async (data, cont
         description: description || undefined,
         status,
         automatic,
+        checklist: checklist.length ? checklist : undefined,
         schedule: storedSchedule,
         priority,
         siteId: siteId || undefined,

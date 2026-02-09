@@ -21,6 +21,21 @@ import { orgCollectionPath, orgPreventiveTemplatesPath } from '@/lib/organizatio
 const normalizeOptional = (value?: string) =>
   value && value !== '__none__' ? value : undefined;
 
+const parseChecklistText = (text?: string) => {
+  const raw = String(text ?? '').split(/\r?\n/);
+  const out: { label: string; required: boolean; order: number }[] = [];
+  let order = 0;
+  for (const line of raw) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const optional = trimmed.startsWith('?');
+    const label = trimmed.replace(/^\?\s*/, '').trim();
+    if (!label) continue;
+    out.push({ label, required: !optional, order: order++ });
+  }
+  return out;
+};
+
 export default function NewPreventiveTemplatePage() {
   const router = useRouter();
   const app = useFirebaseApp();
@@ -135,6 +150,7 @@ export default function NewPreventiveTemplatePage() {
         description: values.description?.trim() || null,
         status: values.status,
         automatic: values.automatic,
+        checklist: parseChecklistText(values.checklistText),
         schedule: {
           type: values.scheduleType,
           timezone:
