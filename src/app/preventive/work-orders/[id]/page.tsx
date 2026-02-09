@@ -32,9 +32,13 @@ export default function WorkOrderDetailPage() {
     woId && organizationId ? orgDocPath(organizationId, "workOrders", woId) : null
   );
 
+  // NOTE: QueryConstraint instances must be memoized; useCollectionQuery's effect depends on them by reference.
+  // If we create orderBy(...) inline, it re-subscribes on every render and can cause constant loading / UI jank.
+  const checklistConstraints = useMemo(() => [orderBy("order", "asc")], []);
+
   const { data: checklistItems, loading: checklistLoading } = useCollectionQuery<WorkOrderChecklistItem>(
     woId && organizationId ? orgWorkOrderChecklistItemsPath(organizationId, woId) : null,
-    orderBy("order", "asc")
+    ...checklistConstraints
   );
 
   const isLoading = userLoading || workOrderLoading;
