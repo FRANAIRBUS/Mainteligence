@@ -55,10 +55,8 @@ export default function WorkOrderDetailPage() {
     return "Cerrada";
   }, [workOrder?.status]);
 
-  const canStart = workOrder?.isOpen === true && (workOrder?.status === "open" || !workOrder?.status);
   const canClose = workOrder?.isOpen === true;
 
-  const [starting, setStarting] = useState(false);
   const [closing, setClosing] = useState(false);
 
   const toggleChecklistItem = async (item: WorkOrderChecklistItem) => {
@@ -84,26 +82,6 @@ export default function WorkOrderDetailPage() {
         description: err?.message ?? "Error inesperado",
         variant: "destructive",
       });
-    }
-  };
-
-  const startWorkOrder = async () => {
-    if (!app || !organizationId || !woId) return;
-
-    setStarting(true);
-    try {
-      const fn = httpsCallable(getFunctions(app), "workOrders_start");
-      await fn({ organizationId, woId });
-      toast({ title: "OT actualizada", description: "Estado actualizado a 'En progreso'." });
-    } catch (err: any) {
-      console.error("workOrders_start failed", err);
-      toast({
-        title: "No se pudo iniciar",
-        description: err?.message ?? "Error inesperado",
-        variant: "destructive",
-      });
-    } finally {
-      setStarting(false);
     }
   };
 
@@ -161,23 +139,13 @@ export default function WorkOrderDetailPage() {
                 <span>{workOrder.title}</span>
                 <Badge variant="outline">{statusLabel}</Badge>
               </CardTitle>
-              <CardDescription>
-                ID: <span className="font-mono">{workOrder.id}</span>
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">Prioridad: {workOrder.priority ?? "Media"}</Badge>
-                {workOrder.preventiveTemplateId ? (
-                  <Badge variant="secondary">Plantilla: {workOrder.preventiveTemplateId}</Badge>
-                ) : null}
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={startWorkOrder} disabled={!canStart || starting}>
-                  {starting ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  En progreso
-                </Button>
                 <Button variant="destructive" onClick={closeWorkOrder} disabled={!canClose || closing}>
                   {closing ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Cerrar
