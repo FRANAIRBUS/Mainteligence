@@ -16,6 +16,13 @@ import {
 } from "@/lib/status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Icons } from "@/components/icons";
 import { AppShell } from "@/components/app-shell";
 import { useCollection, useCollectionQuery, useDoc, useUser } from "@/lib/firebase";
@@ -197,12 +204,23 @@ export default function Home() {
       description={organizationLabel}
       action={
         <div className="flex flex-wrap items-center gap-2">
-          <Button asChild>
-            <Link href="/tasks/new">Crear tarea</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/incidents/new">Crear incidencia</Link>
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>Nueva</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Crear</DropdownMenuLabel>
+              <DropdownMenuItem asChild>
+                <Link href="/tasks/new">Tarea</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/incidents/new">Incidencia</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/preventive/new">Preventivo</Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       }
     >
