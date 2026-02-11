@@ -10,6 +10,16 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription as ModalDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Icons } from "@/components/icons";
 import { useToast } from "@/hooks/use-toast";
 
@@ -55,11 +65,13 @@ export default function WorkOrderDetailPage() {
     return "Cerrada";
   }, [workOrder?.status]);
 
-  const canStart = workOrder?.isOpen === true && (workOrder?.status === "open" || !workOrder?.status);
   const canClose = workOrder?.isOpen === true;
 
-  const [starting, setStarting] = useState(false);
   const [closing, setClosing] = useState(false);
+
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportDescription, setReportDescription] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
   const toggleChecklistItem = async (item: WorkOrderChecklistItem) => {
     if (!organizationId || !woId || !user || !firestore) return;
@@ -87,23 +99,54 @@ export default function WorkOrderDetailPage() {
     }
   };
 
-  const startWorkOrder = async () => {
-    if (!app || !organizationId || !woId) return;
-
-    setStarting(true);
-    try {
-      const fn = httpsCallable(getFunctions(app), "workOrders_start");
-      await fn({ organizationId, woId });
-      toast({ title: "OT actualizada", description: "Estado actualizado a 'En progreso'." });
-    } catch (err: any) {
-      console.error("workOrders_start failed", err);
+  const addReport = async () => {
+    if (!app || !organizationId || !woId) {
       toast({
-        title: "No se pudo iniciar",
-        description: err?.message ?? "Error inesperado",
+        title: "No se pudo registrar el informe",
+        description: "Inténtalo nuevamente en unos instantes. Faltan datos obligatorios.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!user) {
+      toast({
+        title: "Inicia sesión",
+        description: "Debes iniciar sesión para informar esta OT.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const description = reportDescription.trim();
+    if (!description) {
+      toast({
+        title: "Agrega una descripción",
+        description: "Describe el informe antes de enviarlo.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setReportSubmitting(true);
+    try {
+      const fn = httpsCallable(getFunctions(app), "workOrders_addReport");
+      await fn({ organizationId, woId, description });
+      setReportDescription("");
+      setIsReportDialogOpen(false);
+      toast({ title: "Informe agregado", description: "Se registró el seguimiento de la OT." });
+    } catch (err: any) {
+      console.error("workOrders_addReport failed", err);
+      const msg =
+        err?.details?.message ||
+        err?.message ||
+        (typeof err === "string" ? err : "Error inesperado");
+      toast({
+        title: "No se pudo guardar el informe",
+        description: msg,
         variant: "destructive",
       });
     } finally {
-      setStarting(false);
+      setReportSubmitting(false);
     }
   };
 
@@ -161,28 +204,47 @@ export default function WorkOrderDetailPage() {
                 <span>{workOrder.title}</span>
                 <Badge variant="outline">{statusLabel}</Badge>
               </CardTitle>
-              <CardDescription>
-                ID: <span className="font-mono">{workOrder.id}</span>
-              </CardDescription>
+              {workOrder.description ? (
+                <CardDescription className="whitespace-pre-wrap">{workOrder.description}</CardDescription>
+              ) : null}
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">Prioridad: {workOrder.priority ?? "Media"}</Badge>
-                {workOrder.preventiveTemplateId ? (
-                  <Badge variant="secondary">Plantilla: {workOrder.preventiveTemplateId}</Badge>
-                ) : null}
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={startWorkOrder} disabled={!canStart || starting}>
-                  {starting ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  En progreso
+                <Button variant="outline" onClick={() => setIsReportDialogOpen(true)} disabled={!workOrder.isOpen}>
+                  Registrar informe
                 </Button>
                 <Button variant="destructive" onClick={closeWorkOrder} disabled={!canClose || closing}>
                   {closing ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Cerrar
                 </Button>
               </div>
+
+              {Array.isArray((workOrder as any).reports) && (workOrder as any).reports.length ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Informes</div>
+                  <div className="space-y-2">
+                    {(workOrder as any).reports
+                      .slice()
+                      .sort((a: any, b: any) => {
+                        const aMs = a?.createdAt?.toMillis?.() ?? 0;
+                        const bMs = b?.createdAt?.toMillis?.() ?? 0;
+                        return bMs - aMs;
+                      })
+                      .map((r: any, idx: number) => (
+                        <Card key={idx}>
+                          <CardHeader className="p-3">
+                            <CardTitle className="text-sm">Informe</CardTitle>
+                            <CardDescription className="whitespace-pre-wrap">{String(r?.description ?? "")}</CardDescription>
+                          </CardHeader>
+                        </Card>
+                      ))}
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -226,6 +288,41 @@ export default function WorkOrderDetailPage() {
           </Card>
         </div>
       )}
+
+      <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuevo informe</DialogTitle>
+            <ModalDescription>
+              Describe el informe o avance que deseas registrar para esta OT.
+            </ModalDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="wo-report">Detalle del informe</Label>
+            <Textarea
+              id="wo-report"
+              placeholder="Describe el informe o avance que deseas registrar"
+              value={reportDescription}
+              onChange={(event) => setReportDescription(event.target.value)}
+              disabled={reportSubmitting || !workOrder?.isOpen}
+            />
+            {!workOrder?.isOpen && (
+              <p className="text-xs text-muted-foreground">
+                La OT está cerrada. No se pueden agregar más informes.
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsReportDialogOpen(false)} disabled={reportSubmitting}>
+              Cancelar
+            </Button>
+            <Button onClick={addReport} disabled={reportSubmitting || !workOrder?.isOpen}>
+              {reportSubmitting && <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar informe
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

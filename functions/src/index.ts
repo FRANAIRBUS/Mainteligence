@@ -5300,6 +5300,87 @@ export const workOrders_close = functions.https.onCall(async (data, context) => 
   return { ok: true, organizationId: orgId, woId };
 });
 
+export const workOrders_addReport = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  try {
+    const orgId = resolveOrgIdFromData(data);
+    const woId = requireStringField(data?.woId, 'woId');
+    const descriptionRaw = String(data?.description ?? data?.text ?? data?.reportAppend?.description ?? data?.payload?.description ?? '').trim();
+
+    if (!descriptionRaw) {
+      throw httpsError('invalid-argument', 'El informe no puede estar vacío.');
+    }
+    if (descriptionRaw.length > 5000) {
+      throw httpsError('invalid-argument', 'El informe es demasiado largo (máx 5000 caracteres).');
+    }
+
+    const { role } = await requireActiveMembership(actorUid, orgId);
+
+    const orgRef = db.collection('organizations').doc(orgId);
+    const woRef = orgRef.collection('workOrders').doc(woId);
+
+    const woSnap = await woRef.get();
+    if (!woSnap.exists) throw httpsError('not-found', 'OT no encontrada.');
+    if (String(woSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('permission-denied', 'OT fuera de la organización.');
+    }
+
+    const wo = woSnap.data() as any;
+    const createdBy = String(wo?.createdBy ?? '');
+    const assignedTo = String(wo?.assignedTo ?? '');
+    const isAdminLike = ADMIN_LIKE_ROLES.has(role);
+    const isActorRelated = actorUid === createdBy || (assignedTo && actorUid === assignedTo);
+
+    if (!isAdminLike && !isActorRelated) {
+      throw httpsError('permission-denied', 'Solo el creador/asignado o admin/mantenimiento puede registrar informes en esta OT.');
+    }
+
+    if (wo?.isOpen !== true) {
+      throw httpsError('failed-precondition', 'La OT está cerrada. No se pueden añadir informes.');
+    }
+
+    const entry = {
+      description: descriptionRaw,
+      createdAt: admin.firestore.Timestamp.now(),
+      createdBy: actorUid,
+    };
+
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+    await woRef.update({
+      reports: admin.firestore.FieldValue.arrayUnion(entry),
+      updatedAt: nowServer,
+    });
+
+    await auditLog({
+      action: 'workOrders_addReport',
+      actorUid,
+      actorEmail,
+      orgId,
+      after: { woId },
+    });
+
+    return { ok: true, organizationId: orgId, woId };
+  } catch (error: any) {
+    functions.logger.error('workOrders_addReport failed', {
+      code: error?.code,
+      message: error?.message,
+      stack: error?.stack,
+    });
+
+    // Preserve explicit HttpsError codes so the client can show meaningful feedback.
+    if (error instanceof functions.https.HttpsError || error?.constructor?.name === 'HttpsError') {
+      throw error;
+    }
+
+    // Fallback: unknown/internal.
+    throw new functions.https.HttpsError('internal', 'Error interno registrando el informe.', {
+      reason: 'workOrders_addReport_failed',
+    });
+  }
+});
+
 // Back-compat: generatePreventiveNow sigue existiendo, pero se recomienda migrar a workOrders_generateNow.
 
 export const inviteUserToOrg = functions.https.onCall(async (data, context) => {
