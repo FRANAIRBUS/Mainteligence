@@ -5300,6 +5300,63 @@ export const workOrders_close = functions.https.onCall(async (data, context) => 
   return { ok: true, organizationId: orgId, woId };
 });
 
+// Añadir informes/seguimientos a una OT de preventivo.
+// Misma semántica que tickets/tasks: append inmutable, con createdAt y createdBy.
+export const workOrders_addReport = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const orgId = resolveOrgIdFromData(data);
+  const woId = requireStringField(data.woId, 'woId');
+  const description = requireStringField(data.description, 'description').trim();
+  if (!description) throw httpsError('invalid-argument', 'La descripción del informe es obligatoria.');
+
+  const { role } = await requireActiveMembership(actorUid, orgId);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const woRef = orgRef.collection('workOrders').doc(woId);
+
+  const woSnap = await woRef.get();
+  if (!woSnap.exists) throw httpsError('not-found', 'OT no encontrada.');
+  if (String(woSnap.get('organizationId') ?? '') !== orgId) {
+    throw httpsError('permission-denied', 'OT fuera de la organización.');
+  }
+
+  const wo = woSnap.data() as any;
+  const createdBy = String(wo?.createdBy ?? '');
+  const assignedTo = String(wo?.assignedTo ?? '');
+  const isAdminLike = ADMIN_LIKE_ROLES.has(role);
+  const isActorRelated = actorUid === createdBy || (assignedTo && actorUid === assignedTo);
+
+  if (!isAdminLike && !isActorRelated) {
+    throw httpsError('permission-denied', 'Solo el creador/asignado o admin/mantenimiento puede informar esta OT.');
+  }
+
+  if (wo?.isOpen !== true) {
+    throw httpsError('failed-precondition', 'La OT está cerrada.');
+  }
+
+  const nowServer = admin.firestore.FieldValue.serverTimestamp();
+  await woRef.update({
+    reports: admin.firestore.FieldValue.arrayUnion({
+      description,
+      createdBy: actorUid,
+      createdAt: nowServer,
+    }),
+    updatedAt: nowServer,
+  });
+
+  await auditLog({
+    action: 'workOrders_addReport',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { woId },
+  });
+
+  return { ok: true, organizationId: orgId, woId };
+});
+
 // Back-compat: generatePreventiveNow sigue existiendo, pero se recomienda migrar a workOrders_generateNow.
 
 export const inviteUserToOrg = functions.https.onCall(async (data, context) => {

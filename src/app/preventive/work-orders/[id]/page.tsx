@@ -10,12 +10,21 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Icons } from "@/components/icons";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 
 import { useCollectionQuery, useDoc, useFirebaseApp, useFirestore, useUser } from "@/lib/firebase";
 import type { WorkOrder, WorkOrderChecklistItem } from "@/lib/firebase/models";
 import { orgDocPath, orgWorkOrderChecklistItemsPath } from "@/lib/organization";
+
+type ReportEntry = {
+  description?: string;
+  createdBy?: string;
+  createdAt?: any;
+};
 
 export default function WorkOrderDetailPage() {
   const router = useRouter();
@@ -56,8 +65,23 @@ export default function WorkOrderDetailPage() {
   }, [workOrder?.status]);
 
   const canClose = workOrder?.isOpen === true;
-
   const [closing, setClosing] = useState(false);
+
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportDescription, setReportDescription] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+
+  const sortedReports = useMemo(() => {
+    const reports = (workOrder as any)?.reports as ReportEntry[] | undefined;
+    if (!reports || !Array.isArray(reports)) return [];
+    return [...reports].sort((a, b) => {
+      const aDate = a?.createdAt?.toDate?.() ?? a?.createdAt ?? null;
+      const bDate = b?.createdAt?.toDate?.() ?? b?.createdAt ?? null;
+      const aMs = aDate instanceof Date ? aDate.getTime() : 0;
+      const bMs = bDate instanceof Date ? bDate.getTime() : 0;
+      return bMs - aMs;
+    });
+  }, [workOrder]);
 
   const toggleChecklistItem = async (item: WorkOrderChecklistItem) => {
     if (!organizationId || !woId || !user || !firestore) return;
@@ -82,6 +106,46 @@ export default function WorkOrderDetailPage() {
         description: err?.message ?? "Error inesperado",
         variant: "destructive",
       });
+    }
+  };
+
+  const addWorkOrderReport = async () => {
+    if (!app || !organizationId || !woId) return;
+    if (!workOrder?.isOpen) {
+      toast({
+        title: "OT cerrada",
+        description: "La OT está cerrada. No se pueden agregar más informes.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const description = reportDescription.trim();
+    if (!description) {
+      toast({
+        title: "Agrega una descripción",
+        description: "Describe el informe antes de enviarlo.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setReportSubmitting(true);
+    try {
+      const fn = httpsCallable(getFunctions(app), "workOrders_addReport");
+      await fn({ organizationId, woId, description });
+      setReportDescription("");
+      setIsReportDialogOpen(false);
+      toast({ title: "Informe agregado", description: "Se registró el seguimiento de la OT." });
+    } catch (err: any) {
+      console.error("workOrders_addReport failed", err);
+      toast({
+        title: "No se pudo guardar el informe",
+        description: err?.message ?? "Vuelve a intentarlo en unos segundos.",
+        variant: "destructive",
+      });
+    } finally {
+      setReportSubmitting(false);
     }
   };
 
@@ -139,6 +203,7 @@ export default function WorkOrderDetailPage() {
                 <span>{workOrder.title}</span>
                 <Badge variant="outline">{statusLabel}</Badge>
               </CardTitle>
+              {workOrder.description ? <CardDescription className="whitespace-pre-line">{workOrder.description}</CardDescription> : null}
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">
@@ -146,10 +211,44 @@ export default function WorkOrderDetailPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => setIsReportDialogOpen(true)} disabled={!workOrder.isOpen}>
+                  Registrar informe
+                </Button>
                 <Button variant="destructive" onClick={closeWorkOrder} disabled={!canClose || closing}>
                   {closing ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Cerrar
                 </Button>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Informes</h3>
+                  <Button size="sm" variant="ghost" onClick={() => setIsReportDialogOpen(true)} disabled={!workOrder.isOpen}>
+                    Añadir
+                  </Button>
+                </div>
+
+                {sortedReports.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Aún no hay informes para esta OT.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {sortedReports.map((report, index) => {
+                      const date = report.createdAt?.toDate?.() ?? new Date();
+                      const reporter = report.createdBy ?? "";
+                      return (
+                        <div key={`${index}-${reporter}`} className="rounded-md border p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                            <span>{date.toLocaleString()}</span>
+                            {reporter ? <span className="font-mono">{reporter}</span> : null}
+                          </div>
+                          <p className="mt-2 whitespace-pre-line text-sm text-foreground">
+                            {String(report.description ?? "")}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -194,6 +293,41 @@ export default function WorkOrderDetailPage() {
           </Card>
         </div>
       )}
+
+      <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nuevo informe</DialogTitle>
+            <DialogDescription>
+              Describe el informe o avance que deseas registrar para esta OT.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="workorder-report">Detalle del informe</Label>
+            <Textarea
+              id="workorder-report"
+              placeholder="Describe el informe o avance que deseas registrar"
+              value={reportDescription}
+              onChange={(e) => setReportDescription(e.target.value)}
+              disabled={reportSubmitting || !workOrder?.isOpen}
+            />
+            {!workOrder?.isOpen ? (
+              <p className="text-xs text-muted-foreground">La OT está cerrada. No se pueden agregar más informes.</p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setIsReportDialogOpen(false)} disabled={reportSubmitting}>
+              Cancelar
+            </Button>
+            <Button onClick={addWorkOrderReport} disabled={reportSubmitting || !workOrder?.isOpen}>
+              {reportSubmitting ? <Icons.spinner className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Guardar informe
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
