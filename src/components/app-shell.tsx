@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/firebase";
 
-import MainNav from "@/components/main-nav";
 import { UserNav } from "@/components/user-nav";
 import MobileBottomNav from "@/components/mobile-bottom-nav";
 import { DemoModeBanner } from "@/components/demo-mode-banner";
@@ -24,11 +23,9 @@ export function AppShell({ title, description, action, children, className }: Ap
   const pathname = usePathname();
   const router = useRouter();
   const { user, memberships, activeMembership, loading, isRoot } = useUser();
-  const [menuOpen, setMenuOpen] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
 
   React.useEffect(() => {
-    setMenuOpen(false);
     setCreateOpen(false);
   }, [pathname]);
 
@@ -104,55 +101,8 @@ export function AppShell({ title, description, action, children, className }: Ap
 
       {/* Bottom nav */}
       <MobileBottomNav
-        onOpenMenu={() => setMenuOpen(true)}
         onOpenCreate={() => setCreateOpen(true)}
       />
-
-      {/* Drawer overlay: Menú */}
-      {menuOpen ? (
-        <div className="fixed inset-0 z-50">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setMenuOpen(false)}
-            aria-hidden="true"
-          />
-          <aside className="absolute left-0 top-0 h-full w-[320px] max-w-[85vw] bg-background shadow-xl">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="text-sm font-semibold">Menú</div>
-              <button
-                type="button"
-                onClick={() => setMenuOpen(false)}
-                className="rounded-md border px-2 py-1 text-xs"
-              >
-                Cerrar
-              </button>
-            </div>
-
-            <div className="h-full overflow-y-auto p-3 pb-24">
-              <MainNav onNavigate={() => setMenuOpen(false)} />
-
-              <div className="mt-4 rounded-xl border p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-sm font-semibold">Accesos rápidos</p>
-                  <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                    App
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <QuickLink href="/tasks" label="Tareas" />
-                  <QuickLink href="/incidents" label="Incidencias" />
-                  <QuickLink href="/reports" label="Informes" />
-                  <QuickLink href="/settings" label="Ajustes" />
-                  <QuickLink href="/locations" label="Ubicaciones" />
-                  <QuickLink href="/departments" label="Departamentos" />
-                  <QuickLink href="/users" label="Usuarios" />
-                </div>
-              </div>
-            </div>
-          </aside>
-        </div>
-      ) : null}
 
       {/* Drawer overlay: Crear */}
       {createOpen ? (
@@ -183,17 +133,6 @@ export function AppShell({ title, description, action, children, className }: Ap
         </div>
       ) : null}
     </div>
-  );
-}
-
-function QuickLink({ href, label }: { href: string; label: string }) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center justify-center rounded-lg border bg-background px-2 py-2 text-xs hover:bg-muted"
-    >
-      <span className="truncate">{label}</span>
-    </Link>
   );
 }
 
