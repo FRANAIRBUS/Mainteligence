@@ -26,6 +26,7 @@ export function AppShell({ title, description, action, children, className }: Ap
   const router = useRouter();
   const { user, memberships, activeMembership, loading, isRoot } = useUser();
   const [createOpen, setCreateOpen] = React.useState(false);
+  const organizationName = activeMembership?.organizationName ?? "Mainteligence";
 
   React.useEffect(() => {
     setCreateOpen(false);
@@ -115,18 +116,19 @@ export function AppShell({ title, description, action, children, className }: Ap
             aria-hidden="true"
           />
           <div className="absolute bottom-0 left-0 right-0 bg-background shadow-2xl">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="flex items-center gap-2">
-                <DynamicClientLogo width={24} height={24} className="bg-muted p-1" />
-                <div className="text-sm font-semibold">Crear</div>
-              </div>
+            <div className="relative border-b px-4 py-4">
               <button
                 type="button"
                 onClick={() => setCreateOpen(false)}
-                className="rounded-md border px-2 py-1 text-xs"
+                className="absolute right-4 top-4 rounded-md border px-2 py-1 text-sm leading-none"
+                aria-label="Cerrar"
               >
-                Cerrar
+                ×
               </button>
+              <div className="flex flex-col items-center gap-3 text-center">
+                <DynamicClientLogo width={84} height={84} className="rounded-xl bg-muted/60 p-2" />
+                <div className="text-base font-semibold">{organizationName}</div>
+              </div>
             </div>
 
             <div className="grid gap-3 p-4 pb-6">
@@ -162,7 +164,7 @@ function ActionLink({
   subtitle: string;
 }) {
   return (
-    <Link href={href} className="rounded-xl border bg-background p-3 hover:bg-muted">
+    <Link href={href} className="rounded-xl border bg-background p-3 text-center hover:bg-muted">
       <p className="text-sm font-semibold">{title}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
     </Link>
