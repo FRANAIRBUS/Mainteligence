@@ -6,12 +6,10 @@ import { cn } from "@/lib/utils";
 import { Home, ClipboardList, Wrench, Plus, Menu } from "lucide-react";
 
 export type MobileBottomNavProps = {
-  onOpenMenu: () => void;
   onOpenCreate: () => void;
 };
 
 export function MobileBottomNav({
-  onOpenMenu,
   onOpenCreate,
 }: MobileBottomNavProps) {
   const pathname = usePathname();
@@ -35,16 +33,11 @@ export function MobileBottomNav({
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex h-20 max-w-5xl items-center justify-around px-2">
-        {/* Menú (inactivo siempre, blanco) */}
-        <button
-          type="button"
-          onClick={onOpenMenu}
-          className={itemClass(false)}
-          aria-label="Menú"
-        >
-          <Menu className={iconClass(false)} />
+        {/* Menú */}
+        <Link href="/menu" className={itemClass(isActive("/menu"))} aria-label="Menú">
+          <Menu className={iconClass(isActive("/menu"))} />
           <span>Menú</span>
-        </button>
+        </Link>
 
         {/* Panel */}
         <Link href="/" className={itemClass(isActive("/"))} aria-label="Panel">
