@@ -6,9 +6,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/lib/firebase";
 
+import MainNav from "@/components/main-nav";
 import { UserNav } from "@/components/user-nav";
 import MobileBottomNav from "@/components/mobile-bottom-nav";
 import { DemoModeBanner } from "@/components/demo-mode-banner";
+import { DynamicClientLogo } from "@/components/dynamic-client-logo";
 
 export type AppShellProps = {
   title?: string;
@@ -114,7 +116,10 @@ export function AppShell({ title, description, action, children, className }: Ap
           />
           <div className="absolute bottom-0 left-0 right-0 bg-background shadow-2xl">
             <div className="flex items-center justify-between border-b px-4 py-3">
-              <div className="text-sm font-semibold">Crear</div>
+              <div className="flex items-center gap-2">
+                <DynamicClientLogo width={24} height={24} className="bg-muted p-1" />
+                <div className="text-sm font-semibold">Crear</div>
+              </div>
               <button
                 type="button"
                 onClick={() => setCreateOpen(false)}
@@ -133,6 +138,17 @@ export function AppShell({ title, description, action, children, className }: Ap
         </div>
       ) : null}
     </div>
+  );
+}
+
+function QuickLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center justify-center rounded-lg border bg-background px-2 py-2 text-xs hover:bg-muted"
+    >
+      <span className="truncate">{label}</span>
+    </Link>
   );
 }
 
