@@ -82,7 +82,7 @@ export default function MenuPage() {
                       <span className="text-[10px] font-semibold uppercase text-primary">activo</span>
                     ) : null}
                   </Link>
-                ))
+                ))}
               </div>
             </div>
           ))
