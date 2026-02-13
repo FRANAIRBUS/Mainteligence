@@ -14,16 +14,15 @@ export default function MenuPage() {
 
   return (
     <AppShell title={organizationName} description="Menú">
-      {/* Logo card (compact) */}
+      {/* Logo card */}
       <div className="mb-4 rounded-2xl border border-white/70 bg-card p-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-muted/60">
-            {/* Máximo tamaño visible para logo sin romper layout */}
-            <DynamicClientLogo width={44} height={44} />
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="flex h-36 w-36 items-center justify-center rounded-2xl bg-muted/60">
+            <DynamicClientLogo width={132} height={132} />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{organizationName}</p>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            <p className="text-base font-semibold">{organizationName}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
               {userLoading ? "Cargando organización…" : "Organización activa"}
             </p>
           </div>
