@@ -72,7 +72,10 @@ export default function MenuPage() {
                     }
                   >
                     <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/70 text-foreground">
-                      <item.icon className="h-4 w-4" />
+                      {(() => {
+                      const Icon = item.icon as any;
+                      return Icon ? <Icon className="h-4 w-4" /> : null;
+                    })()}
                     </span>
                     <span className="flex-1 text-left">{item.label}</span>
                     {item.active ? (
