@@ -33,9 +33,4 @@ env:
   - variable: NPM_CONFIG_CACHE
     value: /tmp/.npm
     availability: [BUILD]
-  - variable: RESEND_API_KEY
-    value: "re_ayevNEZP_AAErLT47BjxU5vTxnkTzDQhn"
-    availability: [BUILD, RUNTIME]
-  - variable: RESEND_FROM
-    value: "avisos@maintelligence.app"
-    availability: [BUILD, RUNTIME]
+
