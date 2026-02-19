@@ -1369,9 +1369,9 @@ exports.onTicketAssign = functions.firestore
     const after = change.after.data();
     if (!before || !after)
         return;
-    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo)
-        return;
-    if (after.assignmentEmailSource === 'client')
+    const beforeAssignedTo = (before.assignedTo !== null && before.assignedTo !== void 0 ? before.assignedTo : null);
+    const afterAssignedTo = (after.assignedTo !== null && after.assignedTo !== void 0 ? after.assignedTo : null);
+    if (!afterAssignedTo || beforeAssignedTo === afterAssignedTo)
         return;
     try {
         const orgId = (_b = (_a = after.organizationId) !== null && _a !== void 0 ? _a : context.params.orgId) !== null && _b !== void 0 ? _b : null;
@@ -1401,9 +1401,9 @@ exports.onTaskAssign = functions.firestore
     const after = change.after.data();
     if (!before || !after)
         return;
-    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo)
-        return;
-    if (after.assignmentEmailSource === 'client')
+    const beforeAssignedTo = (before.assignedTo !== null && before.assignedTo !== void 0 ? before.assignedTo : null);
+    const afterAssignedTo = (after.assignedTo !== null && after.assignedTo !== void 0 ? after.assignedTo : null);
+    if (!afterAssignedTo || beforeAssignedTo === afterAssignedTo)
         return;
     try {
         const orgId = (_b = (_a = after.organizationId) !== null && _a !== void 0 ? _a : context.params.orgId) !== null && _b !== void 0 ? _b : null;
@@ -1434,8 +1434,6 @@ exports.onTicketCreate = functions.firestore
     const data = snap.data();
     if (!(data === null || data === void 0 ? void 0 : data.assignedTo))
         return;
-    if (data.assignmentEmailSource === 'client')
-        return;
     try {
         const orgId = (_b = (_a = data.organizationId) !== null && _a !== void 0 ? _a : context.params.orgId) !== null && _b !== void 0 ? _b : null;
         await (0, assignment_email_1.sendAssignmentEmail)({
@@ -1462,8 +1460,6 @@ exports.onTaskCreate = functions.firestore
     var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
     const data = snap.data();
     if (!(data === null || data === void 0 ? void 0 : data.assignedTo))
-        return;
-    if (data.assignmentEmailSource === 'client')
         return;
     try {
         const orgId = (_b = (_a = data.organizationId) !== null && _a !== void 0 ? _a : context.params.orgId) !== null && _b !== void 0 ? _b : null;
