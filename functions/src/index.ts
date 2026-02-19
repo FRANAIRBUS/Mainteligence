@@ -1828,12 +1828,16 @@ export const onTicketAssign = functions.firestore
 
     try {
       const orgId = after.organizationId ?? context.params.orgId ?? null;
+      const baseUrl = 'https://multi.maintelligence.app';
+      const link = orgId
+        ? `${baseUrl}/incidents/${context.params.ticketId}?org=${encodeURIComponent(String(orgId))}`
+        : `${baseUrl}/incidents/${context.params.ticketId}`;
       await sendAssignmentEmail({
         organizationId: orgId,
         assignedTo: after.assignedTo ?? null,
         departmentId: after.departmentId ?? null,
         title: after.title ?? '(sin título)',
-        link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+        link,
         type: 'incidencia',
         identifier: after.displayId ?? context.params.ticketId,
         description: after.description ?? '',
@@ -1859,12 +1863,16 @@ export const onTaskAssign = functions.firestore
 
     try {
       const orgId = after.organizationId ?? context.params.orgId ?? null;
+      const baseUrl = 'https://multi.maintelligence.app';
+      const link = orgId
+        ? `${baseUrl}/tasks/${context.params.taskId}?org=${encodeURIComponent(String(orgId))}`
+        : `${baseUrl}/tasks/${context.params.taskId}`;
       await sendAssignmentEmail({
         organizationId: orgId,
         assignedTo: after.assignedTo ?? null,
         departmentId: after.location ?? null,
         title: after.title ?? '(sin título)',
-        link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+        link,
         type: 'tarea',
         identifier: context.params.taskId,
         description: after.description ?? '',
@@ -1887,12 +1895,16 @@ export const onTicketCreate = functions.firestore
 
     try {
       const orgId = data.organizationId ?? context.params.orgId ?? null;
+      const baseUrl = 'https://multi.maintelligence.app';
+      const link = orgId
+        ? `${baseUrl}/incidents/${context.params.ticketId}?org=${encodeURIComponent(String(orgId))}`
+        : `${baseUrl}/incidents/${context.params.ticketId}`;
       await sendAssignmentEmail({
         organizationId: orgId,
         assignedTo: data.assignedTo ?? null,
         departmentId: data.departmentId ?? null,
         title: data.title ?? '(sin título)',
-        link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+        link,
         type: 'incidencia',
         identifier: data.displayId ?? context.params.ticketId,
         description: data.description ?? '',
@@ -1913,12 +1925,16 @@ export const onTaskCreate = functions.firestore
 
     try {
       const orgId = data.organizationId ?? context.params.orgId ?? null;
+      const baseUrl = 'https://multi.maintelligence.app';
+      const link = orgId
+        ? `${baseUrl}/tasks/${context.params.taskId}?org=${encodeURIComponent(String(orgId))}`
+        : `${baseUrl}/tasks/${context.params.taskId}`;
       await sendAssignmentEmail({
         organizationId: orgId,
         assignedTo: data.assignedTo ?? null,
         departmentId: data.location ?? null,
         title: data.title ?? '(sin título)',
-        link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+        link,
         type: 'tarea',
         identifier: context.params.taskId,
         description: data.description ?? '',
