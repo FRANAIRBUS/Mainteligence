@@ -1822,8 +1822,9 @@ export const onTicketAssign = functions.firestore
     const after = change.after.data() as any;
     if (!before || !after) return;
 
-    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo) return;
-    if (after.assignmentEmailSource === 'client') return;
+    const beforeAssignedTo = before.assignedTo ?? null;
+    const afterAssignedTo = after.assignedTo ?? null;
+    if (!afterAssignedTo || beforeAssignedTo === afterAssignedTo) return;
 
     try {
       const orgId = after.organizationId ?? context.params.orgId ?? null;
@@ -1852,8 +1853,9 @@ export const onTaskAssign = functions.firestore
     const after = change.after.data() as any;
     if (!before || !after) return;
 
-    if (!before.assignedTo || !after.assignedTo || before.assignedTo === after.assignedTo) return;
-    if (after.assignmentEmailSource === 'client') return;
+    const beforeAssignedTo = before.assignedTo ?? null;
+    const afterAssignedTo = after.assignedTo ?? null;
+    if (!afterAssignedTo || beforeAssignedTo === afterAssignedTo) return;
 
     try {
       const orgId = after.organizationId ?? context.params.orgId ?? null;
@@ -1882,7 +1884,6 @@ export const onTicketCreate = functions.firestore
   .onCreate(async (snap, context) => {
     const data = snap.data() as any;
     if (!data?.assignedTo) return;
-    if (data.assignmentEmailSource === 'client') return;
 
     try {
       const orgId = data.organizationId ?? context.params.orgId ?? null;
@@ -1909,7 +1910,6 @@ export const onTaskCreate = functions.firestore
   .onCreate(async (snap, context) => {
     const data = snap.data() as any;
     if (!data?.assignedTo) return;
-    if (data.assignmentEmailSource === 'client') return;
 
     try {
       const orgId = data.organizationId ?? context.params.orgId ?? null;

@@ -11,7 +11,6 @@ import type { Ticket, User, Department, OrganizationMember } from '@/lib/firebas
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError } from '@/lib/firebase/errors';
 import { buildRbacUser, getTicketPermissions, normalizeRole } from '@/lib/rbac';
-import { sendAssignmentEmail } from '@/lib/assignment-email';
 import { orgDocPath } from '@/lib/organization';
 import { normalizeTicketStatus, ticketStatusLabel } from '@/lib/status';
 
@@ -133,47 +132,12 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
 
     if (assignmentChanged) {
       updateData.assignedTo = newAssignee;
-
-      if (newAssignee) {
-        updateData.assignmentEmailSource = 'client';
-      }
     }
     
     try {
       const functions = getFunctions();
       const updateTicket = httpsCallable(functions, 'updateTicketStatus');
       await updateTicket({ orgId: organizationId, ticketId: ticket.id, patch: updateData });
-
-      if (assignmentChanged && newAssignee) {
-        const baseUrl =
-          typeof window !== 'undefined'
-            ? window.location.origin
-            : 'https://multi.maintelligence.app';
-        const departmentName = data.departmentId
-          ? departments.find((dept) => dept.id === data.departmentId)?.name || data.departmentId
-          : '';
-        const locationName = ticket.locationId || '';
-
-        void (async () => {
-          try {
-            await sendAssignmentEmail({
-              users,
-              departments,
-              assignedTo: newAssignee,
-              departmentId: data.departmentId || null,
-              departmentName,
-              locationName,
-              title: ticket.title,
-              link: `${baseUrl}/incidents/${ticket.id}`,
-              type: 'incidencia',
-              identifier: ticket.displayId || ticket.id,
-              description: ticket.description ?? '',
-              priority: data.priority,
-              status: data.status,
-            });
-          } catch (error) {
-            console.error('No se pudo enviar el email de asignación de incidencia', error);
-          }
         })();
       }
 
