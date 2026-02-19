@@ -140,8 +140,6 @@ const assignableUsers = useMemo(() => {
 
     try {
       const id = await createTask(firestore, auth, payload);
-        })();
-      }
 
       router.push("/tasks");
     } catch (error) {

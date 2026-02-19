@@ -138,8 +138,6 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       const functions = getFunctions();
       const updateTicket = httpsCallable(functions, 'updateTicketStatus');
       await updateTicket({ orgId: organizationId, ticketId: ticket.id, patch: updateData });
-        })();
-      }
 
       toast({
         title: 'Éxito',
@@ -215,7 +213,6 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       return users.filter((userOption) => userOption.locationId === locationScope);
     }
     return users;
-  })();
 
   const assignmentOptions =
     currentAssignee && !selectableUsers.some((userOption) => userOption.id === currentAssignee.id)

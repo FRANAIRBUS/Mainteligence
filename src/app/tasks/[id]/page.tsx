@@ -317,8 +317,6 @@ const assignableUsers = useMemo(() => {
         return;
       }
       await updateTask(firestore, auth, targetOrgId, task.id, updates);
-        })();
-      }
 
       toast({
         title: "Tarea actualizada",
