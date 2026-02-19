@@ -213,6 +213,7 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
       return users.filter((userOption) => userOption.locationId === locationScope);
     }
     return users;
+  })();
 
   const assignmentOptions =
     currentAssignee && !selectableUsers.some((userOption) => userOption.id === currentAssignee.id)
