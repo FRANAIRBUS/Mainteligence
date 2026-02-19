@@ -62,32 +62,34 @@ const formatDate = (value) => {
 const buildEmailContent = ({ title, link, type, identifier, description, priority, status, dueDate, location, category, assignedUser, }) => {
     const typeLabel = type === 'tarea' ? 'tarea' : 'incidencia';
     const subject = `Nueva ${typeLabel} asignada: ${title}`;
+    const safeTitle = title || '(sin título)';
+    const safeDescription = description || 'Sin descripción';
     const introLine = assignedUser
-        ? `Has sido asignado a la ${typeLabel} ${identifier ? `${identifier} - ` : ''}${title}.`
-        : `Se ha asignado la ${typeLabel} ${identifier ? `${identifier} - ` : ''}${title}.`;
+        ? `Has sido asignado a la ${typeLabel} ${safeTitle}.`
+        : `Se ha asignado la ${typeLabel} ${safeTitle}.`;
     const details = [
-        { label: 'Título', value: title || '(sin título)' },
+        { label: 'Título', value: safeTitle },
         { label: 'ID', value: identifier || 'No especificado' },
         { label: 'Estado', value: status || 'open' },
         { label: 'Prioridad', value: priority || 'media' },
         { label: 'Fecha límite', value: formatDate(dueDate) },
         { label: 'Ubicación / Departamento', value: location || 'No especificado' },
         { label: 'Categoría', value: category || 'No especificada' },
-        { label: 'Descripción', value: description || 'Sin descripción' },
+        { label: 'Descripción', value: safeDescription },
     ];
     const detailRows = details
         .map((item) => `<tr><td style="padding: 8px 12px; font-weight: 600; color: #111827;">${item.label}</td><td style="padding: 8px 12px; color: #374151;">${item.value}</td></tr>`)
         .join('');
     const text = [
         introLine,
-        `Título: ${title || '(sin título)'}`,
+        `Título: ${safeTitle}`,
+        `Descripción: ${safeDescription}`,
         `ID: ${identifier || 'No especificado'}`,
         `Estado: ${status || 'open'}`,
         `Prioridad: ${priority || 'media'}`,
         `Fecha límite: ${formatDate(dueDate)}`,
         `Ubicación / Departamento: ${location || 'No especificado'}`,
         `Categoría: ${category || 'No especificada'}`,
-        `Descripción: ${description || 'Sin descripción'}`,
         `Ver ${typeLabel}: ${link}`,
     ].join('\n');
     const html = `
@@ -95,12 +97,13 @@ const buildEmailContent = ({ title, link, type, identifier, description, priorit
       <tr>
         <td style="background:linear-gradient(135deg, #111827, #1f2937); padding:24px 24px; color:#f9fafb;">
           <div style="font-size:14px; letter-spacing:0.5px; text-transform:uppercase; opacity:0.8;">Nueva ${typeLabel} asignada</div>
-          <div style="font-size:22px; font-weight:700; margin-top:4px;">${identifier ? `${identifier} · ` : ''}${title}</div>
+          <div style="font-size:22px; font-weight:700; margin-top:4px;">${safeTitle}</div>
         </td>
       </tr>
       <tr>
         <td style="padding:24px 24px 8px; color:#111827;">
           <p style="margin:0 0 12px; font-size:16px;">${introLine}</p>
+          <p style="margin:0 0 12px; font-size:15px; color:#374151;"><strong>Descripción:</strong> ${safeDescription}</p>
         </td>
       </tr>
       <tr>
