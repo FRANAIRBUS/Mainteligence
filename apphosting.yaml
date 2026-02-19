@@ -30,7 +30,12 @@ env:
   - variable: NODE_ENV
     value: production
     availability: [BUILD, RUNTIME]
+  - variable: RESEND_API_KEY
+    secret: RESEND_API_KEY
+    availability: [RUNTIME]
+  - variable: RESEND_FROM
+    secret: RESEND_FROM
+    availability: [RUNTIME]
   - variable: NPM_CONFIG_CACHE
     value: /tmp/.npm
     availability: [BUILD]
-
