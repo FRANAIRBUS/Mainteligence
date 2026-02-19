@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useDoc, useUser, useCollection, useFirestore } from '@/lib/firebase';
 import type { Ticket, Site, Department, Asset, OrganizationMember } from '@/lib/firebase/models';
 import { Icons } from '@/components/icons';
@@ -51,12 +51,57 @@ function InfoCard({ icon: Icon, label, value }: { icon: React.ElementType, label
 
 export default function IncidentDetailPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const params = useParams();
   const { id } = params;
   const ticketId = Array.isArray(id) ? id[0] : id;
   const firestore = useFirestore();
 
-  const { user, profile: userProfile, role, organizationId, loading: userLoading } = useUser();
+  const { user, profile: userProfile, role, organizationId, loading: userLoading, memberships, setActiveOrganizationId } = useUser();
+
+  const targetOrgId = useMemo(() => {
+    const raw = searchParams?.get('org') ?? '';
+    const trimmed = raw.trim();
+    return trimmed ? trimmed : null;
+  }, [searchParams]);
+
+  const lastOrgSwitchAttemptRef = useRef<string | null>(null);
+  const [orgSwitchError, setOrgSwitchError] = useState<string | null>(null);
+
+  const canAccessTargetOrg = useMemo(() => {
+    if (!targetOrgId) return true;
+    return memberships.some((m) => m.organizationId === targetOrgId && m.status === 'active');
+  }, [memberships, targetOrgId]);
+
+  const shouldSwitchOrg = Boolean(
+    targetOrgId && !userLoading && user && organizationId && organizationId !== targetOrgId
+  );
+
+  useEffect(() => {
+    if (!shouldSwitchOrg) return;
+    if (!targetOrgId) return;
+
+    if (!canAccessTargetOrg) {
+      setOrgSwitchError(
+        'Este enlace pertenece a otra organización a la que tu usuario actual no tiene acceso.'
+      );
+      return;
+    }
+
+    if (lastOrgSwitchAttemptRef.current === targetOrgId) return;
+    lastOrgSwitchAttemptRef.current = targetOrgId;
+    setOrgSwitchError(null);
+
+    void (async () => {
+      try {
+        await setActiveOrganizationId(targetOrgId);
+      } catch {
+        setOrgSwitchError(
+          'No se pudo cambiar automáticamente a la organización del enlace. Cambia la organización manualmente e inténtalo de nuevo.'
+        );
+      }
+    })();
+  }, [canAccessTargetOrg, setActiveOrganizationId, shouldSwitchOrg, targetOrgId]);
   const { data: ticket, loading: ticketLoading, error: ticketError } = useDoc<Ticket>(
     ticketId && organizationId ? orgDocPath(organizationId, 'tickets', ticketId) : null
   );
@@ -399,6 +444,59 @@ export default function IncidentDetailPage() {
   };
 
   const renderContent = () => {
+    if (shouldSwitchOrg && !canAccessTargetOrg) {
+      return (
+        <div className="flex justify-center px-4 py-12">
+          <Card className="max-w-lg">
+            <CardHeader className="text-center">
+              <CardTitle>Acceso no disponible</CardTitle>
+              <CardDescription>
+                {orgSwitchError ??
+                  'Esta incidencia pertenece a otra organización. Cambia de cuenta o solicita acceso a esa organización.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap justify-center gap-2 pb-6">
+              <Button variant="outline" asChild>
+                <Link href="/menu">Ir al menú</Link>
+              </Button>
+              <Button asChild>
+                <Link href="/login">Cambiar de cuenta</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (shouldSwitchOrg && canAccessTargetOrg && orgSwitchError) {
+      return (
+        <div className="flex justify-center px-4 py-12">
+          <Card className="max-w-lg">
+            <CardHeader className="text-center">
+              <CardTitle>No se pudo abrir la incidencia</CardTitle>
+              <CardDescription>{orgSwitchError}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap justify-center gap-2 pb-6">
+              <Button variant="outline" asChild>
+                <Link href="/menu">Ir al menú</Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href="/incidents">Volver al listado</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    if (shouldSwitchOrg && canAccessTargetOrg && organizationId !== targetOrgId) {
+      return (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Icons.spinner className="h-4 w-4 animate-spin" /> Cambiando a la organización del enlace...
+        </div>
+      );
+    }
+
     if (isLoading || !user) {
       return (
         <div className="flex items-center justify-center py-12">

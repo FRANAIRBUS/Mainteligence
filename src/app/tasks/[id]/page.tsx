@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ElementType } from "react";
+import { useEffect, useMemo, useRef, useState, type ElementType } from "react";
 import { Timestamp } from "firebase/firestore";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
@@ -71,9 +71,54 @@ export default function TaskDetailPage() {
   const firestore = useFirestore();
   const auth = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const params = useParams();
   const taskId = Array.isArray(params.id) ? params.id[0] : params.id;
-  const { user, loading: userLoading, organizationId, role } = useUser();
+  const { user, loading: userLoading, organizationId, role, memberships, setActiveOrganizationId } = useUser();
+
+  const targetOrgId = useMemo(() => {
+    const raw = searchParams?.get("org") ?? "";
+    const trimmed = raw.trim();
+    return trimmed ? trimmed : null;
+  }, [searchParams]);
+
+  const lastOrgSwitchAttemptRef = useRef<string | null>(null);
+  const [orgSwitchError, setOrgSwitchError] = useState<string | null>(null);
+
+  const canAccessTargetOrg = useMemo(() => {
+    if (!targetOrgId) return true;
+    return memberships.some((m) => m.organizationId === targetOrgId && m.status === "active");
+  }, [memberships, targetOrgId]);
+
+  const shouldSwitchOrg = Boolean(
+    targetOrgId && !userLoading && user && organizationId && organizationId !== targetOrgId
+  );
+
+  useEffect(() => {
+    if (!shouldSwitchOrg) return;
+    if (!targetOrgId) return;
+
+    if (!canAccessTargetOrg) {
+      setOrgSwitchError(
+        "Este enlace pertenece a otra organización a la que tu usuario actual no tiene acceso."
+      );
+      return;
+    }
+
+    if (lastOrgSwitchAttemptRef.current === targetOrgId) return;
+    lastOrgSwitchAttemptRef.current = targetOrgId;
+    setOrgSwitchError(null);
+
+    void (async () => {
+      try {
+        await setActiveOrganizationId(targetOrgId);
+      } catch {
+        setOrgSwitchError(
+          "No se pudo cambiar automáticamente a la organización del enlace. Cambia la organización manualmente e inténtalo de nuevo."
+        );
+      }
+    })();
+  }, [canAccessTargetOrg, setActiveOrganizationId, shouldSwitchOrg, targetOrgId]);
   const { data: users, loading: usersLoading } = useCollection<OrganizationMember>(
     organizationId ? orgCollectionPath(organizationId, "members") : null
   );
@@ -539,6 +584,55 @@ const assignableUsers = useMemo(() => {
   };
 
   const renderContent = () => {
+    if (shouldSwitchOrg && !canAccessTargetOrg) {
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>Acceso no disponible</CardTitle>
+            <CardDescription>
+              {orgSwitchError ??
+                "Esta tarea pertenece a otra organización. Cambia de cuenta o solicita acceso a esa organización."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/menu">Ir al menú</Link>
+            </Button>
+            <Button asChild>
+              <Link href="/login">Cambiar de cuenta</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (shouldSwitchOrg && canAccessTargetOrg && orgSwitchError) {
+      return (
+        <Card>
+          <CardHeader>
+            <CardTitle>No se pudo abrir la tarea</CardTitle>
+            <CardDescription>{orgSwitchError}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/menu">Ir al menú</Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/tasks">Volver al listado</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    if (shouldSwitchOrg && canAccessTargetOrg && organizationId !== targetOrgId) {
+      return (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Icons.spinner className="h-4 w-4 animate-spin" /> Cambiando a la organización del enlace...
+        </div>
+      );
+    }
+
     if (isLoading || !userProfile) {
       return (
         <div className="flex items-center gap-2 text-muted-foreground">
