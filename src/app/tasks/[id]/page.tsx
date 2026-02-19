@@ -35,7 +35,6 @@ import type { MaintenanceTask, MaintenanceTaskInput } from "@/types/maintenance-
 import { useToast } from "@/hooks/use-toast";
 import { buildRbacUser, getTaskPermissions } from "@/lib/rbac";
 import { normalizeTaskStatus, taskStatusLabel } from "@/lib/status";
-import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { CalendarIcon, MapPin, User as UserIcon, ClipboardList, Tag } from "lucide-react";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
@@ -295,16 +294,8 @@ const assignableUsers = useMemo(() => {
 
     const trimmedAssignedTo = values.assignedTo.trim();
     const assignmentChanged = trimmedAssignedTo !== (task?.assignedTo ?? "");
-    const assignmentDepartmentName = values.departmentId.trim()
-      ? departments.find((dept) => dept.id === values.departmentId.trim())?.name ||
-        values.departmentId.trim()
-      : "";
-    const assignmentLocationName = values.locationId.trim()
-      ? locations?.find((location) => location.id === values.locationId.trim())?.name ||
-        values.locationId.trim()
-      : "";
 
-    const updates: MaintenanceTaskInput & { assignmentEmailSource?: "client" | "server" } = {
+    const updates: MaintenanceTaskInput = {
       title: values.title.trim(),
       description: values.description.trim(),
       priority: values.priority,
@@ -318,10 +309,6 @@ const assignableUsers = useMemo(() => {
       category: values.category.trim(),
     };
 
-    if (assignmentChanged && trimmedAssignedTo) {
-      updates.assignmentEmailSource = "client";
-    }
-
     try {
       const targetOrgId = task.organizationId ?? organizationId;
       if (!targetOrgId) {
@@ -330,37 +317,6 @@ const assignableUsers = useMemo(() => {
         return;
       }
       await updateTask(firestore, auth, targetOrgId, task.id, updates);
-
-      if (assignmentChanged && trimmedAssignedTo) {
-        const baseUrl =
-          typeof window !== "undefined"
-            ? window.location.origin
-            : "https://multi.maintelligence.app";
-
-        void (async () => {
-          try {
-            await sendAssignmentEmail({
-              users,
-              departments,
-              assignedTo: trimmedAssignedTo,
-              departmentId: values.departmentId.trim() || null,
-              departmentName: assignmentDepartmentName,
-              locationName: assignmentLocationName,
-              title: values.title.trim(),
-              link: `${baseUrl}/tasks/${task.id}`,
-              type: "tarea",
-              identifier: task.id,
-              description: values.description.trim(),
-              priority: values.priority,
-              status: values.status,
-              dueDate: values.dueDate ? new Date(values.dueDate) : null,
-              category: values.category.trim(),
-            });
-          } catch (error) {
-            console.error("No se pudo enviar el email de asignación de tarea", error);
-          }
-        })();
-      }
 
       toast({
         title: "Tarea actualizada",

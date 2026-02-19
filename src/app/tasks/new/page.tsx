@@ -10,7 +10,6 @@ import { useAuth, useCollection, useDoc, useFirestore, useUser } from "@/lib/fir
 import { createTask } from "@/lib/firestore-tasks";
 import type { MaintenanceTaskInput } from "@/types/maintenance-task";
 import type { Department, OrganizationMember, Site } from "@/lib/firebase/models";
-import { sendAssignmentEmail } from "@/lib/assignment-email";
 import { orgCollectionPath, orgDocPath } from "@/lib/organization";
 
 const emptyValues: TaskFormValues = {
@@ -121,16 +120,8 @@ const assignableUsers = useMemo(() => {
     setErrorMessage(null);
 
     const assignedTo = values.assignedTo.trim();
-    const assignmentDepartmentName = values.departmentId.trim()
-      ? departments?.find((dept) => dept.id === values.departmentId.trim())?.name ||
-        values.departmentId.trim()
-      : "";
-    const assignmentLocationName = values.locationId.trim()
-      ? locations?.find((location) => location.id === values.locationId.trim())?.name ||
-        values.locationId.trim()
-      : "";
 
-    const payload: MaintenanceTaskInput & { assignmentEmailSource?: "client" | "server" } = {
+    const payload: MaintenanceTaskInput = {
       title: values.title.trim(),
       description: values.description.trim(),
       priority: values.priority,
@@ -147,43 +138,8 @@ const assignableUsers = useMemo(() => {
       organizationId,
     };
 
-    if (assignedTo) {
-      payload.assignmentEmailSource = "client";
-    }
-
     try {
       const id = await createTask(firestore, auth, payload);
-
-      if (assignedTo) {
-        const baseUrl =
-          typeof window !== "undefined"
-            ? window.location.origin
-            : "https://multi.maintelligence.app";
-
-        void (async () => {
-          try {
-            await sendAssignmentEmail({
-              users,
-              departments,
-              assignedTo,
-              departmentId: values.departmentId.trim() || null,
-              departmentName: assignmentDepartmentName,
-              locationName: assignmentLocationName,
-              title: values.title.trim(),
-              link: `${baseUrl}/tasks/${id}`,
-              type: "tarea",
-              identifier: id,
-              description: values.description.trim(),
-              priority: values.priority,
-              status: values.status,
-              dueDate: values.dueDate ? new Date(values.dueDate) : null,
-              category: values.category.trim(),
-            });
-          } catch (error) {
-            console.error("No se pudo enviar el email de asignación de tarea", error);
-          }
-        })();
-      }
 
       router.push("/tasks");
     } catch (error) {
