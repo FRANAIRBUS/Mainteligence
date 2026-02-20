@@ -1,8 +1,8 @@
 "use strict";
 var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.registerAppleAppAccountToken = exports.registerGooglePlayPurchase = exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.generatePreventiveTickets = exports.pausePreventivesWithoutEntitlement = exports.pauseExpiredDemoPreventives = exports.inviteUserToOrg = exports.duplicatePreventiveTemplate = exports.updatePreventiveTemplate = exports.createPreventiveTemplate = exports.createPreventive = exports.createAsset = exports.deleteTask = exports.updateTaskStatus = exports.createTask = exports.updateTicketStatus = exports.createTicket = exports.registerTicketAttachment = exports.createTicketUploadSession = exports.createDepartment = exports.createSite = exports.setActiveOrganization = exports.finalizeOrganizationSignup = exports.bootstrapSignup = exports.bootstrapFromInvites = exports.checkOrganizationAvailability = exports.resolveOrganizationId = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.orgSetOrganizationStatus = exports.rootSetOrganizationPlan = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
-exports.stripeWebhook = exports.appleAppStoreNotifications = void 0;
+exports.orgApproveJoinRequest = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.generatePreventiveTickets = exports.pausePreventivesWithoutEntitlement = exports.pauseExpiredDemoPreventives = exports.inviteUserToOrg = exports.workOrders_addReport = exports.workOrders_close = exports.workOrders_start = exports.workOrders_generateNow = exports.generatePreventiveNow = exports.deletePreventiveTemplate = exports.duplicatePreventiveTemplate = exports.updatePreventiveTemplate = exports.createPreventiveTemplate = exports.createPreventive = exports.createAsset = exports.deleteTask = exports.updateTaskStatus = exports.createTask = exports.updateTicketStatus = exports.createTicket = exports.registerTicketAttachment = exports.createTicketUploadSession = exports.createDepartment = exports.createSite = exports.setActiveOrganization = exports.finalizeOrganizationSignup = exports.bootstrapSignup = exports.bootstrapFromInvites = exports.checkOrganizationAvailability = exports.resolveOrganizationId = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.orgSetOrganizationStatus = exports.rootSetOrganizationPlan = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
+exports.stripeWebhook = exports.appleAppStoreNotifications = exports.registerAppleAppAccountToken = exports.registerGooglePlayPurchase = exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const assignment_email_1 = require("./assignment-email");
@@ -322,6 +322,8 @@ function resolveEntitlementPlanId({ metadataPlanId, fallbackPlanId, }) {
             return 'free';
         if (planId.startsWith('basic'))
             return 'basic';
+        if (planId.startsWith('standard'))
+            return 'starter';
         if (planId.startsWith('starter'))
             return 'starter';
         if (planId.startsWith('pro'))
@@ -388,6 +390,11 @@ function resolveEffectiveLimitsForPlan(planId, limits) {
         maxAttachmentsPerTicket: coalesceLimit('maxAttachmentsPerTicket'),
         retentionDays: coalesceLimit('retentionDays'),
     };
+}
+function hasPlanChanged(currentPlanId, nextPlanId) {
+    if (!currentPlanId)
+        return true;
+    return resolveEntitlementPlanId({ metadataPlanId: currentPlanId }) !== nextPlanId;
 }
 function resolveEffectiveFeaturesForPlan(planId, features) {
     return Object.assign(Object.assign({}, resolveDefaultFeaturesForPlan(planId)), (features !== null && features !== void 0 ? features : {}));
@@ -540,7 +547,7 @@ async function updateOrganizationStripeEntitlement({ orgId, planId, status, tria
             metadataPlanId: planId !== null && planId !== void 0 ? planId : null,
             fallbackPlanId: entitlement === null || entitlement === void 0 ? void 0 : entitlement.planId,
         });
-        const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits);
+        const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, hasPlanChanged(entitlement === null || entitlement === void 0 ? void 0 : entitlement.planId, resolvedPlanId) ? null : entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits);
         const shouldBlock = shouldBlockProviderUpdate(entitlement, 'stripe');
         const billingProviderPayload = shouldBlock
             ? buildConflictPayload({
@@ -719,7 +726,7 @@ async function updateOrganizationAppleEntitlement({ orgId, planId, status, curre
             metadataPlanId: planId !== null && planId !== void 0 ? planId : null,
             fallbackPlanId: entitlement === null || entitlement === void 0 ? void 0 : entitlement.planId,
         });
-        const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits);
+        const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, hasPlanChanged(entitlement === null || entitlement === void 0 ? void 0 : entitlement.planId, resolvedPlanId) ? null : entitlement === null || entitlement === void 0 ? void 0 : entitlement.limits);
         const shouldBlock = shouldBlockProviderUpdate(entitlement, 'apple_app_store');
         const billingProviderPayload = shouldBlock
             ? buildConflictPayload({
@@ -1160,6 +1167,15 @@ async function resolvePlanFeaturesForTx(tx, planId) {
         : undefined;
     return resolveEffectiveFeaturesForPlan(resolvedPlanId, rawFeatures !== null && rawFeatures !== void 0 ? rawFeatures : null);
 }
+async function resolvePlanLimitsForTx(tx, planId, rawLimits) {
+    var _a;
+    const resolvedPlanId = resolveEntitlementPlanId({ metadataPlanId: planId !== null && planId !== void 0 ? planId : null });
+    const planSnap = await tx.get(db.collection('planCatalog').doc(resolvedPlanId));
+    const planLimits = planSnap.exists
+        ? planSnap.get('limits')
+        : undefined;
+    return resolveEffectiveLimitsForPlan(resolvedPlanId, (_a = planLimits !== null && planLimits !== void 0 ? planLimits : rawLimits) !== null && _a !== void 0 ? _a : null);
+}
 async function resolveFallbackPreventivesEntitlementForTx(tx, orgData, baseEntitlement) {
     var _a, _b, _c, _d;
     const providersRaw = ((_a = orgData === null || orgData === void 0 ? void 0 : orgData.billingProviders) !== null && _a !== void 0 ? _a : null);
@@ -1364,29 +1380,33 @@ async function auditLog(params) {
 exports.onTicketAssign = functions.firestore
     .document('organizations/{orgId}/tickets/{ticketId}')
     .onUpdate(async (change, context) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
     const before = change.before.data();
     const after = change.after.data();
     if (!before || !after)
         return;
-    const beforeAssignedTo = (before.assignedTo !== null && before.assignedTo !== void 0 ? before.assignedTo : null);
-    const afterAssignedTo = (after.assignedTo !== null && after.assignedTo !== void 0 ? after.assignedTo : null);
+    const beforeAssignedTo = (_a = before.assignedTo) !== null && _a !== void 0 ? _a : null;
+    const afterAssignedTo = (_b = after.assignedTo) !== null && _b !== void 0 ? _b : null;
     if (!afterAssignedTo || beforeAssignedTo === afterAssignedTo)
         return;
     try {
-        const orgId = (_b = (_a = after.organizationId) !== null && _a !== void 0 ? _a : context.params.orgId) !== null && _b !== void 0 ? _b : null;
+        const orgId = (_d = (_c = after.organizationId) !== null && _c !== void 0 ? _c : context.params.orgId) !== null && _d !== void 0 ? _d : null;
+        const baseUrl = 'https://multi.maintelligence.app';
+        const link = orgId
+            ? `${baseUrl}/incidents/${context.params.ticketId}?org=${encodeURIComponent(String(orgId))}`
+            : `${baseUrl}/incidents/${context.params.ticketId}`;
         await (0, assignment_email_1.sendAssignmentEmail)({
             organizationId: orgId,
-            assignedTo: (_c = after.assignedTo) !== null && _c !== void 0 ? _c : null,
-            departmentId: (_d = after.departmentId) !== null && _d !== void 0 ? _d : null,
-            title: (_e = after.title) !== null && _e !== void 0 ? _e : '(sin título)',
-            link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+            assignedTo: (_e = after.assignedTo) !== null && _e !== void 0 ? _e : null,
+            departmentId: (_f = after.departmentId) !== null && _f !== void 0 ? _f : null,
+            title: (_g = after.title) !== null && _g !== void 0 ? _g : '(sin título)',
+            link,
             type: 'incidencia',
-            identifier: (_f = after.displayId) !== null && _f !== void 0 ? _f : context.params.ticketId,
-            description: (_g = after.description) !== null && _g !== void 0 ? _g : '',
-            priority: (_h = after.priority) !== null && _h !== void 0 ? _h : '',
-            status: (_j = after.status) !== null && _j !== void 0 ? _j : '',
-            location: (_k = after.departmentId) !== null && _k !== void 0 ? _k : null,
+            identifier: (_h = after.displayId) !== null && _h !== void 0 ? _h : context.params.ticketId,
+            description: (_j = after.description) !== null && _j !== void 0 ? _j : '',
+            priority: (_k = after.priority) !== null && _k !== void 0 ? _k : '',
+            status: (_l = after.status) !== null && _l !== void 0 ? _l : '',
+            location: (_m = after.departmentId) !== null && _m !== void 0 ? _m : null,
         });
     }
     catch (error) {
@@ -1396,31 +1416,35 @@ exports.onTicketAssign = functions.firestore
 exports.onTaskAssign = functions.firestore
     .document('organizations/{orgId}/tasks/{taskId}')
     .onUpdate(async (change, context) => {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
     const before = change.before.data();
     const after = change.after.data();
     if (!before || !after)
         return;
-    const beforeAssignedTo = (before.assignedTo !== null && before.assignedTo !== void 0 ? before.assignedTo : null);
-    const afterAssignedTo = (after.assignedTo !== null && after.assignedTo !== void 0 ? after.assignedTo : null);
+    const beforeAssignedTo = (_a = before.assignedTo) !== null && _a !== void 0 ? _a : null;
+    const afterAssignedTo = (_b = after.assignedTo) !== null && _b !== void 0 ? _b : null;
     if (!afterAssignedTo || beforeAssignedTo === afterAssignedTo)
         return;
     try {
-        const orgId = (_b = (_a = after.organizationId) !== null && _a !== void 0 ? _a : context.params.orgId) !== null && _b !== void 0 ? _b : null;
+        const orgId = (_d = (_c = after.organizationId) !== null && _c !== void 0 ? _c : context.params.orgId) !== null && _d !== void 0 ? _d : null;
+        const baseUrl = 'https://multi.maintelligence.app';
+        const link = orgId
+            ? `${baseUrl}/tasks/${context.params.taskId}?org=${encodeURIComponent(String(orgId))}`
+            : `${baseUrl}/tasks/${context.params.taskId}`;
         await (0, assignment_email_1.sendAssignmentEmail)({
             organizationId: orgId,
-            assignedTo: (_c = after.assignedTo) !== null && _c !== void 0 ? _c : null,
-            departmentId: (_d = after.location) !== null && _d !== void 0 ? _d : null,
-            title: (_e = after.title) !== null && _e !== void 0 ? _e : '(sin título)',
-            link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+            assignedTo: (_e = after.assignedTo) !== null && _e !== void 0 ? _e : null,
+            departmentId: (_f = after.location) !== null && _f !== void 0 ? _f : null,
+            title: (_g = after.title) !== null && _g !== void 0 ? _g : '(sin título)',
+            link,
             type: 'tarea',
             identifier: context.params.taskId,
-            description: (_f = after.description) !== null && _f !== void 0 ? _f : '',
-            priority: (_g = after.priority) !== null && _g !== void 0 ? _g : '',
-            status: (_h = after.status) !== null && _h !== void 0 ? _h : '',
-            dueDate: (_j = after.dueDate) !== null && _j !== void 0 ? _j : null,
-            location: (_k = after.location) !== null && _k !== void 0 ? _k : null,
-            category: (_l = after.category) !== null && _l !== void 0 ? _l : null,
+            description: (_h = after.description) !== null && _h !== void 0 ? _h : '',
+            priority: (_j = after.priority) !== null && _j !== void 0 ? _j : '',
+            status: (_k = after.status) !== null && _k !== void 0 ? _k : '',
+            dueDate: (_l = after.dueDate) !== null && _l !== void 0 ? _l : null,
+            location: (_m = after.location) !== null && _m !== void 0 ? _m : null,
+            category: (_o = after.category) !== null && _o !== void 0 ? _o : null,
         });
     }
     catch (error) {
@@ -1436,12 +1460,16 @@ exports.onTicketCreate = functions.firestore
         return;
     try {
         const orgId = (_b = (_a = data.organizationId) !== null && _a !== void 0 ? _a : context.params.orgId) !== null && _b !== void 0 ? _b : null;
+        const baseUrl = 'https://multi.maintelligence.app';
+        const link = orgId
+            ? `${baseUrl}/incidents/${context.params.ticketId}?org=${encodeURIComponent(String(orgId))}`
+            : `${baseUrl}/incidents/${context.params.ticketId}`;
         await (0, assignment_email_1.sendAssignmentEmail)({
             organizationId: orgId,
             assignedTo: (_c = data.assignedTo) !== null && _c !== void 0 ? _c : null,
             departmentId: (_d = data.departmentId) !== null && _d !== void 0 ? _d : null,
             title: (_e = data.title) !== null && _e !== void 0 ? _e : '(sin título)',
-            link: `https://multi.maintelligence.app/incidents/${context.params.ticketId}`,
+            link,
             type: 'incidencia',
             identifier: (_f = data.displayId) !== null && _f !== void 0 ? _f : context.params.ticketId,
             description: (_g = data.description) !== null && _g !== void 0 ? _g : '',
@@ -1463,12 +1491,16 @@ exports.onTaskCreate = functions.firestore
         return;
     try {
         const orgId = (_b = (_a = data.organizationId) !== null && _a !== void 0 ? _a : context.params.orgId) !== null && _b !== void 0 ? _b : null;
+        const baseUrl = 'https://multi.maintelligence.app';
+        const link = orgId
+            ? `${baseUrl}/tasks/${context.params.taskId}?org=${encodeURIComponent(String(orgId))}`
+            : `${baseUrl}/tasks/${context.params.taskId}`;
         await (0, assignment_email_1.sendAssignmentEmail)({
             organizationId: orgId,
             assignedTo: (_c = data.assignedTo) !== null && _c !== void 0 ? _c : null,
             departmentId: (_d = data.location) !== null && _d !== void 0 ? _d : null,
             title: (_e = data.title) !== null && _e !== void 0 ? _e : '(sin título)',
-            link: `https://multi.maintelligence.app/tasks/${context.params.taskId}`,
+            link,
             type: 'tarea',
             identifier: context.params.taskId,
             description: (_f = data.description) !== null && _f !== void 0 ? _f : '',
@@ -1840,7 +1872,7 @@ exports.rootSetOrganizationPlan = functions.https.onCall(async (data, context) =
         if (!resolvedEntitlementStatus) {
             throw httpsError('invalid-argument', 'entitlementStatus inválido.');
         }
-        const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, currentEntitlement === null || currentEntitlement === void 0 ? void 0 : currentEntitlement.limits);
+        const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, hasPlanChanged(currentEntitlement === null || currentEntitlement === void 0 ? void 0 : currentEntitlement.planId, resolvedPlanId) ? null : currentEntitlement === null || currentEntitlement === void 0 ? void 0 : currentEntitlement.limits);
         const usage = (_b = currentEntitlement === null || currentEntitlement === void 0 ? void 0 : currentEntitlement.usage) !== null && _b !== void 0 ? _b : DEFAULT_ENTITLEMENT_USAGE;
         const nextEntitlement = buildEntitlementPayload({
             planId: resolvedPlanId,
@@ -2819,223 +2851,293 @@ exports.createDepartment = functions.https.onCall(async (data, context) => {
 // Tickets & Tasks (server-only writes)
 // -----------------------------
 exports.createTicketUploadSession = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e;
-    const uid = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
-    if (!uid) {
-        throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
-    }
-    const orgId = String((_c = (_b = data === null || data === void 0 ? void 0 : data.orgId) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.organizationId) !== null && _c !== void 0 ? _c : '').trim();
-    const ticketId = String((_d = data === null || data === void 0 ? void 0 : data.ticketId) !== null && _d !== void 0 ? _d : '').trim();
-    const maxFiles = Math.min(Number((_e = data === null || data === void 0 ? void 0 : data.maxFiles) !== null && _e !== void 0 ? _e : 10) || 10, 10);
-    if (!orgId || !ticketId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o ticketId.');
-    }
-    return await db.runTransaction(async (tx) => {
-        var _a, _b, _c, _d, _e, _f;
-        await requireActiveMembershipForTx(tx, orgId, uid);
-        const orgRef = db.collection('organizations').doc(orgId);
-        const orgSnap = await tx.get(orgRef);
-        if (!orgSnap.exists) {
-            throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    var _a, _b, _c, _d, _e, _f;
+    try {
+        const uid = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+        if (!uid) {
+            throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
         }
-        const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
-        const maxAttachmentMB = Number((_b = (_a = entitlement.limits) === null || _a === void 0 ? void 0 : _a.maxAttachmentMB) !== null && _b !== void 0 ? _b : 0) || 0;
-        const monthlyMB = Number((_d = (_c = entitlement.limits) === null || _c === void 0 ? void 0 : _c.attachmentsMonthlyMB) !== null && _d !== void 0 ? _d : 0) || 0;
-        const perTicket = Number((_f = (_e = entitlement.limits) === null || _e === void 0 ? void 0 : _e.maxAttachmentsPerTicket) !== null && _f !== void 0 ? _f : 0) || 0;
-        if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
-            throw new functions.https.HttpsError('failed-precondition', 'Los adjuntos no están disponibles en tu plan.', 'attachments_not_allowed');
+        const orgId = String((_c = (_b = data === null || data === void 0 ? void 0 : data.orgId) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.organizationId) !== null && _c !== void 0 ? _c : '').trim();
+        const ticketId = String((_d = data === null || data === void 0 ? void 0 : data.ticketId) !== null && _d !== void 0 ? _d : '').trim();
+        const maxFiles = Math.min(Number((_e = data === null || data === void 0 ? void 0 : data.maxFiles) !== null && _e !== void 0 ? _e : 10) || 10, 10);
+        if (!orgId || !ticketId) {
+            throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId o ticketId.');
         }
-        // Create short-lived session for Storage rules.
-        const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000));
-        const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
-        tx.set(sessionRef, {
-            organizationId: orgId,
-            uploaderUid: uid,
-            type: 'ticket',
-            status: 'active',
-            allowedFiles: {},
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            expiresAt,
-            maxFiles,
+        return await db.runTransaction(async (tx) => {
+            var _a, _b, _c;
+            await requireActiveMembershipForTx(tx, orgId, uid);
+            const orgRef = db.collection('organizations').doc(orgId);
+            const orgSnap = await tx.get(orgRef);
+            if (!orgSnap.exists) {
+                throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+            }
+            const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+            const effectiveLimits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
+            const maxAttachmentMB = Number((_a = effectiveLimits.maxAttachmentMB) !== null && _a !== void 0 ? _a : 0) || 0;
+            const monthlyMB = Number((_b = effectiveLimits.attachmentsMonthlyMB) !== null && _b !== void 0 ? _b : 0) || 0;
+            const perTicket = Number((_c = effectiveLimits.maxAttachmentsPerTicket) !== null && _c !== void 0 ? _c : 0) || 0;
+            if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
+                throw new functions.https.HttpsError('failed-precondition', 'Los adjuntos no están disponibles en tu plan.', 'attachments_not_allowed');
+            }
+            // Create short-lived session for Storage rules.
+            const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000));
+            const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
+            tx.set(sessionRef, {
+                organizationId: orgId,
+                uploaderUid: uid,
+                type: 'ticket',
+                status: 'active',
+                allowedFiles: {},
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                expiresAt,
+                maxFiles,
+            });
+            functions.logger.info('Created ticket upload session', {
+                orgId,
+                ticketId,
+                uploaderUid: uid,
+                maxFiles,
+                maxAttachmentMB,
+                expiresAt: expiresAt.toDate().toISOString(),
+            });
+            return {
+                ok: true,
+                ticketId,
+                expiresAt: expiresAt.toDate().toISOString(),
+                maxFiles,
+                maxAttachmentMB,
+            };
         });
-        return {
-            ok: true,
-            ticketId,
-            expiresAt: expiresAt.toDate().toISOString(),
-            maxFiles,
-            maxAttachmentMB,
-        };
-    });
+    }
+    catch (error) {
+        functions.logger.error('createTicketUploadSession failed', {
+            code: error === null || error === void 0 ? void 0 : error.code,
+            message: error === null || error === void 0 ? void 0 : error.message,
+            stack: error === null || error === void 0 ? void 0 : error.stack,
+        });
+        if (error instanceof functions.https.HttpsError || ((_f = error === null || error === void 0 ? void 0 : error.constructor) === null || _f === void 0 ? void 0 : _f.name) === 'HttpsError') {
+            throw error;
+        }
+        throw new functions.https.HttpsError('internal', 'Error interno creando sesión de subida.', {
+            reason: 'createTicketUploadSession_failed',
+        });
+    }
 });
 exports.registerTicketAttachment = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f, _g;
-    const uid = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
-    if (!uid) {
-        throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
-    }
-    const orgId = String((_c = (_b = data === null || data === void 0 ? void 0 : data.orgId) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.organizationId) !== null && _c !== void 0 ? _c : '').trim();
-    const ticketId = String((_d = data === null || data === void 0 ? void 0 : data.ticketId) !== null && _d !== void 0 ? _d : '').trim();
-    const sizeBytes = Number((_e = data === null || data === void 0 ? void 0 : data.sizeBytes) !== null && _e !== void 0 ? _e : 0) || 0;
-    const fileName = String((_f = data === null || data === void 0 ? void 0 : data.fileName) !== null && _f !== void 0 ? _f : '').trim();
-    const contentType = String((_g = data === null || data === void 0 ? void 0 : data.contentType) !== null && _g !== void 0 ? _g : '').trim();
-    if (!orgId || !ticketId || sizeBytes <= 0 || !fileName || !contentType) {
-        throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId, ticketId, sizeBytes, fileName o contentType.');
-    }
-    const sizeMB = sizeBytes / (1024 * 1024);
-    return await db.runTransaction(async (tx) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
-        await requireActiveMembershipForTx(tx, orgId, uid);
-        const orgRef = db.collection('organizations').doc(orgId);
-        const orgSnap = await tx.get(orgRef);
-        if (!orgSnap.exists) {
-            throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    try {
+        const uid = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+        if (!uid) {
+            throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
         }
-        const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
-        const maxAttachmentMB = Number((_b = (_a = entitlement.limits) === null || _a === void 0 ? void 0 : _a.maxAttachmentMB) !== null && _b !== void 0 ? _b : 0) || 0;
-        const monthlyMB = Number((_d = (_c = entitlement.limits) === null || _c === void 0 ? void 0 : _c.attachmentsMonthlyMB) !== null && _d !== void 0 ? _d : 0) || 0;
-        const perTicket = Number((_f = (_e = entitlement.limits) === null || _e === void 0 ? void 0 : _e.maxAttachmentsPerTicket) !== null && _f !== void 0 ? _f : 0) || 0;
-        const usedThisMonth = Number((_h = (_g = entitlement.usage) === null || _g === void 0 ? void 0 : _g.attachmentsThisMonthMB) !== null && _h !== void 0 ? _h : 0) || 0;
-        if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
-            throw new functions.https.HttpsError('failed-precondition', 'Los adjuntos no están disponibles en tu plan.', 'attachments_not_allowed');
+        const orgId = String((_c = (_b = data === null || data === void 0 ? void 0 : data.orgId) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.organizationId) !== null && _c !== void 0 ? _c : '').trim();
+        const ticketId = String((_d = data === null || data === void 0 ? void 0 : data.ticketId) !== null && _d !== void 0 ? _d : '').trim();
+        const sizeBytes = Number((_e = data === null || data === void 0 ? void 0 : data.sizeBytes) !== null && _e !== void 0 ? _e : 0) || 0;
+        const fileName = String((_f = data === null || data === void 0 ? void 0 : data.fileName) !== null && _f !== void 0 ? _f : '').trim();
+        const contentType = String((_g = data === null || data === void 0 ? void 0 : data.contentType) !== null && _g !== void 0 ? _g : '').trim();
+        if (!orgId || !ticketId || sizeBytes <= 0 || !fileName || !contentType) {
+            throw new functions.https.HttpsError('invalid-argument', 'Faltan orgId, ticketId, sizeBytes, fileName o contentType.');
         }
-        if (sizeMB > maxAttachmentMB + 1e-6) {
-            throw new functions.https.HttpsError('failed-precondition', `Adjunto supera el tamaño máximo (${maxAttachmentMB} MB).`, 'attachment_too_large');
-        }
-        if (usedThisMonth + sizeMB > monthlyMB + 1e-6) {
-            throw new functions.https.HttpsError('failed-precondition', 'Se superó la cuota mensual de adjuntos.', 'attachments_quota_exceeded');
-        }
-        const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
-        const sessionSnap = await tx.get(sessionRef);
-        if (!sessionSnap.exists || sessionSnap.get('status') !== 'active' || sessionSnap.get('type') !== 'ticket') {
-            throw new functions.https.HttpsError('failed-precondition', 'La sesión de carga no está activa.', 'upload_session_inactive');
-        }
-        if (sessionSnap.get('uploaderUid') !== uid) {
-            throw new functions.https.HttpsError('permission-denied', 'Sesión de carga inválida.');
-        }
-        const allowedFiles = (sessionSnap.get('allowedFiles') || {});
-        if (allowedFiles[fileName]) {
-            throw new functions.https.HttpsError('already-exists', 'El archivo ya fue registrado.');
-        }
-        const maxFiles = Number((_j = sessionSnap.get('maxFiles')) !== null && _j !== void 0 ? _j : 0) || 0;
-        const registeredCount = Object.keys(allowedFiles).length;
-        if (maxFiles > 0 && registeredCount >= maxFiles) {
-            throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${maxFiles}).`, 'attachments_per_ticket_exceeded');
-        }
-        const ticketRef = orgRef.collection('tickets').doc(ticketId);
-        const ticketSnap = await tx.get(ticketRef);
-        if (ticketSnap.exists) {
-            const currentUrls = Array.isArray(ticketSnap.get('photoUrls')) ? ticketSnap.get('photoUrls') : [];
-            if (currentUrls.length >= perTicket) {
-                throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${perTicket}).`, 'attachments_per_ticket_exceeded');
+        const sizeMB = sizeBytes / (1024 * 1024);
+        return await db.runTransaction(async (tx) => {
+            var _a, _b, _c, _d, _e, _f;
+            await requireActiveMembershipForTx(tx, orgId, uid);
+            const orgRef = db.collection('organizations').doc(orgId);
+            const orgSnap = await tx.get(orgRef);
+            if (!orgSnap.exists) {
+                throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
             }
-        }
-        tx.update(orgRef, {
-            'entitlement.usage.attachmentsThisMonthMB': admin.firestore.FieldValue.increment(sizeMB),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        tx.update(sessionRef, new admin.firestore.FieldPath('allowedFiles', fileName), {
-            sizeBytes,
-            contentType,
-            registeredAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        return { ok: true, sizeMB };
-    });
-});
-exports.createTicket = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c, _d, _e, _f;
-    const uid = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
-    if (!uid) {
-        throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
-    }
-    const orgId = String((_c = (_b = data === null || data === void 0 ? void 0 : data.orgId) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.organizationId) !== null && _c !== void 0 ? _c : '').trim();
-    const payload = ((_d = data === null || data === void 0 ? void 0 : data.payload) !== null && _d !== void 0 ? _d : data);
-    const providedTicketId = String((_f = (_e = payload === null || payload === void 0 ? void 0 : payload.ticketId) !== null && _e !== void 0 ? _e : data === null || data === void 0 ? void 0 : data.ticketId) !== null && _f !== void 0 ? _f : '').trim() || undefined;
-    if (!orgId) {
-        throw new functions.https.HttpsError('invalid-argument', 'Falta orgId.');
-    }
-    return await db.runTransaction(async (tx) => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w;
-        const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
-        const orgRef = db.collection('organizations').doc(orgId);
-        const orgSnap = await tx.get(orgRef);
-        if (!orgSnap.exists) {
-            throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
-        }
-        const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
-        const limits = entitlement.limits;
-        const usage = entitlement.usage;
-        const locationId = String((_b = (_a = payload === null || payload === void 0 ? void 0 : payload.locationId) !== null && _a !== void 0 ? _a : payload === null || payload === void 0 ? void 0 : payload.siteId) !== null && _b !== void 0 ? _b : '').trim();
-        const originDepartmentId = String((_c = payload === null || payload === void 0 ? void 0 : payload.originDepartmentId) !== null && _c !== void 0 ? _c : '').trim() || undefined;
-        const targetDepartmentId = String((_d = payload === null || payload === void 0 ? void 0 : payload.targetDepartmentId) !== null && _d !== void 0 ? _d : '').trim() || undefined;
-        const departmentId = String((_e = payload === null || payload === void 0 ? void 0 : payload.departmentId) !== null && _e !== void 0 ? _e : '').trim() || undefined;
-        const effectiveDepartmentId = (_f = targetDepartmentId !== null && targetDepartmentId !== void 0 ? targetDepartmentId : originDepartmentId) !== null && _f !== void 0 ? _f : departmentId;
-        if (!locationId) {
-            throw new functions.https.HttpsError('invalid-argument', 'Falta locationId.');
-        }
-        if (!effectiveDepartmentId) {
-            throw new functions.https.HttpsError('invalid-argument', 'Falta departmentId.');
-        }
-        // Scope enforcement (keep existing RBAC model; don't redesign).
-        requireScopedAccessToSite(resolved.role, resolved.scope, locationId);
-        requireScopedAccessToDepartment(resolved.role, resolved.scope, effectiveDepartmentId);
-        const status = (_g = payload === null || payload === void 0 ? void 0 : payload.status) !== null && _g !== void 0 ? _g : 'new';
-        if (isOpenStatus(status)) {
-            const current = Number((_h = usage === null || usage === void 0 ? void 0 : usage.openTicketsCount) !== null && _h !== void 0 ? _h : 0) || 0;
-            const max = Number((_j = limits === null || limits === void 0 ? void 0 : limits.maxOpenTickets) !== null && _j !== void 0 ? _j : 0) || 0;
-            if (max > 0 && current >= max) {
-                throw new functions.https.HttpsError('failed-precondition', 'Has alcanzado el límite de incidencias abiertas de tu plan.', 'max_open_tickets_reached');
+            const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+            const effectiveLimits = await resolvePlanLimitsForTx(tx, entitlement.planId, entitlement.limits);
+            const maxAttachmentMB = Number((_a = effectiveLimits.maxAttachmentMB) !== null && _a !== void 0 ? _a : 0) || 0;
+            const monthlyMB = Number((_b = effectiveLimits.attachmentsMonthlyMB) !== null && _b !== void 0 ? _b : 0) || 0;
+            const perTicket = Number((_c = effectiveLimits.maxAttachmentsPerTicket) !== null && _c !== void 0 ? _c : 0) || 0;
+            const usedThisMonth = Number((_e = (_d = entitlement.usage) === null || _d === void 0 ? void 0 : _d.attachmentsThisMonthMB) !== null && _e !== void 0 ? _e : 0) || 0;
+            if (monthlyMB <= 0 || maxAttachmentMB <= 0 || perTicket <= 0) {
+                throw new functions.https.HttpsError('failed-precondition', 'Los adjuntos no están disponibles en tu plan.', 'attachments_not_allowed');
             }
-        }
-        const ticketRef = providedTicketId
-            ? orgRef.collection('tickets').doc(providedTicketId)
-            : orgRef.collection('tickets').doc();
-        const existing = await tx.get(ticketRef);
-        if (existing.exists) {
-            throw new functions.https.HttpsError('already-exists', 'La incidencia ya existe.');
-        }
-        const nowYear = new Date().getFullYear();
-        const displayId = (payload === null || payload === void 0 ? void 0 : payload.displayId) || `INC-${nowYear}-${String(Date.now()).slice(-4)}`;
-        const createdByName = String((_p = (_m = (_k = payload === null || payload === void 0 ? void 0 : payload.createdByName) !== null && _k !== void 0 ? _k : (_l = resolved.userData) === null || _l === void 0 ? void 0 : _l.displayName) !== null && _m !== void 0 ? _m : (_o = resolved.userData) === null || _o === void 0 ? void 0 : _o.email) !== null && _p !== void 0 ? _p : uid);
-        const docData = {
-            organizationId: orgId,
-            locationId,
-            originDepartmentId: originDepartmentId !== null && originDepartmentId !== void 0 ? originDepartmentId : null,
-            targetDepartmentId: targetDepartmentId !== null && targetDepartmentId !== void 0 ? targetDepartmentId : null,
-            departmentId: departmentId !== null && departmentId !== void 0 ? departmentId : null,
-            title: String((_q = payload === null || payload === void 0 ? void 0 : payload.title) !== null && _q !== void 0 ? _q : '').trim(),
-            description: String((_r = payload === null || payload === void 0 ? void 0 : payload.description) !== null && _r !== void 0 ? _r : '').trim(),
-            type: (_s = payload === null || payload === void 0 ? void 0 : payload.type) !== null && _s !== void 0 ? _s : 'correctivo',
-            status,
-            priority: (_t = payload === null || payload === void 0 ? void 0 : payload.priority) !== null && _t !== void 0 ? _t : 'Media',
-            assetId: (_u = payload === null || payload === void 0 ? void 0 : payload.assetId) !== null && _u !== void 0 ? _u : null,
-            createdBy: uid,
-            createdByName,
-            assignedRole: (_v = payload === null || payload === void 0 ? void 0 : payload.assignedRole) !== null && _v !== void 0 ? _v : 'mantenimiento',
-            assignedTo: (_w = payload === null || payload === void 0 ? void 0 : payload.assignedTo) !== null && _w !== void 0 ? _w : null,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            displayId,
-            photoUrls: Array.isArray(payload === null || payload === void 0 ? void 0 : payload.photoUrls) ? payload.photoUrls : [],
-            hasAttachments: Array.isArray(payload === null || payload === void 0 ? void 0 : payload.photoUrls) && payload.photoUrls.length > 0,
-        };
-        // Clean null-ish legacy.
-        if (!docData.assetId)
-            delete docData.assetId;
-        tx.set(ticketRef, docData, { merge: false });
-        if (isOpenStatus(status)) {
+            if (sizeMB > maxAttachmentMB + 1e-6) {
+                throw new functions.https.HttpsError('failed-precondition', `Adjunto supera el tamaño máximo (${maxAttachmentMB} MB).`, 'attachment_too_large');
+            }
+            if (usedThisMonth + sizeMB > monthlyMB + 1e-6) {
+                throw new functions.https.HttpsError('failed-precondition', 'Se superó la cuota mensual de adjuntos.', 'attachments_quota_exceeded');
+            }
+            const sessionRef = orgRef.collection('uploadSessions').doc(ticketId);
+            const sessionSnap = await tx.get(sessionRef);
+            if (!sessionSnap.exists || sessionSnap.get('status') !== 'active' || sessionSnap.get('type') !== 'ticket') {
+                functions.logger.warn('Upload session inactive or missing', {
+                    orgId,
+                    ticketId,
+                    uploaderUid: uid,
+                    sessionExists: sessionSnap.exists,
+                    sessionStatus: sessionSnap.get('status'),
+                    sessionType: sessionSnap.get('type'),
+                });
+                throw new functions.https.HttpsError('failed-precondition', 'La sesión de carga no está activa.', 'upload_session_inactive');
+            }
+            if (sessionSnap.get('uploaderUid') !== uid) {
+                functions.logger.warn('Upload session uploader mismatch', {
+                    orgId,
+                    ticketId,
+                    uploaderUid: uid,
+                    sessionUploaderUid: sessionSnap.get('uploaderUid'),
+                });
+                throw new functions.https.HttpsError('permission-denied', 'Sesión de carga inválida.');
+            }
+            const allowedFiles = (sessionSnap.get('allowedFiles') || {});
+            if (allowedFiles[fileName]) {
+                throw new functions.https.HttpsError('already-exists', 'El archivo ya fue registrado.');
+            }
+            const maxFiles = Number((_f = sessionSnap.get('maxFiles')) !== null && _f !== void 0 ? _f : 0) || 0;
+            const registeredCount = Object.keys(allowedFiles).length;
+            if (maxFiles > 0 && registeredCount >= maxFiles) {
+                throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${maxFiles}).`, 'attachments_per_ticket_exceeded');
+            }
+            const ticketRef = orgRef.collection('tickets').doc(ticketId);
+            const ticketSnap = await tx.get(ticketRef);
+            if (ticketSnap.exists) {
+                const currentUrls = Array.isArray(ticketSnap.get('photoUrls')) ? ticketSnap.get('photoUrls') : [];
+                if (currentUrls.length >= perTicket) {
+                    throw new functions.https.HttpsError('failed-precondition', `Se superó el máximo de adjuntos por incidencia (${perTicket}).`, 'attachments_per_ticket_exceeded');
+                }
+            }
             tx.update(orgRef, {
-                'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(1),
+                'entitlement.usage.attachmentsThisMonthMB': admin.firestore.FieldValue.increment(sizeMB),
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
+            tx.update(sessionRef, new admin.firestore.FieldPath('allowedFiles', fileName), {
+                sizeBytes,
+                contentType,
+                registeredAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            return { ok: true, sizeMB };
+        });
+    }
+    catch (error) {
+        functions.logger.error('registerTicketAttachment failed', {
+            code: error === null || error === void 0 ? void 0 : error.code,
+            message: error === null || error === void 0 ? void 0 : error.message,
+            stack: error === null || error === void 0 ? void 0 : error.stack,
+        });
+        if (error instanceof functions.https.HttpsError || ((_h = error === null || error === void 0 ? void 0 : error.constructor) === null || _h === void 0 ? void 0 : _h.name) === 'HttpsError') {
+            throw error;
         }
-        // Clean up upload session if present.
-        const sessionRef = orgRef.collection('uploadSessions').doc(ticketRef.id);
-        const sessionSnap = await tx.get(sessionRef);
-        if (sessionSnap.exists) {
-            tx.delete(sessionRef);
+        throw new functions.https.HttpsError('internal', 'Error interno registrando adjunto.', {
+            reason: 'registerTicketAttachment_failed',
+        });
+    }
+});
+exports.createTicket = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g;
+    try {
+        const uid = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid;
+        if (!uid) {
+            throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
         }
-        return { ok: true, ticketId: ticketRef.id };
-    });
+        const orgId = String((_c = (_b = data === null || data === void 0 ? void 0 : data.orgId) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.organizationId) !== null && _c !== void 0 ? _c : '').trim();
+        const payload = ((_d = data === null || data === void 0 ? void 0 : data.payload) !== null && _d !== void 0 ? _d : data);
+        const providedTicketId = String((_f = (_e = payload === null || payload === void 0 ? void 0 : payload.ticketId) !== null && _e !== void 0 ? _e : data === null || data === void 0 ? void 0 : data.ticketId) !== null && _f !== void 0 ? _f : '').trim() || undefined;
+        if (!orgId) {
+            throw new functions.https.HttpsError('invalid-argument', 'Falta orgId.');
+        }
+        return await db.runTransaction(async (tx) => {
+            var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w;
+            const resolved = await requireActiveMembershipForTx(tx, orgId, uid);
+            const orgRef = db.collection('organizations').doc(orgId);
+            const orgSnap = await tx.get(orgRef);
+            if (!orgSnap.exists) {
+                throw new functions.https.HttpsError('not-found', 'Organización no encontrada.');
+            }
+            const entitlement = resolveEffectiveEntitlementForTx(orgSnap);
+            const limits = entitlement.limits;
+            const usage = entitlement.usage;
+            const locationId = String((_b = (_a = payload === null || payload === void 0 ? void 0 : payload.locationId) !== null && _a !== void 0 ? _a : payload === null || payload === void 0 ? void 0 : payload.siteId) !== null && _b !== void 0 ? _b : '').trim();
+            const originDepartmentId = String((_c = payload === null || payload === void 0 ? void 0 : payload.originDepartmentId) !== null && _c !== void 0 ? _c : '').trim() || undefined;
+            const targetDepartmentId = String((_d = payload === null || payload === void 0 ? void 0 : payload.targetDepartmentId) !== null && _d !== void 0 ? _d : '').trim() || undefined;
+            const departmentId = String((_e = payload === null || payload === void 0 ? void 0 : payload.departmentId) !== null && _e !== void 0 ? _e : '').trim() || undefined;
+            const effectiveDepartmentId = (_f = targetDepartmentId !== null && targetDepartmentId !== void 0 ? targetDepartmentId : originDepartmentId) !== null && _f !== void 0 ? _f : departmentId;
+            if (!locationId) {
+                throw new functions.https.HttpsError('invalid-argument', 'Falta locationId.');
+            }
+            if (!effectiveDepartmentId) {
+                throw new functions.https.HttpsError('invalid-argument', 'Falta departmentId.');
+            }
+            // Scope enforcement (keep existing RBAC model; don't redesign).
+            requireScopedAccessToSite(resolved.role, resolved.scope, locationId);
+            requireScopedAccessToDepartment(resolved.role, resolved.scope, effectiveDepartmentId);
+            const status = (_g = payload === null || payload === void 0 ? void 0 : payload.status) !== null && _g !== void 0 ? _g : 'new';
+            if (isOpenStatus(status)) {
+                const current = Number((_h = usage === null || usage === void 0 ? void 0 : usage.openTicketsCount) !== null && _h !== void 0 ? _h : 0) || 0;
+                const max = Number((_j = limits === null || limits === void 0 ? void 0 : limits.maxOpenTickets) !== null && _j !== void 0 ? _j : 0) || 0;
+                if (max > 0 && current >= max) {
+                    throw new functions.https.HttpsError('failed-precondition', 'Has alcanzado el límite de incidencias abiertas de tu plan.', 'max_open_tickets_reached');
+                }
+            }
+            const ticketRef = providedTicketId
+                ? orgRef.collection('tickets').doc(providedTicketId)
+                : orgRef.collection('tickets').doc();
+            const existing = await tx.get(ticketRef);
+            if (existing.exists) {
+                throw new functions.https.HttpsError('already-exists', 'La incidencia ya existe.');
+            }
+            // Read upload session (if any) BEFORE any writes in the transaction.
+            const sessionRef = orgRef.collection('uploadSessions').doc(ticketRef.id);
+            const sessionSnap = await tx.get(sessionRef);
+            const nowYear = new Date().getFullYear();
+            const displayId = (payload === null || payload === void 0 ? void 0 : payload.displayId) || `INC-${nowYear}-${String(Date.now()).slice(-4)}`;
+            const createdByName = String((_p = (_m = (_k = payload === null || payload === void 0 ? void 0 : payload.createdByName) !== null && _k !== void 0 ? _k : (_l = resolved.userData) === null || _l === void 0 ? void 0 : _l.displayName) !== null && _m !== void 0 ? _m : (_o = resolved.userData) === null || _o === void 0 ? void 0 : _o.email) !== null && _p !== void 0 ? _p : uid);
+            const docData = {
+                organizationId: orgId,
+                locationId,
+                originDepartmentId: originDepartmentId !== null && originDepartmentId !== void 0 ? originDepartmentId : null,
+                targetDepartmentId: targetDepartmentId !== null && targetDepartmentId !== void 0 ? targetDepartmentId : null,
+                departmentId: departmentId !== null && departmentId !== void 0 ? departmentId : null,
+                title: String((_q = payload === null || payload === void 0 ? void 0 : payload.title) !== null && _q !== void 0 ? _q : '').trim(),
+                description: String((_r = payload === null || payload === void 0 ? void 0 : payload.description) !== null && _r !== void 0 ? _r : '').trim(),
+                type: (_s = payload === null || payload === void 0 ? void 0 : payload.type) !== null && _s !== void 0 ? _s : 'correctivo',
+                status,
+                priority: (_t = payload === null || payload === void 0 ? void 0 : payload.priority) !== null && _t !== void 0 ? _t : 'Media',
+                assetId: (_u = payload === null || payload === void 0 ? void 0 : payload.assetId) !== null && _u !== void 0 ? _u : null,
+                createdBy: uid,
+                createdByName,
+                assignedRole: (_v = payload === null || payload === void 0 ? void 0 : payload.assignedRole) !== null && _v !== void 0 ? _v : 'mantenimiento',
+                assignedTo: (_w = payload === null || payload === void 0 ? void 0 : payload.assignedTo) !== null && _w !== void 0 ? _w : null,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                displayId,
+                photoUrls: Array.isArray(payload === null || payload === void 0 ? void 0 : payload.photoUrls) ? payload.photoUrls : [],
+                hasAttachments: Array.isArray(payload === null || payload === void 0 ? void 0 : payload.photoUrls) && payload.photoUrls.length > 0,
+            };
+            // Clean null-ish legacy.
+            if (!docData.assetId)
+                delete docData.assetId;
+            tx.set(ticketRef, docData, { merge: false });
+            if (isOpenStatus(status)) {
+                tx.update(orgRef, {
+                    'entitlement.usage.openTicketsCount': admin.firestore.FieldValue.increment(1),
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            }
+            // Clean up upload session if present.
+            if (sessionSnap.exists) {
+                tx.delete(sessionRef);
+            }
+            return { ok: true, ticketId: ticketRef.id };
+        });
+    }
+    catch (error) {
+        functions.logger.error('createTicket failed', {
+            code: error === null || error === void 0 ? void 0 : error.code,
+            message: error === null || error === void 0 ? void 0 : error.message,
+            stack: error === null || error === void 0 ? void 0 : error.stack,
+        });
+        if (error instanceof functions.https.HttpsError || ((_g = error === null || error === void 0 ? void 0 : error.constructor) === null || _g === void 0 ? void 0 : _g.name) === 'HttpsError') {
+            throw error;
+        }
+        throw new functions.https.HttpsError('internal', 'Error interno creando incidencia.', {
+            reason: 'createTicket_failed',
+        });
+    }
 });
 exports.updateTicketStatus = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e;
@@ -3427,6 +3529,8 @@ exports.createPreventiveTemplate = functions.https.onCall(async (data, context) 
         const siteId = String((_g = data.siteId) !== null && _g !== void 0 ? _g : '').trim();
         const departmentId = String((_h = data.departmentId) !== null && _h !== void 0 ? _h : '').trim();
         const assetId = String((_j = data.assetId) !== null && _j !== void 0 ? _j : '').trim();
+        const checklistRaw = Array.isArray(data.checklist) ? data.checklist : [];
+        const checklist = normalizeChecklistItems(checklistRaw);
         if (!isPlainObject(data.schedule))
             throw httpsError('invalid-argument', 'schedule requerido.');
         const scheduleType = String((_k = data.schedule.type) !== null && _k !== void 0 ? _k : '').trim();
@@ -3524,6 +3628,7 @@ exports.createPreventiveTemplate = functions.https.onCall(async (data, context) 
                 description: description || undefined,
                 status,
                 automatic,
+                checklist: checklist.length ? checklist : undefined,
                 schedule: storedSchedule,
                 priority,
                 siteId: siteId || undefined,
@@ -3575,6 +3680,8 @@ exports.updatePreventiveTemplate = functions.https.onCall(async (data, context) 
     const siteId = String((_g = data.siteId) !== null && _g !== void 0 ? _g : '').trim();
     const departmentId = String((_h = data.departmentId) !== null && _h !== void 0 ? _h : '').trim();
     const assetId = String((_j = data.assetId) !== null && _j !== void 0 ? _j : '').trim();
+    const checklistRaw = Array.isArray(data.checklist) ? data.checklist : [];
+    const checklist = normalizeChecklistItems(checklistRaw);
     if (!isPlainObject(data.schedule))
         throw httpsError('invalid-argument', 'schedule requerido.');
     const scheduleType = String((_k = data.schedule.type) !== null && _k !== void 0 ? _k : '').trim();
@@ -3667,6 +3774,7 @@ exports.updatePreventiveTemplate = functions.https.onCall(async (data, context) 
             description: description || undefined,
             status,
             automatic,
+            checklist: checklist.length ? checklist : undefined,
             schedule: storedSchedule,
             priority,
             siteId: siteId || undefined,
@@ -3676,6 +3784,17 @@ exports.updatePreventiveTemplate = functions.https.onCall(async (data, context) 
             updatedAt: now,
             source: 'updatePreventiveTemplate_v1',
         }));
+        // Keep pausedReason only when template remains paused.
+        if (status !== 'paused') {
+            tx.update(templateRef, {
+                pausedReason: admin.firestore.FieldValue.delete(),
+            });
+        }
+        else if (typeof data.pausedReason === 'string' && String(data.pausedReason).trim()) {
+            tx.update(templateRef, {
+                pausedReason: String(data.pausedReason).trim(),
+            });
+        }
     });
     await auditLog({
         action: 'updatePreventiveTemplate',
@@ -3738,6 +3857,476 @@ exports.duplicatePreventiveTemplate = functions.https.onCall(async (data, contex
     });
     return { ok: true, organizationId: orgId, templateId: targetRef.id };
 });
+exports.deletePreventiveTemplate = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = resolveOrgIdFromData(data);
+    const templateId = requireStringField(data.templateId, 'templateId');
+    const { role } = await requireActiveMembership(actorUid, orgId);
+    requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para eliminar plantillas preventivas.');
+    const orgRef = db.collection('organizations').doc(orgId);
+    const templateRef = orgRef.collection('preventiveTemplates').doc(templateId);
+    const openWorkOrdersQuery = orgRef
+        .collection('workOrders')
+        .where('kind', '==', 'preventive')
+        .where('isOpen', '==', true)
+        .where('preventiveTemplateId', '==', templateId)
+        .limit(1);
+    await db.runTransaction(async (tx) => {
+        var _a;
+        const [orgSnap, templateSnap, openWosSnap] = await Promise.all([
+            tx.get(orgRef),
+            tx.get(templateRef),
+            tx.get(openWorkOrdersQuery),
+        ]);
+        if (!orgSnap.exists)
+            throw httpsError('not-found', 'Organización no encontrada.');
+        if (!templateSnap.exists)
+            throw httpsError('not-found', 'Plantilla no encontrada.');
+        if (String((_a = templateSnap.get('organizationId')) !== null && _a !== void 0 ? _a : '') !== orgId) {
+            throw httpsError('permission-denied', 'Plantilla fuera de la organización.');
+        }
+        if (!openWosSnap.empty) {
+            throw httpsError('failed-precondition', 'No se puede eliminar: existen OTs preventivas abiertas asociadas a esta plantilla.');
+        }
+        tx.delete(templateRef);
+    });
+    await auditLog({
+        action: 'deletePreventiveTemplate',
+        actorUid,
+        actorEmail,
+        orgId,
+        after: { templateId },
+    });
+    return { ok: true, organizationId: orgId, templateId };
+});
+exports.generatePreventiveNow = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = resolveOrgIdFromData(data);
+    const templateId = requireStringField(data.templateId, 'templateId');
+    const { role } = await requireActiveMembership(actorUid, orgId);
+    requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para generar preventivos manualmente.');
+    const orgRef = db.collection('organizations').doc(orgId);
+    const templateRef = orgRef.collection('preventiveTemplates').doc(templateId);
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+    const nowMillis = Date.now();
+    const ticketId = `prev_${templateId}_${nowMillis}`;
+    const ticketRef = orgRef.collection('tickets').doc(ticketId);
+    await db.runTransaction(async (tx) => {
+        var _a, _b, _c, _d, _e;
+        const [orgSnap, templateSnap, existingTicket] = await Promise.all([
+            tx.get(orgRef),
+            tx.get(templateRef),
+            tx.get(ticketRef),
+        ]);
+        if (!orgSnap.exists)
+            throw httpsError('not-found', 'Organización no encontrada.');
+        if (!templateSnap.exists)
+            throw httpsError('not-found', 'Plantilla no encontrada.');
+        if (String((_a = templateSnap.get('organizationId')) !== null && _a !== void 0 ? _a : '') !== orgId) {
+            throw httpsError('permission-denied', 'Plantilla fuera de la organización.');
+        }
+        if (existingTicket.exists) {
+            throw httpsError('already-exists', 'La orden ya existe.');
+        }
+        const orgData = orgSnap.data();
+        if ((orgData === null || orgData === void 0 ? void 0 : orgData.preventivesPausedByEntitlement) === true) {
+            throw httpsError('failed-precondition', 'Los preventivos están pausados por el plan actual.');
+        }
+        const entitlement = orgData === null || orgData === void 0 ? void 0 : orgData.entitlement;
+        if (!entitlement)
+            throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+        const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+        if (!(0, entitlements_1.isFeatureEnabled)(Object.assign(Object.assign({}, entitlement), { features }), 'PREVENTIVES')) {
+            throw httpsError('failed-precondition', 'Tu plan actual no incluye preventivos.');
+        }
+        const template = templateSnap.data();
+        if (template.status !== 'active') {
+            throw httpsError('failed-precondition', 'La plantilla no está activa.');
+        }
+        if (!template.siteId || !template.departmentId) {
+            throw httpsError('failed-precondition', 'La plantilla necesita siteId y departmentId para generar una orden.');
+        }
+        const schedule = template.schedule;
+        if (!(schedule === null || schedule === void 0 ? void 0 : schedule.type))
+            throw httpsError('failed-precondition', 'La plantilla no tiene programación válida.');
+        const runAtDate = resolveZonedDate(schedule.timezone);
+        const runAtTimestamp = admin.firestore.Timestamp.fromDate(runAtDate);
+        const nextBase = new Date(runAtDate.getTime() + 60 * 1000);
+        const followingRunDate = schedule.type === 'date' ? null : computeNextRunAt(schedule, nextBase);
+        const frequencyDays = resolveFrequencyDays(schedule);
+        ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+        const ticketPayload = {
+            organizationId: orgId,
+            type: 'preventivo',
+            status: 'new',
+            priority: (_b = template.priority) !== null && _b !== void 0 ? _b : 'Media',
+            siteId: template.siteId,
+            departmentId: template.departmentId,
+            assetId: (_c = template.assetId) !== null && _c !== void 0 ? _c : null,
+            title: template.name,
+            description: (_d = template.description) !== null && _d !== void 0 ? _d : '',
+            createdBy: actorUid,
+            assignedRole: 'mantenimiento',
+            assignedTo: null,
+            createdAt: nowServer,
+            updatedAt: nowServer,
+            preventiveTemplateId: templateRef.id,
+            templateSnapshot: {
+                name: template.name,
+                frequencyDays,
+            },
+            preventive: {
+                frequencyDays,
+                scheduledFor: runAtTimestamp,
+                checklist: (_e = template.checklist) !== null && _e !== void 0 ? _e : [],
+            },
+            source: 'generatePreventiveNow_v1',
+        };
+        tx.create(ticketRef, ticketPayload);
+        tx.update(orgRef, {
+            [`entitlement.usage.${USAGE_FIELDS.preventives}`]: admin.firestore.FieldValue.increment(1),
+            'entitlement.updatedAt': nowServer,
+        });
+        tx.update(templateRef, {
+            'schedule.lastRunAt': runAtTimestamp,
+            'schedule.nextRunAt': followingRunDate ? admin.firestore.Timestamp.fromDate(followingRunDate) : null,
+            updatedAt: nowServer,
+        });
+    });
+    await auditLog({
+        action: 'generatePreventiveNow',
+        actorUid,
+        actorEmail,
+        orgId,
+        after: { templateId, ticketId },
+    });
+    return { ok: true, organizationId: orgId, templateId, ticketId };
+});
+function normalizeChecklistItems(raw) {
+    var _a, _b, _c, _d, _e;
+    const items = [];
+    const arr = Array.isArray(raw) ? raw : [];
+    let order = 0;
+    for (const it of arr) {
+        order += 1;
+        if (typeof it === 'string') {
+            const label = it.trim();
+            if (!label)
+                continue;
+            items.push({ label, required: true, order });
+            continue;
+        }
+        if (it && typeof it === 'object') {
+            const anyIt = it;
+            const label = String((_c = (_b = (_a = anyIt.label) !== null && _a !== void 0 ? _a : anyIt.text) !== null && _b !== void 0 ? _b : anyIt.name) !== null && _c !== void 0 ? _c : '').trim();
+            if (!label)
+                continue;
+            const required = Boolean((_d = anyIt.required) !== null && _d !== void 0 ? _d : true);
+            items.push({ label, required, order: Number((_e = anyIt.order) !== null && _e !== void 0 ? _e : order) });
+            continue;
+        }
+    }
+    return items;
+}
+exports.workOrders_generateNow = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = resolveOrgIdFromData(data);
+    const templateId = requireStringField(data.templateId, 'templateId');
+    const { role } = await requireActiveMembership(actorUid, orgId);
+    requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para generar OTs de preventivo manualmente.');
+    const orgRef = db.collection('organizations').doc(orgId);
+    const templateRef = orgRef.collection('preventiveTemplates').doc(templateId);
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+    const nowMillis = Date.now();
+    const woId = `wo_prev_${templateId}_${nowMillis}`;
+    const woRef = orgRef.collection('workOrders').doc(woId);
+    await db.runTransaction(async (tx) => {
+        var _a, _b, _c, _d;
+        const [orgSnap, templateSnap, existingWo] = await Promise.all([
+            tx.get(orgRef),
+            tx.get(templateRef),
+            tx.get(woRef),
+        ]);
+        if (!orgSnap.exists)
+            throw httpsError('not-found', 'Organización no encontrada.');
+        if (!templateSnap.exists)
+            throw httpsError('not-found', 'Plantilla no encontrada.');
+        if (String((_a = templateSnap.get('organizationId')) !== null && _a !== void 0 ? _a : '') !== orgId) {
+            throw httpsError('permission-denied', 'Plantilla fuera de la organización.');
+        }
+        if (existingWo.exists) {
+            throw httpsError('already-exists', 'La OT ya existe.');
+        }
+        const orgData = orgSnap.data();
+        if ((orgData === null || orgData === void 0 ? void 0 : orgData.preventivesPausedByEntitlement) === true) {
+            throw httpsError('failed-precondition', 'Los preventivos están pausados por el plan actual.');
+        }
+        const entitlement = orgData === null || orgData === void 0 ? void 0 : orgData.entitlement;
+        if (!entitlement)
+            throw httpsError('failed-precondition', 'La organización no tiene entitlement.');
+        const features = await resolvePlanFeaturesForTx(tx, entitlement.planId);
+        if (!(0, entitlements_1.isFeatureEnabled)(Object.assign(Object.assign({}, entitlement), { features }), 'PREVENTIVES')) {
+            throw httpsError('failed-precondition', 'Tu plan actual no incluye preventivos.');
+        }
+        const template = templateSnap.data();
+        if (template.status !== 'active') {
+            throw httpsError('failed-precondition', 'La plantilla no está activa.');
+        }
+        if (!template.siteId || !template.departmentId) {
+            throw httpsError('failed-precondition', 'La plantilla necesita siteId y departmentId para generar una OT.');
+        }
+        const schedule = template.schedule;
+        if (!(schedule === null || schedule === void 0 ? void 0 : schedule.type))
+            throw httpsError('failed-precondition', 'La plantilla no tiene programación válida.');
+        const runAtDate = resolveZonedDate(schedule.timezone);
+        const runAtTimestamp = admin.firestore.Timestamp.fromDate(runAtDate);
+        const nextBase = new Date(runAtDate.getTime() + 60 * 1000);
+        const followingRunDate = schedule.type === 'date' ? null : computeNextRunAt(schedule, nextBase);
+        const frequencyDays = resolveFrequencyDays(schedule);
+        ensureEntitlementAllowsCreate({ kind: 'preventives', entitlement, features });
+        const checklistItems = normalizeChecklistItems(template.checklist);
+        const checklistRequired = checklistItems.length > 0;
+        const woPayload = {
+            organizationId: orgId,
+            kind: 'preventive',
+            status: 'open',
+            isOpen: true,
+            priority: (_b = template.priority) !== null && _b !== void 0 ? _b : 'Media',
+            siteId: template.siteId,
+            departmentId: template.departmentId,
+            assetId: (_c = template.assetId) !== null && _c !== void 0 ? _c : null,
+            title: template.name,
+            description: (_d = template.description) !== null && _d !== void 0 ? _d : '',
+            createdBy: actorUid,
+            assignedTo: null,
+            createdAt: nowServer,
+            updatedAt: nowServer,
+            preventiveTemplateId: templateRef.id,
+            templateSnapshot: {
+                name: template.name,
+                frequencyDays,
+            },
+            preventive: {
+                frequencyDays,
+                scheduledFor: runAtTimestamp,
+            },
+            checklistRequired,
+            source: 'workOrders_generateNow_v1',
+        };
+        tx.create(woRef, woPayload);
+        // Crear checklist en subcolección (server-only)
+        if (checklistItems.length) {
+            for (const item of checklistItems) {
+                const itemRef = woRef.collection('checklistItems').doc();
+                tx.create(itemRef, {
+                    organizationId: orgId,
+                    label: item.label,
+                    required: item.required,
+                    order: item.order,
+                    done: false,
+                    doneAt: null,
+                    doneBy: null,
+                    createdAt: nowServer,
+                    updatedAt: nowServer,
+                });
+            }
+        }
+        tx.update(orgRef, {
+            [`entitlement.usage.${USAGE_FIELDS.preventives}`]: admin.firestore.FieldValue.increment(1),
+            'entitlement.updatedAt': nowServer,
+        });
+        tx.update(templateRef, {
+            'schedule.lastRunAt': runAtTimestamp,
+            'schedule.nextRunAt': followingRunDate ? admin.firestore.Timestamp.fromDate(followingRunDate) : null,
+            updatedAt: nowServer,
+        });
+    });
+    await auditLog({
+        action: 'workOrders_generateNow',
+        actorUid,
+        actorEmail,
+        orgId,
+        after: { templateId, woId },
+    });
+    return { ok: true, organizationId: orgId, templateId, woId };
+});
+exports.workOrders_start = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = resolveOrgIdFromData(data);
+    const woId = requireStringField(data.woId, 'woId');
+    const { role } = await requireActiveMembership(actorUid, orgId);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const woRef = orgRef.collection('workOrders').doc(woId);
+    const woSnap = await woRef.get();
+    if (!woSnap.exists)
+        throw httpsError('not-found', 'OT no encontrada.');
+    if (String((_d = woSnap.get('organizationId')) !== null && _d !== void 0 ? _d : '') !== orgId) {
+        throw httpsError('permission-denied', 'OT fuera de la organización.');
+    }
+    const wo = woSnap.data();
+    const createdBy = String((_e = wo === null || wo === void 0 ? void 0 : wo.createdBy) !== null && _e !== void 0 ? _e : '');
+    const assignedTo = String((_f = wo === null || wo === void 0 ? void 0 : wo.assignedTo) !== null && _f !== void 0 ? _f : '');
+    const isAdminLike = ADMIN_LIKE_ROLES.has(role);
+    const isActorRelated = actorUid === createdBy || (assignedTo && actorUid === assignedTo);
+    if (!isAdminLike && !isActorRelated) {
+        throw httpsError('permission-denied', 'Solo el creador/asignado o admin/mantenimiento puede iniciar esta OT.');
+    }
+    if ((wo === null || wo === void 0 ? void 0 : wo.isOpen) !== true) {
+        throw httpsError('failed-precondition', 'La OT está cerrada.');
+    }
+    const currentStatus = String((_g = wo === null || wo === void 0 ? void 0 : wo.status) !== null && _g !== void 0 ? _g : 'open');
+    if (currentStatus === 'in_progress') {
+        return { ok: true, organizationId: orgId, woId, status: 'in_progress' };
+    }
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+    await woRef.update({
+        status: 'in_progress',
+        startedAt: nowServer,
+        startedBy: actorUid,
+        updatedAt: nowServer,
+    });
+    await auditLog({
+        action: 'workOrders_start',
+        actorUid,
+        actorEmail,
+        orgId,
+        after: { woId },
+    });
+    return { ok: true, organizationId: orgId, woId, status: 'in_progress' };
+});
+exports.workOrders_close = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const orgId = resolveOrgIdFromData(data);
+    const woId = requireStringField(data.woId, 'woId');
+    const { role } = await requireActiveMembership(actorUid, orgId);
+    const orgRef = db.collection('organizations').doc(orgId);
+    const woRef = orgRef.collection('workOrders').doc(woId);
+    const woSnap = await woRef.get();
+    if (!woSnap.exists)
+        throw httpsError('not-found', 'OT no encontrada.');
+    if (String((_d = woSnap.get('organizationId')) !== null && _d !== void 0 ? _d : '') !== orgId) {
+        throw httpsError('permission-denied', 'OT fuera de la organización.');
+    }
+    const wo = woSnap.data();
+    const createdBy = String((_e = wo === null || wo === void 0 ? void 0 : wo.createdBy) !== null && _e !== void 0 ? _e : '');
+    const assignedTo = String((_f = wo === null || wo === void 0 ? void 0 : wo.assignedTo) !== null && _f !== void 0 ? _f : '');
+    const isAdminLike = ADMIN_LIKE_ROLES.has(role);
+    const isActorRelated = actorUid === createdBy || (assignedTo && actorUid === assignedTo);
+    if (!isAdminLike && !isActorRelated) {
+        throw httpsError('permission-denied', 'Solo el creador/asignado o admin/mantenimiento puede cerrar esta OT.');
+    }
+    if ((wo === null || wo === void 0 ? void 0 : wo.isOpen) !== true) {
+        throw httpsError('failed-precondition', 'La OT ya está cerrada.');
+    }
+    const checklistRequired = Boolean((wo === null || wo === void 0 ? void 0 : wo.checklistRequired) === true);
+    if (checklistRequired) {
+        const incomplete = await woRef
+            .collection('checklistItems')
+            .where('required', '==', true)
+            .where('done', '==', false)
+            .limit(1)
+            .get();
+        if (!incomplete.empty) {
+            throw httpsError('failed-precondition', 'No se puede cerrar: hay items obligatorios sin completar.');
+        }
+    }
+    const nowServer = admin.firestore.FieldValue.serverTimestamp();
+    await woRef.update({
+        status: 'closed',
+        isOpen: false,
+        closedAt: nowServer,
+        closedBy: actorUid,
+        updatedAt: nowServer,
+    });
+    await auditLog({
+        action: 'workOrders_close',
+        actorUid,
+        actorEmail,
+        orgId,
+        after: { woId },
+    });
+    return { ok: true, organizationId: orgId, woId };
+});
+exports.workOrders_addReport = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+    const actorUid = requireAuth(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    try {
+        const orgId = resolveOrgIdFromData(data);
+        const woId = requireStringField(data === null || data === void 0 ? void 0 : data.woId, 'woId');
+        const descriptionRaw = String((_j = (_g = (_e = (_d = data === null || data === void 0 ? void 0 : data.description) !== null && _d !== void 0 ? _d : data === null || data === void 0 ? void 0 : data.text) !== null && _e !== void 0 ? _e : (_f = data === null || data === void 0 ? void 0 : data.reportAppend) === null || _f === void 0 ? void 0 : _f.description) !== null && _g !== void 0 ? _g : (_h = data === null || data === void 0 ? void 0 : data.payload) === null || _h === void 0 ? void 0 : _h.description) !== null && _j !== void 0 ? _j : '').trim();
+        if (!descriptionRaw) {
+            throw httpsError('invalid-argument', 'El informe no puede estar vacío.');
+        }
+        if (descriptionRaw.length > 5000) {
+            throw httpsError('invalid-argument', 'El informe es demasiado largo (máx 5000 caracteres).');
+        }
+        const { role } = await requireActiveMembership(actorUid, orgId);
+        const orgRef = db.collection('organizations').doc(orgId);
+        const woRef = orgRef.collection('workOrders').doc(woId);
+        const woSnap = await woRef.get();
+        if (!woSnap.exists)
+            throw httpsError('not-found', 'OT no encontrada.');
+        if (String((_k = woSnap.get('organizationId')) !== null && _k !== void 0 ? _k : '') !== orgId) {
+            throw httpsError('permission-denied', 'OT fuera de la organización.');
+        }
+        const wo = woSnap.data();
+        const createdBy = String((_l = wo === null || wo === void 0 ? void 0 : wo.createdBy) !== null && _l !== void 0 ? _l : '');
+        const assignedTo = String((_m = wo === null || wo === void 0 ? void 0 : wo.assignedTo) !== null && _m !== void 0 ? _m : '');
+        const isAdminLike = ADMIN_LIKE_ROLES.has(role);
+        const isActorRelated = actorUid === createdBy || (assignedTo && actorUid === assignedTo);
+        if (!isAdminLike && !isActorRelated) {
+            throw httpsError('permission-denied', 'Solo el creador/asignado o admin/mantenimiento puede registrar informes en esta OT.');
+        }
+        if ((wo === null || wo === void 0 ? void 0 : wo.isOpen) !== true) {
+            throw httpsError('failed-precondition', 'La OT está cerrada. No se pueden añadir informes.');
+        }
+        const entry = {
+            description: descriptionRaw,
+            createdAt: admin.firestore.Timestamp.now(),
+            createdBy: actorUid,
+        };
+        const nowServer = admin.firestore.FieldValue.serverTimestamp();
+        await woRef.update({
+            reports: admin.firestore.FieldValue.arrayUnion(entry),
+            updatedAt: nowServer,
+        });
+        await auditLog({
+            action: 'workOrders_addReport',
+            actorUid,
+            actorEmail,
+            orgId,
+            after: { woId },
+        });
+        return { ok: true, organizationId: orgId, woId };
+    }
+    catch (error) {
+        functions.logger.error('workOrders_addReport failed', {
+            code: error === null || error === void 0 ? void 0 : error.code,
+            message: error === null || error === void 0 ? void 0 : error.message,
+            stack: error === null || error === void 0 ? void 0 : error.stack,
+        });
+        // Preserve explicit HttpsError codes so the client can show meaningful feedback.
+        if (error instanceof functions.https.HttpsError || ((_o = error === null || error === void 0 ? void 0 : error.constructor) === null || _o === void 0 ? void 0 : _o.name) === 'HttpsError') {
+            throw error;
+        }
+        // Fallback: unknown/internal.
+        throw new functions.https.HttpsError('internal', 'Error interno registrando el informe.', {
+            reason: 'workOrders_addReport_failed',
+        });
+    }
+});
+// Back-compat: generatePreventiveNow sigue existiendo, pero se recomienda migrar a workOrders_generateNow.
 exports.inviteUserToOrg = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f;
     const actorUid = requireAuth(context);
@@ -3897,12 +4486,19 @@ exports.generatePreventiveTickets = functions.pubsub
         const orgId = resolveTemplateOrgId(templateDoc.ref, template);
         if (!orgId)
             continue;
+        const templateRef = templateDoc.ref;
         if (!((_a = template.schedule) === null || _a === void 0 ? void 0 : _a.type))
             continue;
-        if (!template.siteId || !template.departmentId)
+        if (!template.siteId || !template.departmentId) {
+            await templateRef.update({
+                status: 'paused',
+                pausedReason: 'missing_site_or_department',
+                'schedule.nextRunAt': null,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
             continue;
+        }
         const orgRef = db.collection('organizations').doc(orgId);
-        const templateRef = templateDoc.ref;
         let createdTicketId = null;
         await db.runTransaction(async (tx) => {
             var _a, _b, _c, _d, _e, _f, _g;
