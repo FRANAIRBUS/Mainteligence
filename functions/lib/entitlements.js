@@ -82,6 +82,8 @@ const DEFAULT_PLAN_LIMITS = {
 };
 const normalizePlanId = (planId) => {
     const normalized = String(planId !== null && planId !== void 0 ? planId : '').trim().toLowerCase();
+    if (normalized.startsWith('standard'))
+        return 'starter';
     return (normalized in DEFAULT_PLAN_LIMITS ? normalized : 'free');
 };
 const resolveEffectivePlanFeatures = (planId, features) => {

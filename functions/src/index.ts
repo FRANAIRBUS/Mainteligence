@@ -584,6 +584,11 @@ function resolveEffectiveLimitsForPlan(planId: EntitlementPlanId, limits?: Parti
   };
 }
 
+function hasPlanChanged(currentPlanId: EntitlementPlanId | undefined, nextPlanId: EntitlementPlanId): boolean {
+  if (!currentPlanId) return true;
+  return resolveEntitlementPlanId({ metadataPlanId: currentPlanId }) !== nextPlanId;
+}
+
 function resolveEffectiveFeaturesForPlan(planId: EntitlementPlanId, features?: Record<string, boolean> | null): Record<string, boolean> {
   return {
     ...resolveDefaultFeaturesForPlan(planId),
@@ -773,7 +778,10 @@ async function updateOrganizationStripeEntitlement({
       metadataPlanId: planId ?? null,
       fallbackPlanId: entitlement?.planId,
     });
-    const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement?.limits);
+    const limits = resolveEffectiveLimitsForPlan(
+      resolvedPlanId,
+      hasPlanChanged(entitlement?.planId, resolvedPlanId) ? null : entitlement?.limits
+    );
 
     const shouldBlock = shouldBlockProviderUpdate(entitlement, 'stripe');
     const billingProviderPayload: Record<string, unknown> = shouldBlock
@@ -1000,7 +1008,10 @@ async function updateOrganizationAppleEntitlement({
       metadataPlanId: planId ?? null,
       fallbackPlanId: entitlement?.planId,
     });
-    const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, entitlement?.limits);
+    const limits = resolveEffectiveLimitsForPlan(
+      resolvedPlanId,
+      hasPlanChanged(entitlement?.planId, resolvedPlanId) ? null : entitlement?.limits
+    );
 
     const shouldBlock = shouldBlockProviderUpdate(entitlement, 'apple_app_store');
     const billingProviderPayload: Record<string, unknown> = shouldBlock
@@ -2382,7 +2393,10 @@ export const rootSetOrganizationPlan = functions.https.onCall(async (data, conte
       throw httpsError('invalid-argument', 'entitlementStatus inválido.');
     }
 
-    const limits = resolveEffectiveLimitsForPlan(resolvedPlanId, currentEntitlement?.limits);
+    const limits = resolveEffectiveLimitsForPlan(
+      resolvedPlanId,
+      hasPlanChanged(currentEntitlement?.planId, resolvedPlanId) ? null : currentEntitlement?.limits
+    );
     const usage = currentEntitlement?.usage ?? DEFAULT_ENTITLEMENT_USAGE;
 
     const nextEntitlement = buildEntitlementPayload({
