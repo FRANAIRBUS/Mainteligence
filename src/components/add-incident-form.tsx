@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -15,11 +15,12 @@ import { getDownloadURL, ref, uploadBytesResumable, type UploadTaskSnapshot } fr
 
 import { useToast } from '@/hooks/use-toast';
 import { useFirestore, useUser, useStorage, useCollection, useDoc } from '@/lib/firebase';
-import type { Site, Department, Asset, Organization } from '@/lib/firebase/models';
+import type { Site, Department, Asset, Organization, OrganizationMember } from '@/lib/firebase/models';
 import { errorEmitter } from '@/lib/firebase/error-emitter';
 import { FirestorePermissionError, StoragePermissionError } from '@/lib/firebase/errors';
 import { orgCollectionPath, orgStoragePath } from '@/lib/organization';
 import { normalizePlanId, resolveEffectivePlanLimits } from '@/lib/entitlements';
+import { normalizeRole } from '@/lib/rbac';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -109,6 +110,10 @@ const formSchema = z.object({
   priority: z.enum(['Baja', 'Media', 'Alta', 'Crítica'], {
     required_error: 'Debe seleccionar una prioridad.',
   }),
+  assignedTo: z
+    .string()
+    .optional()
+    .transform((value) => (value && value !== '__none__' ? value : null)),
 });
 
 type AddIncidentFormValues = z.infer<typeof formSchema>;
@@ -122,7 +127,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const { toast } = useToast();
   const firestore = useFirestore();
   const storage = useStorage();
-  const { user, organizationId, profile, activeMembership } = useUser();
+  const { user, organizationId, profile, role, activeMembership } = useUser();
   const { data: organization, error: organizationError } = useDoc<Organization>(
     organizationId ? `organizations/${organizationId}` : null
   );
@@ -164,6 +169,29 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
   const { data: assets, loading: assetsLoading, error: assetsError } = useCollection<Asset>(
     organizationId ? orgCollectionPath(organizationId, 'assets') : null
   );
+  const { data: members = [], loading: membersLoading, error: membersError } = useCollection<OrganizationMember>(
+    organizationId ? orgCollectionPath(organizationId, 'members') : null
+  );
+
+  const normalizedRole = normalizeRole(role ?? profile?.role);
+  const assignableUsers = useMemo(() => {
+    if (!user) return [];
+
+    if (normalizedRole === 'operario') {
+      const self = members.find((member) => member.id === user.uid);
+      if (self) return [self];
+      return [
+        {
+          id: user.uid,
+          displayName: profile?.displayName ?? user.displayName ?? user.email ?? user.uid,
+          email: user.email ?? null,
+          role: 'operario',
+        } as OrganizationMember,
+      ];
+    }
+
+    return members;
+  }, [members, normalizedRole, profile?.displayName, user]);
 
   const form = useForm<AddIncidentFormValues>({
     resolver: zodResolver(formSchema),
@@ -172,6 +200,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
       description: '',
       priority: 'Media',
       assetId: '__none__',
+      assignedTo: '__none__',
     },
   });
 
@@ -581,7 +610,7 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
         status: 'new' as const,
         createdByName,
         assignedRole: 'mantenimiento',
-        assignedTo: null,
+        assignedTo: data.assignedTo,
         organizationId: scopedOrganizationId,
         photoUrls: urls,
         hasAttachments: urls.length > 0,
@@ -642,8 +671,8 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
     }
   };
 
-  const isLoading = sitesLoading || deptsLoading || assetsLoading;
-  const catalogError = sitesError || deptsError || assetsError;
+  const isLoading = sitesLoading || deptsLoading || assetsLoading || membersLoading;
+  const catalogError = sitesError || deptsError || assetsError || membersError;
   const isPermissionDenied = catalogError && (catalogError as { code?: string }).code === 'permission-denied';
   const canSubmit = Boolean(firestore && storage && user && organizationId && !catalogError);
 
@@ -809,6 +838,35 @@ export function AddIncidentForm({ onCancel, onSuccess }: AddIncidentFormProps) {
                     <SelectItem value="Media">Media</SelectItem>
                     <SelectItem value="Alta">Alta</SelectItem>
                     <SelectItem value="Crítica">Crítica</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="assignedTo"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Asignar a (Opcional)</FormLabel>
+                <Select
+                  name={field.name}
+                  onValueChange={field.onChange}
+                  value={field.value ?? '__none__'}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin asignar" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sin asignar</SelectItem>
+                    {assignableUsers.map((userOption) => (
+                      <SelectItem key={userOption.id} value={userOption.id}>
+                        {userOption.displayName || userOption.email || userOption.id}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />

@@ -200,19 +200,24 @@ export function EditIncidentDialog({ open, onOpenChange, ticket, users = [], dep
 
   const selectableUsers = (() => {
     if (!users) return [];
+
+    if (canAssignAnyUser) {
+      const departmentScope = currentMember?.departmentId ?? userProfile?.departmentId ?? null;
+      const locationScope = currentMember?.locationId ?? userProfile?.locationId ?? null;
+      if (normalizedRole === 'jefe_departamento' && departmentScope) {
+        return users.filter((userOption) => userOption.departmentId === departmentScope);
+      }
+      if (normalizedRole === 'jefe_ubicacion' && locationScope) {
+        return users.filter((userOption) => userOption.locationId === locationScope);
+      }
+      return users;
+    }
+
     if (canAssignToSelf && currentUser) {
       return users.filter((userOption) => userOption.id === currentUser.uid);
     }
-    if (!canAssignAnyUser) return [];
-    const departmentScope = currentMember?.departmentId ?? userProfile?.departmentId ?? null;
-    const locationScope = currentMember?.locationId ?? userProfile?.locationId ?? null;
-    if (normalizedRole === 'jefe_departamento' && departmentScope) {
-      return users.filter((userOption) => userOption.departmentId === departmentScope);
-    }
-    if (normalizedRole === 'jefe_ubicacion' && locationScope) {
-      return users.filter((userOption) => userOption.locationId === locationScope);
-    }
-    return users;
+
+    return [];
   })();
 
   const assignmentOptions =
