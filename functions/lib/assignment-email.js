@@ -16,6 +16,12 @@ const resolveDepartmentId = (departments, departmentIdOrName) => {
         dept.name === departmentIdOrName ||
         dept.code === departmentIdOrName)) === null || _a === void 0 ? void 0 : _a.id) !== null && _b !== void 0 ? _b : null;
 };
+const resolveDepartmentName = (departments, departmentIdOrName) => {
+    var _a, _b;
+    return (_b = (_a = departments.find((dept) => dept.id === departmentIdOrName ||
+        dept.name === departmentIdOrName ||
+        dept.code === departmentIdOrName)) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null;
+};
 const collectRecipients = ({ users, departments, assignedTo, departmentId }) => {
     const recipients = new Set();
     const assignedUser = resolveAssignedUser(users, assignedTo);
@@ -189,7 +195,7 @@ const resolveFallbackAssignedUser = async (assignedTo, organizationId) => {
     return null;
 };
 const sendAssignmentEmail = async (input) => {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g;
     const resendKey = RESEND_API_KEY.value();
     const resendFrom = RESEND_FROM.value();
     if (!resendKey || !resendFrom) {
@@ -210,7 +216,8 @@ const sendAssignmentEmail = async (input) => {
     if (!recipients.length) {
         return;
     }
-    const { subject, html, text } = buildEmailContent(Object.assign(Object.assign({}, input), { assignedUser: resolvedAssignedUser }));
+    const departmentName = (_f = resolveDepartmentName(departments, (_e = input.location) !== null && _e !== void 0 ? _e : null)) !== null && _f !== void 0 ? _f : resolveDepartmentName(departments, (_g = input.departmentId) !== null && _g !== void 0 ? _g : null);
+    const { subject, html, text } = buildEmailContent(Object.assign(Object.assign({}, input), { location: departmentName !== null && departmentName !== void 0 ? departmentName : input.location, assignedUser: resolvedAssignedUser }));
     const resend = new resend_1.Resend(resendKey);
     await resend.emails.send({
         from: resendFrom,
