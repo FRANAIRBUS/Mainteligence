@@ -22,6 +22,7 @@ const resolveDepartmentName = (departments, departmentIdOrName) => {
         dept.name === departmentIdOrName ||
         dept.code === departmentIdOrName)) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null;
 };
+const resolveSiteName = (sites, siteIdOrName) => { var _a, _b; return (_b = (_a = sites.find((site) => site.id === siteIdOrName || site.name === siteIdOrName)) === null || _a === void 0 ? void 0 : _a.name) !== null && _b !== void 0 ? _b : null; };
 const collectRecipients = ({ users, departments, assignedTo, departmentId }) => {
     const recipients = new Set();
     const assignedUser = resolveAssignedUser(users, assignedTo);
@@ -131,12 +132,13 @@ const buildEmailContent = ({ title, link, type, identifier, description, priorit
 };
 const loadOrganizationData = async (organizationId) => {
     if (!organizationId) {
-        return { users: [], departments: [] };
+        return { users: [], departments: [], sites: [] };
     }
     const orgRef = admin.firestore().collection('organizations').doc(organizationId);
-    const [membersSnap, departmentsSnap] = await Promise.all([
+    const [membersSnap, departmentsSnap, sitesSnap] = await Promise.all([
         orgRef.collection('members').get(),
         orgRef.collection('departments').get(),
+        orgRef.collection('sites').get(),
     ]);
     const users = membersSnap.docs.map((doc) => {
         var _a, _b, _c, _d;
@@ -158,7 +160,15 @@ const loadOrganizationData = async (organizationId) => {
             code: (_b = data === null || data === void 0 ? void 0 : data.code) !== null && _b !== void 0 ? _b : null,
         };
     });
-    return { users, departments };
+    const sites = sitesSnap.docs.map((doc) => {
+        var _a;
+        const data = doc.data();
+        return {
+            id: doc.id,
+            name: (_a = data === null || data === void 0 ? void 0 : data.name) !== null && _a !== void 0 ? _a : null,
+        };
+    });
+    return { users, departments, sites };
 };
 const resolveFallbackAssignedUser = async (assignedTo, organizationId) => {
     var _a, _b, _c, _d, _e, _f;
@@ -195,14 +205,14 @@ const resolveFallbackAssignedUser = async (assignedTo, organizationId) => {
     return null;
 };
 const sendAssignmentEmail = async (input) => {
-    var _a, _b, _c, _d, _e, _f, _g;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
     const resendKey = RESEND_API_KEY.value();
     const resendFrom = RESEND_FROM.value();
     if (!resendKey || !resendFrom) {
         console.warn('Resend no configurado: RESEND_API_KEY/RESEND_FROM faltante.');
         return;
     }
-    const { users, departments } = await loadOrganizationData((_a = input.organizationId) !== null && _a !== void 0 ? _a : null);
+    const { users, departments, sites } = await loadOrganizationData((_a = input.organizationId) !== null && _a !== void 0 ? _a : null);
     const resolvedAssignedUser = (_b = resolveAssignedUser(users, input.assignedTo)) !== null && _b !== void 0 ? _b : (await resolveFallbackAssignedUser((_c = input.assignedTo) !== null && _c !== void 0 ? _c : null, (_d = input.organizationId) !== null && _d !== void 0 ? _d : null));
     const { recipients } = collectRecipients({
         users,
@@ -216,8 +226,8 @@ const sendAssignmentEmail = async (input) => {
     if (!recipients.length) {
         return;
     }
-    const departmentName = (_f = resolveDepartmentName(departments, (_e = input.location) !== null && _e !== void 0 ? _e : null)) !== null && _f !== void 0 ? _f : resolveDepartmentName(departments, (_g = input.departmentId) !== null && _g !== void 0 ? _g : null);
-    const { subject, html, text } = buildEmailContent(Object.assign(Object.assign({}, input), { location: departmentName !== null && departmentName !== void 0 ? departmentName : input.location, assignedUser: resolvedAssignedUser }));
+    const resolvedLocationLabel = (_k = (_h = (_f = resolveDepartmentName(departments, (_e = input.departmentId) !== null && _e !== void 0 ? _e : null)) !== null && _f !== void 0 ? _f : resolveDepartmentName(departments, (_g = input.location) !== null && _g !== void 0 ? _g : null)) !== null && _h !== void 0 ? _h : resolveSiteName(sites, (_j = input.location) !== null && _j !== void 0 ? _j : null)) !== null && _k !== void 0 ? _k : input.location;
+    const { subject, html, text } = buildEmailContent(Object.assign(Object.assign({}, input), { location: resolvedLocationLabel, assignedUser: resolvedAssignedUser }));
     const resend = new resend_1.Resend(resendKey);
     await resend.emails.send({
         from: resendFrom,

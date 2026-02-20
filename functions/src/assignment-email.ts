@@ -41,6 +41,11 @@ interface BackendDepartment {
   code?: string | null;
 }
 
+interface BackendSite {
+  id: string;
+  name?: string | null;
+}
+
 const RESEND_API_KEY = defineString('RESEND_API_KEY');
 const RESEND_FROM = defineString('RESEND_FROM');
 
@@ -67,6 +72,9 @@ const resolveDepartmentName = (
       dept.name === departmentIdOrName ||
       dept.code === departmentIdOrName
   )?.name ?? null;
+
+const resolveSiteName = (sites: BackendSite[], siteIdOrName?: string | null) =>
+  sites.find((site) => site.id === siteIdOrName || site.name === siteIdOrName)?.name ?? null;
 
 const collectRecipients = ({ users, departments, assignedTo, departmentId }: RecipientOptions) => {
   const recipients = new Set<string>();
@@ -200,13 +208,14 @@ const buildEmailContent = ({
 
 const loadOrganizationData = async (organizationId?: string | null) => {
   if (!organizationId) {
-    return { users: [] as BackendUser[], departments: [] as BackendDepartment[] };
+    return { users: [] as BackendUser[], departments: [] as BackendDepartment[], sites: [] as BackendSite[] };
   }
 
   const orgRef = admin.firestore().collection('organizations').doc(organizationId);
-  const [membersSnap, departmentsSnap] = await Promise.all([
+  const [membersSnap, departmentsSnap, sitesSnap] = await Promise.all([
     orgRef.collection('members').get(),
     orgRef.collection('departments').get(),
+    orgRef.collection('sites').get(),
   ]);
 
   const users = membersSnap.docs.map((doc) => {
@@ -229,7 +238,15 @@ const loadOrganizationData = async (organizationId?: string | null) => {
     } satisfies BackendDepartment;
   });
 
-  return { users, departments };
+  const sites = sitesSnap.docs.map((doc) => {
+    const data = doc.data() as any;
+    return {
+      id: doc.id,
+      name: data?.name ?? null,
+    } satisfies BackendSite;
+  });
+
+  return { users, departments, sites };
 };
 
 const resolveFallbackAssignedUser = async (
@@ -281,7 +298,7 @@ export const sendAssignmentEmail = async (input: AssignmentEmailInput) => {
     return;
   }
 
-  const { users, departments } = await loadOrganizationData(input.organizationId ?? null);
+  const { users, departments, sites } = await loadOrganizationData(input.organizationId ?? null);
   const resolvedAssignedUser =
     resolveAssignedUser(users, input.assignedTo) ??
     (await resolveFallbackAssignedUser(input.assignedTo ?? null, input.organizationId ?? null));
@@ -301,13 +318,15 @@ export const sendAssignmentEmail = async (input: AssignmentEmailInput) => {
     return;
   }
 
-  const departmentName =
+  const resolvedLocationLabel =
+    resolveDepartmentName(departments, input.departmentId ?? null) ??
     resolveDepartmentName(departments, input.location ?? null) ??
-    resolveDepartmentName(departments, input.departmentId ?? null);
+    resolveSiteName(sites, input.location ?? null) ??
+    input.location;
 
   const { subject, html, text } = buildEmailContent({
     ...input,
-    location: departmentName ?? input.location,
+    location: resolvedLocationLabel,
     assignedUser: resolvedAssignedUser,
   });
 
