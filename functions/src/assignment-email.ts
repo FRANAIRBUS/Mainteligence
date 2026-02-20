@@ -57,6 +57,17 @@ const resolveDepartmentId = (departments: BackendDepartment[], departmentIdOrNam
       dept.code === departmentIdOrName
   )?.id ?? null;
 
+const resolveDepartmentName = (
+  departments: BackendDepartment[],
+  departmentIdOrName?: string | null
+) =>
+  departments.find(
+    (dept) =>
+      dept.id === departmentIdOrName ||
+      dept.name === departmentIdOrName ||
+      dept.code === departmentIdOrName
+  )?.name ?? null;
+
 const collectRecipients = ({ users, departments, assignedTo, departmentId }: RecipientOptions) => {
   const recipients = new Set<string>();
   const assignedUser = resolveAssignedUser(users, assignedTo);
@@ -290,8 +301,13 @@ export const sendAssignmentEmail = async (input: AssignmentEmailInput) => {
     return;
   }
 
+  const departmentName =
+    resolveDepartmentName(departments, input.location ?? null) ??
+    resolveDepartmentName(departments, input.departmentId ?? null);
+
   const { subject, html, text } = buildEmailContent({
     ...input,
+    location: departmentName ?? input.location,
     assignedUser: resolvedAssignedUser,
   });
 
