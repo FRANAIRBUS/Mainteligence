@@ -24,6 +24,9 @@ export default function OnboardingPage() {
   const auth = useAuth();
   const app = useFirebaseApp();
   const { user, profile, memberships, organizationId, activeMembership, loading, isRoot } = useUser();
+
+  const [betaClosed, setBetaClosed] = useState(false);
+  const [betaAllowed, setBetaAllowed] = useState(true);
   const [finalizeAttempted, setFinalizeAttempted] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [finalizeLoading, setFinalizeLoading] = useState(false);
@@ -57,6 +60,30 @@ export default function OnboardingPage() {
   const [quotaRequiresUpgrade, setQuotaRequiresUpgrade] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState(false);
+
+  useEffect(() => {
+    if (!app || !user) return;
+
+    const cfg = httpsCallable(getFunctions(app, 'us-central1'), 'getPublicAppConfig');
+    cfg({})
+      .then(async (res) => {
+        const data = res?.data as any;
+        const closed = Boolean(data?.betaClosed ?? false);
+        setBetaClosed(closed);
+        if (!closed) {
+          setBetaAllowed(true);
+          return;
+        }
+
+        const gate = httpsCallable(getFunctions(app, 'us-central1'), 'checkSignupAllowed');
+        const gateRes = await gate({});
+        const gateData = gateRes?.data as any;
+        setBetaAllowed(gateData?.allowed !== false);
+      })
+      .catch(() => {
+        // non-blocking
+      });
+  }, [app, user]);
 
   const sanitizedOrgId = useMemo(
     () => String(organizationIdInput ?? '').trim().toLowerCase(),
@@ -400,6 +427,31 @@ export default function OnboardingPage() {
   const showSelection = Boolean(
     user && !pending && (allowCreate || (!hasActiveMembership && !organizationId))
   );
+
+  if (!loading && user && betaClosed && !betaAllowed) {
+    return (
+      <AppShell>
+        <div className="max-w-2xl mx-auto space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Acceso restringido (beta cerrada)</CardTitle>
+              <CardDescription>
+                Tu cuenta no tiene acceso a la beta. Envía una solicitud o espera invitación.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button className="w-full" onClick={() => router.push('/beta')}>
+                Solicitar acceso
+              </Button>
+              <Button variant="outline" className="w-full" onClick={doLogout}>
+                Cerrar sesión
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
