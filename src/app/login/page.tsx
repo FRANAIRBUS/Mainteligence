@@ -16,6 +16,7 @@ import {
   createUserWithEmailAndPassword,
   sendEmailVerification,
   sendPasswordResetEmail,
+  signOut,
   applyActionCode,
 } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -28,6 +29,8 @@ export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, organizationId, activeMembership, isRoot, loading: userLoading } = useUser();
+
+  const [betaClosed, setBetaClosed] = useState(false);
 
   const [isLoginView, setIsLoginView] = useState(true);
 
@@ -42,6 +45,26 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!app) return;
+    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'getPublicAppConfig');
+    fn({})
+      .then((res) => {
+        const data = res?.data as any;
+        setBetaClosed(Boolean(data?.betaClosed ?? false));
+      })
+      .catch(() => {
+        // non-blocking
+      });
+  }, [app]);
+
+  useEffect(() => {
+    if (betaClosed) {
+      // Force login view when beta is closed (registration goes through /beta).
+      setIsLoginView(true);
+    }
+  }, [betaClosed]);
 
   useEffect(() => {
     if (userLoading) return;
@@ -102,6 +125,22 @@ export default function LoginPage() {
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
 
+      // Gate access (closed beta) after login.
+      try {
+        if (app) {
+          const gate = httpsCallable(getFunctions(app, 'us-central1'), 'gateLoginAccess');
+          const res = await gate({});
+          const data = res?.data as any;
+          if (data?.allowed === false) {
+            await signOut(auth);
+            router.replace('/beta');
+            return;
+          }
+        }
+      } catch {
+        // non-blocking (do not lock out existing users if config fails)
+      }
+
       // If this user was invited before registering, attach pending invites/memberships.
       try {
         if (app) {
@@ -152,6 +191,22 @@ export default function LoginPage() {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
 
+      // Gate access (closed beta) after Google sign-in.
+      try {
+        if (app) {
+          const gate = httpsCallable(getFunctions(app, 'us-central1'), 'gateLoginAccess');
+          const res = await gate({});
+          const data = res?.data as any;
+          if (data?.allowed === false) {
+            await signOut(auth);
+            router.replace('/beta');
+            return;
+          }
+        }
+      } catch {
+        // non-blocking
+      }
+
       // If this Google account was invited before, claim pending invites and route accordingly.
       try {
         if (app) {
@@ -201,6 +256,16 @@ export default function LoginPage() {
     setNotice(null);
 
     try {
+      if (app) {
+        const gate = httpsCallable(getFunctions(app, 'us-central1'), 'checkSignupAllowed');
+        const res = await gate({ email: email.trim() });
+        const data = res?.data as any;
+        if (data?.allowed === false) {
+          router.replace('/beta');
+          throw new Error('Registro cerrado. Solicita acceso a la beta.');
+        }
+      }
+
       if (password.trim().length < 6) {
         throw new Error('La contraseña debe tener al menos 6 caracteres.');
       }
@@ -273,7 +338,9 @@ export default function LoginPage() {
               <CardDescription>
                 {isLoginView
                   ? 'Accede con tu correo y contraseña.'
-                  : 'Crea tu cuenta y después elige tu organización o prueba la demo.'}
+                  : betaClosed
+                    ? 'Registro cerrado. Solicita acceso a la beta.'
+                    : 'Crea tu cuenta y después elige tu organización o prueba la demo.'}
               </CardDescription>
             </CardHeader>
 
@@ -289,78 +356,92 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <form onSubmit={isLoginView ? onLogin : onRegister} className="space-y-4 text-left">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="nombre@empresa.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="password">Contraseña</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-
-                {!isLoginView && (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
-                      <Input
-                        id="confirmPassword"
-                        type="password"
-                        placeholder="••••••••"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        required
-                      />
-                    </div>
-
-                    <div className="flex items-start space-x-2">
-                      <Checkbox
-                        id="captcha"
-                        checked={captchaAccepted}
-                        onCheckedChange={(v) => setCaptchaAccepted(Boolean(v))}
-                      />
-                      <Label htmlFor="captcha" className="leading-5">
-                        No soy un robot (captcha)
-                      </Label>
-                    </div>
-                  </>
-                )}
-
-                {isLoginView && (
-                  <Button
-                    type="button"
-                    variant="link"
-                    className="h-auto w-full justify-start px-0 text-sm"
-                    onClick={onResetPassword}
-                    disabled={loading}
-                  >
-                    ¿Olvidaste tu contraseña?
+              {(!isLoginView && betaClosed) ? (
+                <div className="space-y-4 text-left">
+                  <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+                    El registro público está deshabilitado. Si quieres acceso, envía una solicitud.
+                  </div>
+                  <Button className="w-full" onClick={() => router.push('/beta')} disabled={loading}>
+                    Solicitar acceso
                   </Button>
-                )}
+                  <Button type="button" variant="outline" className="w-full" onClick={onGoogle} disabled={loading}>
+                    Continuar con Google
+                  </Button>
+                </div>
+              ) : (
+                <form onSubmit={isLoginView ? onLogin : onRegister} className="space-y-4 text-left">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="nombre@empresa.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
 
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'Procesando…' : isLoginView ? 'Entrar' : 'Crear cuenta'}
-                </Button>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Contraseña</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
 
-                <Button type="button" variant="outline" className="w-full" onClick={onGoogle} disabled={loading}>
-                  Continuar con Google
-                </Button>
-              </form>
+                  {!isLoginView && (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="confirmPassword">Confirmar contraseña</Label>
+                        <Input
+                          id="confirmPassword"
+                          type="password"
+                          placeholder="••••••••"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div className="flex items-start space-x-2">
+                        <Checkbox
+                          id="captcha"
+                          checked={captchaAccepted}
+                          onCheckedChange={(v) => setCaptchaAccepted(Boolean(v))}
+                        />
+                        <Label htmlFor="captcha" className="leading-5">
+                          No soy un robot (captcha)
+                        </Label>
+                      </div>
+                    </>
+                  )}
+
+                  {isLoginView && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="h-auto w-full justify-start px-0 text-sm"
+                      onClick={onResetPassword}
+                      disabled={loading}
+                    >
+                      ¿Olvidaste tu contraseña?
+                    </Button>
+                  )}
+
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? 'Procesando…' : isLoginView ? 'Entrar' : 'Crear cuenta'}
+                  </Button>
+
+                  <Button type="button" variant="outline" className="w-full" onClick={onGoogle} disabled={loading}>
+                    Continuar con Google
+                  </Button>
+                </form>
+              )}
             </CardContent>
 
             <CardFooter className="flex flex-col gap-2">
@@ -368,10 +449,20 @@ export default function LoginPage() {
                 type="button"
                 variant="link"
                 className="w-full"
-                onClick={() => setIsLoginView((v) => !v)}
+                onClick={() => {
+                  if (isLoginView && betaClosed) {
+                    router.push('/beta');
+                    return;
+                  }
+                  setIsLoginView((v) => !v);
+                }}
                 disabled={loading}
               >
-                {isLoginView ? '¿No tienes cuenta? Crear cuenta' : 'Ya tengo cuenta. Iniciar sesión'}
+                {isLoginView
+                  ? betaClosed
+                    ? 'Registro cerrado. Solicitar acceso'
+                    : '¿No tienes cuenta? Crear cuenta'
+                  : 'Ya tengo cuenta. Iniciar sesión'}
               </Button>
             </CardFooter>
           </Card>
