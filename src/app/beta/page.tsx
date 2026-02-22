@@ -138,7 +138,12 @@ export default function BetaClosedPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Cargo</Label>
-                    <Input value={role} onChange={(e) => setRole(e.target.value)} placeholder="CTO, Mantenimiento, ..." />
+                    <Input
+                      value={role}
+                      onChange={(e) => setRole(e.target.value)}
+                      placeholder="CTO, Mantenimiento, ..."
+                      required
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Email</Label>
@@ -146,11 +151,16 @@ export default function BetaClosedPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Teléfono</Label>
-                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+                    <Input value={phone} onChange={(e) => setPhone(e.target.value)} required />
                   </div>
                   <div className="space-y-2">
                     <Label>Sector</Label>
-                    <Input value={sector} onChange={(e) => setSector(e.target.value)} placeholder="Industria, alimentación, ..." />
+                    <Input
+                      value={sector}
+                      onChange={(e) => setSector(e.target.value)}
+                      placeholder="Industria, alimentación, ..."
+                      required
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Nº de sedes</Label>
@@ -160,17 +170,23 @@ export default function BetaClosedPage() {
                       onChange={(e) => setSitesCount(e.target.value)}
                       placeholder="1"
                       min={0}
+                      required
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Herramientas actuales</Label>
-                    <Input value={currentTools} onChange={(e) => setCurrentTools(e.target.value)} placeholder="Excel, ERP, ..." />
+                    <Input
+                      value={currentTools}
+                      onChange={(e) => setCurrentTools(e.target.value)}
+                      placeholder="Excel, ERP, ..."
+                      required
+                    />
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label>Dolor principal</Label>
-                  <Textarea value={mainPain} onChange={(e) => setMainPain(e.target.value)} rows={3} />
+                  <Textarea value={mainPain} onChange={(e) => setMainPain(e.target.value)} rows={3} required />
                 </div>
 
                 <div className="flex flex-col gap-3">
