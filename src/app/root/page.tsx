@@ -94,6 +94,27 @@ export default function RootPage() {
     }
   }, []);
 
+  const api = useMemo(() => {
+    if (!fn) return null;
+    return {
+      getPublicAppConfig: httpsCallable(fn, 'getPublicAppConfig'),
+      rootSetPublicAppConfig: httpsCallable(fn, 'rootSetPublicAppConfig'),
+      rootListBetaRequests: httpsCallable(fn, 'rootListBetaRequests'),
+      rootUpdateBetaRequest: httpsCallable(fn, 'rootUpdateBetaRequest'),
+      rootCreateAccountFromBetaRequest: httpsCallable(fn, 'rootCreateAccountFromBetaRequest'),
+      rootListOrganizations: httpsCallable(fn, 'rootListOrganizations'),
+      rootOrgSummary: httpsCallable(fn, 'rootOrgSummary'),
+      rootListUsersByOrg: httpsCallable(fn, 'rootListUsersByOrg'),
+      rootUpsertUserToOrganization: httpsCallable(fn, 'rootUpsertUserToOrganization'),
+      rootDeactivateOrganization: httpsCallable(fn, 'rootDeactivateOrganization'),
+      rootSetOrganizationPlan: httpsCallable(fn, 'rootSetOrganizationPlan'),
+      rootPurgeOrganizationCollection: httpsCallable(fn, 'rootPurgeOrganizationCollection'),
+      rootDeleteOrganizationScaffold: httpsCallable(fn, 'rootDeleteOrganizationScaffold'),
+    };
+  }, [fn]);
+
+
+
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -322,25 +343,6 @@ export default function RootPage() {
       setCreatingAccount(false);
     }
   };
-
-  const api = useMemo(() => {
-    if (!fn) return null;
-    return {
-      getPublicAppConfig: httpsCallable(fn, 'getPublicAppConfig'),
-      rootSetPublicAppConfig: httpsCallable(fn, 'rootSetPublicAppConfig'),
-      rootListBetaRequests: httpsCallable(fn, 'rootListBetaRequests'),
-      rootUpdateBetaRequest: httpsCallable(fn, 'rootUpdateBetaRequest'),
-      rootCreateAccountFromBetaRequest: httpsCallable(fn, 'rootCreateAccountFromBetaRequest'),
-      rootListOrganizations: httpsCallable(fn, 'rootListOrganizations'),
-      rootOrgSummary: httpsCallable(fn, 'rootOrgSummary'),
-      rootListUsersByOrg: httpsCallable(fn, 'rootListUsersByOrg'),
-      rootUpsertUserToOrganization: httpsCallable(fn, 'rootUpsertUserToOrganization'),
-      rootDeactivateOrganization: httpsCallable(fn, 'rootDeactivateOrganization'),
-      rootSetOrganizationPlan: httpsCallable(fn, 'rootSetOrganizationPlan'),
-      rootPurgeOrganizationCollection: httpsCallable(fn, 'rootPurgeOrganizationCollection'),
-      rootDeleteOrganizationScaffold: httpsCallable(fn, 'rootDeleteOrganizationScaffold'),
-    };
-  }, [fn]);
 
   const loadOrgs = async (mode: 'reset' | 'next' = 'reset') => {
     if (!api) return;
