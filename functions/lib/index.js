@@ -1,8 +1,8 @@
 "use strict";
 var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.orgApproveJoinRequest = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.generatePreventiveTickets = exports.pausePreventivesWithoutEntitlement = exports.pauseExpiredDemoPreventives = exports.inviteUserToOrg = exports.workOrders_addReport = exports.workOrders_close = exports.workOrders_start = exports.workOrders_generateNow = exports.generatePreventiveNow = exports.deletePreventiveTemplate = exports.duplicatePreventiveTemplate = exports.updatePreventiveTemplate = exports.createPreventiveTemplate = exports.createPreventive = exports.createAsset = exports.deleteTask = exports.updateTaskStatus = exports.createTask = exports.updateTicketStatus = exports.createTicket = exports.registerTicketAttachment = exports.createTicketUploadSession = exports.createDepartment = exports.createSite = exports.setActiveOrganization = exports.finalizeOrganizationSignup = exports.bootstrapSignup = exports.bootstrapFromInvites = exports.checkOrganizationAvailability = exports.resolveOrganizationId = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.orgSetOrganizationStatus = exports.rootSetOrganizationPlan = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = void 0;
-exports.stripeWebhook = exports.appleAppStoreNotifications = exports.registerAppleAppAccountToken = exports.registerGooglePlayPurchase = exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = void 0;
+exports.workOrders_addReport = exports.workOrders_close = exports.workOrders_start = exports.workOrders_generateNow = exports.generatePreventiveNow = exports.deletePreventiveTemplate = exports.duplicatePreventiveTemplate = exports.updatePreventiveTemplate = exports.createPreventiveTemplate = exports.createPreventive = exports.createAsset = exports.deleteTask = exports.updateTaskStatus = exports.createTask = exports.updateTicketStatus = exports.createTicket = exports.registerTicketAttachment = exports.createTicketUploadSession = exports.createDepartment = exports.createSite = exports.setActiveOrganization = exports.finalizeOrganizationSignup = exports.bootstrapSignup = exports.bootstrapFromInvites = exports.checkOrganizationAvailability = exports.resolveOrganizationId = exports.rootPurgeOrganizationCollection = exports.rootDeleteOrganizationScaffold = exports.orgSetOrganizationStatus = exports.rootSetOrganizationPlan = exports.rootDeactivateOrganization = exports.rootUpsertUserToOrganization = exports.rootListUsersByOrg = exports.rootOrgSummary = exports.rootListOrganizations = exports.rootCreateAccountFromBetaRequest = exports.rootUpdateBetaRequest = exports.rootListBetaRequests = exports.rootSetPublicAppConfig = exports.onTaskDeleted = exports.onTicketDeleted = exports.onTicketClosed = exports.onTaskCreate = exports.onTicketCreate = exports.onTaskAssign = exports.onTicketAssign = exports.submitBetaRequest = exports.gateLoginAccess = exports.checkSignupAllowed = exports.getPublicAppConfig = void 0;
+exports.stripeWebhook = exports.appleAppStoreNotifications = exports.registerAppleAppAccountToken = exports.registerGooglePlayPurchase = exports.demoteToAdminWithinOrg = exports.promoteToSuperAdminWithinOrg = exports.setRoleWithinOrg = exports.orgRejectJoinRequest = exports.orgApproveJoinRequest = exports.orgUpdateUserProfileCallable = exports.orgUpdateUserProfile = exports.orgInviteUser = exports.generatePreventiveTickets = exports.pausePreventivesWithoutEntitlement = exports.pauseExpiredDemoPreventives = exports.inviteUserToOrg = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const assignment_email_1 = require("./assignment-email");
@@ -1374,6 +1374,256 @@ async function auditLog(params) {
         : db.collection('auditLogs');
     await collectionRef.add(Object.assign(Object.assign({}, params), { createdAt: admin.firestore.FieldValue.serverTimestamp() }));
 }
+const PUBLIC_CONFIG_COLLECTION = 'systemConfig';
+const PUBLIC_CONFIG_DOC_ID = 'public';
+const BETA_REQUESTS_COLLECTION = 'betaRequests';
+const BETA_RATE_LIMIT_COLLECTION = 'betaRequestRateLimits';
+const BETA_RATE_LIMIT_MAX_REQUESTS = 3;
+const BETA_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+async function readPublicConfig() {
+    var _a;
+    const snap = await db.collection(PUBLIC_CONFIG_COLLECTION).doc(PUBLIC_CONFIG_DOC_ID).get();
+    const betaClosed = Boolean(snap.exists ? ((_a = snap.get('betaClosed')) !== null && _a !== void 0 ? _a : false) : false);
+    return { betaClosed, exists: snap.exists };
+}
+function normalizeEmail(input) {
+    return String(input !== null && input !== void 0 ? input : '').trim().toLowerCase();
+}
+function requireNonEmptyString(input, field) {
+    const v = String(input !== null && input !== void 0 ? input : '').trim();
+    if (!v)
+        throw httpsError('invalid-argument', `${field} requerido.`);
+    return v;
+}
+function maybeString(input) {
+    const v = String(input !== null && input !== void 0 ? input : '').trim();
+    return v ? v : null;
+}
+function betaRequestIdFromEmail(email) {
+    const h = crypto.createHash('sha256').update(email).digest('hex');
+    return `email_${h.slice(0, 24)}`;
+}
+function betaRateLimitWindowStartMs(nowMs) {
+    return Math.floor(nowMs / BETA_RATE_LIMIT_WINDOW_MS) * BETA_RATE_LIMIT_WINDOW_MS;
+}
+async function consumeBetaRateLimit(ipHash) {
+    if (!ipHash)
+        return { allowed: true };
+    const nowMs = Date.now();
+    const windowStartMs = betaRateLimitWindowStartMs(nowMs);
+    const windowKey = new Date(windowStartMs).toISOString().slice(0, 10);
+    const docId = `${ipHash}_${windowKey}`;
+    const ref = db.collection(BETA_RATE_LIMIT_COLLECTION).doc(docId);
+    const windowEndsAtMs = windowStartMs + BETA_RATE_LIMIT_WINDOW_MS;
+    return db.runTransaction(async (tx) => {
+        var _a, _b;
+        const snap = await tx.get(ref);
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const count = Number((_a = snap.get('count')) !== null && _a !== void 0 ? _a : 0);
+        if (count >= BETA_RATE_LIMIT_MAX_REQUESTS) {
+            tx.set(ref, {
+                windowKey,
+                blockedCount: admin.firestore.FieldValue.increment(1),
+                limitedAt: now,
+                lastBlockedAt: now,
+                updatedAt: now,
+            }, { merge: true });
+            return { allowed: false };
+        }
+        tx.set(ref, {
+            ipHash,
+            windowKey,
+            count: admin.firestore.FieldValue.increment(1),
+            windowStartMs,
+            windowEndsAtMs,
+            createdAt: snap.exists ? (_b = snap.get('createdAt')) !== null && _b !== void 0 ? _b : now : now,
+            updatedAt: now,
+        }, { merge: true });
+        return { allowed: true };
+    });
+}
+function ignoredBetaRequestResponse() {
+    return { ok: true, ignored: true };
+}
+function logIgnoredBetaRequest(reason, meta) {
+    var _a;
+    console.info('[submitBetaRequest] ignored', {
+        reason,
+        hasIpHash: Boolean(meta.ipHash),
+        emailDomain: ((_a = meta.email) === null || _a === void 0 ? void 0 : _a.includes('@')) ? meta.email.split('@')[1] : null,
+    });
+}
+async function hasPendingInviteForEmailOrUid(opts) {
+    var _a, _b;
+    const email = ((_a = opts.email) !== null && _a !== void 0 ? _a : '').trim().toLowerCase();
+    const uid = ((_b = opts.uid) !== null && _b !== void 0 ? _b : '').trim();
+    const queries = [];
+    if (email) {
+        queries.push(db
+            .collectionGroup('joinRequests')
+            .where('email', '==', email)
+            .where('status', '==', 'pending')
+            .limit(1)
+            .get());
+    }
+    if (uid) {
+        queries.push(db
+            .collectionGroup('joinRequests')
+            .where('userId', '==', uid)
+            .where('status', '==', 'pending')
+            .limit(1)
+            .get());
+    }
+    if (queries.length === 0)
+        return false;
+    const snaps = await Promise.all(queries);
+    return snaps.some((s) => !s.empty);
+}
+async function hasAcceptedBetaRequest(email) {
+    const snap = await db
+        .collection(BETA_REQUESTS_COLLECTION)
+        .where('email', '==', email)
+        .where('status', '==', 'accepted')
+        .limit(1)
+        .get();
+    return !snap.empty;
+}
+exports.getPublicAppConfig = functions.https.onCall(async () => {
+    const { betaClosed } = await readPublicConfig();
+    return { ok: true, betaClosed };
+});
+// Used by the unauthenticated login/register UI to decide whether to allow signup.
+exports.checkSignupAllowed = functions.https.onCall(async (data, context) => {
+    var _a, _b;
+    const { betaClosed } = await readPublicConfig();
+    if (!betaClosed)
+        return { ok: true, allowed: true };
+    const email = normalizeEmail(data === null || data === void 0 ? void 0 : data.email);
+    const uid = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid) !== null && _b !== void 0 ? _b : null;
+    // If the caller is already authenticated, gate based on memberships/invites.
+    if (uid) {
+        const membershipsSnap = await db
+            .collection('memberships')
+            .where('userId', '==', uid)
+            .limit(1)
+            .get();
+        if (!membershipsSnap.empty)
+            return { ok: true, allowed: true, reason: 'has_membership' };
+        const authUser = await admin.auth().getUser(uid).catch(() => null);
+        const authEmail = normalizeEmail(authUser === null || authUser === void 0 ? void 0 : authUser.email);
+        const hasInvite = await hasPendingInviteForEmailOrUid({ email: authEmail, uid });
+        if (hasInvite)
+            return { ok: true, allowed: true, reason: 'has_invite' };
+        if (authEmail && (await hasAcceptedBetaRequest(authEmail))) {
+            return { ok: true, allowed: true, reason: 'beta_accepted' };
+        }
+        return { ok: true, allowed: false, reason: 'beta_closed' };
+    }
+    // Unauthenticated path: require an email to check invites/acceptance.
+    if (!email)
+        return { ok: true, allowed: false, reason: 'beta_closed' };
+    const hasInvite = await hasPendingInviteForEmailOrUid({ email, uid: null });
+    if (hasInvite)
+        return { ok: true, allowed: true, reason: 'has_invite' };
+    const accepted = await hasAcceptedBetaRequest(email);
+    if (accepted)
+        return { ok: true, allowed: true, reason: 'beta_accepted' };
+    return { ok: true, allowed: false, reason: 'beta_closed' };
+});
+// Hard gate after a sign-in method that may have created a new Auth account (Google).
+exports.gateLoginAccess = functions.https.onCall(async (_data, context) => {
+    const uid = requireAuth(context);
+    if (isRootClaim(context))
+        return { ok: true, allowed: true, reason: 'root' };
+    const { betaClosed } = await readPublicConfig();
+    if (!betaClosed)
+        return { ok: true, allowed: true, reason: 'open' };
+    const membershipsSnap = await db
+        .collection('memberships')
+        .where('userId', '==', uid)
+        .limit(1)
+        .get();
+    if (!membershipsSnap.empty)
+        return { ok: true, allowed: true, reason: 'has_membership' };
+    const authUser = await admin.auth().getUser(uid).catch(() => null);
+    const email = normalizeEmail(authUser === null || authUser === void 0 ? void 0 : authUser.email);
+    const hasInvite = await hasPendingInviteForEmailOrUid({ email, uid });
+    if (hasInvite)
+        return { ok: true, allowed: true, reason: 'has_invite' };
+    if (email && (await hasAcceptedBetaRequest(email)))
+        return { ok: true, allowed: true, reason: 'beta_accepted' };
+    return { ok: true, allowed: false, reason: 'beta_closed' };
+});
+// Public (unauth) beta request submission.
+exports.submitBetaRequest = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u;
+    const fullName = requireNonEmptyString(data === null || data === void 0 ? void 0 : data.fullName, 'fullName');
+    const companyName = requireNonEmptyString(data === null || data === void 0 ? void 0 : data.companyName, 'companyName');
+    const email = normalizeEmail(data === null || data === void 0 ? void 0 : data.email);
+    if (!email)
+        throw httpsError('invalid-argument', 'email requerido.');
+    // Basic honeypot for bots.
+    const honey = String((_b = (_a = data === null || data === void 0 ? void 0 : data.companyWebsite) !== null && _a !== void 0 ? _a : data === null || data === void 0 ? void 0 : data.website) !== null && _b !== void 0 ? _b : '').trim();
+    if (honey) {
+        logIgnoredBetaRequest('honeypot', { ipHash: null, email: normalizeEmail(data === null || data === void 0 ? void 0 : data.email) });
+        return ignoredBetaRequestResponse();
+    }
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const ip = ((_d = (_c = context.rawRequest) === null || _c === void 0 ? void 0 : _c.ip) !== null && _d !== void 0 ? _d : '').toString();
+    const ua = ((_g = (_f = (_e = context.rawRequest) === null || _e === void 0 ? void 0 : _e.headers) === null || _f === void 0 ? void 0 : _f['user-agent']) !== null && _g !== void 0 ? _g : '').toString();
+    const ipHash = ip ? crypto.createHash('sha256').update(ip).digest('hex') : null;
+    const rateLimit = await consumeBetaRateLimit(ipHash);
+    if (!rateLimit.allowed) {
+        logIgnoredBetaRequest('rate_limit', { ipHash, email });
+        return ignoredBetaRequestResponse();
+    }
+    // Upsert by email (avoid multiple docs per lead).
+    const existingSnap = await db
+        .collection(BETA_REQUESTS_COLLECTION)
+        .where('email', '==', email)
+        .limit(1)
+        .get();
+    const docRef = existingSnap.empty
+        ? db.collection(BETA_REQUESTS_COLLECTION).doc(betaRequestIdFromEmail(email))
+        : existingSnap.docs[0].ref;
+    const existingData = existingSnap.empty ? null : existingSnap.docs[0].data();
+    const existingStatus = String((_h = existingData === null || existingData === void 0 ? void 0 : existingData.status) !== null && _h !== void 0 ? _h : 'new');
+    // If already finalized, keep it immutable except timestamps.
+    if (existingStatus === 'accepted' || existingStatus === 'rejected') {
+        await docRef.set({ updatedAt: now }, { merge: true });
+        return { ok: true, id: docRef.id, status: existingStatus, locked: true };
+    }
+    const payload = {
+        status: existingStatus || 'new',
+        fullName,
+        companyName,
+        role: maybeString(data === null || data === void 0 ? void 0 : data.role),
+        email,
+        phone: maybeString(data === null || data === void 0 ? void 0 : data.phone),
+        sector: maybeString(data === null || data === void 0 ? void 0 : data.sector),
+        sitesCount: Number.isFinite(Number(data === null || data === void 0 ? void 0 : data.sitesCount)) ? Number(data === null || data === void 0 ? void 0 : data.sitesCount) : null,
+        currentTools: maybeString(data === null || data === void 0 ? void 0 : data.currentTools),
+        mainPain: maybeString(data === null || data === void 0 ? void 0 : data.mainPain),
+        canUseReal2to4Weeks: Boolean((_j = data === null || data === void 0 ? void 0 : data.canUseReal2to4Weeks) !== null && _j !== void 0 ? _j : false),
+        wantsDemo: Boolean((_k = data === null || data === void 0 ? void 0 : data.wantsDemo) !== null && _k !== void 0 ? _k : false),
+        reviewedBy: (_l = existingData === null || existingData === void 0 ? void 0 : existingData.reviewedBy) !== null && _l !== void 0 ? _l : null,
+        reviewedAt: (_m = existingData === null || existingData === void 0 ? void 0 : existingData.reviewedAt) !== null && _m !== void 0 ? _m : null,
+        notes: (_o = existingData === null || existingData === void 0 ? void 0 : existingData.notes) !== null && _o !== void 0 ? _o : null,
+        createdAccount: Boolean((_p = existingData === null || existingData === void 0 ? void 0 : existingData.createdAccount) !== null && _p !== void 0 ? _p : false),
+        createdOrgId: (_q = existingData === null || existingData === void 0 ? void 0 : existingData.createdOrgId) !== null && _q !== void 0 ? _q : null,
+        createdUserId: (_r = existingData === null || existingData === void 0 ? void 0 : existingData.createdUserId) !== null && _r !== void 0 ? _r : null,
+        createdAt: (_s = existingData === null || existingData === void 0 ? void 0 : existingData.createdAt) !== null && _s !== void 0 ? _s : now,
+        updatedAt: now,
+        meta: {
+            ipHash,
+            userAgent: ua || null,
+            authUid: (_u = (_t = context.auth) === null || _t === void 0 ? void 0 : _t.uid) !== null && _u !== void 0 ? _u : null,
+        },
+        source: 'submitBetaRequest_v1',
+    };
+    await docRef.set(payload, { merge: true });
+    return { ok: true, id: docRef.id };
+});
 /* ------------------------------
    FIRESTORE TRIGGERS (GEN1)
 --------------------------------- */
@@ -1549,6 +1799,259 @@ function requireRoot(context) {
         throw httpsError('permission-denied', 'Solo ROOT (claim) puede hacer esto.');
     return uid;
 }
+exports.rootSetPublicAppConfig = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d;
+    const actorUid = requireRoot(context);
+    const betaClosed = Boolean((_a = data === null || data === void 0 ? void 0 : data.betaClosed) !== null && _a !== void 0 ? _a : false);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    await db
+        .collection(PUBLIC_CONFIG_COLLECTION)
+        .doc(PUBLIC_CONFIG_DOC_ID)
+        .set({
+        betaClosed,
+        updatedAt: now,
+        updatedBy: actorUid,
+        source: 'rootSetPublicAppConfig_v1',
+    }, { merge: true });
+    await auditLog({
+        action: 'rootSetPublicAppConfig',
+        actorUid,
+        actorEmail: (_d = (_c = (_b = context.auth) === null || _b === void 0 ? void 0 : _b.token) === null || _c === void 0 ? void 0 : _c.email) !== null && _d !== void 0 ? _d : null,
+        after: { betaClosed },
+    });
+    return { ok: true, betaClosed };
+});
+exports.rootListBetaRequests = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g;
+    requireRoot(context);
+    const limit = Math.min(Number((_a = data === null || data === void 0 ? void 0 : data.limit) !== null && _a !== void 0 ? _a : 50), 200);
+    const cursorCreatedAtMs = Number((_b = data === null || data === void 0 ? void 0 : data.cursorCreatedAtMs) !== null && _b !== void 0 ? _b : 0);
+    const cursorId = String((_c = data === null || data === void 0 ? void 0 : data.cursorId) !== null && _c !== void 0 ? _c : '').trim();
+    let query = db
+        .collection(BETA_REQUESTS_COLLECTION)
+        .orderBy('createdAt', 'desc')
+        .orderBy(admin.firestore.FieldPath.documentId(), 'desc')
+        .limit(limit + 1);
+    if (cursorCreatedAtMs && cursorId) {
+        query = query.startAfter(admin.firestore.Timestamp.fromMillis(cursorCreatedAtMs), cursorId);
+    }
+    const snap = await query.get();
+    const docs = snap.docs;
+    const hasMore = docs.length > limit;
+    const sliced = hasMore ? docs.slice(0, limit) : docs;
+    const rows = sliced.map((d) => {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
+        const v = d.data();
+        const createdAt = v === null || v === void 0 ? void 0 : v.createdAt;
+        const updatedAt = v === null || v === void 0 ? void 0 : v.updatedAt;
+        const reviewedAt = v === null || v === void 0 ? void 0 : v.reviewedAt;
+        const toMs = (t) => ((t === null || t === void 0 ? void 0 : t.toMillis) ? t.toMillis() : null);
+        return {
+            id: d.id,
+            status: (_a = v === null || v === void 0 ? void 0 : v.status) !== null && _a !== void 0 ? _a : 'new',
+            fullName: (_b = v === null || v === void 0 ? void 0 : v.fullName) !== null && _b !== void 0 ? _b : null,
+            companyName: (_c = v === null || v === void 0 ? void 0 : v.companyName) !== null && _c !== void 0 ? _c : null,
+            role: (_d = v === null || v === void 0 ? void 0 : v.role) !== null && _d !== void 0 ? _d : null,
+            email: (_e = v === null || v === void 0 ? void 0 : v.email) !== null && _e !== void 0 ? _e : null,
+            phone: (_f = v === null || v === void 0 ? void 0 : v.phone) !== null && _f !== void 0 ? _f : null,
+            sector: (_g = v === null || v === void 0 ? void 0 : v.sector) !== null && _g !== void 0 ? _g : null,
+            sitesCount: (_h = v === null || v === void 0 ? void 0 : v.sitesCount) !== null && _h !== void 0 ? _h : null,
+            currentTools: (_j = v === null || v === void 0 ? void 0 : v.currentTools) !== null && _j !== void 0 ? _j : null,
+            mainPain: (_k = v === null || v === void 0 ? void 0 : v.mainPain) !== null && _k !== void 0 ? _k : null,
+            canUseReal2to4Weeks: Boolean((_l = v === null || v === void 0 ? void 0 : v.canUseReal2to4Weeks) !== null && _l !== void 0 ? _l : false),
+            wantsDemo: Boolean((_m = v === null || v === void 0 ? void 0 : v.wantsDemo) !== null && _m !== void 0 ? _m : false),
+            reviewedBy: (_o = v === null || v === void 0 ? void 0 : v.reviewedBy) !== null && _o !== void 0 ? _o : null,
+            reviewedAtMs: toMs(reviewedAt),
+            notes: (_p = v === null || v === void 0 ? void 0 : v.notes) !== null && _p !== void 0 ? _p : null,
+            createdAccount: Boolean((_q = v === null || v === void 0 ? void 0 : v.createdAccount) !== null && _q !== void 0 ? _q : false),
+            createdOrgId: (_r = v === null || v === void 0 ? void 0 : v.createdOrgId) !== null && _r !== void 0 ? _r : null,
+            createdUserId: (_s = v === null || v === void 0 ? void 0 : v.createdUserId) !== null && _s !== void 0 ? _s : null,
+            createdAtMs: toMs(createdAt),
+            updatedAtMs: toMs(updatedAt),
+        };
+    });
+    const nextCursor = hasMore ? docs[limit] : null;
+    const nextCursorCreatedAtMs = (_f = (_e = (_d = nextCursor === null || nextCursor === void 0 ? void 0 : nextCursor.get('createdAt')) === null || _d === void 0 ? void 0 : _d.toMillis) === null || _e === void 0 ? void 0 : _e.call(_d)) !== null && _f !== void 0 ? _f : null;
+    const nextCursorId = (_g = nextCursor === null || nextCursor === void 0 ? void 0 : nextCursor.id) !== null && _g !== void 0 ? _g : null;
+    return {
+        ok: true,
+        requests: rows,
+        nextCursorCreatedAtMs,
+        nextCursorId,
+    };
+});
+exports.rootUpdateBetaRequest = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d;
+    const actorUid = requireRoot(context);
+    const requestId = requireNonEmptyString(data === null || data === void 0 ? void 0 : data.requestId, 'requestId');
+    const status = String((_a = data === null || data === void 0 ? void 0 : data.status) !== null && _a !== void 0 ? _a : '').trim();
+    const notes = maybeString(data === null || data === void 0 ? void 0 : data.notes);
+    if (!['new', 'reviewing', 'accepted', 'waitlist', 'rejected'].includes(status)) {
+        throw httpsError('invalid-argument', 'status inválido.');
+    }
+    const ref = db.collection(BETA_REQUESTS_COLLECTION).doc(requestId);
+    const snap = await ref.get();
+    if (!snap.exists)
+        throw httpsError('not-found', 'Solicitud no encontrada.');
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    await ref.set({
+        status,
+        notes,
+        reviewedBy: actorUid,
+        reviewedAt: now,
+        updatedAt: now,
+        source: 'rootUpdateBetaRequest_v1',
+    }, { merge: true });
+    await auditLog({
+        action: 'rootUpdateBetaRequest',
+        actorUid,
+        actorEmail: (_d = (_c = (_b = context.auth) === null || _b === void 0 ? void 0 : _b.token) === null || _c === void 0 ? void 0 : _c.email) !== null && _d !== void 0 ? _d : null,
+        after: { requestId, status },
+    });
+    return { ok: true, requestId, status };
+});
+exports.rootCreateAccountFromBetaRequest = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
+    const actorUid = requireRoot(context);
+    const actorEmail = ((_c = (_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email) !== null && _c !== void 0 ? _c : null);
+    const requestId = requireNonEmptyString(data === null || data === void 0 ? void 0 : data.requestId, 'requestId');
+    const roleIn = String((_d = data === null || data === void 0 ? void 0 : data.role) !== null && _d !== void 0 ? _d : 'admin').trim();
+    const requestedRole = normalizeRole(roleIn);
+    const sendInvite = (data === null || data === void 0 ? void 0 : data.sendInvite) !== false;
+    const reqRef = db.collection(BETA_REQUESTS_COLLECTION).doc(requestId);
+    const reqSnap = await reqRef.get();
+    if (!reqSnap.exists)
+        throw httpsError('not-found', 'Solicitud no encontrada.');
+    const req = reqSnap.data();
+    const email = normalizeEmail(req === null || req === void 0 ? void 0 : req.email);
+    if (!email)
+        throw httpsError('failed-precondition', 'La solicitud no tiene email.');
+    const status = String((_e = req === null || req === void 0 ? void 0 : req.status) !== null && _e !== void 0 ? _e : 'new');
+    if (status === 'rejected')
+        throw httpsError('failed-precondition', 'Solicitud rechazada.');
+    if (Boolean((_f = req === null || req === void 0 ? void 0 : req.createdAccount) !== null && _f !== void 0 ? _f : false)) {
+        throw httpsError('failed-precondition', 'Esta solicitud ya fue usada para crear una cuenta.');
+    }
+    const companyName = String((_g = req === null || req === void 0 ? void 0 : req.companyName) !== null && _g !== void 0 ? _g : '').trim();
+    const fullName = String((_h = req === null || req === void 0 ? void 0 : req.fullName) !== null && _h !== void 0 ? _h : '').trim();
+    const orgIdInput = String((_j = data === null || data === void 0 ? void 0 : data.organizationId) !== null && _j !== void 0 ? _j : '').trim() || companyName;
+    const organizationId = sanitizeOrganizationId(orgIdInput);
+    if (!organizationId)
+        throw httpsError('invalid-argument', 'organizationId requerido.');
+    const orgName = String((_k = data === null || data === void 0 ? void 0 : data.organizationName) !== null && _k !== void 0 ? _k : '').trim() || companyName || organizationId;
+    const orgLegalName = maybeString(data === null || data === void 0 ? void 0 : data.organizationLegalName);
+    const orgCountry = (_l = maybeString(data === null || data === void 0 ? void 0 : data.organizationCountry)) !== null && _l !== void 0 ? _l : 'ES';
+    const billingEmail = (_m = maybeString(data === null || data === void 0 ? void 0 : data.organizationBillingEmail)) !== null && _m !== void 0 ? _m : email;
+    const orgRef = db.collection('organizations').doc(organizationId);
+    const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
+    const existingOrg = await orgRef.get();
+    if (existingOrg.exists)
+        throw httpsError('already-exists', 'La organización ya existe.');
+    const authUser = await admin.auth().getUserByEmail(email).catch(() => null);
+    const targetUid = (_o = authUser === null || authUser === void 0 ? void 0 : authUser.uid) !== null && _o !== void 0 ? _o : '';
+    const inviteId = targetUid ? targetUid : `invite_${email}`;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    await db.runTransaction(async (tx) => {
+        const orgSnapTx = await tx.get(orgRef);
+        if (orgSnapTx.exists) {
+            throw httpsError('already-exists', 'La organización ya existe.');
+        }
+        tx.create(orgRef, {
+            organizationId,
+            name: orgName,
+            legalName: orgLegalName,
+            country: orgCountry,
+            billingEmail,
+            subscriptionPlan: 'trial',
+            isActive: true,
+            type: 'standard',
+            status: 'active',
+            entitlement: buildEntitlementPayload({
+                planId: 'free',
+                status: 'trialing',
+                now,
+                usage: Object.assign(Object.assign({}, DEFAULT_ENTITLEMENT_USAGE), { usersCount: 1 }),
+            }),
+            settings: {
+                allowGuestAccess: false,
+                maxUsers: 50,
+                inviteOnly: true,
+            },
+            createdByUserId: actorUid,
+            createdAt: now,
+            updatedAt: now,
+            source: 'rootCreateAccountFromBetaRequest_v1',
+        });
+        tx.set(orgRef.collection('settings').doc('main'), Object.assign(Object.assign({ organizationId }, DEFAULT_ORG_SETTINGS_MAIN), { createdAt: now, updatedAt: now, source: 'rootCreateAccountFromBetaRequest_v1' }), { merge: true });
+        tx.create(orgPublicRef, {
+            organizationId,
+            name: orgName,
+            nameLower: orgName.toLowerCase(),
+            isActive: true,
+            type: 'standard',
+            status: 'active',
+            createdAt: now,
+            updatedAt: now,
+            source: 'rootCreateAccountFromBetaRequest_v1',
+        });
+        const joinReqRef = orgRef.collection('joinRequests').doc(inviteId);
+        tx.set(joinReqRef, {
+            userId: targetUid || null,
+            organizationId,
+            organizationName: orgName,
+            email,
+            displayName: fullName || email,
+            requestedRole,
+            status: 'pending',
+            departmentId: null,
+            invitedBy: actorUid,
+            invitedByEmail: actorEmail,
+            invitedAt: now,
+            createdAt: now,
+            updatedAt: now,
+            source: 'rootCreateAccountFromBetaRequest_v1',
+        }, { merge: true });
+        tx.set(reqRef, {
+            status: 'accepted',
+            reviewedBy: actorUid,
+            reviewedAt: now,
+            createdAccount: true,
+            createdOrgId: organizationId,
+            createdUserId: targetUid || null,
+            updatedAt: now,
+            source: 'rootCreateAccountFromBetaRequest_v1',
+        }, { merge: true });
+    });
+    if (sendInvite) {
+        try {
+            await (0, invite_email_1.sendInviteEmail)({
+                recipientEmail: email,
+                orgName,
+                role: requestedRole,
+                inviteLink: 'https://multi.maintelligence.app/login',
+            });
+        }
+        catch (error) {
+            console.warn('Error enviando email de invitación (beta).', error);
+        }
+    }
+    await auditLog({
+        action: 'rootCreateAccountFromBetaRequest',
+        actorUid,
+        actorEmail,
+        orgId: organizationId,
+        targetUid: targetUid || null,
+        targetEmail: email,
+        after: { requestId, organizationId, role: requestedRole },
+    });
+    return {
+        ok: true,
+        requestId,
+        organizationId,
+        inviteId,
+        invitedExistingUser: Boolean(targetUid),
+    };
+});
 exports.rootListOrganizations = functions.https.onCall(async (data, context) => {
     var _a, _b, _c, _d, _e, _f;
     requireRoot(context);

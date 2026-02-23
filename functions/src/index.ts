@@ -1833,6 +1833,9 @@ type BetaRequestStatus = 'new' | 'reviewing' | 'accepted' | 'waitlist' | 'reject
 const PUBLIC_CONFIG_COLLECTION = 'systemConfig';
 const PUBLIC_CONFIG_DOC_ID = 'public';
 const BETA_REQUESTS_COLLECTION = 'betaRequests';
+const BETA_RATE_LIMIT_COLLECTION = 'betaRequestRateLimits';
+const BETA_RATE_LIMIT_MAX_REQUESTS = 3;
+const BETA_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 async function readPublicConfig() {
   const snap = await db.collection(PUBLIC_CONFIG_COLLECTION).doc(PUBLIC_CONFIG_DOC_ID).get();
@@ -1858,6 +1861,70 @@ function maybeString(input: unknown) {
 function betaRequestIdFromEmail(email: string) {
   const h = crypto.createHash('sha256').update(email).digest('hex');
   return `email_${h.slice(0, 24)}`;
+}
+
+function betaRateLimitWindowStartMs(nowMs: number) {
+  return Math.floor(nowMs / BETA_RATE_LIMIT_WINDOW_MS) * BETA_RATE_LIMIT_WINDOW_MS;
+}
+
+async function consumeBetaRateLimit(ipHash: string | null) {
+  if (!ipHash) return { allowed: true as const };
+
+  const nowMs = Date.now();
+  const windowStartMs = betaRateLimitWindowStartMs(nowMs);
+  const windowKey = new Date(windowStartMs).toISOString().slice(0, 10);
+  const docId = `${ipHash}_${windowKey}`;
+  const ref = db.collection(BETA_RATE_LIMIT_COLLECTION).doc(docId);
+  const windowEndsAtMs = windowStartMs + BETA_RATE_LIMIT_WINDOW_MS;
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const count = Number(snap.get('count') ?? 0);
+
+    if (count >= BETA_RATE_LIMIT_MAX_REQUESTS) {
+      tx.set(
+        ref,
+        {
+          windowKey,
+          blockedCount: admin.firestore.FieldValue.increment(1),
+          limitedAt: now,
+          lastBlockedAt: now,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      return { allowed: false as const };
+    }
+
+    tx.set(
+      ref,
+      {
+        ipHash,
+        windowKey,
+        count: admin.firestore.FieldValue.increment(1),
+        windowStartMs,
+        windowEndsAtMs,
+        createdAt: snap.exists ? snap.get('createdAt') ?? now : now,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+
+    return { allowed: true as const };
+  });
+}
+
+function ignoredBetaRequestResponse() {
+  return { ok: true, ignored: true };
+}
+
+function logIgnoredBetaRequest(reason: 'honeypot' | 'rate_limit', meta: { ipHash: string | null; email?: string | null }) {
+  console.info('[submitBetaRequest] ignored', {
+    reason,
+    hasIpHash: Boolean(meta.ipHash),
+    emailDomain: meta.email?.includes('@') ? meta.email.split('@')[1] : null,
+  });
 }
 
 async function hasPendingInviteForEmailOrUid(opts: { email?: string | null; uid?: string | null }) {
@@ -1983,13 +2050,20 @@ export const submitBetaRequest = functions.https.onCall(async (data, context) =>
   // Basic honeypot for bots.
   const honey = String(data?.companyWebsite ?? data?.website ?? '').trim();
   if (honey) {
-    return { ok: true, ignored: true };
+    logIgnoredBetaRequest('honeypot', { ipHash: null, email: normalizeEmail(data?.email) });
+    return ignoredBetaRequestResponse();
   }
 
   const now = admin.firestore.FieldValue.serverTimestamp();
   const ip = (context.rawRequest?.ip ?? '').toString();
   const ua = (context.rawRequest?.headers?.['user-agent'] ?? '').toString();
   const ipHash = ip ? crypto.createHash('sha256').update(ip).digest('hex') : null;
+
+  const rateLimit = await consumeBetaRateLimit(ipHash);
+  if (!rateLimit.allowed) {
+    logIgnoredBetaRequest('rate_limit', { ipHash, email });
+    return ignoredBetaRequestResponse();
+  }
 
   // Upsert by email (avoid multiple docs per lead).
   const existingSnap = await db
