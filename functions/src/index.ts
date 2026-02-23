@@ -1886,7 +1886,9 @@ async function consumeBetaRateLimit(ipHash: string | null) {
       tx.set(
         ref,
         {
+          windowKey,
           blockedCount: admin.firestore.FieldValue.increment(1),
+          limitedAt: now,
           lastBlockedAt: now,
           updatedAt: now,
         },
@@ -1899,6 +1901,7 @@ async function consumeBetaRateLimit(ipHash: string | null) {
       ref,
       {
         ipHash,
+        windowKey,
         count: admin.firestore.FieldValue.increment(1),
         windowStartMs,
         windowEndsAtMs,
@@ -1909,6 +1912,18 @@ async function consumeBetaRateLimit(ipHash: string | null) {
     );
 
     return { allowed: true as const };
+  });
+}
+
+function ignoredBetaRequestResponse() {
+  return { ok: true, ignored: true };
+}
+
+function logIgnoredBetaRequest(reason: 'honeypot' | 'rate_limit', meta: { ipHash: string | null; email?: string | null }) {
+  console.info('[submitBetaRequest] ignored', {
+    reason,
+    hasIpHash: Boolean(meta.ipHash),
+    emailDomain: meta.email?.includes('@') ? meta.email.split('@')[1] : null,
   });
 }
 
@@ -2035,7 +2050,8 @@ export const submitBetaRequest = functions.https.onCall(async (data, context) =>
   // Basic honeypot for bots.
   const honey = String(data?.companyWebsite ?? data?.website ?? '').trim();
   if (honey) {
-    return { ok: true, ignored: true };
+    logIgnoredBetaRequest('honeypot', { ipHash: null, email: normalizeEmail(data?.email) });
+    return ignoredBetaRequestResponse();
   }
 
   const now = admin.firestore.FieldValue.serverTimestamp();
@@ -2045,7 +2061,8 @@ export const submitBetaRequest = functions.https.onCall(async (data, context) =>
 
   const rateLimit = await consumeBetaRateLimit(ipHash);
   if (!rateLimit.allowed) {
-    return { ok: true, ignored: true };
+    logIgnoredBetaRequest('rate_limit', { ipHash, email });
+    return ignoredBetaRequestResponse();
   }
 
   // Upsert by email (avoid multiple docs per lead).

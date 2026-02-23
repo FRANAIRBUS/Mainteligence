@@ -1422,7 +1422,9 @@ async function consumeBetaRateLimit(ipHash) {
         const count = Number((_a = snap.get('count')) !== null && _a !== void 0 ? _a : 0);
         if (count >= BETA_RATE_LIMIT_MAX_REQUESTS) {
             tx.set(ref, {
+                windowKey,
                 blockedCount: admin.firestore.FieldValue.increment(1),
+                limitedAt: now,
                 lastBlockedAt: now,
                 updatedAt: now,
             }, { merge: true });
@@ -1430,6 +1432,7 @@ async function consumeBetaRateLimit(ipHash) {
         }
         tx.set(ref, {
             ipHash,
+            windowKey,
             count: admin.firestore.FieldValue.increment(1),
             windowStartMs,
             windowEndsAtMs,
@@ -1437,6 +1440,17 @@ async function consumeBetaRateLimit(ipHash) {
             updatedAt: now,
         }, { merge: true });
         return { allowed: true };
+    });
+}
+function ignoredBetaRequestResponse() {
+    return { ok: true, ignored: true };
+}
+function logIgnoredBetaRequest(reason, meta) {
+    var _a;
+    console.info('[submitBetaRequest] ignored', {
+        reason,
+        hasIpHash: Boolean(meta.ipHash),
+        emailDomain: ((_a = meta.email) === null || _a === void 0 ? void 0 : _a.includes('@')) ? meta.email.split('@')[1] : null,
     });
 }
 async function hasPendingInviteForEmailOrUid(opts) {
@@ -1551,7 +1565,8 @@ exports.submitBetaRequest = functions.https.onCall(async (data, context) => {
     // Basic honeypot for bots.
     const honey = String((_b = (_a = data === null || data === void 0 ? void 0 : data.companyWebsite) !== null && _a !== void 0 ? _a : data === null || data === void 0 ? void 0 : data.website) !== null && _b !== void 0 ? _b : '').trim();
     if (honey) {
-        return { ok: true, ignored: true };
+        logIgnoredBetaRequest('honeypot', { ipHash: null, email: normalizeEmail(data === null || data === void 0 ? void 0 : data.email) });
+        return ignoredBetaRequestResponse();
     }
     const now = admin.firestore.FieldValue.serverTimestamp();
     const ip = ((_d = (_c = context.rawRequest) === null || _c === void 0 ? void 0 : _c.ip) !== null && _d !== void 0 ? _d : '').toString();
@@ -1559,7 +1574,8 @@ exports.submitBetaRequest = functions.https.onCall(async (data, context) => {
     const ipHash = ip ? crypto.createHash('sha256').update(ip).digest('hex') : null;
     const rateLimit = await consumeBetaRateLimit(ipHash);
     if (!rateLimit.allowed) {
-        return { ok: true, ignored: true };
+        logIgnoredBetaRequest('rate_limit', { ipHash, email });
+        return ignoredBetaRequestResponse();
     }
     // Upsert by email (avoid multiple docs per lead).
     const existingSnap = await db
