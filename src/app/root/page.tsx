@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
 type OrgRow = {
   id: string;
@@ -39,6 +40,30 @@ type MemberRow = {
   active?: boolean;
   role?: string | null;
   departmentId?: string | null;
+};
+
+type BetaRequestRow = {
+  id: string;
+  status: string;
+  fullName?: string | null;
+  companyName?: string | null;
+  role?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  sector?: string | null;
+  sitesCount?: number | null;
+  currentTools?: string | null;
+  mainPain?: string | null;
+  canUseReal2to4Weeks?: boolean;
+  wantsDemo?: boolean;
+  reviewedBy?: string | null;
+  reviewedAtMs?: number | null;
+  notes?: string | null;
+  createdAccount?: boolean;
+  createdOrgId?: string | null;
+  createdUserId?: string | null;
+  createdAtMs?: number | null;
+  updatedAtMs?: number | null;
 };
 
 const ROLE_OPTIONS = [
@@ -69,8 +94,53 @@ export default function RootPage() {
     }
   }, []);
 
+  const api = useMemo(() => {
+    if (!fn) return null;
+    return {
+      getPublicAppConfig: httpsCallable(fn, 'getPublicAppConfig'),
+      rootSetPublicAppConfig: httpsCallable(fn, 'rootSetPublicAppConfig'),
+      rootListBetaRequests: httpsCallable(fn, 'rootListBetaRequests'),
+      rootUpdateBetaRequest: httpsCallable(fn, 'rootUpdateBetaRequest'),
+      rootCreateAccountFromBetaRequest: httpsCallable(fn, 'rootCreateAccountFromBetaRequest'),
+      rootListOrganizations: httpsCallable(fn, 'rootListOrganizations'),
+      rootOrgSummary: httpsCallable(fn, 'rootOrgSummary'),
+      rootListUsersByOrg: httpsCallable(fn, 'rootListUsersByOrg'),
+      rootUpsertUserToOrganization: httpsCallable(fn, 'rootUpsertUserToOrganization'),
+      rootDeactivateOrganization: httpsCallable(fn, 'rootDeactivateOrganization'),
+      rootSetOrganizationPlan: httpsCallable(fn, 'rootSetOrganizationPlan'),
+      rootPurgeOrganizationCollection: httpsCallable(fn, 'rootPurgeOrganizationCollection'),
+      rootDeleteOrganizationScaffold: httpsCallable(fn, 'rootDeleteOrganizationScaffold'),
+    };
+  }, [fn]);
+
+
+
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // CLOSED BETA
+  const [betaClosed, setBetaClosed] = useState(false);
+  const [betaConfigLoading, setBetaConfigLoading] = useState(false);
+
+  // BETA REQUESTS
+  const [betaRequests, setBetaRequests] = useState<BetaRequestRow[]>([]);
+  const [betaRequestsLoading, setBetaRequestsLoading] = useState(false);
+  const [betaLimit, setBetaLimit] = useState(50);
+  const [betaCursorCreatedAtMs, setBetaCursorCreatedAtMs] = useState<number | null>(null);
+  const [betaCursorId, setBetaCursorId] = useState<string | null>(null);
+  const [betaHasMore, setBetaHasMore] = useState(false);
+  const [betaStatusFilter, setBetaStatusFilter] = useState<string>('all');
+  const [betaSearch, setBetaSearch] = useState('');
+  const [selectedBeta, setSelectedBeta] = useState<BetaRequestRow | null>(null);
+  const [betaEditStatus, setBetaEditStatus] = useState<string>('reviewing');
+  const [betaEditNotes, setBetaEditNotes] = useState('');
+  const [betaSaving, setBetaSaving] = useState(false);
+
+  const [createOrgId, setCreateOrgId] = useState('');
+  const [createOrgName, setCreateOrgName] = useState('');
+  const [createRole, setCreateRole] = useState('admin');
+  const [createSendInvite, setCreateSendInvite] = useState(true);
+  const [creatingAccount, setCreatingAccount] = useState(false);
 
   // ORGS
   const [orgs, setOrgs] = useState<OrgRow[]>([]);
@@ -124,6 +194,11 @@ export default function RootPage() {
     }
   }, [loading, user, isRoot, router]);
 
+  useEffect(() => {
+    if (!api || loading || !user || !isRoot) return;
+    void loadPublicConfig();
+  }, [api, isRoot, loading, user]);
+
   const handleSignOut = async () => {
     try {
       if (auth) await signOut(auth);
@@ -133,19 +208,141 @@ export default function RootPage() {
     }
   };
 
-  const api = useMemo(() => {
-    if (!fn) return null;
-    return {
-      rootListOrganizations: httpsCallable(fn, 'rootListOrganizations'),
-      rootOrgSummary: httpsCallable(fn, 'rootOrgSummary'),
-      rootListUsersByOrg: httpsCallable(fn, 'rootListUsersByOrg'),
-      rootUpsertUserToOrganization: httpsCallable(fn, 'rootUpsertUserToOrganization'),
-      rootDeactivateOrganization: httpsCallable(fn, 'rootDeactivateOrganization'),
-      rootSetOrganizationPlan: httpsCallable(fn, 'rootSetOrganizationPlan'),
-      rootPurgeOrganizationCollection: httpsCallable(fn, 'rootPurgeOrganizationCollection'),
-      rootDeleteOrganizationScaffold: httpsCallable(fn, 'rootDeleteOrganizationScaffold'),
-    };
-  }, [fn]);
+  const loadPublicConfig = async () => {
+    if (!api) return;
+    setBetaConfigLoading(true);
+    try {
+      const res = await api.getPublicAppConfig({});
+      const data = res?.data as any;
+      setBetaClosed(Boolean(data?.betaClosed ?? false));
+    } catch {
+      // non-blocking
+    } finally {
+      setBetaConfigLoading(false);
+    }
+  };
+
+  const setBetaMode = async (closed: boolean) => {
+    if (!api) return;
+    setBetaConfigLoading(true);
+    setError(null);
+    try {
+      const res = await api.rootSetPublicAppConfig({ betaClosed: closed });
+      const data = res?.data as any;
+      setBetaClosed(Boolean(data?.betaClosed ?? closed));
+      setSuccess('Configuración de beta actualizada.');
+    } catch (e: any) {
+      setSuccess(null);
+      setError(e?.message ?? 'Error actualizando beta.');
+    } finally {
+      setBetaConfigLoading(false);
+    }
+  };
+
+  const loadBetaRequests = async (mode: 'reset' | 'next' = 'reset') => {
+    if (!api) return;
+    setBetaRequestsLoading(true);
+    setError(null);
+    try {
+      const payload: any = { limit: betaLimit };
+      if (mode === 'next' && betaCursorCreatedAtMs && betaCursorId) {
+        payload.cursorCreatedAtMs = betaCursorCreatedAtMs;
+        payload.cursorId = betaCursorId;
+      }
+      const res = await api.rootListBetaRequests(payload);
+      const data = res?.data as any;
+      const rows = (data?.requests ?? []) as BetaRequestRow[];
+
+      if (mode === 'reset') {
+        setBetaRequests(rows);
+      } else {
+        setBetaRequests((prev) => [...prev, ...rows]);
+      }
+
+      const nextMs = (data?.nextCursorCreatedAtMs ?? null) as number | null;
+      const nextId = (data?.nextCursorId ?? null) as string | null;
+      setBetaCursorCreatedAtMs(nextMs);
+      setBetaCursorId(nextId);
+      setBetaHasMore(Boolean(nextMs && nextId));
+    } catch (e: any) {
+      setError(e?.message ?? 'Error cargando solicitudes beta');
+    } finally {
+      setBetaRequestsLoading(false);
+    }
+  };
+
+  const selectBeta = (row: BetaRequestRow) => {
+    setSelectedBeta(row);
+    setBetaEditStatus(String(row.status ?? 'reviewing'));
+    setBetaEditNotes(String(row.notes ?? ''));
+
+    const guess = String(row.companyName ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9_-]/g, '');
+    setCreateOrgId(guess);
+    setCreateOrgName(String(row.companyName ?? '').trim());
+    setCreateRole('admin');
+    setCreateSendInvite(true);
+  };
+
+  const saveBetaStatus = async () => {
+    if (!api || !selectedBeta) return;
+    setBetaSaving(true);
+    setError(null);
+    try {
+      await api.rootUpdateBetaRequest({
+        requestId: selectedBeta.id,
+        status: betaEditStatus,
+        notes: betaEditNotes,
+      });
+
+      setBetaRequests((prev) =>
+        prev.map((r) => (r.id === selectedBeta.id ? { ...r, status: betaEditStatus, notes: betaEditNotes } : r)),
+      );
+      setSelectedBeta((prev) => (prev ? { ...prev, status: betaEditStatus, notes: betaEditNotes } : prev));
+      setSuccess('Solicitud actualizada.');
+    } catch (e: any) {
+      setSuccess(null);
+      setError(e?.message ?? 'Error actualizando solicitud');
+    } finally {
+      setBetaSaving(false);
+    }
+  };
+
+  const createAccountFromBeta = async () => {
+    if (!api || !selectedBeta) return;
+    setCreatingAccount(true);
+    setError(null);
+    try {
+      const res = await api.rootCreateAccountFromBetaRequest({
+        requestId: selectedBeta.id,
+        organizationId: createOrgId,
+        organizationName: createOrgName,
+        role: createRole,
+        sendInvite: createSendInvite,
+      });
+      const data = res?.data as any;
+      setSuccess(`Organización creada: ${data?.organizationId ?? createOrgId}. Invitación enviada.`);
+
+      setBetaRequests((prev) =>
+        prev.map((r) =>
+          r.id === selectedBeta.id
+            ? { ...r, status: 'accepted', createdAccount: true, createdOrgId: data?.organizationId ?? createOrgId }
+            : r,
+        ),
+      );
+      setSelectedBeta((prev) =>
+        prev ? { ...prev, status: 'accepted', createdAccount: true, createdOrgId: data?.organizationId ?? createOrgId } : prev,
+      );
+    } catch (e: any) {
+      setSuccess(null);
+      setError(e?.message ?? 'Error creando cuenta desde solicitud');
+    } finally {
+      setCreatingAccount(false);
+    }
+  };
 
   const loadOrgs = async (mode: 'reset' | 'next' = 'reset') => {
     if (!api) return;
@@ -349,6 +546,230 @@ export default function RootPage() {
 
           {error ? <div className="text-sm text-red-600 pt-2">{error}</div> : null}
           {success ? <div className="text-sm text-emerald-700 pt-1">{success}</div> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Modo beta cerrada</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="text-sm text-muted-foreground">
+              Estado:{' '}
+              <span className="font-medium text-foreground">{betaClosed ? 'CERRADA' : 'ABIERTA'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="betaClosed"
+                type="checkbox"
+                checked={betaClosed}
+                onChange={(e) => setBetaMode(e.target.checked)}
+                disabled={!api || betaConfigLoading}
+              />
+              <Label htmlFor="betaClosed">Activar beta cerrada</Label>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={loadPublicConfig} disabled={!api || betaConfigLoading}>
+              {betaConfigLoading ? 'Cargando…' : 'Refrescar'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Solicitudes de beta</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-5">
+            <div className="md:col-span-2">
+              <Label>Búsqueda (empresa/email/contacto)</Label>
+              <Input value={betaSearch} onChange={(e) => setBetaSearch(e.target.value)} placeholder="fran, montes..." />
+            </div>
+            <div>
+              <Label>Estado</Label>
+              <select
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={betaStatusFilter}
+                onChange={(e) => setBetaStatusFilter(e.target.value)}
+              >
+                <option value="all">Todas</option>
+                <option value="new">new</option>
+                <option value="reviewing">reviewing</option>
+                <option value="waitlist">waitlist</option>
+                <option value="accepted">accepted</option>
+                <option value="rejected">rejected</option>
+              </select>
+            </div>
+            <div>
+              <Label>Límite</Label>
+              <Input
+                type="number"
+                value={betaLimit}
+                onChange={(e) => setBetaLimit(Math.max(10, Math.min(200, Number(e.target.value || 50))))}
+              />
+            </div>
+            <div className="flex items-end gap-2">
+              <Button onClick={() => loadBetaRequests('reset')} disabled={!api || betaRequestsLoading}>
+                {betaRequestsLoading ? 'Cargando…' : 'Cargar'}
+              </Button>
+              <Button onClick={() => loadBetaRequests('next')} disabled={!api || betaRequestsLoading || !betaHasMore}>
+                Más
+              </Button>
+            </div>
+          </div>
+
+          <div className="text-sm text-muted-foreground">
+            {betaRequests.length === 0 ? 'Sin solicitudes.' : `Mostrando ${betaRequests.length} solicitudes.`}
+          </div>
+
+          {betaRequests.length > 0 ? (
+            <div className="overflow-auto border rounded-md">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/40">
+                  <tr className="text-left">
+                    <th className="p-2">fecha</th>
+                    <th className="p-2">empresa</th>
+                    <th className="p-2">contacto</th>
+                    <th className="p-2">email</th>
+                    <th className="p-2">sector</th>
+                    <th className="p-2">estado</th>
+                    <th className="p-2">acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {betaRequests
+                    .filter((r) => {
+                      if (betaStatusFilter !== 'all' && String(r.status) !== betaStatusFilter) return false;
+                      const q = betaSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      const hay = `${r.companyName ?? ''} ${r.fullName ?? ''} ${r.email ?? ''}`.toLowerCase();
+                      return hay.includes(q);
+                    })
+                    .map((r) => (
+                      <tr key={r.id} className="border-t">
+                        <td className="p-2 text-muted-foreground">
+                          {r.createdAtMs ? new Date(r.createdAtMs).toLocaleString('es-ES') : '—'}
+                        </td>
+                        <td className="p-2 font-medium">{r.companyName ?? '—'}</td>
+                        <td className="p-2">{r.fullName ?? '—'}</td>
+                        <td className="p-2 text-muted-foreground">{r.email ?? '—'}</td>
+                        <td className="p-2 text-muted-foreground">{r.sector ?? '—'}</td>
+                        <td className="p-2">
+                          {String(r.status)}{r.createdAccount ? ' (creada)' : ''}
+                        </td>
+                        <td className="p-2">
+                          <Button size="sm" variant={selectedBeta?.id === r.id ? 'default' : 'outline'} onClick={() => selectBeta(r)}>
+                            Detalle
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
+          {selectedBeta ? (
+            <div className="border rounded-md p-4 space-y-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-sm text-muted-foreground">Solicitud</div>
+                  <div className="font-medium">{selectedBeta.companyName ?? '—'}</div>
+                  <div className="text-sm text-muted-foreground">{selectedBeta.fullName ?? '—'} · {selectedBeta.email ?? '—'}</div>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {selectedBeta.createdAtMs ? new Date(selectedBeta.createdAtMs).toLocaleString('es-ES') : '—'}
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <Label>Estado</Label>
+                  <select
+                    className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                    value={betaEditStatus}
+                    onChange={(e) => setBetaEditStatus(e.target.value)}
+                  >
+                    <option value="new">new</option>
+                    <option value="reviewing">reviewing</option>
+                    <option value="waitlist">waitlist</option>
+                    <option value="accepted">accepted</option>
+                    <option value="rejected">rejected</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>Teléfono</Label>
+                  <Input value={String(selectedBeta.phone ?? '')} disabled />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Notas internas</Label>
+                  <Textarea value={betaEditNotes} onChange={(e) => setBetaEditNotes(e.target.value)} rows={3} />
+                </div>
+                <div className="md:col-span-2 flex gap-2">
+                  <Button onClick={saveBetaStatus} disabled={!api || betaSaving}>
+                    {betaSaving ? 'Guardando…' : 'Guardar'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setSelectedBeta(null)}>
+                    Cerrar
+                  </Button>
+                </div>
+              </div>
+
+              <div className="border-t pt-4 space-y-3">
+                <div className="font-medium">Crear cuenta desde solicitud</div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div>
+                    <Label>orgId</Label>
+                    <Input value={createOrgId} onChange={(e) => setCreateOrgId(e.target.value)} placeholder="empresa" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label>Nombre organización</Label>
+                    <Input value={createOrgName} onChange={(e) => setCreateOrgName(e.target.value)} placeholder="Empresa S.L." />
+                  </div>
+                  <div>
+                    <Label>Rol invitación</Label>
+                    <select
+                      className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                      value={createRole}
+                      onChange={(e) => setCreateRole(e.target.value)}
+                    >
+                      <option value="admin">admin</option>
+                      <option value="super_admin">super_admin</option>
+                      <option value="mantenimiento">mantenimiento</option>
+                      <option value="operario">operario</option>
+                      <option value="auditor">auditor</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end gap-2 md:col-span-2">
+                    <input
+                      id="sendInvite"
+                      type="checkbox"
+                      checked={createSendInvite}
+                      onChange={(e) => setCreateSendInvite(e.target.checked)}
+                    />
+                    <Label htmlFor="sendInvite">Enviar email de invitación</Label>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={createAccountFromBeta}
+                  disabled={!api || creatingAccount || Boolean(selectedBeta.createdAccount) || betaEditStatus === 'rejected'}
+                >
+                  {selectedBeta.createdAccount
+                    ? 'Ya creada'
+                    : creatingAccount
+                      ? 'Creando…'
+                      : 'Crear organización + invitar'}
+                </Button>
+                {selectedBeta.createdOrgId ? (
+                  <div className="text-sm text-muted-foreground">Org creada: {selectedBeta.createdOrgId}</div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

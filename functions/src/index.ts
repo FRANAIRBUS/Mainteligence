@@ -1823,6 +1823,302 @@ async function auditLog(params: {
 }
 
 /* ------------------------------
+   PUBLIC CONFIG + CLOSED BETA (GEN1)
+   - Public reads are done via callable (no public Firestore rules).
+   - Beta requests are created via callable (no public Firestore rules).
+--------------------------------- */
+
+type BetaRequestStatus = 'new' | 'reviewing' | 'accepted' | 'waitlist' | 'rejected';
+
+const PUBLIC_CONFIG_COLLECTION = 'systemConfig';
+const PUBLIC_CONFIG_DOC_ID = 'public';
+const BETA_REQUESTS_COLLECTION = 'betaRequests';
+const BETA_RATE_LIMIT_COLLECTION = 'betaRequestRateLimits';
+const BETA_RATE_LIMIT_MAX_REQUESTS = 3;
+const BETA_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+async function readPublicConfig() {
+  const snap = await db.collection(PUBLIC_CONFIG_COLLECTION).doc(PUBLIC_CONFIG_DOC_ID).get();
+  const betaClosed = Boolean(snap.exists ? (snap.get('betaClosed') ?? false) : false);
+  return { betaClosed, exists: snap.exists };
+}
+
+function normalizeEmail(input: unknown) {
+  return String(input ?? '').trim().toLowerCase();
+}
+
+function requireNonEmptyString(input: unknown, field: string) {
+  const v = String(input ?? '').trim();
+  if (!v) throw httpsError('invalid-argument', `${field} requerido.`);
+  return v;
+}
+
+function maybeString(input: unknown) {
+  const v = String(input ?? '').trim();
+  return v ? v : null;
+}
+
+function betaRequestIdFromEmail(email: string) {
+  const h = crypto.createHash('sha256').update(email).digest('hex');
+  return `email_${h.slice(0, 24)}`;
+}
+
+function betaRateLimitWindowStartMs(nowMs: number) {
+  return Math.floor(nowMs / BETA_RATE_LIMIT_WINDOW_MS) * BETA_RATE_LIMIT_WINDOW_MS;
+}
+
+async function consumeBetaRateLimit(ipHash: string | null) {
+  if (!ipHash) return { allowed: true as const };
+
+  const nowMs = Date.now();
+  const windowStartMs = betaRateLimitWindowStartMs(nowMs);
+  const windowKey = new Date(windowStartMs).toISOString().slice(0, 10);
+  const docId = `${ipHash}_${windowKey}`;
+  const ref = db.collection(BETA_RATE_LIMIT_COLLECTION).doc(docId);
+  const windowEndsAtMs = windowStartMs + BETA_RATE_LIMIT_WINDOW_MS;
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const count = Number(snap.get('count') ?? 0);
+
+    if (count >= BETA_RATE_LIMIT_MAX_REQUESTS) {
+      tx.set(
+        ref,
+        {
+          windowKey,
+          blockedCount: admin.firestore.FieldValue.increment(1),
+          limitedAt: now,
+          lastBlockedAt: now,
+          updatedAt: now,
+        },
+        { merge: true },
+      );
+      return { allowed: false as const };
+    }
+
+    tx.set(
+      ref,
+      {
+        ipHash,
+        windowKey,
+        count: admin.firestore.FieldValue.increment(1),
+        windowStartMs,
+        windowEndsAtMs,
+        createdAt: snap.exists ? snap.get('createdAt') ?? now : now,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+
+    return { allowed: true as const };
+  });
+}
+
+function ignoredBetaRequestResponse() {
+  return { ok: true, ignored: true };
+}
+
+function logIgnoredBetaRequest(reason: 'honeypot' | 'rate_limit', meta: { ipHash: string | null; email?: string | null }) {
+  console.info('[submitBetaRequest] ignored', {
+    reason,
+    hasIpHash: Boolean(meta.ipHash),
+    emailDomain: meta.email?.includes('@') ? meta.email.split('@')[1] : null,
+  });
+}
+
+async function hasPendingInviteForEmailOrUid(opts: { email?: string | null; uid?: string | null }) {
+  const email = (opts.email ?? '').trim().toLowerCase();
+  const uid = (opts.uid ?? '').trim();
+
+  const queries: Promise<FirebaseFirestore.QuerySnapshot>[] = [];
+
+  if (email) {
+    queries.push(
+      db
+        .collectionGroup('joinRequests')
+        .where('email', '==', email)
+        .where('status', '==', 'pending')
+        .limit(1)
+        .get(),
+    );
+  }
+
+  if (uid) {
+    queries.push(
+      db
+        .collectionGroup('joinRequests')
+        .where('userId', '==', uid)
+        .where('status', '==', 'pending')
+        .limit(1)
+        .get(),
+    );
+  }
+
+  if (queries.length === 0) return false;
+  const snaps = await Promise.all(queries);
+  return snaps.some((s) => !s.empty);
+}
+
+async function hasAcceptedBetaRequest(email: string) {
+  const snap = await db
+    .collection(BETA_REQUESTS_COLLECTION)
+    .where('email', '==', email)
+    .where('status', '==', 'accepted')
+    .limit(1)
+    .get();
+  return !snap.empty;
+}
+
+export const getPublicAppConfig = functions.https.onCall(async () => {
+  const { betaClosed } = await readPublicConfig();
+  return { ok: true, betaClosed };
+});
+
+// Used by the unauthenticated login/register UI to decide whether to allow signup.
+export const checkSignupAllowed = functions.https.onCall(async (data, context) => {
+  const { betaClosed } = await readPublicConfig();
+  if (!betaClosed) return { ok: true, allowed: true };
+
+  const email = normalizeEmail(data?.email);
+  const uid = context.auth?.uid ?? null;
+
+  // If the caller is already authenticated, gate based on memberships/invites.
+  if (uid) {
+    const membershipsSnap = await db
+      .collection('memberships')
+      .where('userId', '==', uid)
+      .limit(1)
+      .get();
+
+    if (!membershipsSnap.empty) return { ok: true, allowed: true, reason: 'has_membership' };
+
+    const authUser = await admin.auth().getUser(uid).catch(() => null);
+    const authEmail = normalizeEmail(authUser?.email);
+    const hasInvite = await hasPendingInviteForEmailOrUid({ email: authEmail, uid });
+    if (hasInvite) return { ok: true, allowed: true, reason: 'has_invite' };
+    if (authEmail && (await hasAcceptedBetaRequest(authEmail))) {
+      return { ok: true, allowed: true, reason: 'beta_accepted' };
+    }
+
+    return { ok: true, allowed: false, reason: 'beta_closed' };
+  }
+
+  // Unauthenticated path: require an email to check invites/acceptance.
+  if (!email) return { ok: true, allowed: false, reason: 'beta_closed' };
+
+  const hasInvite = await hasPendingInviteForEmailOrUid({ email, uid: null });
+  if (hasInvite) return { ok: true, allowed: true, reason: 'has_invite' };
+
+  const accepted = await hasAcceptedBetaRequest(email);
+  if (accepted) return { ok: true, allowed: true, reason: 'beta_accepted' };
+
+  return { ok: true, allowed: false, reason: 'beta_closed' };
+});
+
+// Hard gate after a sign-in method that may have created a new Auth account (Google).
+export const gateLoginAccess = functions.https.onCall(async (_data, context) => {
+  const uid = requireAuth(context);
+  if (isRootClaim(context)) return { ok: true, allowed: true, reason: 'root' };
+
+  const { betaClosed } = await readPublicConfig();
+  if (!betaClosed) return { ok: true, allowed: true, reason: 'open' };
+
+  const membershipsSnap = await db
+    .collection('memberships')
+    .where('userId', '==', uid)
+    .limit(1)
+    .get();
+  if (!membershipsSnap.empty) return { ok: true, allowed: true, reason: 'has_membership' };
+
+  const authUser = await admin.auth().getUser(uid).catch(() => null);
+  const email = normalizeEmail(authUser?.email);
+  const hasInvite = await hasPendingInviteForEmailOrUid({ email, uid });
+  if (hasInvite) return { ok: true, allowed: true, reason: 'has_invite' };
+  if (email && (await hasAcceptedBetaRequest(email))) return { ok: true, allowed: true, reason: 'beta_accepted' };
+
+  return { ok: true, allowed: false, reason: 'beta_closed' };
+});
+
+// Public (unauth) beta request submission.
+export const submitBetaRequest = functions.https.onCall(async (data, context) => {
+  const fullName = requireNonEmptyString(data?.fullName, 'fullName');
+  const companyName = requireNonEmptyString(data?.companyName, 'companyName');
+  const email = normalizeEmail(data?.email);
+  if (!email) throw httpsError('invalid-argument', 'email requerido.');
+
+  // Basic honeypot for bots.
+  const honey = String(data?.companyWebsite ?? data?.website ?? '').trim();
+  if (honey) {
+    logIgnoredBetaRequest('honeypot', { ipHash: null, email: normalizeEmail(data?.email) });
+    return ignoredBetaRequestResponse();
+  }
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const ip = (context.rawRequest?.ip ?? '').toString();
+  const ua = (context.rawRequest?.headers?.['user-agent'] ?? '').toString();
+  const ipHash = ip ? crypto.createHash('sha256').update(ip).digest('hex') : null;
+
+  const rateLimit = await consumeBetaRateLimit(ipHash);
+  if (!rateLimit.allowed) {
+    logIgnoredBetaRequest('rate_limit', { ipHash, email });
+    return ignoredBetaRequestResponse();
+  }
+
+  // Upsert by email (avoid multiple docs per lead).
+  const existingSnap = await db
+    .collection(BETA_REQUESTS_COLLECTION)
+    .where('email', '==', email)
+    .limit(1)
+    .get();
+
+  const docRef = existingSnap.empty
+    ? db.collection(BETA_REQUESTS_COLLECTION).doc(betaRequestIdFromEmail(email))
+    : existingSnap.docs[0].ref;
+
+  const existingData = existingSnap.empty ? null : (existingSnap.docs[0].data() as any);
+  const existingStatus = String(existingData?.status ?? 'new') as BetaRequestStatus;
+
+  // If already finalized, keep it immutable except timestamps.
+  if (existingStatus === 'accepted' || existingStatus === 'rejected') {
+    await docRef.set({ updatedAt: now }, { merge: true });
+    return { ok: true, id: docRef.id, status: existingStatus, locked: true };
+  }
+
+  const payload = {
+    status: existingStatus || ('new' as BetaRequestStatus),
+    fullName,
+    companyName,
+    role: maybeString(data?.role),
+    email,
+    phone: maybeString(data?.phone),
+    sector: maybeString(data?.sector),
+    sitesCount: Number.isFinite(Number(data?.sitesCount)) ? Number(data?.sitesCount) : null,
+    currentTools: maybeString(data?.currentTools),
+    mainPain: maybeString(data?.mainPain),
+    canUseReal2to4Weeks: Boolean(data?.canUseReal2to4Weeks ?? false),
+    wantsDemo: Boolean(data?.wantsDemo ?? false),
+    reviewedBy: existingData?.reviewedBy ?? null,
+    reviewedAt: existingData?.reviewedAt ?? null,
+    notes: existingData?.notes ?? null,
+    createdAccount: Boolean(existingData?.createdAccount ?? false),
+    createdOrgId: existingData?.createdOrgId ?? null,
+    createdUserId: existingData?.createdUserId ?? null,
+    createdAt: existingData?.createdAt ?? now,
+    updatedAt: now,
+    meta: {
+      ipHash,
+      userAgent: ua || null,
+      authUid: context.auth?.uid ?? null,
+    },
+    source: 'submitBetaRequest_v1',
+  };
+
+  await docRef.set(payload, { merge: true });
+  return { ok: true, id: docRef.id };
+});
+
+/* ------------------------------
    FIRESTORE TRIGGERS (GEN1)
 --------------------------------- */
 
@@ -1996,6 +2292,313 @@ function requireRoot(context: functions.https.CallableContext) {
   if (!isRootClaim(context)) throw httpsError('permission-denied', 'Solo ROOT (claim) puede hacer esto.');
   return uid;
 }
+
+export const rootSetPublicAppConfig = functions.https.onCall(async (data, context) => {
+  const actorUid = requireRoot(context);
+  const betaClosed = Boolean(data?.betaClosed ?? false);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db
+    .collection(PUBLIC_CONFIG_COLLECTION)
+    .doc(PUBLIC_CONFIG_DOC_ID)
+    .set(
+      {
+        betaClosed,
+        updatedAt: now,
+        updatedBy: actorUid,
+        source: 'rootSetPublicAppConfig_v1',
+      },
+      { merge: true },
+    );
+
+  await auditLog({
+    action: 'rootSetPublicAppConfig',
+    actorUid,
+    actorEmail: (context.auth?.token as any)?.email ?? null,
+    after: { betaClosed },
+  });
+
+  return { ok: true, betaClosed };
+});
+
+export const rootListBetaRequests = functions.https.onCall(async (data, context) => {
+  requireRoot(context);
+
+  const limit = Math.min(Number(data?.limit ?? 50), 200);
+  const cursorCreatedAtMs = Number(data?.cursorCreatedAtMs ?? 0);
+  const cursorId = String(data?.cursorId ?? '').trim();
+
+  let query: FirebaseFirestore.Query = db
+    .collection(BETA_REQUESTS_COLLECTION)
+    .orderBy('createdAt', 'desc')
+    .orderBy(admin.firestore.FieldPath.documentId(), 'desc')
+    .limit(limit + 1);
+
+  if (cursorCreatedAtMs && cursorId) {
+    query = query.startAfter(admin.firestore.Timestamp.fromMillis(cursorCreatedAtMs), cursorId);
+  }
+
+  const snap = await query.get();
+  const docs = snap.docs;
+  const hasMore = docs.length > limit;
+  const sliced = hasMore ? docs.slice(0, limit) : docs;
+
+  const rows = sliced.map((d) => {
+    const v = d.data() as any;
+    const createdAt = v?.createdAt;
+    const updatedAt = v?.updatedAt;
+    const reviewedAt = v?.reviewedAt;
+    const toMs = (t: any) => (t?.toMillis ? t.toMillis() : null);
+    return {
+      id: d.id,
+      status: v?.status ?? 'new',
+      fullName: v?.fullName ?? null,
+      companyName: v?.companyName ?? null,
+      role: v?.role ?? null,
+      email: v?.email ?? null,
+      phone: v?.phone ?? null,
+      sector: v?.sector ?? null,
+      sitesCount: v?.sitesCount ?? null,
+      currentTools: v?.currentTools ?? null,
+      mainPain: v?.mainPain ?? null,
+      canUseReal2to4Weeks: Boolean(v?.canUseReal2to4Weeks ?? false),
+      wantsDemo: Boolean(v?.wantsDemo ?? false),
+      reviewedBy: v?.reviewedBy ?? null,
+      reviewedAtMs: toMs(reviewedAt),
+      notes: v?.notes ?? null,
+      createdAccount: Boolean(v?.createdAccount ?? false),
+      createdOrgId: v?.createdOrgId ?? null,
+      createdUserId: v?.createdUserId ?? null,
+      createdAtMs: toMs(createdAt),
+      updatedAtMs: toMs(updatedAt),
+    };
+  });
+
+  const nextCursor = hasMore ? docs[limit] : null;
+  const nextCursorCreatedAtMs = nextCursor?.get('createdAt')?.toMillis?.() ?? null;
+  const nextCursorId = nextCursor?.id ?? null;
+
+  return {
+    ok: true,
+    requests: rows,
+    nextCursorCreatedAtMs,
+    nextCursorId,
+  };
+});
+
+export const rootUpdateBetaRequest = functions.https.onCall(async (data, context) => {
+  const actorUid = requireRoot(context);
+
+  const requestId = requireNonEmptyString(data?.requestId, 'requestId');
+  const status = String(data?.status ?? '').trim() as BetaRequestStatus;
+  const notes = maybeString(data?.notes);
+
+  if (!['new', 'reviewing', 'accepted', 'waitlist', 'rejected'].includes(status)) {
+    throw httpsError('invalid-argument', 'status inválido.');
+  }
+
+  const ref = db.collection(BETA_REQUESTS_COLLECTION).doc(requestId);
+  const snap = await ref.get();
+  if (!snap.exists) throw httpsError('not-found', 'Solicitud no encontrada.');
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await ref.set(
+    {
+      status,
+      notes,
+      reviewedBy: actorUid,
+      reviewedAt: now,
+      updatedAt: now,
+      source: 'rootUpdateBetaRequest_v1',
+    },
+    { merge: true },
+  );
+
+  await auditLog({
+    action: 'rootUpdateBetaRequest',
+    actorUid,
+    actorEmail: (context.auth?.token as any)?.email ?? null,
+    after: { requestId, status },
+  });
+
+  return { ok: true, requestId, status };
+});
+
+export const rootCreateAccountFromBetaRequest = functions.https.onCall(async (data, context) => {
+  const actorUid = requireRoot(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+
+  const requestId = requireNonEmptyString(data?.requestId, 'requestId');
+  const roleIn = String(data?.role ?? 'admin').trim();
+  const requestedRole: Role = normalizeRole(roleIn);
+  const sendInvite = data?.sendInvite !== false;
+
+  const reqRef = db.collection(BETA_REQUESTS_COLLECTION).doc(requestId);
+  const reqSnap = await reqRef.get();
+  if (!reqSnap.exists) throw httpsError('not-found', 'Solicitud no encontrada.');
+  const req = reqSnap.data() as any;
+
+  const email = normalizeEmail(req?.email);
+  if (!email) throw httpsError('failed-precondition', 'La solicitud no tiene email.');
+
+  const status = String(req?.status ?? 'new') as BetaRequestStatus;
+  if (status === 'rejected') throw httpsError('failed-precondition', 'Solicitud rechazada.');
+  if (Boolean(req?.createdAccount ?? false)) {
+    throw httpsError('failed-precondition', 'Esta solicitud ya fue usada para crear una cuenta.');
+  }
+
+  const companyName = String(req?.companyName ?? '').trim();
+  const fullName = String(req?.fullName ?? '').trim();
+
+  const orgIdInput = String(data?.organizationId ?? '').trim() || companyName;
+  const organizationId = sanitizeOrganizationId(orgIdInput);
+  if (!organizationId) throw httpsError('invalid-argument', 'organizationId requerido.');
+
+  const orgName = String(data?.organizationName ?? '').trim() || companyName || organizationId;
+  const orgLegalName = maybeString(data?.organizationLegalName);
+  const orgCountry = maybeString(data?.organizationCountry) ?? 'ES';
+  const billingEmail = maybeString(data?.organizationBillingEmail) ?? email;
+
+  const orgRef = db.collection('organizations').doc(organizationId);
+  const orgPublicRef = db.collection('organizationsPublic').doc(organizationId);
+  const existingOrg = await orgRef.get();
+  if (existingOrg.exists) throw httpsError('already-exists', 'La organización ya existe.');
+
+  const authUser = await admin.auth().getUserByEmail(email).catch(() => null);
+  const targetUid = authUser?.uid ?? '';
+  const inviteId = targetUid ? targetUid : `invite_${email}`;
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (tx) => {
+    const orgSnapTx = await tx.get(orgRef);
+    if (orgSnapTx.exists) {
+      throw httpsError('already-exists', 'La organización ya existe.');
+    }
+
+    tx.create(orgRef, {
+      organizationId,
+      name: orgName,
+      legalName: orgLegalName,
+      country: orgCountry,
+      billingEmail,
+      subscriptionPlan: 'trial',
+      isActive: true,
+      type: 'standard',
+      status: 'active',
+      entitlement: buildEntitlementPayload({
+        planId: 'free',
+        status: 'trialing',
+        now,
+        usage: {
+          ...DEFAULT_ENTITLEMENT_USAGE,
+          usersCount: 1,
+        },
+      }),
+      settings: {
+        allowGuestAccess: false,
+        maxUsers: 50,
+        inviteOnly: true,
+      },
+      createdByUserId: actorUid,
+      createdAt: now,
+      updatedAt: now,
+      source: 'rootCreateAccountFromBetaRequest_v1',
+    });
+
+    tx.set(
+      orgRef.collection('settings').doc('main'),
+      {
+        organizationId,
+        ...DEFAULT_ORG_SETTINGS_MAIN,
+        createdAt: now,
+        updatedAt: now,
+        source: 'rootCreateAccountFromBetaRequest_v1',
+      },
+      { merge: true },
+    );
+
+    tx.create(orgPublicRef, {
+      organizationId,
+      name: orgName,
+      nameLower: orgName.toLowerCase(),
+      isActive: true,
+      type: 'standard',
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+      source: 'rootCreateAccountFromBetaRequest_v1',
+    });
+
+    const joinReqRef = orgRef.collection('joinRequests').doc(inviteId);
+    tx.set(
+      joinReqRef,
+      {
+        userId: targetUid || null,
+        organizationId,
+        organizationName: orgName,
+        email,
+        displayName: fullName || email,
+        requestedRole,
+        status: 'pending',
+        departmentId: null,
+        invitedBy: actorUid,
+        invitedByEmail: actorEmail,
+        invitedAt: now,
+        createdAt: now,
+        updatedAt: now,
+        source: 'rootCreateAccountFromBetaRequest_v1',
+      },
+      { merge: true },
+    );
+
+    tx.set(
+      reqRef,
+      {
+        status: 'accepted',
+        reviewedBy: actorUid,
+        reviewedAt: now,
+        createdAccount: true,
+        createdOrgId: organizationId,
+        createdUserId: targetUid || null,
+        updatedAt: now,
+        source: 'rootCreateAccountFromBetaRequest_v1',
+      },
+      { merge: true },
+    );
+  });
+
+  if (sendInvite) {
+    try {
+      await sendInviteEmail({
+        recipientEmail: email,
+        orgName,
+        role: requestedRole,
+        inviteLink: 'https://multi.maintelligence.app/login',
+      });
+    } catch (error) {
+      console.warn('Error enviando email de invitación (beta).', error);
+    }
+  }
+
+  await auditLog({
+    action: 'rootCreateAccountFromBetaRequest',
+    actorUid,
+    actorEmail,
+    orgId: organizationId,
+    targetUid: targetUid || null,
+    targetEmail: email,
+    after: { requestId, organizationId, role: requestedRole },
+  });
+
+  return {
+    ok: true,
+    requestId,
+    organizationId,
+    inviteId,
+    invitedExistingUser: Boolean(targetUid),
+  };
+});
 
 export const rootListOrganizations = functions.https.onCall(async (data, context) => {
   requireRoot(context);
