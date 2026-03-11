@@ -107,7 +107,7 @@ export default function IotPage() {
           </div>
           <div className="rounded-xl border border-white/60 bg-background p-4">
             <div className="mb-2 font-semibold text-foreground">Ruta recomendada</div>
-            Firestore `organizations/{orgId}/assets/{assetId}` con `iot.deviceKey`, `panelType`, `lastReading`.
+            Firestore `organizations/{'{orgId}'}/assets/{'{assetId}'}` con `iot.deviceKey`, `panelType`, `lastReading`.
           </div>
           <div className="rounded-xl border border-white/60 bg-background p-4">
             <div className="mb-2 font-semibold text-foreground">Estado actual</div>
