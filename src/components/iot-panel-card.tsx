@@ -234,7 +234,7 @@ function LegacyThermostatPanel({
     <div className="space-y-4">
       <div
         className="relative mx-auto aspect-[557/300] w-full max-w-[557px] overflow-hidden rounded-[20px] bg-cover bg-center bg-no-repeat shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
-        style={{ backgroundColor: '#333333' }}
+        style={{ backgroundImage: "url('/iot/lh1t/images/DISPLAY_FONDO_TEMP.png')" }}
       >
         <div className="absolute left-1/2 top-[5%] -translate-x-1/2 text-center text-[11px] font-bold text-black sm:text-[15px]">
           Ultimo Dato: {timestamp}
@@ -364,7 +364,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
             <StatusBadge status={status} />
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-black/25 p-4 backdrop-blur-sm">
+          <div className="rounded-3xl border border-white/10 p-4 backdrop-blur-sm" style={{ backgroundColor: '#333333' }}>
             {panelType === 'thermostat' ? (
               <LegacyThermostatPanel
                 asset={asset}
