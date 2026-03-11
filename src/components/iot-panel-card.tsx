@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -28,6 +28,12 @@ type DateLike =
   | number
   | null
   | undefined;
+
+const digitalFontStyle: CSSProperties = {
+  fontFamily: "'Digital-7', monospace",
+  letterSpacing: '0.08em',
+  textShadow: '0 0 8px rgba(255, 0, 0, 0.35)',
+};
 
 function toDateValue(value: DateLike): Date | null {
   if (!value) return null;
@@ -66,6 +72,20 @@ function asNumber(value: unknown): number | null {
   if (typeof value === 'string') {
     const normalized = Number(value.replace(',', '.').trim());
     return Number.isFinite(normalized) ? normalized : null;
+  }
+  return null;
+}
+
+function asBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'on', 'activo', 'online'].includes(normalized)) return true;
+    if (['0', 'false', 'off', 'apagado', 'offline'].includes(normalized)) return false;
+  }
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
   }
   return null;
 }
@@ -113,6 +133,10 @@ function readingMetric(reading: AssetIotReading | null | undefined, directKey: k
   return asNumber(reading?.[directKey]) ?? asNumber(reading?.raw?.[rawKey]);
 }
 
+function readingBoolean(reading: AssetIotReading | null | undefined, directKey: keyof AssetIotReading, rawKey: string) {
+  return asBoolean(reading?.[directKey]) ?? asBoolean(reading?.raw?.[rawKey]);
+}
+
 function readingStatus(asset: Asset) {
   const status = asset.iot?.lastReading?.status ?? null;
   if (status) return status;
@@ -152,6 +176,148 @@ function MetricTile({ label, value, suffix, icon }: { label: string; value: stri
       <div className="mt-2 flex items-end gap-1">
         <span className="text-2xl font-semibold text-white">{value}</span>
         {suffix ? <span className="pb-1 text-sm text-slate-400">{suffix}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+function formatLedValue(value: number | null, decimals = 1) {
+  if (value == null) return '--';
+  if (Math.abs(value) >= 100) return value.toFixed(0);
+  return value.toFixed(decimals);
+}
+
+function getRelayState(relays: AssetIotRelay[], label: string) {
+  return relays.find((relay) => relay.label === label)?.active ?? false;
+}
+
+function thermostatMode(reading: AssetIotReading | null | undefined) {
+  const directMode = typeof reading?.mode === 'string' ? reading.mode.toLowerCase() : '';
+  if (directMode === 'heat' || directMode === 'heating') return 'HEAT';
+  if (directMode === 'cool' || directMode === 'cooling') return 'COOL';
+
+  const rawMode = String(reading?.raw?.MODEUP ?? '').trim();
+  if (rawMode === '1') return 'HEAT';
+  if (rawMode === '0') return 'COOL';
+  return 'AUTO';
+}
+
+function LegacyThermostatPanel({
+  asset,
+  reading,
+  status,
+  temperature,
+  humidity,
+  setpoint,
+  relays,
+  alarms,
+}: {
+  asset: Asset;
+  reading: AssetIotReading | null;
+  status: string;
+  temperature: number | null;
+  humidity: number | null;
+  setpoint: number | null;
+  relays: AssetIotRelay[];
+  alarms: string[];
+}) {
+  const powerOn = readingBoolean(reading, 'power', 'RUN') ?? status !== 'offline';
+  const relay1On = getRelayState(relays, 'REL1');
+  const relay2On = getRelayState(relays, 'REL2');
+  const alarmOn = alarms.length > 0;
+  const timestamp = formatReadingDate(asset.iot?.lastSeenAt ?? reading?.readingAt);
+  const legacyMode = thermostatMode(reading);
+  const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
+  const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
+
+  return (
+    <div className="space-y-4">
+      <div
+        className="relative mx-auto aspect-[557/300] w-full max-w-[557px] overflow-hidden rounded-[20px] bg-cover bg-center bg-no-repeat shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
+        style={{ backgroundImage: "url('/iot/lh1t/images/DISPLAY_FONDO_TEMP.png')" }}
+      >
+        <div className="absolute left-1/2 top-[5%] -translate-x-1/2 text-center text-[11px] font-bold text-black sm:text-[15px]">
+          Ultimo Dato: {timestamp}
+        </div>
+        <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 text-center text-[14px] font-bold text-red-600 sm:text-[20px]">
+          {asset.name}
+        </div>
+
+        <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
+          {['MODE ' + legacyMode, 'PROBE 1', 'DATOS'].map((label) => (
+            <div key={label} className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
+              {label}
+            </div>
+          ))}
+        </div>
+
+        <div className="absolute left-[83.8%] top-[27.3%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+          <img src="/iot/lh1t/images/graf.png" alt="Grafica" className="h-full w-full object-contain" />
+        </div>
+        <div className="absolute left-[84%] top-[53.3%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+          <img
+            src={powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png'}
+            alt={powerOn ? 'Encendido' : 'Apagado'}
+            className="h-full w-full object-contain"
+          />
+        </div>
+
+        <div className="absolute left-[6.3%] top-[18.3%] h-[8.3%] w-[4.5%]" style={{ opacity: alarmOn ? 1 : 0.25 }}>
+          <img src="/iot/lh1t/images/alarma.png" alt="Alarma" className="h-full w-full object-contain" />
+        </div>
+
+        <div
+          className="absolute left-[18%] top-[31.7%] w-[30%] text-center text-[44px] text-red-600 sm:text-[70px]"
+          style={digitalFontStyle}
+        >
+          {primaryValue}
+        </div>
+        {powerOn ? (
+          <div className="absolute left-[43.1%] top-[45%] h-[8.3%] w-[4.5%]">
+            <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
+          </div>
+        ) : null}
+
+        <div className="absolute left-[19.8%] top-[66.7%] text-[10px] text-red-600 sm:text-[14px]">Humidity =</div>
+        <div className="absolute left-[33.2%] top-[63.3%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
+          {humidityValue}
+        </div>
+        <div className="absolute left-[44.2%] top-[67.3%] h-[5.7%] w-[3.1%]">
+          <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
+        </div>
+
+        <div className="absolute left-[55.8%] top-[35%] h-[10.7%] w-[5.7%]">
+          <img src="/iot/lh1t/images/RL_1_FRIO.png" alt="Compresor" className="h-full w-full object-contain" />
+        </div>
+        <div className="absolute left-[56%] top-[50%] h-[11.7%] w-[6.3%]">
+          <img src="/iot/lh1t/images/RL_2_FAN.png" alt="Ventilador" className="h-full w-full object-contain" />
+        </div>
+        <div className="absolute left-[67.7%] top-[32.3%] h-[17.7%] w-[10.2%]">
+          <img src={relay1On ? '/iot/lh1t/images/RELE_ON.png' : '/iot/lh1t/images/RELE_OFF.png'} alt="Relay 1" className="h-full w-full object-cover" />
+        </div>
+        <div className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%]">
+          <img src={relay2On ? '/iot/lh1t/images/RELE_ON.png' : '/iot/lh1t/images/RELE_OFF.png'} alt="Relay 2" className="h-full w-full object-cover" />
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <MetricTile
+          label="Consigna"
+          value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
+          suffix="C"
+          icon={<Gauge className="h-3.5 w-3.5" />}
+        />
+        <MetricTile
+          label="Humedad"
+          value={humidity != null ? formatLedValue(humidity, 0) : '--'}
+          suffix="%"
+          icon={<Droplets className="h-3.5 w-3.5" />}
+        />
+        <MetricTile
+          label="Modo"
+          value={legacyMode}
+          icon={<Thermometer className="h-3.5 w-3.5" />}
+        />
       </div>
     </div>
   );
@@ -200,35 +366,16 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
 
           <div className="rounded-3xl border border-white/10 bg-black/25 p-4 backdrop-blur-sm">
             {panelType === 'thermostat' ? (
-              <div className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-[28px] border border-cyan-400/20 bg-slate-900/80 p-5 shadow-[inset_0_0_40px_rgba(8,145,178,0.12)]">
-                  <div className="text-xs uppercase tracking-[0.24em] text-cyan-200/70">Termostato</div>
-                  <div className="mt-3 flex items-end gap-2">
-                    <span className="text-6xl font-semibold tracking-tight text-cyan-100">
-                      {temperature != null ? temperature.toFixed(1) : '--'}
-                    </span>
-                    <span className="pb-2 text-lg text-cyan-100/70">C</span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-3 text-sm text-slate-300">
-                    <span>Set {setpoint != null ? `${setpoint.toFixed(1)} C` : '--'}</span>
-                    <span>Hum {humidity != null ? `${humidity.toFixed(0)} %` : '--'}</span>
-                  </div>
-                </div>
-                <div className="grid gap-3">
-                  <MetricTile
-                    label="Sonda 2"
-                    value={secondaryTemperature != null ? secondaryTemperature.toFixed(1) : '--'}
-                    suffix="C"
-                    icon={<Thermometer className="h-3.5 w-3.5" />}
-                  />
-                  <MetricTile
-                    label="Humedad"
-                    value={humidity != null ? humidity.toFixed(0) : '--'}
-                    suffix="%"
-                    icon={<Droplets className="h-3.5 w-3.5" />}
-                  />
-                </div>
-              </div>
+              <LegacyThermostatPanel
+                asset={asset}
+                reading={reading}
+                status={status}
+                temperature={temperature}
+                humidity={humidity}
+                setpoint={setpoint}
+                relays={relays}
+                alarms={alarms}
+              />
             ) : null}
 
             {panelType === 'sensor' ? (
@@ -321,9 +468,14 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
               Sin alarmas activas. El panel ya esta preparado para consumir lecturas en `asset.iot.lastReading`.
             </div>
           )}
+
+          {panelType === 'thermostat' && secondaryTemperature != null ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
+              Sonda 2 disponible: <span className="font-semibold text-white">{secondaryTemperature.toFixed(1)} C</span>
+            </div>
+          ) : null}
         </CardContent>
       </div>
     </Card>
   );
 }
-
