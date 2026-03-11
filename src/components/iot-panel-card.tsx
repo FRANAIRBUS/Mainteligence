@@ -118,15 +118,11 @@ function normalizeRelays(reading?: AssetIotReading | null): AssetIotRelay[] {
 
 function normalizeAlarms(reading?: AssetIotReading | null): string[] {
   if (Array.isArray(reading?.alarms) && reading.alarms.length > 0) {
-    return reading.alarms.filter(Boolean);
+    return reading.alarms
+      .map((alarm) => String(alarm ?? '').trim())
+      .filter(Boolean);
   }
-
-  const raw = reading?.raw;
-  if (!raw || typeof raw !== 'object') return [];
-
-  return Object.entries(raw as Record<string, unknown>)
-    .filter(([key, value]) => key.startsWith('AL') && value != null && String(value).trim() !== '' && String(value) !== '0')
-    .map(([key, value]) => `${key}: ${String(value)}`);
+  return [];
 }
 
 function readingMetric(reading: AssetIotReading | null | undefined, directKey: keyof AssetIotReading, rawKey: string) {
@@ -148,6 +144,16 @@ function readingStatus(asset: Asset) {
   if (ageMinutes <= 15) return 'online';
   if (ageMinutes <= 120) return 'warning';
   return 'offline';
+}
+
+function readingTimestamp(asset: Asset, reading: AssetIotReading | null | undefined) {
+  return (
+    reading?.readingAt ??
+    asset.iot?.lastSeenAt ??
+    asset.iot?.provisioning?.lastSyncAt ??
+    reading?.raw?.reading_time ??
+    null
+  );
 }
 
 function panelAccent(status: string) {
@@ -225,7 +231,7 @@ function LegacyThermostatPanel({
   const relay1On = getRelayState(relays, 'REL1');
   const relay2On = getRelayState(relays, 'REL2');
   const alarmOn = alarms.length > 0;
-  const timestamp = formatReadingDate(asset.iot?.lastSeenAt ?? reading?.readingAt);
+  const timestamp = formatReadingDate(readingTimestamp(asset, reading));
   const legacyMode = thermostatMode(reading);
   const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
   const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
@@ -236,7 +242,7 @@ function LegacyThermostatPanel({
         className="relative mx-auto aspect-[557/300] w-full max-w-[557px] overflow-hidden rounded-[20px] bg-cover bg-center bg-no-repeat shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
         style={{ backgroundImage: "url('/iot/lh1t/images/DISPLAY_FONDO_TEMP.png')" }}
       >
-        <div className="absolute left-1/2 top-[5%] -translate-x-1/2 text-center text-[11px] font-bold text-black sm:text-[15px]">
+        <div className="absolute left-1/2 top-[5.2%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
           Ultimo Dato: {timestamp}
         </div>
         <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 text-center text-[14px] font-bold text-red-600 sm:text-[20px]">
@@ -251,10 +257,10 @@ function LegacyThermostatPanel({
           ))}
         </div>
 
-        <div className="absolute left-[83.8%] top-[27.3%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+        <div className="absolute left-[83.8%] top-[30.2%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
           <img src="/iot/lh1t/images/graf.png" alt="Grafica" className="h-full w-full object-contain" />
         </div>
-        <div className="absolute left-[84%] top-[53.3%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+        <div className="absolute left-[84%] top-[56.2%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
           <img
             src={powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png'}
             alt={powerOn ? 'Encendido' : 'Apagado'}
@@ -262,7 +268,7 @@ function LegacyThermostatPanel({
           />
         </div>
 
-        <div className="absolute left-[6.3%] top-[18.3%] h-[8.3%] w-[4.5%]" style={{ opacity: alarmOn ? 1 : 0.25 }}>
+        <div className="absolute left-[6.3%] top-[18.3%] h-[8.3%] w-[4.5%]" style={{ opacity: alarmOn ? 1 : 0 }}>
           <img src="/iot/lh1t/images/alarma.png" alt="Alarma" className="h-full w-full object-contain" />
         </div>
 
@@ -273,25 +279,29 @@ function LegacyThermostatPanel({
           {primaryValue}
         </div>
         {powerOn ? (
-          <div className="absolute left-[43.1%] top-[45%] h-[8.3%] w-[4.5%]">
+          <div className="absolute left-[44.8%] top-[42.8%] h-[8.3%] w-[4.5%]">
             <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
           </div>
         ) : null}
 
-        <div className="absolute left-[19.8%] top-[66.7%] text-[10px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute left-[33.2%] top-[63.3%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
+        <div className="absolute left-[17.6%] top-[66.7%] text-[10px] text-red-600 sm:text-[14px]">Humidity =</div>
+        <div className="absolute left-[32.3%] top-[63.3%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
           {humidityValue}
         </div>
-        <div className="absolute left-[44.2%] top-[67.3%] h-[5.7%] w-[3.1%]">
+        <div className="absolute left-[43.9%] top-[67.1%] h-[5.7%] w-[3.1%]">
           <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
         </div>
 
-        <div className="absolute left-[55.8%] top-[35%] h-[10.7%] w-[5.7%]">
-          <img src="/iot/lh1t/images/RL_1_FRIO.png" alt="Compresor" className="h-full w-full object-contain" />
-        </div>
-        <div className="absolute left-[56%] top-[50%] h-[11.7%] w-[6.3%]">
-          <img src="/iot/lh1t/images/RL_2_FAN.png" alt="Ventilador" className="h-full w-full object-contain" />
-        </div>
+        {relay1On ? (
+          <div className="absolute left-[55.8%] top-[35%] h-[10.7%] w-[5.7%]">
+            <img src="/iot/lh1t/images/RL_1_FRIO.png" alt="Compresor" className="h-full w-full object-contain" />
+          </div>
+        ) : null}
+        {relay2On ? (
+          <div className="absolute left-[56%] top-[50%] h-[11.7%] w-[6.3%]">
+            <img src="/iot/lh1t/images/RL_2_FAN.png" alt="Ventilador" className="h-full w-full object-contain" />
+          </div>
+        ) : null}
         <div className="absolute left-[67.7%] top-[32.3%] h-[17.7%] w-[10.2%]">
           <img src={relay1On ? '/iot/lh1t/images/RELE_ON.png' : '/iot/lh1t/images/RELE_OFF.png'} alt="Relay 1" className="h-full w-full object-cover" />
         </div>
@@ -441,7 +451,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
               <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Ultima lectura</div>
               <div className="mt-1 flex items-center gap-2 text-sm text-slate-200">
                 <Activity className="h-4 w-4 text-sky-300" />
-                {formatReadingDate(asset.iot?.lastSeenAt ?? reading?.readingAt)}
+                {formatReadingDate(readingTimestamp(asset, reading))}
               </div>
             </div>
             <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
@@ -463,11 +473,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
                 ))}
               </div>
             </div>
-          ) : (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
-              Sin alarmas activas. El panel ya esta preparado para consumir lecturas en `asset.iot.lastReading`.
-            </div>
-          )}
+          ) : null}
 
           {panelType === 'thermostat' && secondaryTemperature != null ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
@@ -479,3 +485,4 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
     </Card>
   );
 }
+
