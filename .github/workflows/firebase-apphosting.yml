@@ -25,6 +25,11 @@ jobs:
       # otherwise `NEXT_PUBLIC_*` values get frozen without the App Hosting build env.
 
       - name: Deploy to Firebase App Hosting
-        run: npx firebase-tools@latest deploy --only apphosting:my-web-app --project studio-4350140400-a3f8f --non-interactive --force
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            npx firebase-tools@latest deploy --only apphosting:my-web-app --project studio-4350140400-a3f8f --non-interactive --force
+          else
+          
+          fi
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
