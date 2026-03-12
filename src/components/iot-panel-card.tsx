@@ -235,6 +235,7 @@ function LegacyThermostatPanel({
   const legacyMode = thermostatMode(reading);
   const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
   const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
+  const secondaryTemperature = readingMetric(reading, 'secondaryTemperature', 'Temp2');
 
   return (
     <div className="space-y-4">
@@ -322,6 +323,12 @@ function LegacyThermostatPanel({
           value={humidity != null ? formatLedValue(humidity, 0) : '--'}
           suffix="%"
           icon={<Droplets className="h-3.5 w-3.5" />}
+        />
+        <MetricTile
+          label="Sonda 2"
+          value={secondaryTemperature != null ? formatLedValue(secondaryTemperature, 0) : '--'}
+          suffix="C"
+          icon={<Thermometer className="h-3.5 w-3.5" />}
         />
         <MetricTile
           label="Modo"
