@@ -1862,6 +1862,17 @@ const IOT_DEVICE_COLLECTION = 'iotDevices';
 const IOT_BOOTSTRAP_TTL_MS = 30 * 60 * 1000;
 const IOT_MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const IOT_DEFAULT_POLL_INTERVAL_MS = 15 * 1000;
+const IOT_DEFAULT_TELEMETRY_RETENTION_DAYS = 90;
+const IOT_TELEMETRY_RETENTION_DAYS_RAW = Number(
+  process.env.IOT_TELEMETRY_RETENTION_DAYS ?? IOT_DEFAULT_TELEMETRY_RETENTION_DAYS,
+);
+const IOT_TELEMETRY_RETENTION_DAYS =
+  Number.isFinite(IOT_TELEMETRY_RETENTION_DAYS_RAW) && IOT_TELEMETRY_RETENTION_DAYS_RAW >= 1
+    ? Math.floor(IOT_TELEMETRY_RETENTION_DAYS_RAW)
+    : IOT_DEFAULT_TELEMETRY_RETENTION_DAYS;
+const IOT_TELEMETRY_RETENTION_MS = IOT_TELEMETRY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const IOT_TELEMETRY_MAX_POINTS = 2000;
+const IOT_TELEMETRY_MAX_EXPORT_ROWS = 5000;
 const IOT_ALLOWED_PANEL_TYPES = new Set(['thermostat', 'sensor', 'relay']);
 const IOT_ALLOWED_STATUS = new Set(['online', 'offline', 'warning']);
 const IOT_ALLOWED_APPLY_STATUS = new Set(['idle', 'applied', 'rejected', 'error']);
@@ -2054,6 +2065,73 @@ function buildLastReadingFromReportedState(reportedState: Record<string, unknown
     relays: reportedState.relays,
     raw: reportedState.raw,
   });
+}
+
+function parseDateInput(value: unknown, field: string): Date {
+  const parsed = new Date(String(value ?? ''));
+  if (Number.isNaN(parsed.getTime())) {
+    throw httpsError('invalid-argument', `${field} invalido.`);
+  }
+  return parsed;
+}
+
+function resolveTelemetryRange(payload: Record<string, unknown>) {
+  const now = Date.now();
+  const from = payload.from ? parseDateInput(payload.from, 'from') : new Date(now - 24 * 60 * 60 * 1000);
+  const to = payload.to ? parseDateInput(payload.to, 'to') : new Date(now);
+
+  if (from.getTime() > to.getTime()) {
+    throw httpsError('invalid-argument', 'El rango de fechas es invalido. from no puede ser mayor que to.');
+  }
+
+  return { from, to };
+}
+
+function csvEscape(value: unknown) {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  if (!/[",\n\r]/.test(text)) return text;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function toIsoFromTimestamp(input: unknown): string | null {
+  if (!input) return null;
+  if (input instanceof admin.firestore.Timestamp) return input.toDate().toISOString();
+  if (input instanceof Date) return input.toISOString();
+  if (typeof input === 'object' && input !== null && 'toDate' in (input as Record<string, unknown>)) {
+    const maybe = (input as { toDate?: () => Date }).toDate;
+    if (typeof maybe === 'function') {
+      const asDate = maybe();
+      if (asDate instanceof Date && !Number.isNaN(asDate.getTime())) return asDate.toISOString();
+    }
+  }
+  const parsed = new Date(String(input));
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function telemetryRowFromDoc(doc: FirebaseFirestore.QueryDocumentSnapshot) {
+  const data = doc.data() as Record<string, any>;
+  const reported = (data.reportedState ?? {}) as Record<string, any>;
+  return {
+    id: doc.id,
+    readingAt: toIsoFromTimestamp(reported.readingAt) ?? toIsoFromTimestamp(data.createdAt),
+    createdAt: toIsoFromTimestamp(data.createdAt),
+    temperature: reported.temperature ?? null,
+    secondaryTemperature: reported.secondaryTemperature ?? null,
+    humidity: reported.humidity ?? null,
+    setpoint: reported.setpoint ?? null,
+    power: reported.power ?? null,
+    mode: reported.mode ?? null,
+    fan: reported.fan ?? null,
+    status: reported.status ?? null,
+    applyStatus: reported.applyStatus ?? null,
+    applyMessage: reported.applyMessage ?? null,
+    firmwareVersion: reported.firmwareVersion ?? null,
+    uptimeSeconds: reported.uptimeSeconds ?? null,
+    relays: Array.isArray(reported.relays) ? reported.relays : null,
+    alarms: Array.isArray(reported.alarms) ? reported.alarms : null,
+    raw: isPlainObject(reported.raw) ? reported.raw : null,
+  };
 }
 
 async function readOrgAssetByDeviceKey(orgId: string, deviceKey: string) {
@@ -5371,6 +5449,149 @@ export const setAssetIotDesiredState = functions.https.onCall(async (data, conte
   };
 });
 
+export const getAssetIotTelemetry = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const orgId = resolveOrgIdFromData(data);
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+  const payload = data.payload as Record<string, unknown>;
+
+  const assetId = requireStringField(payload.assetId, 'assetId');
+  const requestedLimit = Number(payload.limit ?? 500);
+  const limit =
+    Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.floor(requestedLimit), IOT_TELEMETRY_MAX_POINTS)
+      : 500;
+
+  const { from, to } = resolveTelemetryRange(payload);
+
+  const assetRef = db.collection('organizations').doc(orgId).collection('assets').doc(assetId);
+  const assetSnap = await assetRef.get();
+  if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+    throw httpsError('not-found', 'Activo IoT no encontrado.');
+  }
+
+  const siteId = String(assetSnap.get('siteId') ?? '').trim();
+  requireScopedAccessToSite(role, scope, siteId);
+
+  const querySnap = await assetRef
+    .collection('telemetry')
+    .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(from))
+    .where('createdAt', '<=', admin.firestore.Timestamp.fromDate(to))
+    .orderBy('createdAt', 'asc')
+    .limit(limit)
+    .get();
+
+  const rows = querySnap.docs.map(telemetryRowFromDoc);
+
+  return {
+    ok: true,
+    organizationId: orgId,
+    assetId,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    limit,
+    count: rows.length,
+    rows,
+  };
+});
+
+export const exportAssetIotTelemetryCsv = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const orgId = resolveOrgIdFromData(data);
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+  const payload = data.payload as Record<string, unknown>;
+
+  const assetId = requireStringField(payload.assetId, 'assetId');
+  const requestedLimit = Number(payload.limit ?? IOT_TELEMETRY_MAX_EXPORT_ROWS);
+  const limit =
+    Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.floor(requestedLimit), IOT_TELEMETRY_MAX_EXPORT_ROWS)
+      : IOT_TELEMETRY_MAX_EXPORT_ROWS;
+
+  const { from, to } = resolveTelemetryRange(payload);
+
+  const assetRef = db.collection('organizations').doc(orgId).collection('assets').doc(assetId);
+  const assetSnap = await assetRef.get();
+  if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+    throw httpsError('not-found', 'Activo IoT no encontrado.');
+  }
+
+  const siteId = String(assetSnap.get('siteId') ?? '').trim();
+  requireScopedAccessToSite(role, scope, siteId);
+
+  const querySnap = await assetRef
+    .collection('telemetry')
+    .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(from))
+    .where('createdAt', '<=', admin.firestore.Timestamp.fromDate(to))
+    .orderBy('createdAt', 'asc')
+    .limit(limit)
+    .get();
+
+  const headers = [
+    'readingAt',
+    'createdAt',
+    'temperature',
+    'secondaryTemperature',
+    'humidity',
+    'setpoint',
+    'power',
+    'mode',
+    'fan',
+    'status',
+    'applyStatus',
+    'applyMessage',
+    'firmwareVersion',
+    'uptimeSeconds',
+    'relays',
+    'alarms',
+    'raw',
+  ];
+
+  const csvRows = querySnap.docs.map((docSnap) => {
+    const row = telemetryRowFromDoc(docSnap);
+    return [
+      row.readingAt,
+      row.createdAt,
+      row.temperature,
+      row.secondaryTemperature,
+      row.humidity,
+      row.setpoint,
+      row.power,
+      row.mode,
+      row.fan,
+      row.status,
+      row.applyStatus,
+      row.applyMessage,
+      row.firmwareVersion,
+      row.uptimeSeconds,
+      row.relays ? JSON.stringify(row.relays) : null,
+      row.alarms ? JSON.stringify(row.alarms) : null,
+      row.raw ? JSON.stringify(row.raw) : null,
+    ]
+      .map(csvEscape)
+      .join(',');
+  });
+
+  const csv = [headers.join(','), ...csvRows].join('\n');
+  const filename = `telemetry_${orgId}_${assetId}_${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}.csv`;
+
+  return {
+    ok: true,
+    organizationId: orgId,
+    assetId,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    count: csvRows.length,
+    filename,
+    contentType: 'text/csv; charset=utf-8',
+    csv,
+  };
+});
+
 export const iotDeviceBootstrap = functions.https.onRequest(async (req, res) => {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method Not Allowed' });
@@ -5543,12 +5764,14 @@ export const iotDeviceSync = functions.https.onRequest(async (req, res) => {
     );
 
     if (storeTelemetry && reportedState) {
+      const telemetryExpiresAt = timestampFromMillis(Date.now() + IOT_TELEMETRY_RETENTION_MS);
       await assetRef.collection('telemetry').add({
         organizationId: orgId,
         assetId,
         deviceKey,
         reportedState,
         createdAt: now,
+        expiresAt: telemetryExpiresAt,
       });
     }
 

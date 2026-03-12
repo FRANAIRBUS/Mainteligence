@@ -1,8 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { Bot, KeyRound, Send, SlidersHorizontal } from 'lucide-react';
+import { Bot, Download, KeyRound, Send, SlidersHorizontal } from 'lucide-react';
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import type { Asset } from '@/lib/firebase/models';
 import { useFirebaseApp, useUser } from '@/lib/firebase';
@@ -46,6 +47,47 @@ type ProvisioningResult = {
   pollIntervalMs: number;
 };
 
+type TelemetryPreset = '24h' | '7d' | '30d';
+
+type TelemetryRow = {
+  id: string;
+  readingAt: string | null;
+  createdAt: string | null;
+  temperature: number | null;
+  humidity: number | null;
+};
+
+type TelemetryResult = {
+  rows: TelemetryRow[];
+  count: number;
+};
+
+type CsvResult = {
+  filename: string;
+  csv: string;
+};
+
+function telemetryRange(preset: TelemetryPreset) {
+  const now = new Date();
+  const from = new Date(now);
+  if (preset === '24h') from.setHours(from.getHours() - 24);
+  if (preset === '7d') from.setDate(from.getDate() - 7);
+  if (preset === '30d') from.setDate(from.getDate() - 30);
+  return { from: from.toISOString(), to: now.toISOString() };
+}
+
+function saveCsvLocally(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function formatMaybeDate(value: unknown) {
   if (!value) return null;
   if (value instanceof Date) return value.toLocaleString('es-ES');
@@ -72,7 +114,11 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
   const [open, setOpen] = useState(false);
   const [loadingProvision, setLoadingProvision] = useState(false);
   const [loadingDesiredState, setLoadingDesiredState] = useState(false);
+  const [loadingTelemetry, setLoadingTelemetry] = useState(false);
+  const [exportingTelemetry, setExportingTelemetry] = useState(false);
   const [provisioning, setProvisioning] = useState<ProvisioningResult | null>(null);
+  const [telemetryPreset, setTelemetryPreset] = useState<TelemetryPreset>('24h');
+  const [telemetryRows, setTelemetryRows] = useState<TelemetryRow[]>([]);
   const [setpoint, setSetpoint] = useState(() => String(asset.iot?.desiredState?.setpoint ?? asset.iot?.lastReading?.setpoint ?? ''));
   const [mode, setMode] = useState(asset.iot?.desiredState?.mode ?? 'cool');
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
@@ -96,6 +142,97 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
   }, [provisioning]);
 
   const bootstrappedAt = formatMaybeDate(asset.iot?.provisioning?.bootstrappedAt);
+
+  const chartData = useMemo(
+    () =>
+      telemetryRows
+        .map((row) => {
+          const sourceDate = row.readingAt ?? row.createdAt;
+          const parsed = sourceDate ? new Date(sourceDate) : null;
+          return {
+            ts: parsed,
+            label: parsed ? parsed.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '--',
+            temperature: typeof row.temperature === 'number' ? row.temperature : null,
+            humidity: typeof row.humidity === 'number' ? row.humidity : null,
+          };
+        })
+        .filter((point) => point.ts !== null),
+    [telemetryRows],
+  );
+
+  const averageTemp = useMemo(() => {
+    const values = telemetryRows
+      .map((row) => row.temperature)
+      .filter((value): value is number => typeof value === 'number');
+    if (values.length === 0) return null;
+    const sum = values.reduce((acc, value) => acc + value, 0);
+    return (sum / values.length).toFixed(1);
+  }, [telemetryRows]);
+
+  const handleLoadTelemetry = async (preset: TelemetryPreset) => {
+    if (!app || !organizationId) return;
+    setLoadingTelemetry(true);
+    try {
+      const range = telemetryRange(preset);
+      const fn = httpsCallable(getFunctions(app), 'getAssetIotTelemetry');
+      const result = await fn({
+        organizationId,
+        payload: {
+          assetId: asset.id,
+          from: range.from,
+          to: range.to,
+          limit: 1000,
+        },
+      });
+      const data = result.data as TelemetryResult;
+      setTelemetryRows(Array.isArray(data.rows) ? data.rows : []);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo cargar el historico',
+        description: error.message || 'Error consultando telemetria.',
+      });
+    } finally {
+      setLoadingTelemetry(false);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    if (!app || !organizationId) return;
+    setExportingTelemetry(true);
+    try {
+      const range = telemetryRange(telemetryPreset);
+      const fn = httpsCallable(getFunctions(app), 'exportAssetIotTelemetryCsv');
+      const result = await fn({
+        organizationId,
+        payload: {
+          assetId: asset.id,
+          from: range.from,
+          to: range.to,
+          limit: 5000,
+        },
+      });
+      const data = result.data as CsvResult;
+      saveCsvLocally(data.filename || `telemetry_${asset.id}.csv`, data.csv || '');
+      toast({
+        title: 'CSV descargado',
+        description: 'Se descargo el historico seleccionado.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo exportar CSV',
+        description: error.message || 'Error exportando telemetria.',
+      });
+    } finally {
+      setExportingTelemetry(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    void handleLoadTelemetry(telemetryPreset);
+  }, [open]);
 
   const handleProvision = async () => {
     if (!app || !organizationId) return;
@@ -276,6 +413,61 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
               </div>
             </section>
           </div>
+
+          <section className="rounded-2xl border p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold">Historico de telemetria</div>
+              <div className="flex flex-wrap items-center gap-2">
+                {(['24h', '7d', '30d'] as TelemetryPreset[]).map((preset) => (
+                  <Button
+                    key={preset}
+                    type="button"
+                    variant={telemetryPreset === preset ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => {
+                      setTelemetryPreset(preset);
+                      void handleLoadTelemetry(preset);
+                    }}
+                    disabled={loadingTelemetry}
+                  >
+                    {preset}
+                  </Button>
+                ))}
+                <Button type="button" variant="outline" size="sm" onClick={handleExportCsv} disabled={exportingTelemetry}>
+                  <Download className="mr-2 h-4 w-4" />
+                  {exportingTelemetry ? 'Exportando...' : 'Descargar CSV'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="mb-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+              <div className="rounded-lg border bg-muted/20 p-2">Lecturas: {telemetryRows.length}</div>
+              <div className="rounded-lg border bg-muted/20 p-2">Promedio temp: {averageTemp ? `${averageTemp} C` : '--'}</div>
+              <div className="rounded-lg border bg-muted/20 p-2">Rango: {telemetryPreset}</div>
+            </div>
+
+            <div className="h-56 w-full rounded-xl border bg-background p-2">
+              {loadingTelemetry ? (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Cargando historico...</div>
+              ) : chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="label" minTickGap={24} />
+                    <YAxis yAxisId="temp" width={36} />
+                    <YAxis yAxisId="hum" orientation="right" width={36} />
+                    <Tooltip />
+                    <Line yAxisId="temp" type="monotone" dataKey="temperature" stroke="#0ea5e9" dot={false} strokeWidth={2} name="Temp" />
+                    <Line yAxisId="hum" type="monotone" dataKey="humidity" stroke="#14b8a6" dot={false} strokeWidth={2} name="Humedad" />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  No hay historico para este rango. Verifica que el dispositivo envie storeTelemetry=true.
+                </div>
+              )}
+            </div>
+          </section>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>

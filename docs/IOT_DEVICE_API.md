@@ -85,6 +85,91 @@ Body JSON ejemplo:
 }
 ```
 
+## Callables para graficas y descarga
+### `getAssetIotTelemetry`
+Uso desde cliente autenticado (miembro activo de la organizacion):
+
+Payload:
+```json
+{
+  "organizationId": "org_demo",
+  "payload": {
+    "assetId": "asset123",
+    "from": "2026-03-10T00:00:00.000Z",
+    "to": "2026-03-12T23:59:59.999Z",
+    "limit": 1000
+  }
+}
+```
+
+Respuesta:
+```json
+{
+  "ok": true,
+  "organizationId": "org_demo",
+  "assetId": "asset123",
+  "from": "2026-03-10T00:00:00.000Z",
+  "to": "2026-03-12T23:59:59.999Z",
+  "limit": 1000,
+  "count": 452,
+  "rows": [
+    {
+      "id": "reading1",
+      "readingAt": "2026-03-11T12:00:00.000Z",
+      "createdAt": "2026-03-11T12:00:01.000Z",
+      "temperature": 4.2,
+      "humidity": 81,
+      "status": "online"
+    }
+  ]
+}
+```
+
+### `exportAssetIotTelemetryCsv`
+Devuelve un CSV listo para descargar con cabeceras:
+
+- `readingAt`
+- `createdAt`
+- `temperature`
+- `secondaryTemperature`
+- `humidity`
+- `setpoint`
+- `power`
+- `mode`
+- `fan`
+- `status`
+- `applyStatus`
+- `applyMessage`
+- `firmwareVersion`
+- `uptimeSeconds`
+- `relays`
+- `alarms`
+- `raw`
+
+Payload:
+```json
+{
+  "organizationId": "org_demo",
+  "payload": {
+    "assetId": "asset123",
+    "from": "2026-03-10T00:00:00.000Z",
+    "to": "2026-03-12T23:59:59.999Z",
+    "limit": 5000
+  }
+}
+```
+
+Respuesta:
+```json
+{
+  "ok": true,
+  "filename": "telemetry_org_demo_asset123_2026-03-10_2026-03-12.csv",
+  "contentType": "text/csv; charset=utf-8",
+  "count": 452,
+  "csv": "readingAt,createdAt,..."
+}
+```
+
 Respuesta:
 ```json
 {
@@ -127,6 +212,26 @@ Respuesta:
 
 ### Historico opcional
 `organizations/{orgId}/assets/{assetId}/telemetry/{readingId}`
+
+Campos persistidos por lectura:
+- `organizationId`
+- `assetId`
+- `deviceKey`
+- `reportedState`
+- `createdAt`
+- `expiresAt` (para TTL)
+
+## Retencion y consultas
+- Retencion por defecto: 90 dias.
+- Configurable en Functions con la variable de entorno `IOT_TELEMETRY_RETENTION_DAYS`.
+- Si el dispositivo no envia `storeTelemetry: true`, solo se actualiza el ultimo estado (`iot.lastReading`) y no se genera historico.
+
+Indices definidos:
+- `telemetry` por `organizationId + assetId + createdAt DESC` (graficas por activo/rango).
+- `telemetry` por `organizationId + createdAt DESC` (descargas consolidadas por organizacion).
+
+TTL:
+- Se usa `expiresAt` para eliminar historico automaticamente al vencer la retencion.
 
 ## Notas de firmware
 - El ESP no debe escribir en Firestore directamente.

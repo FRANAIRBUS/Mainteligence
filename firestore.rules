@@ -441,6 +441,14 @@ service cloud.firestore {
           && organizationIdUnchanged()
           && resourceOrganizationIdMatchesPath(orgId);
         allow delete: if isSignedIn() && isAdminInOrg(orgId, request.auth.uid);
+
+        match /telemetry/{readingId} {
+          allow read: if isSignedIn()
+            && isActiveMember(orgId, request.auth.uid)
+            && resourceOrganizationIdMatchesPath(orgId)
+            && (!('assetId' in resource.data) || resource.data.assetId == assetId);
+          allow create, update, delete: if false;
+        }
       }
 
       match /departments/{departmentId} {
