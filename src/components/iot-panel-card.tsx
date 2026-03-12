@@ -246,7 +246,7 @@ function LegacyThermostatPanel({
         <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
           Ultimo Dato: {timestamp}
         </div>
-        <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
+        <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
           {asset.name}
         </div>
 
