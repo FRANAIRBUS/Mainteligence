@@ -243,7 +243,7 @@ function LegacyThermostatPanel({
         className="relative mx-auto aspect-[557/300] w-full max-w-[557px] overflow-hidden rounded-[20px] bg-cover bg-center bg-no-repeat shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
         style={{ backgroundImage: "url('/iot/lh1t/images/DISPLAY_FONDO_TEMP.png')" }}
       >
-        <div className="absolute left-1/2 top-[5.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
+        <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
           Ultimo Dato: {timestamp}
         </div>
         <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
@@ -286,10 +286,10 @@ function LegacyThermostatPanel({
         ) : null}
 
         <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute left-[40.0%] top-[61.5%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
+        <div className="absolute left-[42.0%] top-[61.5%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
           {humidityValue}
         </div>
-        <div className="absolute left-[47.5%] top-[68.0%] h-[5.7%] w-[3.1%]">
+        <div className="absolute left-[48.5%] top-[68.0%] h-[6.5%] w-[4.2%]">
           <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
         </div>
 
@@ -311,7 +311,7 @@ function LegacyThermostatPanel({
         </div>
       </div>
 
-      <div className="grid gap-2 md:grid-cols-4">
+      <div className="grid gap-2 md:grid-cols-2">
         <MetricTile
           label="Consigna"
           value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}

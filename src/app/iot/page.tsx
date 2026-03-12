@@ -100,7 +100,7 @@ export default function IotPage() {
       <div className="grid grid-cols-2 gap-4">
         <SummaryCard
           icon={<Cpu className="h-5 w-5 text-sky-300" />}
-          label="Dispositivos IoT"
+          label="Dispositivos"
           value={String(iotAssets.length)}
           help="Activos con panel configurado"
         />
@@ -108,7 +108,7 @@ export default function IotPage() {
           icon={<RadioTower className="h-5 w-5 text-emerald-300" />}
           label="En linea"
           value={String(onlineCount)}
-          help="Segun el ultimo estado recibido"
+          help="Segun el ultimo estado"
         />
       </div>
 
