@@ -257,10 +257,10 @@ function LegacyThermostatPanel({
           ))}
         </div>
 
-        <div className="absolute left-[83.8%] top-[30.2%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+        <div className="absolute left-[83.8%] top-[32.2%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
           <img src="/iot/lh1t/images/graf.png" alt="Grafica" className="h-full w-full object-contain" />
         </div>
-        <div className="absolute left-[84%] top-[56.2%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+        <div className="absolute left-[84%] top-[58.2%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
           <img
             src={powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png'}
             alt={powerOn ? 'Encendido' : 'Apagado'}
@@ -273,22 +273,22 @@ function LegacyThermostatPanel({
         </div>
 
         <div
-          className="absolute left-[18%] top-[31.7%] w-[30%] text-center text-[44px] text-red-600 sm:text-[70px]"
+          className="absolute left-[16.8%] top-[30.5%] w-[30%] text-center text-[44px] text-red-600 sm:text-[70px]"
           style={digitalFontStyle}
         >
           {primaryValue}
         </div>
         {powerOn ? (
-          <div className="absolute left-[44.8%] top-[42.8%] h-[8.3%] w-[4.5%]">
+          <div className="absolute left-[45.5%] top-[41.5%] h-[8.3%] w-[4.5%]">
             <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
           </div>
         ) : null}
 
         <div className="absolute left-[17.6%] top-[66.7%] text-[10px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute left-[32.3%] top-[63.3%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
+        <div className="absolute left-[36.5%] top-[63.3%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
           {humidityValue}
         </div>
-        <div className="absolute left-[43.9%] top-[67.1%] h-[5.7%] w-[3.1%]">
+        <div className="absolute left-[45.5%] top-[68.0%] h-[5.7%] w-[3.1%]">
           <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
         </div>
 
