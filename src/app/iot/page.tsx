@@ -106,7 +106,7 @@ export default function IotPage() {
         />
         <SummaryCard
           icon={<RadioTower className="h-5 w-5 text-emerald-300" />}
-          label="En linea"
+          label="En linea x"
           value={String(onlineCount)}
           help="Segun el ultimo estado"
         />
