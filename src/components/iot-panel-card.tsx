@@ -286,10 +286,10 @@ function LegacyThermostatPanel({
         ) : null}
 
         <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute left-[37.5%] top-[61.5%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
+        <div className="absolute left-[40.0%] top-[61.5%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
           {humidityValue}
         </div>
-        <div className="absolute left-[44.5%] top-[68.0%] h-[5.7%] w-[3.1%]">
+        <div className="absolute left-[47.5%] top-[68.0%] h-[5.7%] w-[3.1%]">
           <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
         </div>
 
@@ -311,7 +311,7 @@ function LegacyThermostatPanel({
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-2 md:grid-cols-4">
         <MetricTile
           label="Consigna"
           value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
