@@ -261,7 +261,7 @@ function LegacyThermostatPanel({
         <div className="absolute left-[83.8%] top-[34.0%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
           <img src="/iot/lh1t/images/graf.png" alt="Grafica" className="h-full w-full object-contain" />
         </div>
-        <div className="absolute left-[84%] top-[60.0%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+        <div className="absolute left-[84%] top-[62.5%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
           <img
             src={powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png'}
             alt={powerOn ? 'Encendido' : 'Apagado'}
@@ -286,10 +286,10 @@ function LegacyThermostatPanel({
         ) : null}
 
         <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute left-[36.5%] top-[61.5%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
+        <div className="absolute left-[46.5%] top-[61.5%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
           {humidityValue}
         </div>
-        <div className="absolute left-[48.5%] top-[68.0%] h-[5.7%] w-[3.1%]">
+        <div className="absolute left-[53.5%] top-[68.0%] h-[5.7%] w-[3.1%]">
           <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
         </div>
 
