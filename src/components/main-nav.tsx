@@ -18,6 +18,7 @@ import {
   Tags,
   HardHat,
   CreditCard,
+  Cpu,
   type LucideIcon,
 } from "lucide-react";
 
@@ -86,6 +87,12 @@ export function useAppNavigation() {
               "operario",
               "auditor",
             ],
+          },
+          {
+            href: "/iot",
+            label: "IoT",
+            icon: Cpu,
+            active: pathname.startsWith("/iot"),
           },
         ],
       },
@@ -260,3 +267,5 @@ export function MainNav({ onNavigate }: MainNavProps) {
 }
 
 export default MainNav;
+
+

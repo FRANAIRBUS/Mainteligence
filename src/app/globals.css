@@ -1,3 +1,9 @@
+@font-face {
+  font-family: 'Digital-7';
+  src: url('/iot/lh1t/fonts/digital-7.ttf') format('truetype');
+  font-display: swap;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -91,3 +97,4 @@ body {
     @apply font-headline;
   }
 }
+

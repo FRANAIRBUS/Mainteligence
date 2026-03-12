@@ -222,10 +222,75 @@ export interface Department extends BaseEntity {
   code: string;
 }
 
+export type IotPanelType = "thermostat" | "sensor" | "relay";
+export type IotConnectionStatus = "online" | "offline" | "warning";
+
+export interface AssetIotRelay {
+  label: string;
+  active: boolean;
+}
+
+export interface AssetIotReading {
+  readingAt?: Timestamp | Date | string | number | null;
+  temperature?: number | string | null;
+  secondaryTemperature?: number | string | null;
+  humidity?: number | string | null;
+  setpoint?: number | string | null;
+  status?: IotConnectionStatus | null;
+  alarms?: string[] | null;
+  relays?: AssetIotRelay[] | null;
+  raw?: Record<string, unknown> | null;
+}
+
+export interface AssetIotDesiredState {
+  version?: number | null;
+  requestedAt?: Timestamp | Date | string | number | null;
+  requestedBy?: string | null;
+  power?: boolean | null;
+  mode?: string | null;
+  fan?: string | null;
+  setpoint?: number | null;
+  relays?: Record<string, boolean> | null;
+  note?: string | null;
+}
+
+export interface AssetIotReportedState extends AssetIotReading {
+  firmwareVersion?: string | null;
+  ipAddress?: string | null;
+  uptimeSeconds?: number | null;
+  appliedDesiredVersion?: number | null;
+  applyStatus?: "idle" | "applied" | "rejected" | "error" | null;
+  applyMessage?: string | null;
+}
+
+export interface AssetIotProvisioning {
+  bootstrapPending?: boolean;
+  bootstrapExpiresAt?: Timestamp | Date | string | number | null;
+  bootstrapIssuedAt?: Timestamp | Date | string | number | null;
+  bootstrapIssuedBy?: string | null;
+  bootstrappedAt?: Timestamp | Date | string | number | null;
+  lastSyncAt?: Timestamp | Date | string | number | null;
+}
+
+export interface AssetIotConfig {
+  enabled: boolean;
+  panelType: IotPanelType;
+  deviceKey: string;
+  locationLabel?: string;
+  dataSource?: "firestore" | "mysql_bridge" | "maintelligence_api";
+  capabilities?: string[];
+  lastSeenAt?: Timestamp | Date | string | number | null;
+  lastReading?: AssetIotReading | null;
+  reportedState?: AssetIotReportedState | null;
+  desiredState?: AssetIotDesiredState | null;
+  provisioning?: AssetIotProvisioning | null;
+}
+
 export interface Asset extends BaseEntity {
   name: string;
   code: string;
   siteId: string;
+  iot?: AssetIotConfig | null;
 }
 
 export type PreventiveScheduleType = "daily" | "weekly" | "monthly" | "date";
@@ -326,3 +391,6 @@ export interface Ticket extends BaseEntity {
   reopenedBy?: string;
   reopenedAt?: Timestamp;
 }
+
+
+

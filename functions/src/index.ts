@@ -1858,6 +1858,322 @@ function maybeString(input: unknown) {
   return v ? v : null;
 }
 
+const IOT_DEVICE_COLLECTION = 'iotDevices';
+const IOT_BOOTSTRAP_TTL_MS = 30 * 60 * 1000;
+const IOT_MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
+const IOT_DEFAULT_POLL_INTERVAL_MS = 15 * 1000;
+const IOT_DEFAULT_TELEMETRY_RETENTION_DAYS = 90;
+const IOT_TELEMETRY_RETENTION_DAYS_RAW = Number(
+  process.env.IOT_TELEMETRY_RETENTION_DAYS ?? IOT_DEFAULT_TELEMETRY_RETENTION_DAYS,
+);
+const IOT_TELEMETRY_RETENTION_DAYS =
+  Number.isFinite(IOT_TELEMETRY_RETENTION_DAYS_RAW) && IOT_TELEMETRY_RETENTION_DAYS_RAW >= 1
+    ? Math.floor(IOT_TELEMETRY_RETENTION_DAYS_RAW)
+    : IOT_DEFAULT_TELEMETRY_RETENTION_DAYS;
+const IOT_TELEMETRY_RETENTION_MS = IOT_TELEMETRY_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const IOT_TELEMETRY_MAX_POINTS = 2000;
+const IOT_TELEMETRY_MAX_EXPORT_ROWS = 5000;
+const IOT_ALLOWED_PANEL_TYPES = new Set(['thermostat', 'sensor', 'relay']);
+const IOT_ALLOWED_STATUS = new Set(['online', 'offline', 'warning']);
+const IOT_ALLOWED_APPLY_STATUS = new Set(['idle', 'applied', 'rejected', 'error']);
+const FUNCTIONS_REGION = 'us-central1';
+const PROJECT_ID = process.env.GCLOUD_PROJECT || admin.app().options.projectId || '';
+
+function buildFunctionUrl(name: string) {
+  return PROJECT_ID
+    ? `https://${FUNCTIONS_REGION}-${PROJECT_ID}.cloudfunctions.net/${name}`
+    : name;
+}
+
+function sha256Hex(input: string) {
+  return crypto.createHash('sha256').update(input).digest('hex');
+}
+
+function randomSecretHex(bytes = 24) {
+  return crypto.randomBytes(bytes).toString('hex');
+}
+
+function safeCompareHex(a: string, b: string) {
+  const left = Buffer.from(String(a ?? ''), 'utf8');
+  const right = Buffer.from(String(b ?? ''), 'utf8');
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
+function timestampFromMillis(ms: number) {
+  return admin.firestore.Timestamp.fromMillis(ms);
+}
+
+function sanitizeDeviceKey(input: unknown) {
+  const normalized = String(input ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Z0-9:_-]/g, '');
+  if (!normalized || normalized.length < 3) {
+    throw httpsError('invalid-argument', 'deviceKey invalido.');
+  }
+  return normalized;
+}
+
+function iotDeviceDocId(orgId: string, deviceKey: string) {
+  return `${orgId}__${deviceKey}`;
+}
+
+function optionalFiniteNumber(input: unknown, field: string) {
+  if (input === null || input === undefined || input === '') return null;
+  const normalized = Number(String(input).replace(',', '.').trim());
+  if (!Number.isFinite(normalized)) {
+    throw httpsError('invalid-argument', `${field} invalido.`);
+  }
+  return normalized;
+}
+
+function optionalBoolean(input: unknown, field: string) {
+  if (input === null || input === undefined || input === '') return null;
+  if (typeof input === 'boolean') return input;
+  const normalized = String(input).trim().toLowerCase();
+  if (['1', 'true', 'on', 'yes', 'si'].includes(normalized)) return true;
+  if (['0', 'false', 'off', 'no'].includes(normalized)) return false;
+  throw httpsError('invalid-argument', `${field} invalido.`);
+}
+
+function optionalStringValue(input: unknown) {
+  const normalized = String(input ?? '').trim();
+  return normalized ? normalized : null;
+}
+
+function sanitizeCapabilities(input: unknown) {
+  if (!Array.isArray(input)) return undefined;
+  const capabilities = input
+    .map((value) => String(value ?? '').trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  return capabilities.length > 0 ? capabilities : undefined;
+}
+
+function sanitizeDesiredStatePatch(input: unknown) {
+  if (!isPlainObject(input)) throw httpsError('invalid-argument', 'state requerido.');
+
+  const patch: Record<string, unknown> = {};
+
+  if ('setpoint' in input) patch.setpoint = optionalFiniteNumber(input.setpoint, 'state.setpoint');
+  if ('power' in input) patch.power = optionalBoolean(input.power, 'state.power');
+  if ('mode' in input) patch.mode = optionalStringValue(input.mode);
+  if ('fan' in input) patch.fan = optionalStringValue(input.fan);
+  if ('note' in input) patch.note = optionalStringValue(input.note);
+
+  if (isPlainObject(input.relays)) {
+    const relays = Object.entries(input.relays).reduce<Record<string, boolean>>((acc, [key, value]) => {
+      const parsed = optionalBoolean(value, `state.relays.${key}`);
+      if (parsed !== null) acc[String(key)] = parsed;
+      return acc;
+    }, {});
+    if (Object.keys(relays).length > 0) patch.relays = relays;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    throw httpsError('invalid-argument', 'No hay cambios IoT validos para aplicar.');
+  }
+
+  return patch;
+}
+
+function sanitizeRelayArray(input: unknown) {
+  if (!Array.isArray(input)) return undefined;
+  const relays = input
+    .map((item, index) => {
+      if (!isPlainObject(item)) return null;
+      const label = optionalStringValue(item.label) || `REL${index + 1}`;
+      const active = optionalBoolean(item.active, `reportedState.relays.${label}.active`);
+      if (active === null) return null;
+      return { label, active };
+    })
+    .filter(Boolean);
+  return relays.length > 0 ? relays : undefined;
+}
+
+function sanitizeAlarmArray(input: unknown) {
+  if (!Array.isArray(input)) return undefined;
+  const alarms = input
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  return alarms.length > 0 ? alarms : undefined;
+}
+
+function sanitizeReportedState(input: unknown) {
+  if (!isPlainObject(input)) return null;
+
+  const status = optionalStringValue(input.status);
+  if (status && !IOT_ALLOWED_STATUS.has(status)) {
+    throw httpsError('invalid-argument', 'reportedState.status invalido.');
+  }
+
+  const applyStatus = optionalStringValue(input.applyStatus);
+  if (applyStatus && !IOT_ALLOWED_APPLY_STATUS.has(applyStatus)) {
+    throw httpsError('invalid-argument', 'reportedState.applyStatus invalido.');
+  }
+
+  const readingAtRaw = input.readingAt;
+  let readingAt: admin.firestore.Timestamp | undefined;
+  if (readingAtRaw !== undefined && readingAtRaw !== null && readingAtRaw !== '') {
+    const parsed = new Date(String(readingAtRaw));
+    if (Number.isNaN(parsed.getTime())) {
+      throw httpsError('invalid-argument', 'reportedState.readingAt invalido.');
+    }
+    readingAt = admin.firestore.Timestamp.fromDate(parsed);
+  }
+
+  const raw = isPlainObject(input.raw) ? input.raw : undefined;
+
+  return stripUndefinedDeep({
+    readingAt,
+    temperature: optionalFiniteNumber(input.temperature, 'reportedState.temperature'),
+    secondaryTemperature: optionalFiniteNumber(input.secondaryTemperature, 'reportedState.secondaryTemperature'),
+    humidity: optionalFiniteNumber(input.humidity, 'reportedState.humidity'),
+    setpoint: optionalFiniteNumber(input.setpoint, 'reportedState.setpoint'),
+    power: optionalBoolean(input.power, 'reportedState.power'),
+    mode: optionalStringValue(input.mode),
+    fan: optionalStringValue(input.fan),
+    status: status || undefined,
+    alarms: sanitizeAlarmArray(input.alarms),
+    relays: sanitizeRelayArray(input.relays),
+    raw,
+    firmwareVersion: optionalStringValue(input.firmwareVersion),
+    ipAddress: optionalStringValue(input.ipAddress),
+    uptimeSeconds: optionalFiniteNumber(input.uptimeSeconds, 'reportedState.uptimeSeconds'),
+    appliedDesiredVersion: optionalFiniteNumber(input.appliedDesiredVersion, 'reportedState.appliedDesiredVersion'),
+    applyStatus: applyStatus || undefined,
+    applyMessage: optionalStringValue(input.applyMessage),
+  });
+}
+
+function buildLastReadingFromReportedState(reportedState: Record<string, unknown> | null) {
+  if (!reportedState) return null;
+  return stripUndefinedDeep({
+    readingAt: reportedState.readingAt,
+    temperature: reportedState.temperature,
+    secondaryTemperature: reportedState.secondaryTemperature,
+    humidity: reportedState.humidity,
+    setpoint: reportedState.setpoint,
+    power: reportedState.power,
+    mode: reportedState.mode,
+    fan: reportedState.fan,
+    status: reportedState.status,
+    alarms: reportedState.alarms,
+    relays: reportedState.relays,
+    raw: reportedState.raw,
+  });
+}
+
+function parseDateInput(value: unknown, field: string): Date {
+  const parsed = new Date(String(value ?? ''));
+  if (Number.isNaN(parsed.getTime())) {
+    throw httpsError('invalid-argument', `${field} invalido.`);
+  }
+  return parsed;
+}
+
+function resolveTelemetryRange(payload: Record<string, unknown>) {
+  const now = Date.now();
+  const from = payload.from ? parseDateInput(payload.from, 'from') : new Date(now - 24 * 60 * 60 * 1000);
+  const to = payload.to ? parseDateInput(payload.to, 'to') : new Date(now);
+
+  if (from.getTime() > to.getTime()) {
+    throw httpsError('invalid-argument', 'El rango de fechas es invalido. from no puede ser mayor que to.');
+  }
+
+  return { from, to };
+}
+
+function csvEscape(value: unknown) {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  if (!/[",\n\r]/.test(text)) return text;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function toIsoFromTimestamp(input: unknown): string | null {
+  if (!input) return null;
+  if (input instanceof admin.firestore.Timestamp) return input.toDate().toISOString();
+  if (input instanceof Date) return input.toISOString();
+  if (typeof input === 'object' && input !== null && 'toDate' in (input as Record<string, unknown>)) {
+    const maybe = (input as { toDate?: () => Date }).toDate;
+    if (typeof maybe === 'function') {
+      const asDate = maybe();
+      if (asDate instanceof Date && !Number.isNaN(asDate.getTime())) return asDate.toISOString();
+    }
+  }
+  const parsed = new Date(String(input));
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function telemetryRowFromDoc(doc: FirebaseFirestore.QueryDocumentSnapshot) {
+  const data = doc.data() as Record<string, any>;
+  const reported = (data.reportedState ?? {}) as Record<string, any>;
+  return {
+    id: doc.id,
+    readingAt: toIsoFromTimestamp(reported.readingAt) ?? toIsoFromTimestamp(data.createdAt),
+    createdAt: toIsoFromTimestamp(data.createdAt),
+    temperature: reported.temperature ?? null,
+    secondaryTemperature: reported.secondaryTemperature ?? null,
+    humidity: reported.humidity ?? null,
+    setpoint: reported.setpoint ?? null,
+    power: reported.power ?? null,
+    mode: reported.mode ?? null,
+    fan: reported.fan ?? null,
+    status: reported.status ?? null,
+    applyStatus: reported.applyStatus ?? null,
+    applyMessage: reported.applyMessage ?? null,
+    firmwareVersion: reported.firmwareVersion ?? null,
+    uptimeSeconds: reported.uptimeSeconds ?? null,
+    relays: Array.isArray(reported.relays) ? reported.relays : null,
+    alarms: Array.isArray(reported.alarms) ? reported.alarms : null,
+    raw: isPlainObject(reported.raw) ? reported.raw : null,
+  };
+}
+
+async function readOrgAssetByDeviceKey(orgId: string, deviceKey: string) {
+  const assetQuery = await db
+    .collection('organizations')
+    .doc(orgId)
+    .collection('assets')
+    .where('iot.deviceKey', '==', deviceKey)
+    .limit(2)
+    .get();
+
+  if (assetQuery.empty) {
+    throw httpsError('not-found', 'No existe un activo IoT con ese deviceKey.');
+  }
+  if (assetQuery.size > 1) {
+    throw httpsError('failed-precondition', 'Hay varios activos con el mismo deviceKey. Corrigelo antes de provisionar.');
+  }
+
+  return assetQuery.docs[0];
+}
+
+function requireDeviceSignature(req: Request, secret: string) {
+  const timestamp = String(req.headers['x-maint-ts'] ?? '');
+  const signature = String(req.headers['x-maint-signature'] ?? '');
+  if (!timestamp || !signature) {
+    throw httpsError('unauthenticated', 'Faltan cabeceras de firma del dispositivo.');
+  }
+
+  const requestTime = Number(timestamp);
+  if (!Number.isFinite(requestTime) || Math.abs(Date.now() - requestTime) > IOT_MAX_CLOCK_SKEW_MS) {
+    throw httpsError('unauthenticated', 'Timestamp fuera de ventana permitida.');
+  }
+
+  const rawBody = Buffer.isBuffer((req as any).rawBody)
+    ? (req as any).rawBody.toString('utf8')
+    : JSON.stringify(req.body ?? {});
+  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
+  if (!safeCompareHex(expected, signature)) {
+    throw httpsError('unauthenticated', 'Firma del dispositivo invalida.');
+  }
+}
+
 function betaRequestIdFromEmail(email: string) {
   const h = crypto.createHash('sha256').update(email).digest('hex');
   return `email_${h.slice(0, 24)}`;
@@ -4899,6 +5215,28 @@ export const createAsset = functions.https.onCall(async (data, context) => {
   const code = requireStringField(data.payload.code, 'code');
   const siteId = requireStringField(data.payload.siteId, 'siteId');
 
+  const iotPayload = data.payload.iot;
+  let iot: Record<string, unknown> | undefined;
+  if (iotPayload != null) {
+    if (!isPlainObject(iotPayload)) throw httpsError('invalid-argument', 'iot invalido.');
+
+    const enabled = iotPayload.enabled === true;
+    if (enabled) {
+      const panelType = requireStringField(iotPayload.panelType, 'iot.panelType');
+      if (!IOT_ALLOWED_PANEL_TYPES.has(panelType)) {
+        throw httpsError('invalid-argument', 'iot.panelType invalido.');
+      }
+
+      iot = stripUndefinedDeep({
+        enabled: true,
+        panelType,
+        deviceKey: requireStringField(iotPayload.deviceKey, 'iot.deviceKey'),
+        locationLabel: String(iotPayload.locationLabel ?? '').trim() || undefined,
+        dataSource: String(iotPayload.dataSource ?? 'maintelligence_api').trim() || 'maintelligence_api',
+      });
+    }
+  }
+
   requireScopedAccessToSite(role, scope, siteId);
 
   const orgRef = db.collection('organizations').doc(orgId);
@@ -4924,10 +5262,11 @@ export const createAsset = functions.https.onCall(async (data, context) => {
       name,
       code,
       siteId,
+      ...(iot ? { iot } : {}),
       organizationId: orgId,
       createdAt: now,
       updatedAt: now,
-      source: 'createAsset_v1',
+      source: 'createAsset_v2',
     });
     tx.update(orgRef, {
       [`entitlement.usage.${USAGE_FIELDS.assets}`]: admin.firestore.FieldValue.increment(1),
@@ -4940,10 +5279,514 @@ export const createAsset = functions.https.onCall(async (data, context) => {
     actorUid,
     actorEmail,
     orgId,
-    after: { assetId: assetRef.id, name, code, siteId },
+    after: stripUndefinedDeep({ assetId: assetRef.id, name, code, siteId, iot }),
   });
 
   return { ok: true, organizationId: orgId, assetId: assetRef.id };
+});
+
+export const createIotProvisioningToken = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para provisionar dispositivos IoT.');
+
+  const assetId = requireStringField(data?.payload?.assetId, 'assetId');
+  const orgRef = db.collection('organizations').doc(orgId);
+  const assetRef = orgRef.collection('assets').doc(assetId);
+  const assetSnap = await assetRef.get();
+
+  if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+    throw httpsError('not-found', 'Activo IoT no encontrado.');
+  }
+
+  const siteId = String(assetSnap.get('siteId') ?? '').trim();
+  requireScopedAccessToSite(role, scope, siteId);
+
+  const iotData = assetSnap.get('iot') as Record<string, unknown> | undefined;
+  if (!iotData?.enabled) {
+    throw httpsError('failed-precondition', 'El activo no esta marcado como IoT.');
+  }
+
+  const deviceKey = sanitizeDeviceKey(iotData.deviceKey);
+  const duplicateSnap = await orgRef.collection('assets').where('iot.deviceKey', '==', deviceKey).limit(2).get();
+  if (duplicateSnap.size > 1) {
+    throw httpsError('failed-precondition', 'Hay varios activos con el mismo deviceKey. Corrigelo antes de provisionar.');
+  }
+
+  const bootstrapToken = randomSecretHex(18);
+  const expiresAtMs = Date.now() + IOT_BOOTSTRAP_TTL_MS;
+  const deviceRef = db.collection(IOT_DEVICE_COLLECTION).doc(iotDeviceDocId(orgId, deviceKey));
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const expiresAt = timestampFromMillis(expiresAtMs);
+
+  await deviceRef.set(
+    {
+      organizationId: orgId,
+      assetId,
+      deviceKey,
+      disabled: false,
+      bootstrapTokenHash: sha256Hex(bootstrapToken),
+      bootstrapExpiresAt: expiresAt,
+      bootstrapIssuedAt: now,
+      updatedAt: now,
+      updatedBy: actorUid,
+    },
+    { merge: true }
+  );
+
+  await assetRef.set(
+    {
+      iot: {
+        provisioning: {
+          bootstrapPending: true,
+          bootstrapExpiresAt: expiresAt,
+          bootstrapIssuedAt: now,
+          bootstrapIssuedBy: actorUid,
+        },
+      },
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+
+  await auditLog({
+    action: 'createIotProvisioningToken',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: {
+      assetId,
+      deviceKey,
+      bootstrapExpiresAt: expiresAt.toDate().toISOString(),
+    },
+  });
+
+  return {
+    ok: true,
+    organizationId: orgId,
+    assetId,
+    deviceKey,
+    bootstrapToken,
+    bootstrapExpiresAt: expiresAt.toDate().toISOString(),
+    bootstrapUrl: buildFunctionUrl('iotDeviceBootstrap'),
+    syncUrl: buildFunctionUrl('iotDeviceSync'),
+    pollIntervalMs: IOT_DEFAULT_POLL_INTERVAL_MS,
+  };
+});
+
+export const setAssetIotDesiredState = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const actorEmail = ((context.auth?.token as any)?.email ?? null) as string | null;
+  const orgId = resolveOrgIdFromData(data);
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+  requireRoleAllowed(role, MASTER_DATA_ROLES, 'No tienes permisos para enviar ordenes IoT.');
+
+  const assetId = requireStringField(data?.payload?.assetId, 'assetId');
+  const statePatch = sanitizeDesiredStatePatch(data?.payload?.state);
+
+  const orgRef = db.collection('organizations').doc(orgId);
+  const assetRef = orgRef.collection('assets').doc(assetId);
+
+  const result = await db.runTransaction(async (tx) => {
+    const assetSnap = await tx.get(assetRef);
+    if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('not-found', 'Activo IoT no encontrado.');
+    }
+
+    const siteId = String(assetSnap.get('siteId') ?? '').trim();
+    requireScopedAccessToSite(role, scope, siteId);
+
+    const iotData = (assetSnap.get('iot') ?? {}) as Record<string, any>;
+    if (!iotData?.enabled) {
+      throw httpsError('failed-precondition', 'El activo no esta marcado como IoT.');
+    }
+
+    const currentDesired = (iotData.desiredState ?? {}) as Record<string, any>;
+    const nextVersion = Number(currentDesired.version ?? 0) + 1;
+    const nextDesired = stripUndefinedDeep({
+      ...currentDesired,
+      ...statePatch,
+      version: nextVersion,
+      requestedBy: actorUid,
+      requestedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    tx.set(
+      assetRef,
+      {
+        iot: {
+          desiredState: nextDesired,
+        },
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    return {
+      deviceKey: sanitizeDeviceKey(iotData.deviceKey),
+      desiredState: stripUndefinedDeep({ ...nextDesired, requestedAt: new Date().toISOString() }),
+      version: nextVersion,
+    };
+  });
+
+  await auditLog({
+    action: 'setAssetIotDesiredState',
+    actorUid,
+    actorEmail,
+    orgId,
+    after: { assetId, version: result.version, state: statePatch },
+  });
+
+  return {
+    ok: true,
+    organizationId: orgId,
+    assetId,
+    deviceKey: result.deviceKey,
+    desiredState: result.desiredState,
+    version: result.version,
+  };
+});
+
+export const getAssetIotTelemetry = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const orgId = resolveOrgIdFromData(data);
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+  const payload = data.payload as Record<string, unknown>;
+
+  const assetId = requireStringField(payload.assetId, 'assetId');
+  const requestedLimit = Number(payload.limit ?? 500);
+  const limit =
+    Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.floor(requestedLimit), IOT_TELEMETRY_MAX_POINTS)
+      : 500;
+
+  const { from, to } = resolveTelemetryRange(payload);
+
+  const assetRef = db.collection('organizations').doc(orgId).collection('assets').doc(assetId);
+  const assetSnap = await assetRef.get();
+  if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+    throw httpsError('not-found', 'Activo IoT no encontrado.');
+  }
+
+  const siteId = String(assetSnap.get('siteId') ?? '').trim();
+  requireScopedAccessToSite(role, scope, siteId);
+
+  const querySnap = await assetRef
+    .collection('telemetry')
+    .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(from))
+    .where('createdAt', '<=', admin.firestore.Timestamp.fromDate(to))
+    .orderBy('createdAt', 'asc')
+    .limit(limit)
+    .get();
+
+  const rows = querySnap.docs.map(telemetryRowFromDoc);
+
+  return {
+    ok: true,
+    organizationId: orgId,
+    assetId,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    limit,
+    count: rows.length,
+    rows,
+  };
+});
+
+export const exportAssetIotTelemetryCsv = functions.https.onCall(async (data, context) => {
+  const actorUid = requireAuth(context);
+  const orgId = resolveOrgIdFromData(data);
+  const { role, scope } = await requireActiveMembership(actorUid, orgId);
+
+  if (!isPlainObject(data?.payload)) throw httpsError('invalid-argument', 'payload requerido.');
+  const payload = data.payload as Record<string, unknown>;
+
+  const assetId = requireStringField(payload.assetId, 'assetId');
+  const requestedLimit = Number(payload.limit ?? IOT_TELEMETRY_MAX_EXPORT_ROWS);
+  const limit =
+    Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(Math.floor(requestedLimit), IOT_TELEMETRY_MAX_EXPORT_ROWS)
+      : IOT_TELEMETRY_MAX_EXPORT_ROWS;
+
+  const { from, to } = resolveTelemetryRange(payload);
+
+  const assetRef = db.collection('organizations').doc(orgId).collection('assets').doc(assetId);
+  const assetSnap = await assetRef.get();
+  if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+    throw httpsError('not-found', 'Activo IoT no encontrado.');
+  }
+
+  const siteId = String(assetSnap.get('siteId') ?? '').trim();
+  requireScopedAccessToSite(role, scope, siteId);
+
+  const querySnap = await assetRef
+    .collection('telemetry')
+    .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(from))
+    .where('createdAt', '<=', admin.firestore.Timestamp.fromDate(to))
+    .orderBy('createdAt', 'asc')
+    .limit(limit)
+    .get();
+
+  const headers = [
+    'readingAt',
+    'createdAt',
+    'temperature',
+    'secondaryTemperature',
+    'humidity',
+    'setpoint',
+    'power',
+    'mode',
+    'fan',
+    'status',
+    'applyStatus',
+    'applyMessage',
+    'firmwareVersion',
+    'uptimeSeconds',
+    'relays',
+    'alarms',
+    'raw',
+  ];
+
+  const csvRows = querySnap.docs.map((docSnap) => {
+    const row = telemetryRowFromDoc(docSnap);
+    return [
+      row.readingAt,
+      row.createdAt,
+      row.temperature,
+      row.secondaryTemperature,
+      row.humidity,
+      row.setpoint,
+      row.power,
+      row.mode,
+      row.fan,
+      row.status,
+      row.applyStatus,
+      row.applyMessage,
+      row.firmwareVersion,
+      row.uptimeSeconds,
+      row.relays ? JSON.stringify(row.relays) : null,
+      row.alarms ? JSON.stringify(row.alarms) : null,
+      row.raw ? JSON.stringify(row.raw) : null,
+    ]
+      .map(csvEscape)
+      .join(',');
+  });
+
+  const csv = [headers.join(','), ...csvRows].join('\n');
+  const filename = `telemetry_${orgId}_${assetId}_${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}.csv`;
+
+  return {
+    ok: true,
+    organizationId: orgId,
+    assetId,
+    from: from.toISOString(),
+    to: to.toISOString(),
+    count: csvRows.length,
+    filename,
+    contentType: 'text/csv; charset=utf-8',
+    csv,
+  };
+});
+
+export const iotDeviceBootstrap = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method Not Allowed' });
+    return;
+  }
+
+  try {
+    if (!isPlainObject(req.body)) throw httpsError('invalid-argument', 'payload requerido.');
+
+    const orgId = sanitizeOrganizationId(String(req.body.organizationId ?? ''));
+    const deviceKey = sanitizeDeviceKey(req.body.deviceKey);
+    const bootstrapToken = requireNonEmptyString(req.body.bootstrapToken, 'bootstrapToken');
+    if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+
+    const assetSnap = await readOrgAssetByDeviceKey(orgId, deviceKey);
+    const assetRef = assetSnap.ref;
+    const assetId = assetSnap.id;
+    const deviceRef = db.collection(IOT_DEVICE_COLLECTION).doc(iotDeviceDocId(orgId, deviceKey));
+    const deviceSnap = await deviceRef.get();
+
+    if (!deviceSnap.exists) {
+      throw httpsError('failed-precondition', 'No existe una sesion de bootstrap para este dispositivo.');
+    }
+
+    const deviceData = deviceSnap.data() as Record<string, any>;
+    if (deviceData.assetId !== assetId) {
+      throw httpsError('failed-precondition', 'El dispositivo no corresponde con el activo configurado.');
+    }
+    if (deviceData.disabled === true) {
+      throw httpsError('permission-denied', 'El dispositivo esta deshabilitado.');
+    }
+
+    const bootstrapExpiresAt = deviceData.bootstrapExpiresAt instanceof admin.firestore.Timestamp
+      ? deviceData.bootstrapExpiresAt.toMillis()
+      : 0;
+    if (!deviceData.bootstrapTokenHash || !bootstrapExpiresAt || bootstrapExpiresAt < Date.now()) {
+      throw httpsError('failed-precondition', 'El token de bootstrap ha expirado. Genera uno nuevo desde Maintelligence.');
+    }
+    if (!safeCompareHex(String(deviceData.bootstrapTokenHash), sha256Hex(bootstrapToken))) {
+      throw httpsError('permission-denied', 'Bootstrap token invalido.');
+    }
+
+    const capabilities = sanitizeCapabilities(req.body.capabilities);
+    const firmwareVersion = optionalStringValue(req.body.firmwareVersion);
+    const deviceSecret = randomSecretHex(32);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    await deviceRef.set(
+      stripUndefinedDeep({
+        organizationId: orgId,
+        assetId,
+        deviceKey,
+        disabled: false,
+        deviceSecret,
+        deviceSecretIssuedAt: now,
+        bootstrappedAt: now,
+        bootstrapTokenHash: admin.firestore.FieldValue.delete(),
+        bootstrapExpiresAt: admin.firestore.FieldValue.delete(),
+        updatedAt: now,
+        capabilities,
+        firmwareVersion,
+      }),
+      { merge: true }
+    );
+
+    await assetRef.set(
+      {
+        iot: stripUndefinedDeep({
+          dataSource: 'maintelligence_api',
+          capabilities,
+          provisioning: {
+            bootstrapPending: false,
+            bootstrappedAt: now,
+          },
+        }),
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+
+    res.status(200).json({
+      ok: true,
+      organizationId: orgId,
+      assetId,
+      deviceKey,
+      deviceSecret,
+      syncUrl: buildFunctionUrl('iotDeviceSync'),
+      pollIntervalMs: IOT_DEFAULT_POLL_INTERVAL_MS,
+    });
+  } catch (err) {
+    sendHttpError(res, err);
+  }
+});
+
+export const iotDeviceSync = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method Not Allowed' });
+    return;
+  }
+
+  try {
+    if (!isPlainObject(req.body)) throw httpsError('invalid-argument', 'payload requerido.');
+
+    const orgId = sanitizeOrganizationId(String(req.headers['x-maint-org-id'] ?? req.body.organizationId ?? ''));
+    const deviceKey = sanitizeDeviceKey(req.headers['x-maint-device-key'] ?? req.body.deviceKey);
+    if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+
+    const deviceRef = db.collection(IOT_DEVICE_COLLECTION).doc(iotDeviceDocId(orgId, deviceKey));
+    const deviceSnap = await deviceRef.get();
+    if (!deviceSnap.exists) throw httpsError('not-found', 'Dispositivo no registrado.');
+
+    const deviceData = deviceSnap.data() as Record<string, any>;
+    if (deviceData.disabled === true) {
+      throw httpsError('permission-denied', 'Dispositivo deshabilitado.');
+    }
+
+    const deviceSecret = String(deviceData.deviceSecret ?? '').trim();
+    if (!deviceSecret) {
+      throw httpsError('failed-precondition', 'El dispositivo no ha completado el bootstrap.');
+    }
+
+    requireDeviceSignature(req, deviceSecret);
+
+    const assetId = String(deviceData.assetId ?? '').trim();
+    if (!assetId) {
+      throw httpsError('failed-precondition', 'El dispositivo no tiene assetId asociado.');
+    }
+
+    const assetRef = db.collection('organizations').doc(orgId).collection('assets').doc(assetId);
+    const assetSnap = await assetRef.get();
+    if (!assetSnap.exists || String(assetSnap.get('organizationId') ?? '') !== orgId) {
+      throw httpsError('not-found', 'Activo IoT no encontrado.');
+    }
+
+    const assetData = assetSnap.data() as Record<string, any>;
+    const iotData = (assetData.iot ?? {}) as Record<string, any>;
+    if (!iotData.enabled) {
+      throw httpsError('failed-precondition', 'El activo IoT esta deshabilitado.');
+    }
+
+    const reportedState = sanitizeReportedState(req.body.reportedState ?? req.body.state ?? null);
+    const capabilities = sanitizeCapabilities(req.body.capabilities);
+    const storeTelemetry = req.body.storeTelemetry === true;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const assetUpdate = stripUndefinedDeep({
+      iot: {
+        dataSource: 'maintelligence_api',
+        capabilities: capabilities ?? iotData.capabilities,
+        lastSeenAt: now,
+        lastReading: reportedState ? buildLastReadingFromReportedState(reportedState) : undefined,
+        reportedState: reportedState ?? undefined,
+        provisioning: {
+          lastSyncAt: now,
+        },
+      },
+      updatedAt: now,
+    });
+
+    await assetRef.set(assetUpdate, { merge: true });
+    await deviceRef.set(
+      stripUndefinedDeep({
+        lastSyncAt: now,
+        lastIp: optionalStringValue(req.ip),
+        firmwareVersion: reportedState?.firmwareVersion ?? deviceData.firmwareVersion,
+        capabilities,
+        updatedAt: now,
+      }),
+      { merge: true }
+    );
+
+    if (storeTelemetry && reportedState) {
+      const telemetryExpiresAt = timestampFromMillis(Date.now() + IOT_TELEMETRY_RETENTION_MS);
+      await assetRef.collection('telemetry').add({
+        organizationId: orgId,
+        assetId,
+        deviceKey,
+        reportedState,
+        createdAt: now,
+        expiresAt: telemetryExpiresAt,
+      });
+    }
+
+    res.status(200).json({
+      ok: true,
+      organizationId: orgId,
+      assetId,
+      deviceKey,
+      desiredState: iotData.desiredState ?? null,
+      serverTime: new Date().toISOString(),
+      pollIntervalMs: IOT_DEFAULT_POLL_INTERVAL_MS,
+    });
+  } catch (err) {
+    sendHttpError(res, err);
+  }
 });
 
 export const createPreventive = functions.https.onCall(async (data, context) => {
@@ -7051,3 +7894,10 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Webhook handler error.');
   }
 });
+
+
+
+
+
+
+
