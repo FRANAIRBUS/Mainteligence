@@ -280,16 +280,16 @@ function LegacyThermostatPanel({
           {primaryValue}
         </div>
         {powerOn ? (
-          <div className="absolute left-[48.5%] top-[38.5%] h-[8.3%] w-[4.5%]">
+          <div className="absolute left-[48.5%] top-[48.5%] h-[8.3%] w-[4.5%]">
             <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
           </div>
         ) : null}
 
         <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute left-[46.5%] top-[61.5%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
+        <div className="absolute left-[44.5%] top-[61.5%] text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
           {humidityValue}
         </div>
-        <div className="absolute left-[53.5%] top-[68.0%] h-[5.7%] w-[3.1%]">
+        <div className="absolute left-[47.5%] top-[68.0%] h-[5.7%] w-[3.1%]">
           <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
         </div>
 
@@ -311,7 +311,7 @@ function LegacyThermostatPanel({
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3">
         <MetricTile
           label="Consigna"
           value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
@@ -328,11 +328,6 @@ function LegacyThermostatPanel({
           label="Sonda 2"
           value={secondaryTemperature != null ? formatLedValue(secondaryTemperature, 0) : '--'}
           suffix="C"
-          icon={<Thermometer className="h-3.5 w-3.5" />}
-        />
-        <MetricTile
-          label="Modo"
-          value={legacyMode}
           icon={<Thermometer className="h-3.5 w-3.5" />}
         />
       </div>
@@ -371,7 +366,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
                     {siteName}
                   </Badge>
                 ) : null}
-                {asset.iot?.locationLabel ? (
+                {asset.iot?.locationLabel && asset.iot.locationLabel.trim().toLowerCase() !== asset.name.trim().toLowerCase() ? (
                   <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
                     {asset.iot.locationLabel}
                   </Badge>
