@@ -391,7 +391,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
             ) : null}
 
             {panelType === 'sensor' ? (
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
                 <MetricTile
                   label="Temperatura"
                   value={temperature != null ? temperature.toFixed(1) : '--'}
@@ -414,7 +414,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
             ) : null}
 
             {panelType === 'relay' ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
                 {(relays.length > 0 ? relays : [{ label: 'REL1', active: false }]).map((relay) => (
                   <div key={relay.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="flex items-center justify-between text-sm text-slate-300">
