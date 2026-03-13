@@ -100,6 +100,23 @@ function relayOrder(label: string) {
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
 
+function resolveDisplayReading(asset: Asset): AssetIotReading | null {
+  const lastReading = asset.iot?.lastReading ?? null;
+  const reportedState = asset.iot?.reportedState ?? null;
+
+  if (!lastReading && !reportedState) return null;
+  if (!lastReading) return reportedState;
+  if (!reportedState) return lastReading;
+
+  return {
+    ...reportedState,
+    ...lastReading,
+    alarms: lastReading.alarms ?? reportedState.alarms ?? null,
+    raw: lastReading.raw ?? reportedState.raw ?? null,
+    relays: lastReading.relays ?? reportedState.relays ?? null,
+  };
+}
+
 function normalizeRelays(reading?: AssetIotReading | null): AssetIotRelay[] {
   if (Array.isArray(reading?.relays) && reading?.relays.length > 0) {
     return reading.relays
@@ -111,7 +128,7 @@ function normalizeRelays(reading?: AssetIotReading | null): AssetIotRelay[] {
       .sort((left, right) => relayOrder(left.label) - relayOrder(right.label) || left.label.localeCompare(right.label));
   }
 
-  if (reading?.relays && typeof reading.relays === 'object') {
+  if (reading?.relays && !Array.isArray(reading.relays) && typeof reading.relays === 'object') {
     const relays = Object.entries(reading.relays as Record<string, unknown>)
       .map(([label, active]) => {
         const normalizedLabel = label.trim().toUpperCase();
@@ -179,10 +196,10 @@ function readingBoolean(reading: AssetIotReading | null | undefined, directKey: 
 }
 
 function readingStatus(asset: Asset) {
-  const status = asset.iot?.lastReading?.status ?? null;
+  const status = asset.iot?.lastReading?.status ?? asset.iot?.reportedState?.status ?? null;
   if (status) return status;
 
-  const lastSeen = toDateValue(asset.iot?.lastSeenAt ?? asset.iot?.lastReading?.readingAt);
+  const lastSeen = toDateValue(asset.iot?.lastSeenAt ?? asset.iot?.lastReading?.readingAt ?? asset.iot?.reportedState?.readingAt);
   if (!lastSeen) return 'offline';
 
   const ageMinutes = (Date.now() - lastSeen.getTime()) / 60000;
@@ -355,7 +372,7 @@ function LegacyThermostatPanel({
             <img src="/iot/lh1t/images/defross.png" alt="Defross" className="h-full w-full object-contain" />
           </div>
         ) : null}
-        <div className="absolute left-[69.7%] top-[34.3%] h-[15.5%] w-[8.5%]">
+        <div className="absolute left-[68.8%] top-[34.3%] h-[15.5%] w-[8.5%]">
           <img src="/iot/lh1t/images/set.png" alt="Set" className="h-full w-full object-cover" />
         </div>
         <div className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717]">
@@ -390,7 +407,7 @@ function LegacyThermostatPanel({
 }
 
 export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
-  const reading = asset.iot?.lastReading ?? null;
+  const reading = resolveDisplayReading(asset);
   const panelType = asset.iot?.panelType ?? 'sensor';
   const status = readingStatus(asset);
   const temperature = readingMetric(reading, 'temperature', 'Temp1');
@@ -469,7 +486,10 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
 
             {panelType === 'relay' ? (
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-                {(relays.length > 0 ? relays : [{ label: 'REL1', active: false }]).map((relay) => (
+                {(relays.length > 0
+                  ? relays
+                  : ['REL1', 'REL2', 'REL3', 'REL4'].map((label) => ({ label, active: false }))
+                ).map((relay) => (
                   <div key={relay.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="flex items-center justify-between text-sm text-slate-300">
                       <span>{relay.label}</span>

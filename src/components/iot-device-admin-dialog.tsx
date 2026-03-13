@@ -68,31 +68,45 @@ function normalizeCapabilities(capabilities?: string[] | null) {
   return Array.from(new Set((capabilities ?? []).map((capability) => capability.trim().toLowerCase()).filter(Boolean)));
 }
 
+function normalizeRelayBoolean(active: unknown) {
+  if (typeof active === 'boolean') return active;
+  return ['1', 'true', 'on', 'activo', 'online'].includes(String(active ?? '').trim().toLowerCase());
+}
+
 function normalizeRelayEntries(asset: Asset) {
   const relayEntries = new Map<string, boolean>();
 
-  if (Array.isArray(asset.iot?.lastReading?.relays)) {
-    for (const relay of asset.iot.lastReading.relays) {
-      if (!relay?.label) continue;
-      relayEntries.set(relay.label.trim().toUpperCase(), Boolean(relay.active));
-    }
-  } else if (asset.iot?.lastReading?.relays && typeof asset.iot.lastReading.relays === 'object') {
-    for (const [label, active] of Object.entries(asset.iot.lastReading.relays as Record<string, unknown>)) {
-      const normalizedLabel = label.trim().toUpperCase();
-      const normalizedActive = typeof active === 'boolean'
-        ? active
-        : ['1', 'true', 'on', 'activo', 'online'].includes(String(active ?? '').trim().toLowerCase());
-      if (!normalizedLabel) continue;
-      relayEntries.set(normalizedLabel, normalizedActive);
-    }
-  }
+  const registerRelayEntries = (reading?: Asset['iot'] extends infer T ? any : never) => {
+    if (!reading) return;
 
-  if (relayEntries.size === 0 && asset.iot?.lastReading?.raw && typeof asset.iot.lastReading.raw === 'object') {
-    for (const [label, active] of Object.entries(asset.iot.lastReading.raw as Record<string, unknown>)) {
-      if (!/^REL\d+$/i.test(label)) continue;
-      const normalizedActive = ['1', 'true', 'on', 'activo', 'online'].includes(String(active ?? '').trim().toLowerCase());
-      relayEntries.set(label.trim().toUpperCase(), normalizedActive);
+    if (Array.isArray(reading.relays)) {
+      for (const relay of reading.relays) {
+        if (!relay?.label) continue;
+        relayEntries.set(relay.label.trim().toUpperCase(), Boolean(relay.active));
+      }
+      return;
     }
+
+    if (reading.relays && typeof reading.relays === 'object') {
+      for (const [label, active] of Object.entries(reading.relays as Record<string, unknown>)) {
+        const normalizedLabel = label.trim().toUpperCase();
+        if (!normalizedLabel) continue;
+        relayEntries.set(normalizedLabel, normalizeRelayBoolean(active));
+      }
+      return;
+    }
+
+    if (reading.raw && typeof reading.raw === 'object') {
+      for (const [label, active] of Object.entries(reading.raw as Record<string, unknown>)) {
+        if (!/^REL\d+$/i.test(label)) continue;
+        relayEntries.set(label.trim().toUpperCase(), normalizeRelayBoolean(active));
+      }
+    }
+  };
+
+  registerRelayEntries(asset.iot?.lastReading);
+  if (relayEntries.size === 0) {
+    registerRelayEntries(asset.iot?.reportedState);
   }
 
   if (asset.iot?.desiredState?.relays) {
