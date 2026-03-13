@@ -1976,6 +1976,28 @@ function hasRelayControlData(input: unknown) {
   return false;
 }
 
+function normalizeRelayLabel(label: string) {
+  const normalized = optionalStringValue(label);
+  return normalized ? normalized.toUpperCase() : null;
+}
+
+function relayStateFromUnknown(input: unknown, field: string) {
+  if (isPlainObject(input)) {
+    return optionalBoolean(input.active, `${field}.active`);
+  }
+  return optionalBoolean(input, field);
+}
+
+function relayMapFromLegacyState(input: Record<string, unknown>) {
+  return Object.entries(input).reduce<Record<string, unknown>>((acc, [key, value]) => {
+    if (!/^rel\d+$/i.test(key)) return acc;
+    const label = normalizeRelayLabel(key);
+    if (!label) return acc;
+    acc[label] = value;
+    return acc;
+  }, {});
+}
+
 function resolveIotCapabilities(iotData: Record<string, any>) {
   const capabilities = normalizedCapabilitySet(iotData.capabilities);
   const panelType = optionalStringValue(iotData.panelType)?.toLowerCase();
@@ -2054,17 +2076,34 @@ function sanitizeDesiredStatePatch(input: unknown) {
 }
 
 function sanitizeRelayArray(input: unknown) {
-  if (!Array.isArray(input)) return undefined;
-  const relays = input
-    .map((item, index) => {
-      if (!isPlainObject(item)) return null;
-      const label = optionalStringValue(item.label) || `REL${index + 1}`;
-      const active = optionalBoolean(item.active, `reportedState.relays.${label}.active`);
-      if (active === null) return null;
-      return { label, active };
-    })
-    .filter(Boolean);
-  return relays.length > 0 ? relays : undefined;
+  if (Array.isArray(input)) {
+    const relays = input
+      .map((item, index) => {
+        if (!isPlainObject(item)) return null;
+        const label = normalizeRelayLabel(optionalStringValue(item.label) || `REL${index + 1}`);
+        if (!label) return null;
+        const active = relayStateFromUnknown(item, `reportedState.relays.${label}`);
+        if (active === null) return null;
+        return { label, active };
+      })
+      .filter(Boolean);
+    return relays.length > 0 ? relays : undefined;
+  }
+
+  if (isPlainObject(input)) {
+    const relays = Object.entries(input)
+      .map(([key, value]) => {
+        const label = normalizeRelayLabel(key);
+        if (!label) return null;
+        const active = relayStateFromUnknown(value, `reportedState.relays.${label}`);
+        if (active === null) return null;
+        return { label, active };
+      })
+      .filter(Boolean);
+    return relays.length > 0 ? relays : undefined;
+  }
+
+  return undefined;
 }
 
 function sanitizeAlarmArray(input: unknown) {
@@ -2100,6 +2139,7 @@ function sanitizeReportedState(input: unknown) {
   }
 
   const raw = isPlainObject(input.raw) ? input.raw : undefined;
+  const relays = sanitizeRelayArray(input.relays) ?? sanitizeRelayArray(relayMapFromLegacyState(raw ?? input));
 
   return stripUndefinedDeep({
     readingAt,
@@ -2112,7 +2152,7 @@ function sanitizeReportedState(input: unknown) {
     fan: optionalStringValue(input.fan),
     status: status || undefined,
     alarms: sanitizeAlarmArray(input.alarms),
-    relays: sanitizeRelayArray(input.relays),
+    relays,
     raw,
     firmwareVersion: optionalStringValue(input.firmwareVersion),
     ipAddress: optionalStringValue(input.ipAddress),
@@ -2186,6 +2226,7 @@ function toIsoFromTimestamp(input: unknown): string | null {
 function telemetryRowFromDoc(doc: FirebaseFirestore.QueryDocumentSnapshot) {
   const data = doc.data() as Record<string, any>;
   const reported = (data.reportedState ?? {}) as Record<string, any>;
+  const relays = sanitizeRelayArray(reported.relays) ?? sanitizeRelayArray(relayMapFromLegacyState(isPlainObject(reported.raw) ? reported.raw : reported));
   return {
     id: doc.id,
     readingAt: toIsoFromTimestamp(reported.readingAt) ?? toIsoFromTimestamp(data.createdAt),
@@ -2202,7 +2243,7 @@ function telemetryRowFromDoc(doc: FirebaseFirestore.QueryDocumentSnapshot) {
     applyMessage: reported.applyMessage ?? null,
     firmwareVersion: reported.firmwareVersion ?? null,
     uptimeSeconds: reported.uptimeSeconds ?? null,
-    relays: Array.isArray(reported.relays) ? reported.relays : null,
+    relays: relays ?? null,
     alarms: Array.isArray(reported.alarms) ? reported.alarms : null,
     raw: isPlainObject(reported.raw) ? reported.raw : null,
   };

@@ -95,13 +95,57 @@ function relayLabel(index: number) {
   return `REL${index + 1}`;
 }
 
+function relayOrder(label: string) {
+  const match = label.match(/^(?:REL)(\d+)$/i);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
 function normalizeRelays(reading?: AssetIotReading | null): AssetIotRelay[] {
   if (Array.isArray(reading?.relays) && reading?.relays.length > 0) {
-    return reading.relays.filter((relay): relay is AssetIotRelay => Boolean(relay?.label));
+    return reading.relays
+      .filter((relay): relay is AssetIotRelay => Boolean(relay?.label))
+      .map((relay) => ({
+        label: relay.label.trim().toUpperCase(),
+        active: Boolean(relay.active),
+      }))
+      .sort((left, right) => relayOrder(left.label) - relayOrder(right.label) || left.label.localeCompare(right.label));
+  }
+
+  if (reading?.relays && typeof reading.relays === 'object') {
+    const relays = Object.entries(reading.relays as Record<string, unknown>)
+      .map(([label, active]) => {
+        const normalizedLabel = label.trim().toUpperCase();
+        const normalizedActive = asBoolean(active);
+        if (!normalizedLabel || normalizedActive == null) return null;
+        return {
+          label: normalizedLabel,
+          active: normalizedActive,
+        };
+      })
+      .filter((relay): relay is AssetIotRelay => Boolean(relay));
+    if (relays.length > 0) {
+      return relays.sort((left, right) => relayOrder(left.label) - relayOrder(right.label) || left.label.localeCompare(right.label));
+    }
   }
 
   const raw = reading?.raw;
   if (!raw || typeof raw !== 'object') return [];
+
+  const rawRelayEntries = Object.entries(raw as Record<string, unknown>)
+    .filter(([key, value]) => /^REL\d+$/i.test(key) && value != null && value !== '')
+    .map(([key, value]) => {
+      const active = asBoolean(value);
+      if (active == null) return null;
+      return {
+        label: key.trim().toUpperCase(),
+        active,
+      };
+    })
+    .filter((relay): relay is AssetIotRelay => Boolean(relay));
+
+  if (rawRelayEntries.length > 0) {
+    return rawRelayEntries.sort((left, right) => relayOrder(left.label) - relayOrder(right.label) || left.label.localeCompare(right.label));
+  }
 
   return [0, 1, 2, 3]
     .map((index) => {
@@ -311,7 +355,7 @@ function LegacyThermostatPanel({
             <img src="/iot/lh1t/images/defross.png" alt="Defross" className="h-full w-full object-contain" />
           </div>
         ) : null}
-        <div className="absolute left-[67.7%] top-[32.3%] h-[17.7%] w-[10.2%]">
+        <div className="absolute left-[67.7%] top-[32.3%] h-[15.5%] w-[8.5%]">
           <img src="/iot/lh1t/images/set.png" alt="Set" className="h-full w-full object-cover" />
         </div>
         <div className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717]">

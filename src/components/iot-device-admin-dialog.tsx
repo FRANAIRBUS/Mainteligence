@@ -68,20 +68,47 @@ function normalizeCapabilities(capabilities?: string[] | null) {
   return Array.from(new Set((capabilities ?? []).map((capability) => capability.trim().toLowerCase()).filter(Boolean)));
 }
 
-function resolveRelayStateMap(asset: Asset) {
-  const relayState: Record<string, boolean> = {};
+function normalizeRelayEntries(asset: Asset) {
+  const relayEntries = new Map<string, boolean>();
 
   if (Array.isArray(asset.iot?.lastReading?.relays)) {
     for (const relay of asset.iot.lastReading.relays) {
       if (!relay?.label) continue;
-      relayState[relay.label] = Boolean(relay.active);
+      relayEntries.set(relay.label.trim().toUpperCase(), Boolean(relay.active));
+    }
+  } else if (asset.iot?.lastReading?.relays && typeof asset.iot.lastReading.relays === 'object') {
+    for (const [label, active] of Object.entries(asset.iot.lastReading.relays as Record<string, unknown>)) {
+      const normalizedLabel = label.trim().toUpperCase();
+      const normalizedActive = typeof active === 'boolean'
+        ? active
+        : ['1', 'true', 'on', 'activo', 'online'].includes(String(active ?? '').trim().toLowerCase());
+      if (!normalizedLabel) continue;
+      relayEntries.set(normalizedLabel, normalizedActive);
+    }
+  }
+
+  if (relayEntries.size === 0 && asset.iot?.lastReading?.raw && typeof asset.iot.lastReading.raw === 'object') {
+    for (const [label, active] of Object.entries(asset.iot.lastReading.raw as Record<string, unknown>)) {
+      if (!/^REL\d+$/i.test(label)) continue;
+      const normalizedActive = ['1', 'true', 'on', 'activo', 'online'].includes(String(active ?? '').trim().toLowerCase());
+      relayEntries.set(label.trim().toUpperCase(), normalizedActive);
     }
   }
 
   if (asset.iot?.desiredState?.relays) {
     for (const [label, active] of Object.entries(asset.iot.desiredState.relays)) {
-      relayState[label] = Boolean(active);
+      relayEntries.set(label.trim().toUpperCase(), Boolean(active));
     }
+  }
+
+  return Array.from(relayEntries.entries()).sort((left, right) => left[0].localeCompare(right[0]));
+}
+
+function resolveRelayStateMap(asset: Asset) {
+  const relayState: Record<string, boolean> = {};
+
+  for (const [label, active] of normalizeRelayEntries(asset)) {
+    relayState[label] = active;
   }
 
   return relayState;
@@ -90,16 +117,8 @@ function resolveRelayStateMap(asset: Asset) {
 function resolveRelayLabels(asset: Asset) {
   const labels = new Set<string>();
 
-  if (Array.isArray(asset.iot?.lastReading?.relays)) {
-    for (const relay of asset.iot.lastReading.relays) {
-      if (relay?.label) labels.add(relay.label);
-    }
-  }
-
-  if (asset.iot?.desiredState?.relays) {
-    for (const label of Object.keys(asset.iot.desiredState.relays)) {
-      if (label.trim()) labels.add(label);
-    }
+  for (const [label] of normalizeRelayEntries(asset)) {
+    if (label.trim()) labels.add(label);
   }
 
   if (labels.size === 0 && asset.iot?.panelType === 'relay') {
