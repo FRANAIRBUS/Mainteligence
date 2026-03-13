@@ -2134,23 +2134,32 @@ function telemetryRowFromDoc(doc: FirebaseFirestore.QueryDocumentSnapshot) {
   };
 }
 
-async function readOrgAssetByDeviceKey(orgId: string, deviceKey: string) {
+async function findOrgAssetsByNormalizedDeviceKey(orgId: string, deviceKey: string) {
+  const normalizedKey = sanitizeDeviceKey(deviceKey);
   const assetQuery = await db
     .collection('organizations')
     .doc(orgId)
     .collection('assets')
-    .where('iot.deviceKey', '==', deviceKey)
-    .limit(2)
     .get();
-
-  if (assetQuery.empty) {
+  return assetQuery.docs
+    .filter((doc) => {
+      try {
+        return sanitizeDeviceKey(doc.get('iot.deviceKey')) === normalizedKey;
+      } catch {
+        return false;
+      }
+    })
+    .slice(0, 2);
+}
+async function readOrgAssetByDeviceKey(orgId: string, deviceKey: string) {
+  const matchingAssets = await findOrgAssetsByNormalizedDeviceKey(orgId, deviceKey);
+  if (matchingAssets.length === 0) {
     throw httpsError('not-found', 'No existe un activo IoT con ese deviceKey.');
   }
-  if (assetQuery.size > 1) {
+  if (matchingAssets.length > 1) {
     throw httpsError('failed-precondition', 'Hay varios activos con el mismo deviceKey. Corrigelo antes de provisionar.');
   }
-
-  return assetQuery.docs[0];
+  return matchingAssets[0];
 }
 
 function requireDeviceSignature(req: Request, secret: string) {
@@ -5230,7 +5239,7 @@ export const createAsset = functions.https.onCall(async (data, context) => {
       iot = stripUndefinedDeep({
         enabled: true,
         panelType,
-        deviceKey: requireStringField(iotPayload.deviceKey, 'iot.deviceKey'),
+        deviceKey: sanitizeDeviceKey(requireStringField(iotPayload.deviceKey, 'iot.deviceKey')),
         locationLabel: String(iotPayload.locationLabel ?? '').trim() || undefined,
         dataSource: String(iotPayload.dataSource ?? 'maintelligence_api').trim() || 'maintelligence_api',
       });
@@ -5310,8 +5319,8 @@ export const createIotProvisioningToken = functions.https.onCall(async (data, co
   }
 
   const deviceKey = sanitizeDeviceKey(iotData.deviceKey);
-  const duplicateSnap = await orgRef.collection('assets').where('iot.deviceKey', '==', deviceKey).limit(2).get();
-  if (duplicateSnap.size > 1) {
+  const duplicateAssets = await findOrgAssetsByNormalizedDeviceKey(orgId, deviceKey);
+  if (duplicateAssets.length > 1 || (duplicateAssets.length === 1 && duplicateAssets[0].id !== assetId)) {
     throw httpsError('failed-precondition', 'Hay varios activos con el mismo deviceKey. Corrigelo antes de provisionar.');
   }
 
@@ -5339,6 +5348,7 @@ export const createIotProvisioningToken = functions.https.onCall(async (data, co
   await assetRef.set(
     {
       iot: {
+        deviceKey,
         provisioning: {
           bootstrapPending: true,
           bootstrapExpiresAt: expiresAt,
@@ -5401,6 +5411,12 @@ export const setAssetIotDesiredState = functions.https.onCall(async (data, conte
     const iotData = (assetSnap.get('iot') ?? {}) as Record<string, any>;
     if (!iotData?.enabled) {
       throw httpsError('failed-precondition', 'El activo no esta marcado como IoT.');
+    }
+
+    const supportsFan = Array.isArray(iotData.capabilities)
+      && iotData.capabilities.some((capability: unknown) => String(capability ?? '').trim().toLowerCase() === 'fan');
+    if (statePatch.fan !== undefined && statePatch.fan !== null && !supportsFan) {
+      throw httpsError('failed-precondition', 'El dispositivo actual no admite control remoto de fan.');
     }
 
     const currentDesired = (iotData.desiredState ?? {}) as Record<string, any>;
@@ -5660,6 +5676,7 @@ export const iotDeviceBootstrap = functions.https.onRequest(async (req, res) => 
     await assetRef.set(
       {
         iot: stripUndefinedDeep({
+          deviceKey,
           dataSource: 'maintelligence_api',
           capabilities,
           provisioning: {
@@ -7894,6 +7911,7 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Webhook handler error.');
   }
 });
+
 
 
 

@@ -127,6 +127,7 @@ function normalizeAlarms(reading?: AssetIotReading | null): string[] {
 }
 
 function readingMetric(reading: AssetIotReading | null | undefined, directKey: keyof AssetIotReading, rawKey: string) {
+  return asNumber(reading?.[directKey]) ?? asNumber(reading?.raw?.[rawKey]);
 }
 
 function readingBoolean(reading: AssetIotReading | null | undefined, directKey: keyof AssetIotReading, rawKey: string) {
@@ -496,4 +497,6 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
     </Card>
   );
 }
+
+
 

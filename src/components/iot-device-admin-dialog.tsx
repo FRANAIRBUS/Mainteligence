@@ -124,6 +124,7 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
   const [note, setNote] = useState('');
+  const supportsFan = (asset.iot?.capabilities ?? []).some((capability) => capability.trim().toLowerCase() === 'fan');
 
   const deviceSnippet = useMemo(() => {
     if (!provisioning) return '';
@@ -265,7 +266,7 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
         state: {
           power,
           mode,
-          fan,
+          ...(supportsFan ? { fan } : {}),
           note: note.trim() || undefined,
         },
       };
@@ -386,18 +387,24 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
                   </div>
                   <div>
                     <Label htmlFor={`fan-${asset.id}`}>Fan</Label>
-                    <select
-                      id={`fan-${asset.id}`}
-                      value={fan}
-                      onChange={(e) => setFan(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      {fanOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
+                    {supportsFan ? (
+                      <select
+                        id={`fan-${asset.id}`}
+                        value={fan}
+                        onChange={(e) => setFan(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        {fanOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="flex min-h-10 items-center rounded-md border border-dashed border-input bg-muted/30 px-3 text-sm text-muted-foreground">
+                        No soportado por este firmware.
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div>
@@ -479,5 +486,3 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
     </>
   );
 }
-
-
