@@ -1875,7 +1875,7 @@ const IOT_TELEMETRY_MAX_POINTS = 2000;
 const IOT_TELEMETRY_MAX_EXPORT_ROWS = 5000;
 const IOT_ALLOWED_PANEL_TYPES = new Set(['thermostat', 'sensor', 'relay']);
 const IOT_ALLOWED_STATUS = new Set(['online', 'offline', 'warning']);
-const IOT_ALLOWED_APPLY_STATUS = new Set(['idle', 'applied', 'rejected', 'error']);
+const IOT_ALLOWED_APPLY_STATUS = new Set(['idle', 'applied', 'partial', 'rejected', 'error']);
 const FUNCTIONS_REGION = 'us-central1';
 const PROJECT_ID = process.env.GCLOUD_PROJECT || admin.app().options.projectId || '';
 
