@@ -231,6 +231,7 @@ function LegacyThermostatPanel({
   const powerOn = readingBoolean(reading, 'power', 'RUN') ?? status !== 'offline';
   const relay1On = getRelayState(relays, 'REL1');
   const relay2On = getRelayState(relays, 'REL2');
+  const relay3On = getRelayState(relays, 'REL3');
   const alarmOn = alarms.length > 0;
   const timestamp = formatReadingDate(readingTimestamp(asset, reading));
   const legacyMode = thermostatMode(reading);
@@ -301,7 +302,12 @@ function LegacyThermostatPanel({
         ) : null}
         {relay2On ? (
           <div className="absolute left-[56%] top-[50%] h-[11.7%] w-[6.3%]">
-            <img src="/iot/lh1t/images/defross.png" alt="Defrost" className="h-full w-full object-contain" />
+            <img src="/iot/lh1t/images/RL_2_FAN.png" alt="Ventilador" className="h-full w-full object-contain" />
+          </div>
+        ) : null}
+        {relay3On ? (
+          <div className="absolute left-[56%] top-[62.2%] h-[11.7%] w-[6.3%]">
+            <img src="/iot/lh1t/images/defross.png" alt="Defross" className="h-full w-full object-contain" />
           </div>
         ) : null}
         <div className="absolute left-[67.7%] top-[32.3%] h-[17.7%] w-[10.2%]">
