@@ -355,7 +355,7 @@ function LegacyThermostatPanel({
             <img src="/iot/lh1t/images/defross.png" alt="Defross" className="h-full w-full object-contain" />
           </div>
         ) : null}
-        <div className="absolute left-[67.7%] top-[32.3%] h-[15.5%] w-[8.5%]">
+        <div className="absolute left-[69.7%] top-[34.3%] h-[15.5%] w-[8.5%]">
           <img src="/iot/lh1t/images/set.png" alt="Set" className="h-full w-full object-cover" />
         </div>
         <div className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717]">
