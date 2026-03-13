@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   Cpu,
+  FileJson,
   Droplets,
   Gauge,
   MapPin,
@@ -14,7 +15,10 @@ import {
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Asset, AssetIotReading, AssetIotRelay } from '@/lib/firebase/models';
 
 type IotPanelCardProps = {
@@ -256,6 +260,75 @@ function formatLedValue(value: number | null, decimals = 1) {
   return value.toFixed(decimals);
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function jsonReplacer(_key: string, value: unknown) {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (isPlainObject(value)) {
+    if (typeof value.toDate === 'function') {
+      const dateValue = value.toDate();
+      return dateValue instanceof Date ? dateValue.toISOString() : dateValue;
+    }
+
+    if (typeof value.toMillis === 'function') {
+      return new Date(value.toMillis()).toISOString();
+    }
+  }
+
+  return value;
+}
+
+function buildIotDebugPayload(asset: Asset, reading: AssetIotReading | null) {
+  return {
+    assetId: asset.id,
+    assetName: asset.name,
+    assetCode: asset.code,
+    panelType: asset.iot?.panelType ?? null,
+    status: readingStatus(asset),
+    lastSeenAt: asset.iot?.lastSeenAt ?? null,
+    displayReading: reading,
+    iot: asset.iot ?? null,
+  };
+}
+
+function stringifyIotDebugPayload(asset: Asset, reading: AssetIotReading | null) {
+  return JSON.stringify(buildIotDebugPayload(asset, reading), jsonReplacer, 2);
+}
+
+function IotPayloadDialog({ asset, reading }: { asset: Asset; reading: AssetIotReading | null }) {
+  const payload = stringifyIotDebugPayload(asset, reading);
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="border-sky-300/20 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white">
+          <FileJson className="h-4 w-4" />
+          Ver payload IoT
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-4xl border-white/10 bg-slate-950 text-white">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-white">
+            <FileJson className="h-5 w-5 text-sky-300" />
+            Payload IoT enviado por el equipo
+          </DialogTitle>
+          <DialogDescription className="text-slate-400">
+            Vista de asset.iot, la lectura efectiva mostrada en pantalla y metadatos de provision.
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-[70vh] rounded-2xl border border-white/10 bg-black/30">
+          <pre className="p-4 text-xs leading-6 text-slate-200">{payload}</pre>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function getRelayState(relays: AssetIotRelay[], label: string) {
   return relays.find((relay) => relay.label === label)?.active ?? false;
 }
@@ -416,6 +489,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
   const setpoint = readingMetric(reading, 'setpoint', 'Set1');
   const relays = normalizeRelays(reading);
   const alarms = normalizeAlarms(reading);
+  const canInspectPayload = Boolean(asset.iot?.deviceKey || asset.iot?.provisioning);
 
   return (
     <Card className="overflow-hidden border-white/10 bg-slate-950 text-white shadow-xl shadow-slate-950/30">
@@ -530,9 +604,12 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
                 {formatReadingDate(readingTimestamp(asset, reading))}
               </div>
             </div>
-            <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
-              Panel {panelType}
-            </Badge>
+            <div className="flex items-center gap-2 justify-self-start md:justify-self-end">
+              <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
+                Panel {panelType}
+              </Badge>
+              {canInspectPayload ? <IotPayloadDialog asset={asset} reading={reading} /> : null}
+            </div>
           </div>
 
           {alarms.length > 0 ? (
