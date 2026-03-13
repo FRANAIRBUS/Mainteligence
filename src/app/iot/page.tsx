@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { Cpu, Download, Plus, RadioTower, Search, Thermometer } from 'lucide-react';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { Cpu, Plus, RadioTower, Search, Thermometer } from 'lucide-react';
 
 import { AppShell } from '@/components/app-shell';
 import { AddAssetDialog } from '@/components/add-asset-dialog';
@@ -21,17 +20,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Icons } from '@/components/icons';
-import { useCollection, useFirebaseApp, useUser } from '@/lib/firebase';
+import { useCollection, useUser } from '@/lib/firebase';
 import type { Asset, Site } from '@/lib/firebase/models';
 import { orgCollectionPath } from '@/lib/organization';
 import { canManageMasterData, normalizeRole } from '@/lib/rbac';
 import { useRouter } from 'next/navigation';
-import { useToast } from '@/hooks/use-toast';
 
 export default function IotPage() {
   const { user, loading: userLoading, organizationId, role } = useUser();
-  const app = useFirebaseApp();
-  const { toast } = useToast();
   const router = useRouter();
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -79,50 +75,6 @@ export default function IotPage() {
     const status = asset.iot?.lastReading?.status ?? null;
     return status === 'online';
   }).length;
-
-  const handleQuickCsvExport = async (assetId: string) => {
-    if (!app || !organizationId) return;
-    const to = new Date();
-    const from = new Date(to);
-    from.setDate(from.getDate() - 7);
-
-    try {
-      const fn = httpsCallable(getFunctions(app), 'exportAssetIotTelemetryCsv');
-      const result = await fn({
-        organizationId,
-        payload: {
-          assetId,
-          from: from.toISOString(),
-          to: to.toISOString(),
-          limit: 5000,
-        },
-      });
-
-      const data = result.data as { filename?: string; csv?: string };
-      const csv = String(data.csv ?? '');
-      const filename = String(data.filename ?? `telemetry_${assetId}_7d.csv`);
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: 'CSV descargado',
-        description: 'Se descargo el historico de los ultimos 7 dias.',
-      });
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'No se pudo descargar CSV',
-        description: error.message || 'Error exportando telemetria.',
-      });
-    }
-  };
 
   if (userLoading) {
     return (
@@ -198,13 +150,7 @@ export default function IotPage() {
           filteredIotAssets.map((asset) => (
             <div key={asset.id} className="space-y-3">
               <IotPanelCard asset={asset} siteName={siteNameById[asset.siteId]} />
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" className="w-full sm:w-auto" onClick={() => void handleQuickCsvExport(asset.id)}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Descargar CSV (7d)
-                </Button>
-                {canManage ? <IotDeviceAdminDialog asset={asset} /> : null}
-              </div>
+              {canManage ? <IotDeviceAdminDialog asset={asset} /> : null}
             </div>
           ))
         ) : iotAssets.length > 0 ? (

@@ -7,6 +7,7 @@ import {
   Gauge,
   MapPin,
   Power,
+  Settings,
   Thermometer,
   Wifi,
   WifiOff,
@@ -126,7 +127,6 @@ function normalizeAlarms(reading?: AssetIotReading | null): string[] {
 }
 
 function readingMetric(reading: AssetIotReading | null | undefined, directKey: keyof AssetIotReading, rawKey: string) {
-  return asNumber(reading?.[directKey]) ?? asNumber(reading?.raw?.[rawKey]);
 }
 
 function readingBoolean(reading: AssetIotReading | null | undefined, directKey: keyof AssetIotReading, rawKey: string) {
@@ -151,6 +151,7 @@ function readingTimestamp(asset: Asset, reading: AssetIotReading | null | undefi
     reading?.readingAt ??
     asset.iot?.lastSeenAt ??
     asset.iot?.provisioning?.lastSyncAt ??
+    asset.updatedAt ??
     reading?.raw?.reading_time ??
     null
   );
@@ -300,14 +301,16 @@ function LegacyThermostatPanel({
         ) : null}
         {relay2On ? (
           <div className="absolute left-[56%] top-[50%] h-[11.7%] w-[6.3%]">
-            <img src="/iot/lh1t/images/RL_2_FAN.png" alt="Ventilador" className="h-full w-full object-contain" />
+            <img src="/iot/lh1t/images/defross.png" alt="Defrost" className="h-full w-full object-contain" />
           </div>
         ) : null}
         <div className="absolute left-[67.7%] top-[32.3%] h-[17.7%] w-[10.2%]">
-          <img src={relay1On ? '/iot/lh1t/images/RELE_ON.png' : '/iot/lh1t/images/RELE_OFF.png'} alt="Relay 1" className="h-full w-full object-cover" />
+          <img src="/iot/lh1t/images/set.png" alt="Set" className="h-full w-full object-cover" />
         </div>
-        <div className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%]">
-          <img src={relay2On ? '/iot/lh1t/images/RELE_ON.png' : '/iot/lh1t/images/RELE_OFF.png'} alt="Relay 2" className="h-full w-full object-cover" />
+        <div className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717]">
+          <div className="flex h-full w-full items-center justify-center">
+            <Settings className="h-[58%] w-[58%] text-slate-200" strokeWidth={2.2} />
+          </div>
         </div>
       </div>
 
