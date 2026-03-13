@@ -24,9 +24,6 @@ import { Textarea } from '@/components/ui/textarea';
 const modeOptions = [
   { value: 'cool', label: 'Cool' },
   { value: 'heat', label: 'Heat' },
-  { value: 'auto', label: 'Auto' },
-  { value: 'fan', label: 'Fan' },
-  { value: 'off', label: 'Off' },
 ];
 
 const fanOptions = [
@@ -66,6 +63,51 @@ type CsvResult = {
   filename: string;
   csv: string;
 };
+
+function normalizeCapabilities(capabilities?: string[] | null) {
+  return Array.from(new Set((capabilities ?? []).map((capability) => capability.trim().toLowerCase()).filter(Boolean)));
+}
+
+function resolveRelayStateMap(asset: Asset) {
+  const relayState: Record<string, boolean> = {};
+
+  if (Array.isArray(asset.iot?.lastReading?.relays)) {
+    for (const relay of asset.iot.lastReading.relays) {
+      if (!relay?.label) continue;
+      relayState[relay.label] = Boolean(relay.active);
+    }
+  }
+
+  if (asset.iot?.desiredState?.relays) {
+    for (const [label, active] of Object.entries(asset.iot.desiredState.relays)) {
+      relayState[label] = Boolean(active);
+    }
+  }
+
+  return relayState;
+}
+
+function resolveRelayLabels(asset: Asset) {
+  const labels = new Set<string>();
+
+  if (Array.isArray(asset.iot?.lastReading?.relays)) {
+    for (const relay of asset.iot.lastReading.relays) {
+      if (relay?.label) labels.add(relay.label);
+    }
+  }
+
+  if (asset.iot?.desiredState?.relays) {
+    for (const label of Object.keys(asset.iot.desiredState.relays)) {
+      if (label.trim()) labels.add(label);
+    }
+  }
+
+  if (labels.size === 0 && asset.iot?.panelType === 'relay') {
+    ['REL1', 'REL2', 'REL3', 'REL4'].forEach((label) => labels.add(label));
+  }
+
+  return Array.from(labels);
+}
 
 function telemetryRange(preset: TelemetryPreset) {
   const now = new Date();
@@ -124,7 +166,18 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
   const [note, setNote] = useState('');
-  const supportsFan = (asset.iot?.capabilities ?? []).some((capability) => capability.trim().toLowerCase() === 'fan');
+  const panelType = asset.iot?.panelType ?? 'sensor';
+  const relayLabels = useMemo(() => resolveRelayLabels(asset), [asset]);
+  const [relayStates, setRelayStates] = useState<Record<string, boolean>>(() => resolveRelayStateMap(asset));
+  const capabilitySet = useMemo(() => new Set(normalizeCapabilities(asset.iot?.capabilities)), [asset.iot?.capabilities]);
+  const supportsSetpoint = panelType === 'thermostat' || capabilitySet.has('setpoint');
+  const supportsPower = panelType === 'thermostat' || capabilitySet.has('power');
+  const supportsMode = panelType === 'thermostat' || capabilitySet.has('mode');
+  const supportsFan = capabilitySet.has('fan')
+    || typeof asset.iot?.lastReading?.fan === 'string'
+    || typeof asset.iot?.reportedState?.fan === 'string'
+    || typeof asset.iot?.desiredState?.fan === 'string';
+  const supportsRelays = panelType === 'relay' || capabilitySet.has('relays') || relayLabels.length > 0;
 
   const deviceSnippet = useMemo(() => {
     if (!provisioning) return '';
@@ -235,6 +288,18 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
     void handleLoadTelemetry(telemetryPreset);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    setSetpoint(String(asset.iot?.desiredState?.setpoint ?? asset.iot?.lastReading?.setpoint ?? ''));
+    setMode(asset.iot?.desiredState?.mode ?? 'cool');
+    setFan(asset.iot?.desiredState?.fan ?? 'auto');
+    setPower(asset.iot?.desiredState?.power ?? true);
+    setRelayStates(resolveRelayStateMap(asset));
+  }, [
+    open,
+    asset,
+  ]);
+
   const handleProvision = async () => {
     if (!app || !organizationId) return;
     setLoadingProvision(true);
@@ -261,19 +326,29 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
     if (!app || !organizationId) return;
     setLoadingDesiredState(true);
     try {
+      const state: Record<string, unknown> = {
+        note: note.trim() || undefined,
+      };
+
+      if (supportsPower) state.power = power;
+      if (supportsMode) state.mode = mode;
+      if (supportsFan) state.fan = fan;
+
       const payload: Record<string, unknown> = {
         assetId: asset.id,
-        state: {
-          power,
-          mode,
-          ...(supportsFan ? { fan } : {}),
-          note: note.trim() || undefined,
-        },
+        state,
       };
 
       const numericSetpoint = Number(String(setpoint).replace(',', '.'));
-      if (String(setpoint).trim() !== '' && Number.isFinite(numericSetpoint)) {
-        (payload.state as Record<string, unknown>).setpoint = numericSetpoint;
+      if (supportsSetpoint && String(setpoint).trim() !== '' && Number.isFinite(numericSetpoint)) {
+        state.setpoint = numericSetpoint;
+      }
+
+      if (supportsRelays && relayLabels.length > 0) {
+        state.relays = relayLabels.reduce<Record<string, boolean>>((acc, label) => {
+          acc[label] = Boolean(relayStates[label]);
+          return acc;
+        }, {});
       }
 
       const fn = httpsCallable(getFunctions(app), 'setAssetIotDesiredState');
@@ -354,40 +429,46 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
               </div>
               <div className="grid gap-3">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <Label htmlFor={`setpoint-${asset.id}`}>Setpoint</Label>
-                    <Input id={`setpoint-${asset.id}`} value={setpoint} onChange={(e) => setSetpoint(e.target.value)} placeholder="Ej: 4.5" />
-                  </div>
-                  <div>
-                    <Label htmlFor={`power-${asset.id}`}>Power</Label>
-                    <select
-                      id={`power-${asset.id}`}
-                      value={power ? 'on' : 'off'}
-                      onChange={(e) => setPower(e.target.value === 'on')}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="on">ON</option>
-                      <option value="off">OFF</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor={`mode-${asset.id}`}>Mode</Label>
-                    <select
-                      id={`mode-${asset.id}`}
-                      value={mode}
-                      onChange={(e) => setMode(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      {modeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor={`fan-${asset.id}`}>Fan</Label>
-                    {supportsFan ? (
+                  {supportsSetpoint ? (
+                    <div>
+                      <Label htmlFor={`setpoint-${asset.id}`}>Setpoint</Label>
+                      <Input id={`setpoint-${asset.id}`} value={setpoint} onChange={(e) => setSetpoint(e.target.value)} placeholder="Ej: 4.5" />
+                    </div>
+                  ) : null}
+                  {supportsPower ? (
+                    <div>
+                      <Label htmlFor={`power-${asset.id}`}>Power</Label>
+                      <select
+                        id={`power-${asset.id}`}
+                        value={power ? 'on' : 'off'}
+                        onChange={(e) => setPower(e.target.value === 'on')}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="on">ON</option>
+                        <option value="off">OFF</option>
+                      </select>
+                    </div>
+                  ) : null}
+                  {supportsMode ? (
+                    <div>
+                      <Label htmlFor={`mode-${asset.id}`}>Mode</Label>
+                      <select
+                        id={`mode-${asset.id}`}
+                        value={mode}
+                        onChange={(e) => setMode(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        {modeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                  {supportsFan ? (
+                    <div>
+                      <Label htmlFor={`fan-${asset.id}`}>Fan</Label>
                       <select
                         id={`fan-${asset.id}`}
                         value={fan}
@@ -400,13 +481,33 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
                           </option>
                         ))}
                       </select>
-                    ) : (
-                      <div className="flex min-h-10 items-center rounded-md border border-dashed border-input bg-muted/30 px-3 text-sm text-muted-foreground">
-                        No soportado por este firmware.
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  ) : null}
                 </div>
+                {supportsRelays ? (
+                  <div className="grid gap-2">
+                    <Label>Relés</Label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {relayLabels.map((label) => (
+                        <div key={label}>
+                          <Label htmlFor={`relay-${asset.id}-${label}`}>{label}</Label>
+                          <select
+                            id={`relay-${asset.id}-${label}`}
+                            value={relayStates[label] ? 'on' : 'off'}
+                            onChange={(e) => {
+                              const isActive = e.target.value === 'on';
+                              setRelayStates((current) => ({ ...current, [label]: isActive }));
+                            }}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            <option value="on">ON</option>
+                            <option value="off">OFF</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <div>
                   <Label htmlFor={`note-${asset.id}`}>Nota opcional</Label>
                   <Textarea id={`note-${asset.id}`} value={note} onChange={(e) => setNote(e.target.value)} rows={4} placeholder="Ej: bajar consigna por carga nocturna" />

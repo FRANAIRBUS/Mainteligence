@@ -1952,6 +1952,80 @@ function sanitizeCapabilities(input: unknown) {
   return capabilities.length > 0 ? capabilities : undefined;
 }
 
+function normalizedCapabilitySet(input: unknown) {
+  const capabilities = new Set<string>();
+  if (!Array.isArray(input)) return capabilities;
+
+  for (const value of input) {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    if (normalized) capabilities.add(normalized);
+  }
+
+  return capabilities;
+}
+
+function hasRelayControlData(input: unknown) {
+  if (Array.isArray(input)) {
+    return input.some((item) => isPlainObject(item) && Object.keys(item).length > 0);
+  }
+
+  if (isPlainObject(input)) {
+    return Object.keys(input).length > 0;
+  }
+
+  return false;
+}
+
+function resolveIotCapabilities(iotData: Record<string, any>) {
+  const capabilities = normalizedCapabilitySet(iotData.capabilities);
+  const panelType = optionalStringValue(iotData.panelType)?.toLowerCase();
+  const desiredState = isPlainObject(iotData.desiredState) ? iotData.desiredState as Record<string, unknown> : null;
+  const lastReading = isPlainObject(iotData.lastReading) ? iotData.lastReading as Record<string, unknown> : null;
+  const reportedState = isPlainObject(iotData.reportedState) ? iotData.reportedState as Record<string, unknown> : null;
+
+  if (panelType === 'thermostat') {
+    capabilities.add('setpoint');
+    capabilities.add('power');
+    capabilities.add('mode');
+  }
+
+  if (panelType === 'relay') {
+    capabilities.add('relays');
+  }
+
+  if (reportedState?.fan != null || lastReading?.fan != null || desiredState?.fan != null) {
+    capabilities.add('fan');
+  }
+
+  if (
+    hasRelayControlData(reportedState?.relays)
+    || hasRelayControlData(lastReading?.relays)
+    || hasRelayControlData(desiredState?.relays)
+  ) {
+    capabilities.add('relays');
+  }
+
+  return capabilities;
+}
+
+function filterUnsupportedDesiredStateFields(statePatch: Record<string, unknown>, iotData: Record<string, any>) {
+  const filteredState = { ...statePatch };
+  const droppedFields: string[] = [];
+  const capabilities = resolveIotCapabilities(iotData);
+
+  if (filteredState.fan !== undefined && filteredState.fan !== null && !capabilities.has('fan')) {
+    delete filteredState.fan;
+    droppedFields.push('fan');
+  }
+
+  if (filteredState.relays !== undefined && filteredState.relays !== null && !capabilities.has('relays')) {
+    delete filteredState.relays;
+    droppedFields.push('relays');
+  }
+
+  return { filteredState, droppedFields, capabilities };
+}
+
 function sanitizeDesiredStatePatch(input: unknown) {
   if (!isPlainObject(input)) throw httpsError('invalid-argument', 'state requerido.');
 
@@ -5413,17 +5487,22 @@ export const setAssetIotDesiredState = functions.https.onCall(async (data, conte
       throw httpsError('failed-precondition', 'El activo no esta marcado como IoT.');
     }
 
-    const supportsFan = Array.isArray(iotData.capabilities)
-      && iotData.capabilities.some((capability: unknown) => String(capability ?? '').trim().toLowerCase() === 'fan');
-    if (statePatch.fan !== undefined && statePatch.fan !== null && !supportsFan) {
-      throw httpsError('failed-precondition', 'El dispositivo actual no admite control remoto de fan.');
+    const { filteredState, droppedFields } = filterUnsupportedDesiredStateFields(statePatch, iotData);
+    if (Object.keys(filteredState).length === 0) {
+      if (droppedFields.length === 1 && droppedFields[0] === 'fan') {
+        throw httpsError('failed-precondition', 'El dispositivo actual no admite control remoto de fan.');
+      }
+      if (droppedFields.length === 1 && droppedFields[0] === 'relays') {
+        throw httpsError('failed-precondition', 'El dispositivo actual no admite control remoto de relés.');
+      }
+      throw httpsError('failed-precondition', 'La orden solicitada no aplica a las capacidades actuales del dispositivo.');
     }
 
     const currentDesired = (iotData.desiredState ?? {}) as Record<string, any>;
     const nextVersion = Number(currentDesired.version ?? 0) + 1;
     const nextDesired = stripUndefinedDeep({
       ...currentDesired,
-      ...statePatch,
+      ...filteredState,
       version: nextVersion,
       requestedBy: actorUid,
       requestedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -5444,6 +5523,7 @@ export const setAssetIotDesiredState = functions.https.onCall(async (data, conte
       deviceKey: sanitizeDeviceKey(iotData.deviceKey),
       desiredState: stripUndefinedDeep({ ...nextDesired, requestedAt: new Date().toISOString() }),
       version: nextVersion,
+      appliedState: filteredState,
     };
   });
 
@@ -5452,7 +5532,7 @@ export const setAssetIotDesiredState = functions.https.onCall(async (data, conte
     actorUid,
     actorEmail,
     orgId,
-    after: { assetId, version: result.version, state: statePatch },
+    after: { assetId, version: result.version, state: result.appliedState },
   });
 
   return {
