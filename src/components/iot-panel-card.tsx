@@ -441,7 +441,7 @@ function LegacyThermostatPanel({
           </div>
         ) : null}
         {relay3On ? (
-          <div className="absolute left-[56%] top-[62.2%] h-[11.7%] w-[6.3%]">
+          <div className="absolute left-[56%] top-[62.2%] h-[10.7%] w-[5.7%]">
             <img src="/iot/lh1t/images/defross.png" alt="Defross" className="h-full w-full object-contain" />
           </div>
         ) : null}
