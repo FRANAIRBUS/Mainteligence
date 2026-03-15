@@ -1,4 +1,6 @@
-import type { CSSProperties, ReactNode } from 'react';
+'use client';
+
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -199,6 +201,22 @@ function readingBoolean(reading: AssetIotReading | null | undefined, directKey: 
   return asBoolean(reading?.[directKey]) ?? asBoolean(reading?.raw?.[rawKey]);
 }
 
+function probeTemperature(reading: AssetIotReading | null | undefined, probeIndex: number) {
+  if (probeIndex === 1) return readingMetric(reading, 'temperature', 'Temp1');
+  if (probeIndex === 2) return readingMetric(reading, 'secondaryTemperature', 'Temp2');
+  return asNumber(reading?.raw?.[`Temp${probeIndex}`]);
+}
+
+function probeHumidity(reading: AssetIotReading | null | undefined, probeIndex: number) {
+  if (probeIndex === 1) return readingMetric(reading, 'humidity', 'Hum1');
+  return asNumber(reading?.raw?.[`Hum${probeIndex}`]);
+}
+
+function probeSetpoint(reading: AssetIotReading | null | undefined, probeIndex: number) {
+  if (probeIndex === 1) return readingMetric(reading, 'setpoint', 'Set1');
+  return asNumber(reading?.raw?.[`Set${probeIndex}`]);
+}
+
 function readingStatus(asset: Asset) {
   const status = asset.iot?.lastReading?.status ?? asset.iot?.reportedState?.status ?? null;
   if (status) return status;
@@ -348,21 +366,16 @@ function LegacyThermostatPanel({
   asset,
   reading,
   status,
-  temperature,
-  humidity,
-  setpoint,
   relays,
   alarms,
 }: {
   asset: Asset;
   reading: AssetIotReading | null;
   status: string;
-  temperature: number | null;
-  humidity: number | null;
-  setpoint: number | null;
   relays: AssetIotRelay[];
   alarms: string[];
 }) {
+  const [activeProbe, setActiveProbe] = useState<number>(1);
   const powerOn = readingBoolean(reading, 'power', 'RUN') ?? status !== 'offline';
   const relay1On = getRelayState(relays, 'REL1');
   const relay2On = getRelayState(relays, 'REL2');
@@ -370,9 +383,11 @@ function LegacyThermostatPanel({
   const alarmOn = alarms.length > 0;
   const timestamp = formatReadingDate(readingTimestamp(asset, reading));
   const legacyMode = thermostatMode(reading);
+  const temperature = probeTemperature(reading, activeProbe);
+  const humidity = probeHumidity(reading, activeProbe);
+  const setpoint = probeSetpoint(reading, activeProbe) ?? probeSetpoint(reading, 1);
   const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
   const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
-  const secondaryTemperature = readingMetric(reading, 'secondaryTemperature', 'Temp2');
 
   return (
     <div className="space-y-4">
@@ -388,11 +403,16 @@ function LegacyThermostatPanel({
         </div>
 
         <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-          {['MODE ' + legacyMode, 'PROBE 1', 'DATOS'].map((label) => (
-            <div key={label} className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-              {label}
-            </div>
-          ))}
+          <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
+            MODE {legacyMode}
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
+            className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
+          >
+            PROBE {activeProbe}
+          </button>
         </div>
 
         <div className="absolute left-[83.8%] top-[34.0%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
@@ -469,8 +489,8 @@ function LegacyThermostatPanel({
           icon={<Droplets className="h-3.5 w-3.5" />}
         />
         <MetricTile
-          label="Sonda 2"
-          value={secondaryTemperature != null ? formatLedValue(secondaryTemperature, 0) : '--'}
+          label={`Sonda ${activeProbe}`}
+          value={temperature != null ? formatLedValue(temperature, 0) : '--'}
           suffix="C"
           icon={<Thermometer className="h-3.5 w-3.5" />}
         />
@@ -484,7 +504,6 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
   const panelType = asset.iot?.panelType ?? 'sensor';
   const status = readingStatus(asset);
   const temperature = readingMetric(reading, 'temperature', 'Temp1');
-  const secondaryTemperature = readingMetric(reading, 'secondaryTemperature', 'Temp2');
   const humidity = readingMetric(reading, 'humidity', 'Hum1');
   const setpoint = readingMetric(reading, 'setpoint', 'Set1');
   const relays = normalizeRelays(reading);
@@ -527,9 +546,6 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
                 asset={asset}
                 reading={reading}
                 status={status}
-                temperature={temperature}
-                humidity={humidity}
-                setpoint={setpoint}
                 relays={relays}
                 alarms={alarms}
               />
