@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   Activity,
   AlertTriangle,
   Cpu,
+  Download,
   FileJson,
   Droplets,
   Gauge,
@@ -15,12 +17,15 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useToast } from '@/hooks/use-toast';
+import { useFirebaseApp, useUser } from '@/lib/firebase';
 import type { Asset, AssetIotReading, AssetIotRelay } from '@/lib/firebase/models';
 
 type IotPanelCardProps = {
@@ -35,6 +40,26 @@ type DateLike =
   | number
   | null
   | undefined;
+
+type TelemetryPreset = '24h' | '7d' | '30d';
+
+type TelemetryRow = {
+  id: string;
+  readingAt: string | null;
+  createdAt: string | null;
+  temperature: number | null;
+  humidity: number | null;
+};
+
+type TelemetryResult = {
+  rows: TelemetryRow[];
+  count: number;
+};
+
+type CsvResult = {
+  filename: string;
+  csv: string;
+};
 
 const digitalFontStyle: CSSProperties = {
   fontFamily: "'Digital-7', monospace",
@@ -278,6 +303,27 @@ function formatLedValue(value: number | null, decimals = 1) {
   return value.toFixed(decimals);
 }
 
+function telemetryRange(preset: TelemetryPreset) {
+  const now = new Date();
+  const from = new Date(now);
+  if (preset === '24h') from.setHours(from.getHours() - 24);
+  if (preset === '7d') from.setDate(from.getDate() - 7);
+  if (preset === '30d') from.setDate(from.getDate() - 30);
+  return { from: from.toISOString(), to: now.toISOString() };
+}
+
+function saveCsvLocally(filename: string, csv: string) {
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -342,6 +388,183 @@ function IotPayloadDialog({ asset, reading }: { asset: Asset; reading: AssetIotR
         <ScrollArea className="max-h-[70vh] rounded-2xl border border-white/10 bg-black/30">
           <pre className="p-4 text-xs leading-6 text-slate-200">{payload}</pre>
         </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function IotTelemetryDialog({ asset, trigger }: { asset: Asset; trigger: ReactNode }) {
+  const app = useFirebaseApp();
+  const { organizationId } = useUser();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [telemetryPreset, setTelemetryPreset] = useState<TelemetryPreset>('24h');
+  const [loadingTelemetry, setLoadingTelemetry] = useState(false);
+  const [exportingTelemetry, setExportingTelemetry] = useState(false);
+  const [telemetryRows, setTelemetryRows] = useState<TelemetryRow[]>([]);
+
+  const chartData = useMemo(
+    () =>
+      telemetryRows
+        .map((row) => {
+          const sourceDate = row.readingAt ?? row.createdAt;
+          const parsed = sourceDate ? new Date(sourceDate) : null;
+          return {
+            ts: parsed,
+            label: parsed ? parsed.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '--',
+            temperature: typeof row.temperature === 'number' ? row.temperature : null,
+            humidity: typeof row.humidity === 'number' ? row.humidity : null,
+          };
+        })
+        .filter((point) => point.ts !== null),
+    [telemetryRows],
+  );
+
+  const averageTemp = useMemo(() => {
+    const values = telemetryRows
+      .map((row) => row.temperature)
+      .filter((value): value is number => typeof value === 'number');
+    if (values.length === 0) return null;
+    const sum = values.reduce((acc, value) => acc + value, 0);
+    return (sum / values.length).toFixed(1);
+  }, [telemetryRows]);
+
+  const handleLoadTelemetry = async (preset: TelemetryPreset) => {
+    if (!app || !organizationId) return;
+    setLoadingTelemetry(true);
+    try {
+      const range = telemetryRange(preset);
+      const fn = httpsCallable(getFunctions(app), 'getAssetIotTelemetry');
+      const result = await fn({
+        organizationId,
+        payload: {
+          assetId: asset.id,
+          from: range.from,
+          to: range.to,
+          limit: 1000,
+        },
+      });
+      const data = result.data as TelemetryResult;
+      setTelemetryRows(Array.isArray(data.rows) ? data.rows : []);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo cargar el historico',
+        description: error.message || 'Error consultando telemetria.',
+      });
+    } finally {
+      setLoadingTelemetry(false);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    if (!app || !organizationId) return;
+    setExportingTelemetry(true);
+    try {
+      const range = telemetryRange(telemetryPreset);
+      const fn = httpsCallable(getFunctions(app), 'exportAssetIotTelemetryCsv');
+      const result = await fn({
+        organizationId,
+        payload: {
+          assetId: asset.id,
+          from: range.from,
+          to: range.to,
+          limit: 5000,
+        },
+      });
+      const data = result.data as CsvResult;
+      saveCsvLocally(data.filename || `telemetry_${asset.id}.csv`, data.csv || '');
+      toast({
+        title: 'CSV descargado',
+        description: 'Se descargo el historico seleccionado.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo exportar CSV',
+        description: error.message || 'Error exportando telemetria.',
+      });
+    } finally {
+      setExportingTelemetry(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    void handleLoadTelemetry(telemetryPreset);
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{asset.name}</DialogTitle>
+          <DialogDescription>
+            Historico de telemetria del dispositivo IoT para analisis rapido desde el panel.
+          </DialogDescription>
+        </DialogHeader>
+
+        <section className="rounded-2xl border p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold">Historico de telemetria</div>
+            <div className="flex flex-wrap items-center gap-2">
+              {(['24h', '7d', '30d'] as TelemetryPreset[]).map((preset) => (
+                <Button
+                  key={preset}
+                  type="button"
+                  variant={telemetryPreset === preset ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => {
+                    setTelemetryPreset(preset);
+                    void handleLoadTelemetry(preset);
+                  }}
+                  disabled={loadingTelemetry}
+                >
+                  {preset}
+                </Button>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={handleExportCsv} disabled={exportingTelemetry}>
+                <Download className="mr-2 h-4 w-4" />
+                {exportingTelemetry ? 'Exportando...' : 'Descargar CSV'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mb-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+            <div className="rounded-lg border bg-muted/20 p-2">Lecturas: {telemetryRows.length}</div>
+            <div className="rounded-lg border bg-muted/20 p-2">Promedio temp: {averageTemp ? `${averageTemp} C` : '--'}</div>
+            <div className="rounded-lg border bg-muted/20 p-2">Rango: {telemetryPreset}</div>
+          </div>
+
+          <div className="h-56 w-full rounded-xl border bg-background p-2">
+            {loadingTelemetry ? (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Cargando historico...</div>
+            ) : chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" minTickGap={24} />
+                  <YAxis yAxisId="temp" width={36} />
+                  <YAxis yAxisId="hum" orientation="right" width={36} />
+                  <Tooltip />
+                  <Line yAxisId="temp" type="monotone" dataKey="temperature" stroke="#0ea5e9" dot={false} strokeWidth={2} name="Temp" />
+                  <Line yAxisId="hum" type="monotone" dataKey="humidity" stroke="#14b8a6" dot={false} strokeWidth={2} name="Humedad" />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                No hay historico para este rango. Verifica que el dispositivo envie storeTelemetry=true.
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cerrar
+            </Button>
+          </div>
+        </section>
       </DialogContent>
     </Dialog>
   );
@@ -415,9 +638,18 @@ function LegacyThermostatPanel({
           </button>
         </div>
 
-        <div className="absolute left-[83.8%] top-[34.0%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
-          <img src="/iot/lh1t/images/graf.png" alt="Grafica" className="h-full w-full object-contain" />
-        </div>
+        <IotTelemetryDialog
+          asset={asset}
+          trigger={(
+            <button
+              type="button"
+              className="absolute left-[83.8%] top-[34.0%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5 transition hover:bg-black/15"
+              aria-label="Abrir historico de telemetria"
+            >
+              <img src="/iot/lh1t/images/graf.png" alt="Grafica" className="h-full w-full object-contain" />
+            </button>
+          )}
+        />
         <div className="absolute left-[84%] top-[62.5%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
           <img
             src={powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png'}
@@ -644,11 +876,6 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
             </div>
           ) : null}
 
-          {panelType === 'thermostat' && secondaryTemperature != null ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
-              Sonda 2 disponible: <span className="font-semibold text-white">{secondaryTemperature.toFixed(1)} C</span>
-            </div>
-          ) : null}
         </CardContent>
       </div>
     </Card>
