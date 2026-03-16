@@ -87,12 +87,16 @@ const primaryDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
   fontSize: 'clamp(42px, 7.4vw, 65px)',
   lineHeight: 1,
+  fontVariantNumeric: 'tabular-nums',
+  width: 'clamp(150px, 30%, 210px)',
 };
 
 const secondaryDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
   fontSize: 'clamp(18px, 2.7vw, 24px)',
   lineHeight: 1,
+  fontVariantNumeric: 'tabular-nums',
+  width: 'clamp(40px, 7.5%, 62px)',
 };
 
 const ONLINE_TIMEOUT_MINUTES = 30;
@@ -397,19 +401,20 @@ function relayDisplayItems(relays: AssetIotRelay[]) {
 
 function MetricTile({
   label,
-                <div className="absolute left-[12%] top-[30%]">
-                  <div className="flex items-end whitespace-nowrap text-red-600">
-                    <span
-                      className="w-[150px] text-right sm:w-[200px]"
-                      style={{ ...primaryDigitalValueStyle, fontVariantNumeric: 'tabular-nums' }}
-                    >
-                      {primaryValue}
-                    </span>
-                    {powerOn ? (
-                      <span className="mb-[2px] ml-[3px] text-[14px] font-bold leading-none sm:text-[18px]">°C</span>
-                    ) : null}
-                  </div>
-                </div>
+  value,
+  suffix,
+  icon,
+  centered = false,
+}: {
+  label: string;
+  value: string;
+  suffix?: string;
+  icon: ReactNode;
+  centered?: boolean;
+}) {
+  return (
+    <div className={`rounded-2xl border border-white/10 bg-white/5 p-3 ${centered ? 'text-center' : ''}`}>
+      <div className={`text-xs uppercase tracking-[0.18em] text-slate-400 ${centered ? 'flex items-center justify-center gap-2' : 'flex items-center gap-2'}`}>
         {icon}
         <span>{label}</span>
       </div>
@@ -1065,21 +1070,20 @@ function LegacyThermostatPanel({
           <img src="/iot/lh1t/images/alarma.png" alt="Alarma" className="h-full w-full object-contain" />
         </div>
 
-        <div className="absolute left-[12%] top-[30%]">
-          <div className="flex items-end whitespace-nowrap text-red-600">
-            <span
-              className="w-[150px] text-right sm:w-[200px]"
-              style={{ ...primaryDigitalValueStyle, fontVariantNumeric: 'tabular-nums' }}
-            >
-              {primaryValue}
-            </span>
-            {powerOn ? (
-              <span className="mb-[2px] ml-[3px] text-[14px] font-bold leading-none sm:text-[18px]">°C</span>
-            ) : null}
-          </div>
+        <div
+          className="absolute top-[34.5%] right-[47.8%] w-[21%] text-right text-red-600 sm:right-[48.8%] sm:w-[22%] lg:right-[49.6%] lg:w-[23%]"
+          style={primaryDigitalValueStyle}
+        >
+          {primaryValue}
         </div>
+        {powerOn ? (
+          <div className="absolute left-[48.5%] top-[51.5%] h-[8.3%] w-[4.5%]">
+            <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
+          </div>
+        ) : null}
+
         <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute right-[50.5%] top-[64.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
+        <div className="absolute right-[50.5%] top-[64.9%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
           {humidityValue}
         </div>
         <div className="absolute left-[49.0%] top-[68.0%] h-[6.5%] w-[4.2%]">
