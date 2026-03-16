@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import {
   Activity,
@@ -82,11 +82,14 @@ const digitalFontStyle: CSSProperties = {
   fontFamily: "'Digital-7', monospace",
   letterSpacing: '0.08em',
   textShadow: '0 0 8px rgba(255, 0, 0, 0.35)',
+  fontVariantNumeric: 'tabular-nums lining-nums',
+  fontFeatureSettings: '"tnum" 1, "lnum" 1',
+  fontKerning: 'none',
+  whiteSpace: 'nowrap',
 };
 
 const primaryDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
-  fontSize: 'clamp(42px, 7.4vw, 65px)',
   lineHeight: 1,
 };
 
@@ -986,6 +989,8 @@ function LegacyThermostatPanel({
   alarms: string[];
 }) {
   const [activeProbe, setActiveProbe] = useState<number>(1);
+  const displayContainerRef = useRef<HTMLDivElement | null>(null);
+  const [displayWidth, setDisplayWidth] = useState<number>(557);
   const powerOn = readingBoolean(reading, 'power', 'RUN') ?? status !== 'offline';
   const relay1On = getRelayState(relays, 'REL1');
   const relay2On = getRelayState(relays, 'REL2');
@@ -999,11 +1004,46 @@ function LegacyThermostatPanel({
   const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
   const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
   const relayDisplayStates = relayDisplayItems(relays);
+  const primaryDisplayFontSize = useMemo(() => {
+    const scaled = displayWidth * 0.118;
+    return `${Math.min(65, Math.max(34, scaled)).toFixed(1)}px`;
+  }, [displayWidth]);
+  const primaryDisplayStyle = useMemo<CSSProperties>(
+    () => ({
+      ...primaryDigitalValueStyle,
+      fontSize: primaryDisplayFontSize,
+    }),
+    [primaryDisplayFontSize],
+  );
+
+  useEffect(() => {
+    const node = displayContainerRef.current;
+    if (!node) return;
+
+    const syncWidth = (nextWidth: number) => {
+      if (nextWidth > 0) {
+        setDisplayWidth((previousWidth) => (Math.abs(previousWidth - nextWidth) > 0.5 ? nextWidth : previousWidth));
+      }
+    };
+
+    syncWidth(node.getBoundingClientRect().width);
+
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? node.getBoundingClientRect().width;
+      syncWidth(width);
+    });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="space-y-4">
       <div
-        className="relative mx-auto aspect-[557/300] w-full max-w-[557px] overflow-hidden rounded-[20px] bg-cover bg-center bg-no-repeat shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
+        ref={displayContainerRef}
+        className="relative mx-auto aspect-[557/300] w-full max-w-[557px] overflow-hidden rounded-[20px] bg-cover bg-center bg-no-repeat shadow-[0_18px_45px_rgba(0,0,0,0.45)] [container-type:inline-size]"
         style={{ backgroundImage: "url('/iot/lh1t/images/DISPLAY_FONDO_TEMP.png')" }}
       >
         <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
@@ -1051,8 +1091,8 @@ function LegacyThermostatPanel({
         </div>
 
         <div
-          className="absolute top-[38.5%] right-[60.8%] w-[22%] text-center text-red-600 sm:center-[55.8%] sm:w-[20%] lg:center-[55.6%] lg:w-[21%]"
-          style={primaryDigitalValueStyle}
+          className="absolute top-[38.5%] right-[60.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[20%] lg:right-[55.6%] lg:w-[21%]"
+          style={primaryDisplayStyle}
         >
           {primaryValue}
         </div>
