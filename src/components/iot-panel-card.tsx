@@ -258,11 +258,24 @@ function probeSetpoint(reading: AssetIotReading | null | undefined, probeIndex: 
   return asNumber(reading?.raw?.[`Set${probeIndex}`]);
 }
 
-function readingStatus(asset: Asset) {
-  const lastSeen = toDateValue(asset.iot?.lastSeenAt ?? asset.iot?.lastReading?.readingAt ?? asset.iot?.reportedState?.readingAt);
-  if (!lastSeen) return 'offline';
+function lastIotActivityTimestamp(asset: Asset, reading: AssetIotReading | null | undefined) {
+  return (
+    asset.iot?.lastSeenAt
+    ?? asset.iot?.provisioning?.lastSyncAt
+    ?? reading?.readingAt
+    ?? asset.iot?.lastReading?.readingAt
+    ?? asset.iot?.reportedState?.readingAt
+    ?? reading?.raw?.reading_time
+    ?? null
+  );
+}
 
-  const ageMinutes = (Date.now() - lastSeen.getTime()) / 60000;
+function readingStatus(asset: Asset) {
+  const reading = resolveDisplayReading(asset);
+  const lastActivity = toDateValue(lastIotActivityTimestamp(asset, reading));
+  if (!lastActivity) return 'offline';
+
+  const ageMinutes = (Date.now() - lastActivity.getTime()) / 60000;
   if (ageMinutes <= 15) return 'online';
   if (ageMinutes <= 120) return 'warning';
   return 'offline';
@@ -270,11 +283,8 @@ function readingStatus(asset: Asset) {
 
 function readingTimestamp(asset: Asset, reading: AssetIotReading | null | undefined) {
   return (
-    reading?.readingAt ??
-    asset.iot?.lastSeenAt ??
-    asset.iot?.provisioning?.lastSyncAt ??
+    lastIotActivityTimestamp(asset, reading) ??
     asset.updatedAt ??
-    reading?.raw?.reading_time ??
     null
   );
 }
