@@ -170,7 +170,7 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
                 iot: {
                   enabled: true,
                   panelType: data.iotPanelType,
-                  deviceKey: data.iotDeviceKey?.trim(),
+                  deviceKey: data.iotDeviceKey?.trim().toUpperCase(),
                   locationLabel: data.iotLocationLabel?.trim() || undefined,
                   dataSource: 'maintelligence_api',
                 },
@@ -379,4 +379,5 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
     </Dialog>
   );
 }
+
 

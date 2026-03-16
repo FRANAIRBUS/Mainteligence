@@ -236,6 +236,9 @@ export interface AssetIotReading {
   secondaryTemperature?: number | string | null;
   humidity?: number | string | null;
   setpoint?: number | string | null;
+  power?: boolean | null;
+  mode?: string | null;
+  fan?: string | null;
   status?: IotConnectionStatus | null;
   alarms?: string[] | null;
   relays?: AssetIotRelay[] | null;
@@ -259,7 +262,7 @@ export interface AssetIotReportedState extends AssetIotReading {
   ipAddress?: string | null;
   uptimeSeconds?: number | null;
   appliedDesiredVersion?: number | null;
-  applyStatus?: "idle" | "applied" | "rejected" | "error" | null;
+  applyStatus?: "idle" | "applied" | "partial" | "rejected" | "error" | null;
   applyMessage?: string | null;
 }
 
@@ -391,6 +394,7 @@ export interface Ticket extends BaseEntity {
   reopenedBy?: string;
   reopenedAt?: Timestamp;
 }
+
 
 
 

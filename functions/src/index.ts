@@ -1875,7 +1875,7 @@ const IOT_TELEMETRY_MAX_POINTS = 2000;
 const IOT_TELEMETRY_MAX_EXPORT_ROWS = 5000;
 const IOT_ALLOWED_PANEL_TYPES = new Set(['thermostat', 'sensor', 'relay']);
 const IOT_ALLOWED_STATUS = new Set(['online', 'offline', 'warning']);
-const IOT_ALLOWED_APPLY_STATUS = new Set(['idle', 'applied', 'rejected', 'error']);
+const IOT_ALLOWED_APPLY_STATUS = new Set(['idle', 'applied', 'partial', 'rejected', 'error']);
 const FUNCTIONS_REGION = 'us-central1';
 const PROJECT_ID = process.env.GCLOUD_PROJECT || admin.app().options.projectId || '';
 
@@ -1952,6 +1952,102 @@ function sanitizeCapabilities(input: unknown) {
   return capabilities.length > 0 ? capabilities : undefined;
 }
 
+function normalizedCapabilitySet(input: unknown) {
+  const capabilities = new Set<string>();
+  if (!Array.isArray(input)) return capabilities;
+
+  for (const value of input) {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    if (normalized) capabilities.add(normalized);
+  }
+
+  return capabilities;
+}
+
+function hasRelayControlData(input: unknown) {
+  if (Array.isArray(input)) {
+    return input.some((item) => isPlainObject(item) && Object.keys(item).length > 0);
+  }
+
+  if (isPlainObject(input)) {
+    return Object.keys(input).length > 0;
+  }
+
+  return false;
+}
+
+function normalizeRelayLabel(label: string) {
+  const normalized = optionalStringValue(label);
+  return normalized ? normalized.toUpperCase() : null;
+}
+
+function relayStateFromUnknown(input: unknown, field: string) {
+  if (isPlainObject(input)) {
+    return optionalBoolean(input.active, `${field}.active`);
+  }
+  return optionalBoolean(input, field);
+}
+
+function relayMapFromLegacyState(input: Record<string, unknown>) {
+  return Object.entries(input).reduce<Record<string, unknown>>((acc, [key, value]) => {
+    if (!/^rel\d+$/i.test(key)) return acc;
+    const label = normalizeRelayLabel(key);
+    if (!label) return acc;
+    acc[label] = value;
+    return acc;
+  }, {});
+}
+
+function resolveIotCapabilities(iotData: Record<string, any>) {
+  const capabilities = normalizedCapabilitySet(iotData.capabilities);
+  const panelType = optionalStringValue(iotData.panelType)?.toLowerCase();
+  const desiredState = isPlainObject(iotData.desiredState) ? iotData.desiredState as Record<string, unknown> : null;
+  const lastReading = isPlainObject(iotData.lastReading) ? iotData.lastReading as Record<string, unknown> : null;
+  const reportedState = isPlainObject(iotData.reportedState) ? iotData.reportedState as Record<string, unknown> : null;
+
+  if (panelType === 'thermostat') {
+    capabilities.add('setpoint');
+    capabilities.add('power');
+    capabilities.add('mode');
+  }
+
+  if (panelType === 'relay') {
+    capabilities.add('relays');
+  }
+
+  if (reportedState?.fan != null || lastReading?.fan != null || desiredState?.fan != null) {
+    capabilities.add('fan');
+  }
+
+  if (
+    hasRelayControlData(reportedState?.relays)
+    || hasRelayControlData(lastReading?.relays)
+    || hasRelayControlData(desiredState?.relays)
+  ) {
+    capabilities.add('relays');
+  }
+
+  return capabilities;
+}
+
+function filterUnsupportedDesiredStateFields(statePatch: Record<string, unknown>, iotData: Record<string, any>) {
+  const filteredState = { ...statePatch };
+  const droppedFields: string[] = [];
+  const capabilities = resolveIotCapabilities(iotData);
+
+  if (filteredState.fan !== undefined && filteredState.fan !== null && !capabilities.has('fan')) {
+    delete filteredState.fan;
+    droppedFields.push('fan');
+  }
+
+  if (filteredState.relays !== undefined && filteredState.relays !== null && !capabilities.has('relays')) {
+    delete filteredState.relays;
+    droppedFields.push('relays');
+  }
+
+  return { filteredState, droppedFields, capabilities };
+}
+
 function sanitizeDesiredStatePatch(input: unknown) {
   if (!isPlainObject(input)) throw httpsError('invalid-argument', 'state requerido.');
 
@@ -1980,17 +2076,34 @@ function sanitizeDesiredStatePatch(input: unknown) {
 }
 
 function sanitizeRelayArray(input: unknown) {
-  if (!Array.isArray(input)) return undefined;
-  const relays = input
-    .map((item, index) => {
-      if (!isPlainObject(item)) return null;
-      const label = optionalStringValue(item.label) || `REL${index + 1}`;
-      const active = optionalBoolean(item.active, `reportedState.relays.${label}.active`);
-      if (active === null) return null;
-      return { label, active };
-    })
-    .filter(Boolean);
-  return relays.length > 0 ? relays : undefined;
+  if (Array.isArray(input)) {
+    const relays = input
+      .map((item, index) => {
+        if (!isPlainObject(item)) return null;
+        const label = normalizeRelayLabel(optionalStringValue(item.label) || `REL${index + 1}`);
+        if (!label) return null;
+        const active = relayStateFromUnknown(item, `reportedState.relays.${label}`);
+        if (active === null) return null;
+        return { label, active };
+      })
+      .filter(Boolean);
+    return relays.length > 0 ? relays : undefined;
+  }
+
+  if (isPlainObject(input)) {
+    const relays = Object.entries(input)
+      .map(([key, value]) => {
+        const label = normalizeRelayLabel(key);
+        if (!label) return null;
+        const active = relayStateFromUnknown(value, `reportedState.relays.${label}`);
+        if (active === null) return null;
+        return { label, active };
+      })
+      .filter(Boolean);
+    return relays.length > 0 ? relays : undefined;
+  }
+
+  return undefined;
 }
 
 function sanitizeAlarmArray(input: unknown) {
@@ -2026,6 +2139,7 @@ function sanitizeReportedState(input: unknown) {
   }
 
   const raw = isPlainObject(input.raw) ? input.raw : undefined;
+  const relays = sanitizeRelayArray(input.relays) ?? sanitizeRelayArray(relayMapFromLegacyState(raw ?? input));
 
   return stripUndefinedDeep({
     readingAt,
@@ -2038,7 +2152,7 @@ function sanitizeReportedState(input: unknown) {
     fan: optionalStringValue(input.fan),
     status: status || undefined,
     alarms: sanitizeAlarmArray(input.alarms),
-    relays: sanitizeRelayArray(input.relays),
+    relays,
     raw,
     firmwareVersion: optionalStringValue(input.firmwareVersion),
     ipAddress: optionalStringValue(input.ipAddress),
@@ -2112,6 +2226,7 @@ function toIsoFromTimestamp(input: unknown): string | null {
 function telemetryRowFromDoc(doc: FirebaseFirestore.QueryDocumentSnapshot) {
   const data = doc.data() as Record<string, any>;
   const reported = (data.reportedState ?? {}) as Record<string, any>;
+  const relays = sanitizeRelayArray(reported.relays) ?? sanitizeRelayArray(relayMapFromLegacyState(isPlainObject(reported.raw) ? reported.raw : reported));
   return {
     id: doc.id,
     readingAt: toIsoFromTimestamp(reported.readingAt) ?? toIsoFromTimestamp(data.createdAt),
@@ -2128,29 +2243,38 @@ function telemetryRowFromDoc(doc: FirebaseFirestore.QueryDocumentSnapshot) {
     applyMessage: reported.applyMessage ?? null,
     firmwareVersion: reported.firmwareVersion ?? null,
     uptimeSeconds: reported.uptimeSeconds ?? null,
-    relays: Array.isArray(reported.relays) ? reported.relays : null,
+    relays: relays ?? null,
     alarms: Array.isArray(reported.alarms) ? reported.alarms : null,
     raw: isPlainObject(reported.raw) ? reported.raw : null,
   };
 }
 
-async function readOrgAssetByDeviceKey(orgId: string, deviceKey: string) {
+async function findOrgAssetsByNormalizedDeviceKey(orgId: string, deviceKey: string) {
+  const normalizedKey = sanitizeDeviceKey(deviceKey);
   const assetQuery = await db
     .collection('organizations')
     .doc(orgId)
     .collection('assets')
-    .where('iot.deviceKey', '==', deviceKey)
-    .limit(2)
     .get();
-
-  if (assetQuery.empty) {
+  return assetQuery.docs
+    .filter((doc) => {
+      try {
+        return sanitizeDeviceKey(doc.get('iot.deviceKey')) === normalizedKey;
+      } catch {
+        return false;
+      }
+    })
+    .slice(0, 2);
+}
+async function readOrgAssetByDeviceKey(orgId: string, deviceKey: string) {
+  const matchingAssets = await findOrgAssetsByNormalizedDeviceKey(orgId, deviceKey);
+  if (matchingAssets.length === 0) {
     throw httpsError('not-found', 'No existe un activo IoT con ese deviceKey.');
   }
-  if (assetQuery.size > 1) {
+  if (matchingAssets.length > 1) {
     throw httpsError('failed-precondition', 'Hay varios activos con el mismo deviceKey. Corrigelo antes de provisionar.');
   }
-
-  return assetQuery.docs[0];
+  return matchingAssets[0];
 }
 
 function requireDeviceSignature(req: Request, secret: string) {
@@ -5230,7 +5354,7 @@ export const createAsset = functions.https.onCall(async (data, context) => {
       iot = stripUndefinedDeep({
         enabled: true,
         panelType,
-        deviceKey: requireStringField(iotPayload.deviceKey, 'iot.deviceKey'),
+        deviceKey: sanitizeDeviceKey(requireStringField(iotPayload.deviceKey, 'iot.deviceKey')),
         locationLabel: String(iotPayload.locationLabel ?? '').trim() || undefined,
         dataSource: String(iotPayload.dataSource ?? 'maintelligence_api').trim() || 'maintelligence_api',
       });
@@ -5310,8 +5434,8 @@ export const createIotProvisioningToken = functions.https.onCall(async (data, co
   }
 
   const deviceKey = sanitizeDeviceKey(iotData.deviceKey);
-  const duplicateSnap = await orgRef.collection('assets').where('iot.deviceKey', '==', deviceKey).limit(2).get();
-  if (duplicateSnap.size > 1) {
+  const duplicateAssets = await findOrgAssetsByNormalizedDeviceKey(orgId, deviceKey);
+  if (duplicateAssets.length > 1 || (duplicateAssets.length === 1 && duplicateAssets[0].id !== assetId)) {
     throw httpsError('failed-precondition', 'Hay varios activos con el mismo deviceKey. Corrigelo antes de provisionar.');
   }
 
@@ -5339,6 +5463,7 @@ export const createIotProvisioningToken = functions.https.onCall(async (data, co
   await assetRef.set(
     {
       iot: {
+        deviceKey,
         provisioning: {
           bootstrapPending: true,
           bootstrapExpiresAt: expiresAt,
@@ -5403,11 +5528,22 @@ export const setAssetIotDesiredState = functions.https.onCall(async (data, conte
       throw httpsError('failed-precondition', 'El activo no esta marcado como IoT.');
     }
 
+    const { filteredState, droppedFields } = filterUnsupportedDesiredStateFields(statePatch, iotData);
+    if (Object.keys(filteredState).length === 0) {
+      if (droppedFields.length === 1 && droppedFields[0] === 'fan') {
+        throw httpsError('failed-precondition', 'El dispositivo actual no admite control remoto de fan.');
+      }
+      if (droppedFields.length === 1 && droppedFields[0] === 'relays') {
+        throw httpsError('failed-precondition', 'El dispositivo actual no admite control remoto de relés.');
+      }
+      throw httpsError('failed-precondition', 'La orden solicitada no aplica a las capacidades actuales del dispositivo.');
+    }
+
     const currentDesired = (iotData.desiredState ?? {}) as Record<string, any>;
     const nextVersion = Number(currentDesired.version ?? 0) + 1;
     const nextDesired = stripUndefinedDeep({
       ...currentDesired,
-      ...statePatch,
+      ...filteredState,
       version: nextVersion,
       requestedBy: actorUid,
       requestedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -5428,6 +5564,7 @@ export const setAssetIotDesiredState = functions.https.onCall(async (data, conte
       deviceKey: sanitizeDeviceKey(iotData.deviceKey),
       desiredState: stripUndefinedDeep({ ...nextDesired, requestedAt: new Date().toISOString() }),
       version: nextVersion,
+      appliedState: filteredState,
     };
   });
 
@@ -5436,7 +5573,7 @@ export const setAssetIotDesiredState = functions.https.onCall(async (data, conte
     actorUid,
     actorEmail,
     orgId,
-    after: { assetId, version: result.version, state: statePatch },
+    after: { assetId, version: result.version, state: result.appliedState },
   });
 
   return {
@@ -5660,6 +5797,7 @@ export const iotDeviceBootstrap = functions.https.onRequest(async (req, res) => 
     await assetRef.set(
       {
         iot: stripUndefinedDeep({
+          deviceKey,
           dataSource: 'maintelligence_api',
           capabilities,
           provisioning: {
@@ -7894,6 +8032,7 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Webhook handler error.');
   }
 });
+
 
 
 
