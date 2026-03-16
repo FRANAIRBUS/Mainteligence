@@ -83,6 +83,18 @@ const digitalFontStyle: CSSProperties = {
   textShadow: '0 0 8px rgba(255, 0, 0, 0.35)',
 };
 
+const primaryDigitalValueStyle: CSSProperties = {
+  ...digitalFontStyle,
+  fontSize: 'clamp(42px, 7.4vw, 65px)',
+  lineHeight: 1,
+};
+
+const secondaryDigitalValueStyle: CSSProperties = {
+  ...digitalFontStyle,
+  fontSize: 'clamp(18px, 2.7vw, 24px)',
+  lineHeight: 1,
+};
+
 function toDateValue(value: DateLike): Date | null {
   if (!value) return null;
   if (value instanceof Date) {
@@ -1038,8 +1050,8 @@ function LegacyThermostatPanel({
         </div>
 
         <div
-          className="absolute right-[53.2%] top-[30.5%] w-[30%] pr-[1%] text-right text-[44px] text-red-600 sm:text-[65px]"
-          style={digitalFontStyle}
+          className="absolute right-[53.2%] top-[30.5%] w-[30%] pr-[1%] text-right text-red-600"
+          style={primaryDigitalValueStyle}
         >
           {primaryValue}
         </div>
@@ -1050,7 +1062,7 @@ function LegacyThermostatPanel({
         ) : null}
 
         <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute right-[50.5%] top-[61.9%] w-[7.5%] pr-[0.6%] text-right text-[18px] text-red-600 sm:text-[24px]" style={digitalFontStyle}>
+        <div className="absolute right-[50.5%] top-[61.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
           {humidityValue}
         </div>
         <div className="absolute left-[49.0%] top-[68.0%] h-[6.5%] w-[4.2%]">
