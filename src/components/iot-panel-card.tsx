@@ -1022,7 +1022,7 @@ function LegacyThermostatPanel({
         className="relative mx-auto aspect-[557/300] w-full max-w-[557px] overflow-hidden rounded-[20px] bg-cover bg-center bg-no-repeat shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
         style={{ backgroundImage: "url('/iot/lh1t/images/DISPLAY_FONDO_TEMP.png')" }}
       >
-        <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
+        <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[12px]">
           Ultimo Dato: {timestamp}
         </div>
         <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
