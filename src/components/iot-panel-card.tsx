@@ -226,6 +226,24 @@ function normalizeRelays(reading?: AssetIotReading | null): AssetIotRelay[] {
 }
 
 function normalizeAlarms(reading?: AssetIotReading | null): string[] {
+  if (reading?.raw && typeof reading.raw === 'object') {
+    const rawAlarmEntries = Object.entries(reading.raw as Record<string, unknown>)
+      .filter(([key]) => /^AL\d+$/i.test(key));
+
+    if (rawAlarmEntries.length > 0) {
+      const activeRawAlarms = rawAlarmEntries.filter(([, value]) => asBoolean(value) === true || asNumber(value) === 1);
+      if (activeRawAlarms.length === 0) {
+        return [];
+      }
+      if (Array.isArray(reading.alarms) && reading.alarms.length > 0) {
+        return reading.alarms
+          .map((alarm) => String(alarm ?? '').trim())
+          .filter(Boolean);
+      }
+      return activeRawAlarms.map(([key]) => key.trim().toUpperCase());
+    }
+  }
+
   if (Array.isArray(reading?.alarms) && reading.alarms.length > 0) {
     return reading.alarms
       .map((alarm) => String(alarm ?? '').trim())
@@ -262,6 +280,7 @@ function lastIotActivityTimestamp(asset: Asset, reading: AssetIotReading | null 
   return (
     asset.iot?.lastSeenAt
     ?? asset.iot?.provisioning?.lastSyncAt
+    ?? asset.updatedAt
     ?? reading?.readingAt
     ?? asset.iot?.lastReading?.readingAt
     ?? asset.iot?.reportedState?.readingAt
@@ -1036,7 +1055,7 @@ function LegacyThermostatPanel({
         </div>
       </div>
 
-      <div className="grid gap-2 md:grid-cols-2">
+      <div className="grid grid-cols-2 gap-2">
         <MetricTile
           label="Consigna"
           value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
@@ -1053,16 +1072,16 @@ function LegacyThermostatPanel({
         />
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-sm text-slate-300 sm:p-3">
         <div className="mb-2 text-xs uppercase tracking-[0.18em] text-slate-400">Salidas</div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
           {relayDisplayStates.map((relay) => (
             <div
               key={relay.label}
               className={
                 relay.active
-                  ? 'flex min-h-14 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-center font-semibold text-emerald-100'
-                  : 'flex min-h-14 items-center justify-center rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-center font-semibold text-slate-300'
+                  ? 'flex min-h-12 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/20 px-2 py-2 text-center text-sm font-semibold text-emerald-100 sm:min-h-14 sm:px-3'
+                  : 'flex min-h-12 items-center justify-center rounded-xl border border-white/10 bg-slate-900/70 px-2 py-2 text-center text-sm font-semibold text-slate-300 sm:min-h-14 sm:px-3'
               }
             >
               {relay.label}: {relay.active ? 'ON' : 'OFF'}
