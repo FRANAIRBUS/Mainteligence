@@ -1051,7 +1051,7 @@ function LegacyThermostatPanel({
         </div>
 
         <div
-          className="absolute top-[38.5%] right-[60.8%] w-[22%] text-right text-red-600 sm:right-[55.8%] sm:w-[20%] lg:right-[55.6%] lg:w-[21%]"
+          className="absolute top-[38.5%] right-[60.8%] w-[22%] text-center text-red-600 sm:center-[55.8%] sm:w-[20%] lg:center-[55.6%] lg:w-[21%]"
           style={primaryDigitalValueStyle}
         >
           {primaryValue}
