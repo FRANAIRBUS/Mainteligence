@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
@@ -38,7 +39,7 @@ type IotPanelCardProps = {
 };
 
 type DateLike =
-  | { toDate?: () => Date; toMillis?: () => number; seconds?: number; _seconds?: number }
+  | { toDate?: () => Date; toMillis?: () => number }
   | Date
   | string
   | number
@@ -87,19 +88,13 @@ const primaryDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
   fontSize: 'clamp(42px, 7.4vw, 65px)',
   lineHeight: 1,
-  fontVariantNumeric: 'tabular-nums',
-  width: 'clamp(150px, 30%, 210px)',
 };
 
 const secondaryDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
   fontSize: 'clamp(18px, 2.7vw, 24px)',
   lineHeight: 1,
-  fontVariantNumeric: 'tabular-nums',
-  width: 'clamp(40px, 7.5%, 62px)',
 };
-
-const ONLINE_TIMEOUT_MINUTES = 30;
 
 function toDateValue(value: DateLike): Date | null {
   if (!value) return null;
@@ -117,18 +112,6 @@ function toDateValue(value: DateLike): Date | null {
   if (typeof value.toMillis === 'function') {
     const parsed = new Date(value.toMillis());
     return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-  if (typeof value === 'object') {
-    const seconds =
-      typeof value.seconds === 'number'
-        ? value.seconds
-        : typeof value._seconds === 'number'
-          ? value._seconds
-          : null;
-    if (seconds != null) {
-      const parsed = new Date(seconds * 1000);
-      return Number.isNaN(parsed.getTime()) ? null : parsed;
-    }
   }
   return null;
 }
@@ -177,18 +160,6 @@ function relayOrder(label: string) {
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
 
-function readingTimestampValue(reading?: AssetIotReading | null) {
-  if (!reading) return null;
-  const raw = (reading.raw ?? null) as Record<string, unknown> | null;
-  return (
-    toDateValue(reading.readingAt) ??
-    toDateValue(raw?.readingAt as DateLike) ??
-    toDateValue(raw?.reading_at as DateLike) ??
-    toDateValue(raw?.reading_time as DateLike) ??
-    null
-  );
-}
-
 function resolveDisplayReading(asset: Asset): AssetIotReading | null {
   const lastReading = asset.iot?.lastReading ?? null;
   const reportedState = asset.iot?.reportedState ?? null;
@@ -197,10 +168,13 @@ function resolveDisplayReading(asset: Asset): AssetIotReading | null {
   if (!lastReading) return reportedState;
   if (!reportedState) return lastReading;
 
-  const lastReadingTimestamp = readingTimestampValue(lastReading)?.getTime() ?? Number.NEGATIVE_INFINITY;
-  const reportedStateTimestamp = readingTimestampValue(reportedState)?.getTime() ?? Number.NEGATIVE_INFINITY;
-
-  return reportedStateTimestamp >= lastReadingTimestamp ? reportedState : lastReading;
+  return {
+    ...reportedState,
+    ...lastReading,
+    alarms: lastReading ? (lastReading.alarms ?? null) : reportedState.alarms ?? null,
+    raw: lastReading.raw ?? reportedState.raw ?? null,
+    relays: lastReading.relays ?? reportedState.relays ?? null,
+  };
 }
 
 function normalizeRelays(reading?: AssetIotReading | null): AssetIotRelay[] {
@@ -360,6 +334,7 @@ function lastIotActivityTimestamp(asset: Asset, reading: AssetIotReading | null 
     reading?.raw?.reading_time,
     asset.iot?.lastSeenAt,
     asset.iot?.provisioning?.lastSyncAt,
+    asset.updatedAt,
   ]);
 }
 
@@ -368,13 +343,18 @@ function readingStatus(asset: Asset) {
   const lastActivity = toDateValue(lastIotActivityTimestamp(asset, reading));
   if (!lastActivity) return 'offline';
 
-  const ageMinutes = Math.max(0, Date.now() - lastActivity.getTime()) / 60000;
-  if (ageMinutes <= ONLINE_TIMEOUT_MINUTES) return 'online';
+  const ageMinutes = (Date.now() - lastActivity.getTime()) / 60000;
+  if (ageMinutes <= 15) return 'online';
+  if (ageMinutes <= 120) return 'warning';
   return 'offline';
 }
 
 function readingTimestamp(asset: Asset, reading: AssetIotReading | null | undefined) {
-  return lastIotActivityTimestamp(asset, reading) ?? null;
+  return (
+    lastIotActivityTimestamp(asset, reading) ??
+    asset.updatedAt ??
+    null
+  );
 }
 
 function panelAccent(status: string) {
@@ -1026,7 +1006,7 @@ function LegacyThermostatPanel({
         className="relative mx-auto aspect-[557/300] w-full max-w-[557px] overflow-hidden rounded-[20px] bg-cover bg-center bg-no-repeat shadow-[0_18px_45px_rgba(0,0,0,0.45)]"
         style={{ backgroundImage: "url('/iot/lh1t/images/DISPLAY_FONDO_TEMP.png')" }}
       >
-        <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[12px]">
+        <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
           Ultimo Dato: {timestamp}
         </div>
         <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
@@ -1071,7 +1051,7 @@ function LegacyThermostatPanel({
         </div>
 
         <div
-          className="absolute top-[34.5%] right-[47.8%] w-[21%] text-right text-red-600 sm:right-[48.8%] sm:w-[22%] lg:right-[49.6%] lg:w-[23%]"
+          className="absolute right-[53.2%] top-[30.5%] w-[30%] pr-[1%] text-right text-red-600"
           style={primaryDigitalValueStyle}
         >
           {primaryValue}
@@ -1083,7 +1063,7 @@ function LegacyThermostatPanel({
         ) : null}
 
         <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute right-[50.5%] top-[64.9%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
+        <div className="absolute right-[50.5%] top-[61.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
           {humidityValue}
         </div>
         <div className="absolute left-[49.0%] top-[68.0%] h-[6.5%] w-[4.2%]">
@@ -1312,5 +1292,3 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
     </Card>
   );
 }
-
-
