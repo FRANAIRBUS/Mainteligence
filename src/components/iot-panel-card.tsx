@@ -295,24 +295,32 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className="border-slate-500/40 bg-slate-500/10 text-slate-200 hover:bg-slate-500/10"><WifiOff className="mr-1 h-3.5 w-3.5" />Offline</Badge>;
 }
 
-function relaySummary(relays: AssetIotRelay[]) {
-  const normalizedRelays = relays.length > 0
+function relayDisplayItems(relays: AssetIotRelay[]) {
+  return relays.length > 0
     ? relays
     : ['REL1', 'REL2', 'REL3', 'REL4'].map((label) => ({ label, active: false }));
-
-  return normalizedRelays
-    .map((relay) => `${relay.label}: ${relay.active ? 'ON' : 'OFF'}`)
-    .join('   ');
 }
 
-function MetricTile({ label, value, suffix, icon }: { label: string; value: string; suffix?: string; icon: ReactNode }) {
+function MetricTile({
+  label,
+  value,
+  suffix,
+  icon,
+  centered = false,
+}: {
+  label: string;
+  value: string;
+  suffix?: string;
+  icon: ReactNode;
+  centered?: boolean;
+}) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-      <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-slate-400">
+    <div className={`rounded-2xl border border-white/10 bg-white/5 p-3 ${centered ? 'text-center' : ''}`}>
+      <div className={`text-xs uppercase tracking-[0.18em] text-slate-400 ${centered ? 'flex items-center justify-center gap-2' : 'flex items-center gap-2'}`}>
         {icon}
         <span>{label}</span>
       </div>
-      <div className="mt-2 flex items-end gap-1">
+      <div className={`mt-2 flex items-end gap-1 ${centered ? 'justify-center' : ''}`}>
         <span className="text-2xl font-semibold text-white">{value}</span>
         {suffix ? <span className="pb-1 text-sm text-slate-400">{suffix}</span> : null}
       </div>
@@ -912,7 +920,7 @@ function LegacyThermostatPanel({
   const setpoint = probeSetpoint(reading, activeProbe) ?? probeSetpoint(reading, 1);
   const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
   const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
-  const relayStatusSummary = relaySummary(relays);
+  const relayDisplayStates = relayDisplayItems(relays);
 
   return (
     <div className="space-y-4">
@@ -1024,18 +1032,33 @@ function LegacyThermostatPanel({
           value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
           suffix="C"
           icon={<Gauge className="h-3.5 w-3.5" />}
+          centered
         />
         <MetricTile
           label={`Sonda ${activeProbe}`}
           value={temperature != null ? formatLedValue(temperature, 0) : '--'}
           suffix="C"
           icon={<Thermometer className="h-3.5 w-3.5" />}
+          centered
         />
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
         <div className="mb-2 text-xs uppercase tracking-[0.18em] text-slate-400">Salidas</div>
-        <div className="font-medium text-white">{relayStatusSummary}</div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {relayDisplayStates.map((relay) => (
+            <div
+              key={relay.label}
+              className={
+                relay.active
+                  ? 'flex min-h-14 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/20 px-3 py-2 text-center font-semibold text-emerald-100'
+                  : 'flex min-h-14 items-center justify-center rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2 text-center font-semibold text-slate-300'
+              }
+            >
+              {relay.label}: {relay.active ? 'ON' : 'OFF'}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
