@@ -1067,7 +1067,7 @@ function LegacyThermostatPanel({
         </div>
 
         <div
-          className="absolute right-[53.2%] top-[30.5%] w-[30%] pr-[1%] text-right text-red-600"
+          className="absolute right-[53.2%] top-[34.5%] w-[30%] pr-[1%] text-right text-red-600"
           style={primaryDigitalValueStyle}
         >
           {primaryValue}
@@ -1079,7 +1079,7 @@ function LegacyThermostatPanel({
         ) : null}
 
         <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute right-[50.5%] top-[61.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
+        <div className="absolute right-[50.5%] top-[64.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
           {humidityValue}
         </div>
         <div className="absolute left-[49.0%] top-[68.0%] h-[6.5%] w-[4.2%]">
