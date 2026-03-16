@@ -38,7 +38,7 @@ type IotPanelCardProps = {
 };
 
 type DateLike =
-  | { toDate?: () => Date; toMillis?: () => number }
+  | { toDate?: () => Date; toMillis?: () => number; seconds?: number; _seconds?: number }
   | Date
   | string
   | number
@@ -95,6 +95,8 @@ const secondaryDigitalValueStyle: CSSProperties = {
   lineHeight: 1,
 };
 
+const ONLINE_TIMEOUT_MINUTES = 30;
+
 function toDateValue(value: DateLike): Date | null {
   if (!value) return null;
   if (value instanceof Date) {
@@ -111,6 +113,18 @@ function toDateValue(value: DateLike): Date | null {
   if (typeof value.toMillis === 'function') {
     const parsed = new Date(value.toMillis());
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value === 'object') {
+    const seconds =
+      typeof value.seconds === 'number'
+        ? value.seconds
+        : typeof value._seconds === 'number'
+          ? value._seconds
+          : null;
+    if (seconds != null) {
+      const parsed = new Date(seconds * 1000);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
   }
   return null;
 }
@@ -159,6 +173,18 @@ function relayOrder(label: string) {
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
 
+function readingTimestampValue(reading?: AssetIotReading | null) {
+  if (!reading) return null;
+  const raw = (reading.raw ?? null) as Record<string, unknown> | null;
+  return (
+    toDateValue(reading.readingAt) ??
+    toDateValue(raw?.readingAt as DateLike) ??
+    toDateValue(raw?.reading_at as DateLike) ??
+    toDateValue(raw?.reading_time as DateLike) ??
+    null
+  );
+}
+
 function resolveDisplayReading(asset: Asset): AssetIotReading | null {
   const lastReading = asset.iot?.lastReading ?? null;
   const reportedState = asset.iot?.reportedState ?? null;
@@ -167,13 +193,10 @@ function resolveDisplayReading(asset: Asset): AssetIotReading | null {
   if (!lastReading) return reportedState;
   if (!reportedState) return lastReading;
 
-  return {
-    ...reportedState,
-    ...lastReading,
-    alarms: lastReading ? (lastReading.alarms ?? null) : reportedState.alarms ?? null,
-    raw: lastReading.raw ?? reportedState.raw ?? null,
-    relays: lastReading.relays ?? reportedState.relays ?? null,
-  };
+  const lastReadingTimestamp = readingTimestampValue(lastReading)?.getTime() ?? Number.NEGATIVE_INFINITY;
+  const reportedStateTimestamp = readingTimestampValue(reportedState)?.getTime() ?? Number.NEGATIVE_INFINITY;
+
+  return reportedStateTimestamp >= lastReadingTimestamp ? reportedState : lastReading;
 }
 
 function normalizeRelays(reading?: AssetIotReading | null): AssetIotRelay[] {
@@ -333,7 +356,6 @@ function lastIotActivityTimestamp(asset: Asset, reading: AssetIotReading | null 
     reading?.raw?.reading_time,
     asset.iot?.lastSeenAt,
     asset.iot?.provisioning?.lastSyncAt,
-    asset.updatedAt,
   ]);
 }
 
@@ -342,18 +364,13 @@ function readingStatus(asset: Asset) {
   const lastActivity = toDateValue(lastIotActivityTimestamp(asset, reading));
   if (!lastActivity) return 'offline';
 
-  const ageMinutes = (Date.now() - lastActivity.getTime()) / 60000;
-  if (ageMinutes <= 15) return 'online';
-  if (ageMinutes <= 120) return 'warning';
+  const ageMinutes = Math.max(0, Date.now() - lastActivity.getTime()) / 60000;
+  if (ageMinutes <= ONLINE_TIMEOUT_MINUTES) return 'online';
   return 'offline';
 }
 
 function readingTimestamp(asset: Asset, reading: AssetIotReading | null | undefined) {
-  return (
-    lastIotActivityTimestamp(asset, reading) ??
-    asset.updatedAt ??
-    null
-  );
+  return lastIotActivityTimestamp(asset, reading) ?? null;
 }
 
 function panelAccent(status: string) {
@@ -1291,6 +1308,5 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
     </Card>
   );
 }
-
 
 

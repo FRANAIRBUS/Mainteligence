@@ -5875,21 +5875,25 @@ export const iotDeviceSync = functions.https.onRequest(async (req, res) => {
     const storeTelemetry = req.body.storeTelemetry === true;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
-    const assetUpdate = stripUndefinedDeep({
-      iot: {
-        dataSource: 'maintelligence_api',
-        capabilities: capabilities ?? iotData.capabilities,
-        lastSeenAt: now,
-        lastReading: reportedState ? buildLastReadingFromReportedState(reportedState) : undefined,
-        reportedState: reportedState ?? undefined,
-        provisioning: {
-          lastSyncAt: now,
-        },
-      },
+    const assetUpdate: Record<string, unknown> = {
+      'iot.dataSource': 'maintelligence_api',
+      'iot.lastSeenAt': now,
+      'iot.provisioning.lastSyncAt': now,
       updatedAt: now,
-    });
+    };
 
-    await assetRef.set(assetUpdate, { merge: true });
+    if (capabilities !== undefined) {
+      assetUpdate['iot.capabilities'] = capabilities;
+    } else if (iotData.capabilities !== undefined) {
+      assetUpdate['iot.capabilities'] = iotData.capabilities;
+    }
+
+    if (reportedState) {
+      assetUpdate['iot.lastReading'] = buildLastReadingFromReportedState(reportedState);
+      assetUpdate['iot.reportedState'] = reportedState;
+    }
+
+    await assetRef.update(assetUpdate);
     await deviceRef.set(
       stripUndefinedDeep({
         lastSyncAt: now,
@@ -8032,7 +8036,6 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Webhook handler error.');
   }
 });
-
 
 
 

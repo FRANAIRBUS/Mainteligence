@@ -26,6 +26,82 @@ import { orgCollectionPath } from '@/lib/organization';
 import { canManageMasterData, normalizeRole } from '@/lib/rbac';
 import { useRouter } from 'next/navigation';
 
+type DateLike =
+  | { toDate?: () => Date; toMillis?: () => number; seconds?: number; _seconds?: number }
+  | Date
+  | string
+  | number
+  | null
+  | undefined;
+
+const ONLINE_TIMEOUT_MINUTES = 30;
+
+function toDateValue(value: DateLike): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value.toDate === 'function') {
+    const parsed = value.toDate();
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value.toMillis === 'function') {
+    const parsed = new Date(value.toMillis());
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (typeof value === 'object') {
+    const seconds =
+      typeof value.seconds === 'number'
+        ? value.seconds
+        : typeof value._seconds === 'number'
+          ? value._seconds
+          : null;
+    if (seconds != null) {
+      const parsed = new Date(seconds * 1000);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+  }
+  return null;
+}
+
+function latestDateValue(candidates: DateLike[]) {
+  let latest: Date | null = null;
+  for (const candidate of candidates) {
+    const parsed = toDateValue(candidate);
+    if (!parsed) continue;
+    if (!latest || parsed.getTime() > latest.getTime()) {
+      latest = parsed;
+    }
+  }
+  return latest;
+}
+
+function assetLastCommunicationAt(asset: Asset) {
+  const lastReadingRaw = asset.iot?.lastReading?.raw as Record<string, unknown> | null | undefined;
+  const reportedRaw = asset.iot?.reportedState?.raw as Record<string, unknown> | null | undefined;
+  return latestDateValue([
+    asset.iot?.lastReading?.readingAt,
+    asset.iot?.reportedState?.readingAt,
+    lastReadingRaw?.readingAt as DateLike,
+    lastReadingRaw?.reading_at as DateLike,
+    lastReadingRaw?.reading_time as DateLike,
+    reportedRaw?.readingAt as DateLike,
+    reportedRaw?.reading_at as DateLike,
+    reportedRaw?.reading_time as DateLike,
+    asset.iot?.lastSeenAt,
+    asset.iot?.provisioning?.lastSyncAt,
+  ]);
+}
+
+function isAssetOnline(asset: Asset) {
+  const lastCommunication = assetLastCommunicationAt(asset);
+  if (!lastCommunication) return false;
+  const ageMinutes = Math.max(0, Date.now() - lastCommunication.getTime()) / 60000;
+  return ageMinutes <= ONLINE_TIMEOUT_MINUTES;
+}
+
 export default function IotPage() {
   const { user, loading: userLoading, organizationId, role } = useUser();
   const router = useRouter();
@@ -71,10 +147,7 @@ export default function IotPage() {
       .toLowerCase();
     return searchable.includes(normalizedSearch);
   });
-  const onlineCount = iotAssets.filter((asset) => {
-    const status = asset.iot?.lastReading?.status ?? null;
-    return status === 'online';
-  }).length;
+  const onlineCount = iotAssets.filter((asset) => isAssetOnline(asset)).length;
 
   if (userLoading) {
     return (
@@ -108,7 +181,7 @@ export default function IotPage() {
           icon={<RadioTower className="h-5 w-5 text-emerald-300" />}
           label="En linea"
           value={String(onlineCount)}
-          help="Segun el ultimo estado"
+          help="Con datos en los ultimos 30 minutos"
         />
       </div>
 
