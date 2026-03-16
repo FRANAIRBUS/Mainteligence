@@ -231,16 +231,37 @@ function normalizeAlarms(reading?: AssetIotReading | null): string[] {
       .filter(([key]) => /^AL\d+$/i.test(key));
 
     if (rawAlarmEntries.length > 0) {
-      const activeRawAlarms = rawAlarmEntries.filter(([, value]) => asBoolean(value) === true || asNumber(value) === 1);
-      if (activeRawAlarms.length === 0) {
-        return [];
-      }
+      const labelsFromRaw = rawAlarmEntries
+        .map(([, value]) => {
+          if (value == null) return null;
+          const text = String(value).trim();
+          if (!text) return null;
+
+          const normalizedBoolean = asBoolean(value);
+          const normalizedNumber = asNumber(value);
+
+          if (normalizedBoolean === false || normalizedNumber === 0) {
+            return null;
+          }
+
+          if (normalizedBoolean === true || normalizedNumber === 1) {
+            return 'alarma';
+          }
+
+          return text;
+        })
+        .filter((label): label is string => Boolean(label));
+
+      if (labelsFromRaw.length === 0) return [];
+
       if (Array.isArray(reading.alarms) && reading.alarms.length > 0) {
-        return reading.alarms
+        const alarms = reading.alarms
           .map((alarm) => String(alarm ?? '').trim())
           .filter(Boolean);
+        if (alarms.length > 0) return alarms;
       }
-      return activeRawAlarms.map(([key]) => key.trim().toUpperCase());
+
+      return Array.from(new Set(labelsFromRaw));
     }
   }
 
@@ -276,17 +297,32 @@ function probeSetpoint(reading: AssetIotReading | null | undefined, probeIndex: 
   return asNumber(reading?.raw?.[`Set${probeIndex}`]);
 }
 
+function latestDateValue(candidates: DateLike[]) {
+  let latest: Date | null = null;
+
+  for (const candidate of candidates) {
+    const parsed = toDateValue(candidate);
+    if (!parsed) continue;
+    if (!latest || parsed.getTime() > latest.getTime()) {
+      latest = parsed;
+    }
+  }
+
+  return latest;
+}
+
 function lastIotActivityTimestamp(asset: Asset, reading: AssetIotReading | null | undefined) {
-  return (
-    asset.iot?.lastSeenAt
-    ?? asset.iot?.provisioning?.lastSyncAt
-    ?? asset.updatedAt
-    ?? reading?.readingAt
-    ?? asset.iot?.lastReading?.readingAt
-    ?? asset.iot?.reportedState?.readingAt
-    ?? reading?.raw?.reading_time
-    ?? null
-  );
+  return latestDateValue([
+    reading?.readingAt,
+    asset.iot?.lastReading?.readingAt,
+    asset.iot?.reportedState?.readingAt,
+    reading?.raw?.readingAt,
+    reading?.raw?.reading_at,
+    reading?.raw?.reading_time,
+    asset.iot?.lastSeenAt,
+    asset.iot?.provisioning?.lastSyncAt,
+    asset.updatedAt,
+  ]);
 }
 
 function readingStatus(asset: Asset) {
