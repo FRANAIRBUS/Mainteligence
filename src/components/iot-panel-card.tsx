@@ -158,7 +158,7 @@ function resolveDisplayReading(asset: Asset): AssetIotReading | null {
   return {
     ...reportedState,
     ...lastReading,
-    alarms: lastReading.alarms ?? reportedState.alarms ?? null,
+    alarms: lastReading ? (lastReading.alarms ?? null) : reportedState.alarms ?? null,
     raw: lastReading.raw ?? reportedState.raw ?? null,
     relays: lastReading.relays ?? reportedState.relays ?? null,
   };
@@ -259,9 +259,6 @@ function probeSetpoint(reading: AssetIotReading | null | undefined, probeIndex: 
 }
 
 function readingStatus(asset: Asset) {
-  const status = asset.iot?.lastReading?.status ?? asset.iot?.reportedState?.status ?? null;
-  if (status) return status;
-
   const lastSeen = toDateValue(asset.iot?.lastSeenAt ?? asset.iot?.lastReading?.readingAt ?? asset.iot?.reportedState?.readingAt);
   if (!lastSeen) return 'offline';
 
@@ -293,9 +290,19 @@ function StatusBadge({ status }: { status: string }) {
     return <Badge className="border-emerald-400/30 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/15"><Wifi className="mr-1 h-3.5 w-3.5" />Online</Badge>;
   }
   if (status === 'warning') {
-    return <Badge className="border-amber-400/30 bg-amber-500/15 text-amber-100 hover:bg-amber-500/15"><AlertTriangle className="mr-1 h-3.5 w-3.5" />Latente</Badge>;
+    return <Badge className="border-amber-400/30 bg-amber-500/15 text-amber-100 hover:bg-amber-500/15"><AlertTriangle className="mr-1 h-3.5 w-3.5" />Error</Badge>;
   }
   return <Badge className="border-slate-500/40 bg-slate-500/10 text-slate-200 hover:bg-slate-500/10"><WifiOff className="mr-1 h-3.5 w-3.5" />Offline</Badge>;
+}
+
+function relaySummary(relays: AssetIotRelay[]) {
+  const normalizedRelays = relays.length > 0
+    ? relays
+    : ['REL1', 'REL2', 'REL3', 'REL4'].map((label) => ({ label, active: false }));
+
+  return normalizedRelays
+    .map((relay) => `${relay.label}: ${relay.active ? 'ON' : 'OFF'}`)
+    .join('   ');
 }
 
 function MetricTile({ label, value, suffix, icon }: { label: string; value: string; suffix?: string; icon: ReactNode }) {
@@ -905,6 +912,7 @@ function LegacyThermostatPanel({
   const setpoint = probeSetpoint(reading, activeProbe) ?? probeSetpoint(reading, 1);
   const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
   const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
+  const relayStatusSummary = relaySummary(relays);
 
   return (
     <div className="space-y-4">
@@ -1018,17 +1026,16 @@ function LegacyThermostatPanel({
           icon={<Gauge className="h-3.5 w-3.5" />}
         />
         <MetricTile
-          label="Humedad"
-          value={humidity != null ? formatLedValue(humidity, 0) : '--'}
-          suffix="%"
-          icon={<Droplets className="h-3.5 w-3.5" />}
-        />
-        <MetricTile
           label={`Sonda ${activeProbe}`}
           value={temperature != null ? formatLedValue(temperature, 0) : '--'}
           suffix="C"
           icon={<Thermometer className="h-3.5 w-3.5" />}
         />
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
+        <div className="mb-2 text-xs uppercase tracking-[0.18em] text-slate-400">Salidas</div>
+        <div className="font-medium text-white">{relayStatusSummary}</div>
       </div>
     </div>
   );
@@ -1131,7 +1138,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
         </CardHeader>
 
         <CardContent className="space-y-4 pt-5">
-          {relays.length > 0 && panelType !== 'relay' ? (
+          {relays.length > 0 && panelType !== 'relay' && panelType !== 'thermostat' ? (
             <div>
               <div className="mb-2 text-xs uppercase tracking-[0.18em] text-slate-400">Salidas</div>
               <div className="flex flex-wrap gap-2">
@@ -1149,7 +1156,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
 
           <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
             <div>
-              <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Ultima lectura</div>
+              <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Ultimo registro</div>
               <div className="mt-1 flex items-center gap-2 text-sm text-slate-200">
                 <Activity className="h-4 w-4 text-sky-300" />
                 {formatReadingDate(readingTimestamp(asset, reading))}
