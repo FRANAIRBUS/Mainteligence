@@ -1093,31 +1093,31 @@ function LegacyThermostatPanel({
 
       <div className="grid grid-cols-2 gap-2">
         <MetricTile
-          label="Consigna"
-          value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
-          suffix="C"
-          icon={<Gauge className="h-3.5 w-3.5" />}
-          centered
-        />
-        <MetricTile
           label={`Sonda ${activeProbe}`}
           value={temperature != null ? formatLedValue(temperature, 0) : '--'}
           suffix="C"
           icon={<Thermometer className="h-3.5 w-3.5" />}
           centered
         />
+        <MetricTile
+          label="Consigna"
+          value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
+          suffix="C"
+          icon={<Gauge className="h-3.5 w-3.5" />}
+          centered
+        />
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-2.5 text-sm text-slate-300 sm:p-3">
-        <div className="mb-2 text-xs uppercase tracking-[0.18em] text-slate-400">Salidas</div>
-        <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-xs text-slate-300">
+        <div className="mb-1 text-center text-[10px] uppercase tracking-[0.22em] text-slate-400">Salidas</div>
+        <div className="flex flex-wrap justify-center gap-1.5">
           {relayDisplayStates.map((relay) => (
             <div
               key={relay.label}
               className={
                 relay.active
-                  ? 'flex min-h-12 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-500/20 px-2 py-2 text-center text-sm font-semibold text-emerald-100 sm:min-h-14 sm:px-3'
-                  : 'flex min-h-12 items-center justify-center rounded-xl border border-white/10 bg-slate-900/70 px-2 py-2 text-center text-sm font-semibold text-slate-300 sm:min-h-14 sm:px-3'
+                  ? 'rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-100'
+                  : 'rounded-full border border-white/10 bg-slate-900/70 px-2.5 py-1 text-[11px] font-semibold text-slate-300'
               }
             >
               {relay.label}: {relay.active ? 'ON' : 'OFF'}
