@@ -1051,7 +1051,7 @@ function LegacyThermostatPanel({
         </div>
 
         <div
-          className="absolute right-[53.2%] top-[30.5%] w-[30%] pr-[1%] text-right text-red-600"
+          className="absolute top-[38.5%] right-[47.8%] w-[21%] text-right text-red-600 sm:right-[48.8%] sm:w-[22%] lg:right-[49.6%] lg:w-[23%]"
           style={primaryDigitalValueStyle}
         >
           {primaryValue}
@@ -1063,7 +1063,7 @@ function LegacyThermostatPanel({
         ) : null}
 
         <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute right-[50.5%] top-[61.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
+        <div className="absolute right-[50.5%] top-[64.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
           {humidityValue}
         </div>
         <div className="absolute left-[49.0%] top-[68.0%] h-[6.5%] w-[4.2%]">
@@ -1167,6 +1167,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
                 <Badge variant="outline" className="border-sky-300/20 bg-sky-400/10 text-sky-100">
                   {asset.iot?.deviceKey ?? asset.code}
                 </Badge>
+
                 {siteName ? (
                   <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
                     <MapPin className="mr-1 h-3.5 w-3.5" />
