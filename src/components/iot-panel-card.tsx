@@ -1352,11 +1352,11 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute top-[48.8%] right-[60.8%] w-[24%] min-w-[5ch] pr-[0.08em] text-right text-red-600" style={panelFotoPrimaryDisplayStyle}>
+            <div className="absolute top-[45.8%] right-[62.8%] w-[24%] min-w-[5ch] pr-[0.08em] text-right text-red-600" style={panelFotoPrimaryDisplayStyle}>
               {panelFotoPrimaryValue}
             </div>
             {powerOn ? (
-              <div className="absolute left-[41.8%] top-[50.0%] text-[18px] font-semibold text-red-600">°C</div>
+              <div className="absolute left-[40.2%] top-[50.0%] text-[18px] font-semibold text-red-600">°C</div>
             ) : null}
 
             <div className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5">
