@@ -66,6 +66,19 @@ type CsvResult = {
   csv: string;
 };
 
+type LegacyPanelSkinId = 'lh1t' | 'rele' | 'foto';
+
+type LegacyPanelSkinOption = {
+  id: LegacyPanelSkinId;
+  label: string;
+};
+
+type LegacyPanelPhotoOption = {
+  id: string;
+  label: string;
+  imageSrc: string;
+};
+
 const modeOptions = [
   { value: 'cool', label: 'Cool' },
   { value: 'heat', label: 'Heat' },
@@ -98,6 +111,21 @@ const secondaryDigitalValueStyle: CSSProperties = {
   fontSize: 'clamp(18px, 2.7vw, 24px)',
   lineHeight: 1,
 };
+
+const legacyPanelSkins: LegacyPanelSkinOption[] = [
+  { id: 'lh1t', label: 'LH1T' },
+  { id: 'rele', label: 'RELE' },
+  { id: 'foto', label: 'FOTO' },
+];
+
+const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
+  { id: 'compressor', label: 'Compresor', imageSrc: '/iot/PANEL_FOTO/options/compressor.svg' },
+  { id: 'tank', label: 'Tanque', imageSrc: '/iot/PANEL_FOTO/options/tank.svg' },
+  { id: 'milk-tank', label: 'Milk Tank', imageSrc: '/iot/PANEL_FOTO/options/milk-tank.svg' },
+  { id: 'accumulator', label: 'Acumulador', imageSrc: '/iot/PANEL_FOTO/options/accumulator.svg' },
+  { id: 'fancoil', label: 'Fancoil', imageSrc: '/iot/PANEL_FOTO/options/fancoil.svg' },
+  { id: 'window', label: 'Ventana', imageSrc: '/iot/PANEL_FOTO/options/window.svg' },
+];
 
 function toDateValue(value: DateLike): Date | null {
   if (!value) return null;
@@ -975,6 +1003,26 @@ function thermostatMode(reading: AssetIotReading | null | undefined) {
   return 'AUTO';
 }
 
+function isLegacyPanelSkin(value: string | null | undefined): value is LegacyPanelSkinId {
+  return legacyPanelSkins.some((skin) => skin.id === value);
+}
+
+function nextLegacyPanelSkin(current: LegacyPanelSkinId) {
+  const currentIndex = legacyPanelSkins.findIndex((skin) => skin.id === current);
+  if (currentIndex < 0) return legacyPanelSkins[0]?.id ?? 'lh1t';
+  return legacyPanelSkins[(currentIndex + 1) % legacyPanelSkins.length]?.id ?? 'lh1t';
+}
+
+function relayPanelSlots(relays: AssetIotRelay[]) {
+  const normalizedRelays = relayDisplayItems(relays);
+  const relayByLabel = new Map(normalizedRelays.map((relay) => [relay.label, relay] as const));
+
+  return [1, 2, 3].map((slotIndex) => {
+    const expectedLabel = `REL${slotIndex}`;
+    return relayByLabel.get(expectedLabel) ?? normalizedRelays[slotIndex - 1] ?? { label: expectedLabel, active: false };
+  });
+}
+
 function LegacyThermostatPanel({
   asset,
   reading,
@@ -989,8 +1037,12 @@ function LegacyThermostatPanel({
   alarms: string[];
 }) {
   const [activeProbe, setActiveProbe] = useState<number>(1);
+  const [activeSkin, setActiveSkin] = useState<LegacyPanelSkinId>('lh1t');
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string>(legacyPanelPhotoOptions[0]?.id ?? 'compressor');
   const displayContainerRef = useRef<HTMLDivElement | null>(null);
   const [displayWidth, setDisplayWidth] = useState<number>(557);
+  const skinStorageKey = `iot:legacy-skin:${asset.id}`;
+  const photoStorageKey = `iot:legacy-photo:${asset.id}`;
   const powerOn = readingBoolean(reading, 'power', 'RUN') ?? status !== 'offline';
   const relay1On = getRelayState(relays, 'REL1');
   const relay2On = getRelayState(relays, 'REL2');
@@ -1002,11 +1054,46 @@ function LegacyThermostatPanel({
   const humidity = probeHumidity(reading, activeProbe);
   const setpoint = probeSetpoint(reading, activeProbe) ?? probeSetpoint(reading, 1);
   const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
+  const panelFotoPrimaryValue = powerOn ? formatLedValue(temperature, 2) : 'OFF';
   const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
   const relayDisplayStates = relayDisplayItems(relays);
+  const relaySlots = useMemo(() => relayPanelSlots(relays), [relays]);
+  const selectedPhoto = useMemo<LegacyPanelPhotoOption>(
+    () =>
+      legacyPanelPhotoOptions.find((option) => option.id === selectedPhotoId) ??
+      legacyPanelPhotoOptions[0] ?? {
+        id: 'default',
+        label: 'Imagen',
+        imageSrc: '/iot/PANEL_FOTO/options/compressor.svg',
+      },
+    [selectedPhotoId],
+  );
+  const activeSkinLabel = useMemo(
+    () => legacyPanelSkins.find((skin) => skin.id === activeSkin)?.label ?? 'LH1T',
+    [activeSkin],
+  );
+  const telemetryIconSrc = useMemo(() => {
+    if (activeSkin === 'rele') return '/iot/PANEL_RELE/graf.png';
+    if (activeSkin === 'foto') return '/iot/PANEL_FOTO/graf.png';
+    return '/iot/lh1t/images/graf.png';
+  }, [activeSkin]);
+  const powerIconSrc = useMemo(() => {
+    if (activeSkin === 'rele') return powerOn ? '/iot/PANEL_RELE/power_on.png' : '/iot/PANEL_RELE/power_off.png';
+    if (activeSkin === 'foto') return powerOn ? '/iot/PANEL_FOTO/power_on.png' : '/iot/PANEL_FOTO/power_off.png';
+    return powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png';
+  }, [activeSkin, powerOn]);
+  const displayBackgroundImage = useMemo(() => {
+    if (activeSkin === 'rele') return '/iot/PANEL_RELE/DISPLAY_FONDO_RELE_1OFF.png';
+    if (activeSkin === 'foto') return '/iot/PANEL_FOTO/DISPLAY_FOTO.png';
+    return '/iot/lh1t/images/DISPLAY_FONDO_TEMP.png';
+  }, [activeSkin]);
   const primaryDisplayFontSize = useMemo(() => {
     const scaled = displayWidth * 0.118;
     return `${Math.min(65, Math.max(34, scaled)).toFixed(1)}px`;
+  }, [displayWidth]);
+  const panelFotoPrimaryDisplayFontSize = useMemo(() => {
+    const scaled = displayWidth * 0.104;
+    return `${Math.min(62, Math.max(30, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const primaryDisplayStyle = useMemo<CSSProperties>(
     () => ({
@@ -1014,6 +1101,13 @@ function LegacyThermostatPanel({
       fontSize: primaryDisplayFontSize,
     }),
     [primaryDisplayFontSize],
+  );
+  const panelFotoPrimaryDisplayStyle = useMemo<CSSProperties>(
+    () => ({
+      ...primaryDigitalValueStyle,
+      fontSize: panelFotoPrimaryDisplayFontSize,
+    }),
+    [panelFotoPrimaryDisplayFontSize],
   );
 
   useEffect(() => {
@@ -1039,109 +1133,292 @@ function LegacyThermostatPanel({
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const savedSkin = window.localStorage.getItem(skinStorageKey);
+    const savedPhoto = window.localStorage.getItem(photoStorageKey);
+
+    setActiveSkin(isLegacyPanelSkin(savedSkin) ? savedSkin : 'lh1t');
+    setSelectedPhotoId(
+      legacyPanelPhotoOptions.some((option) => option.id === savedPhoto)
+        ? String(savedPhoto)
+        : (legacyPanelPhotoOptions[0]?.id ?? 'compressor'),
+    );
+  }, [photoStorageKey, skinStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(skinStorageKey, activeSkin);
+  }, [activeSkin, skinStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(photoStorageKey, selectedPhotoId);
+  }, [photoStorageKey, selectedPhotoId]);
+
+  const cycleSkin = () => {
+    setActiveSkin((currentSkin) => nextLegacyPanelSkin(currentSkin));
+  };
+
   return (
     <div className="space-y-4">
       <div
         ref={displayContainerRef}
         className="relative mx-auto aspect-[557/300] w-full max-w-[557px] overflow-hidden rounded-[20px] bg-cover bg-center bg-no-repeat shadow-[0_18px_45px_rgba(0,0,0,0.45)] [container-type:inline-size]"
-        style={{ backgroundImage: "url('/iot/lh1t/images/DISPLAY_FONDO_TEMP.png')" }}
+        style={{ backgroundImage: `url('${displayBackgroundImage}')` }}
       >
-        <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
-          Ultimo Dato: {timestamp}
-        </div>
-        <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
-          {asset.name}
-        </div>
+        {activeSkin === 'lh1t' ? (
+          <>
+            <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
+              Ultimo Dato: {timestamp}
+            </div>
+            <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
+              {asset.name}
+            </div>
 
-        <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-          <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-            MODE {legacyMode}
-          </div>
-          <button
-            type="button"
-            onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
-            className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
-          >
-            PROBE {activeProbe}
-          </button>
-        </div>
+            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
+              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
+                MODE {legacyMode}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
+                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
+              >
+                PROBE {activeProbe}
+              </button>
+              <button
+                type="button"
+                onClick={cycleSkin}
+                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
+                title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              >
+                SKIN
+              </button>
+            </div>
 
-        <IotTelemetryDialog
-          asset={asset}
-          trigger={(
-            <button
-              type="button"
-              className="absolute left-[83.8%] top-[34.0%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5 transition hover:bg-black/15"
-              aria-label="Abrir historico de telemetria"
+            <IotTelemetryDialog
+              asset={asset}
+              trigger={(
+                <button
+                  type="button"
+                  className="absolute left-[83.8%] top-[34.0%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5 transition hover:bg-black/15"
+                  aria-label="Abrir historico de telemetria"
+                >
+                  <img src={telemetryIconSrc} alt="Grafica" className="h-full w-full object-contain" />
+                </button>
+              )}
+            />
+            <div className="absolute left-[84%] top-[62.5%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+              <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
+            </div>
+
+            <div className="absolute left-[6.3%] top-[18.3%] h-[8.3%] w-[4.5%]" style={{ opacity: alarmOn ? 1 : 0 }}>
+              <img src="/iot/lh1t/images/alarma.png" alt="Alarma" className="h-full w-full object-contain" />
+            </div>
+
+            <div
+              className="absolute top-[38.5%] right-[60.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[20%] lg:right-[55.6%] lg:w-[21%]"
+              style={primaryDisplayStyle}
             >
-              <img src="/iot/lh1t/images/graf.png" alt="Grafica" className="h-full w-full object-contain" />
-            </button>
-          )}
-        />
-        <div className="absolute left-[84%] top-[62.5%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
-          <img
-            src={powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png'}
-            alt={powerOn ? 'Encendido' : 'Apagado'}
-            className="h-full w-full object-contain"
-          />
-        </div>
+              {primaryValue}
+            </div>
+            {powerOn ? (
+              <div className="absolute left-[45.5%] top-[50%] h-[8.3%] w-[4.5%]">
+                <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
+              </div>
+            ) : null}
 
-        <div className="absolute left-[6.3%] top-[18.3%] h-[8.3%] w-[4.5%]" style={{ opacity: alarmOn ? 1 : 0 }}>
-          <img src="/iot/lh1t/images/alarma.png" alt="Alarma" className="h-full w-full object-contain" />
-        </div>
+            <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
+            <div className="absolute right-[50.5%] top-[64.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
+              {humidityValue}
+            </div>
+            <div className="absolute left-[49.0%] top-[68.0%] h-[6.5%] w-[4.2%]">
+              <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
+            </div>
 
-        <div
-          className="absolute top-[38.5%] right-[60.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[20%] lg:right-[55.6%] lg:w-[21%]"
-          style={primaryDisplayStyle}
-        >
-          {primaryValue}
-        </div>
-        {powerOn ? (
-          <div className="absolute left-[45.5%] top-[50%] h-[8.3%] w-[4.5%]">
-            <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
-          </div>
+            {relay1On ? (
+              <div className="absolute left-[55.8%] top-[35%] h-[10.7%] w-[5.7%]">
+                <img src="/iot/lh1t/images/RL_1_FRIO.png" alt="Compresor" className="h-full w-full object-contain" />
+              </div>
+            ) : null}
+            {relay2On ? (
+              <div className="absolute left-[56%] top-[50%] h-[11.7%] w-[6.3%]">
+                <img src="/iot/lh1t/images/RL_2_FAN.png" alt="Ventilador" className="h-full w-full object-contain" />
+              </div>
+            ) : null}
+            {relay3On ? (
+              <div className="absolute left-[56%] top-[62.2%] h-[10.7%] w-[5.7%]">
+                <img src="/iot/lh1t/images/defross.png" alt="Defross" className="h-full w-full object-contain" />
+              </div>
+            ) : null}
+            <IotDesiredStateDialog
+              asset={asset}
+              trigger={(
+                <button
+                  type="button"
+                  className="absolute left-[68.8%] top-[34.3%] h-[15.5%] w-[8.5%] transition hover:opacity-90"
+                  aria-label="Abrir desired state"
+                >
+                  <img src="/iot/lh1t/images/set.png" alt="Set" className="h-full w-full object-cover" />
+                </button>
+              )}
+            />
+            <div className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717]">
+              <div className="flex h-full w-full items-center justify-center">
+                <Settings className="h-[58%] w-[58%] text-slate-200" strokeWidth={2.2} />
+              </div>
+            </div>
+          </>
         ) : null}
 
-        <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-        <div className="absolute right-[50.5%] top-[64.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
-          {humidityValue}
-        </div>
-        <div className="absolute left-[49.0%] top-[68.0%] h-[6.5%] w-[4.2%]">
-          <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
-        </div>
+        {activeSkin === 'rele' ? (
+          <>
+            <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
+              Ultimo Dato: {timestamp}
+            </div>
+            <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
+              {asset.name}
+            </div>
 
-        {relay1On ? (
-          <div className="absolute left-[55.8%] top-[35%] h-[10.7%] w-[5.7%]">
-            <img src="/iot/lh1t/images/RL_1_FRIO.png" alt="Compresor" className="h-full w-full object-contain" />
-          </div>
+            <div className="absolute left-[7.9%] top-[31.8%] h-[9.3%] w-[17.1%] rounded-[8px] border border-white/45 bg-white/10 text-center text-[11px] font-semibold uppercase text-slate-200">
+              R-1
+            </div>
+            <div className="absolute left-[34.1%] top-[31.8%] h-[9.3%] w-[17.1%] rounded-[8px] border border-white/45 bg-white/10 text-center text-[11px] font-semibold uppercase text-slate-200">
+              R-2
+            </div>
+            <div className="absolute left-[60.3%] top-[31.8%] h-[9.3%] w-[17.1%] rounded-[8px] border border-white/45 bg-white/10 text-center text-[11px] font-semibold uppercase text-slate-200">
+              R-3
+            </div>
+
+            {relaySlots.map((relay, index) => (
+              <div
+                key={`${relay.label}-${index}`}
+                className={`absolute top-[49.3%] h-[25.3%] w-[15.4%] ${index === 0 ? 'left-[8.6%]' : index === 1 ? 'left-[34.8%]' : 'left-[61.0%]'}`}
+              >
+                <img
+                  src={relay.active ? '/iot/PANEL_RELE/RELE_ON.png' : '/iot/PANEL_RELE/RELE_OFF.png'}
+                  alt={`${relay.label} ${relay.active ? 'encendido' : 'apagado'}`}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            ))}
+
+            <IotTelemetryDialog
+              asset={asset}
+              trigger={(
+                <button
+                  type="button"
+                  className="absolute left-[81.5%] top-[31.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+                  aria-label="Abrir historico de telemetria"
+                >
+                  <img src={telemetryIconSrc} alt="Grafica" className="h-full w-full object-contain" />
+                </button>
+              )}
+            />
+            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+              <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
+            </div>
+
+            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
+              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
+                MODE {legacyMode}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
+                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
+              >
+                PROBE {activeProbe}
+              </button>
+              <button
+                type="button"
+                onClick={cycleSkin}
+                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
+                title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              >
+                SKIN
+              </button>
+            </div>
+          </>
         ) : null}
-        {relay2On ? (
-          <div className="absolute left-[56%] top-[50%] h-[11.7%] w-[6.3%]">
-            <img src="/iot/lh1t/images/RL_2_FAN.png" alt="Ventilador" className="h-full w-full object-contain" />
-          </div>
+
+        {activeSkin === 'foto' ? (
+          <>
+            <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
+              Ultimo Dato: {timestamp}
+            </div>
+            <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
+              {asset.name}
+            </div>
+
+            <div className="absolute top-[48.8%] right-[60.8%] w-[24%] min-w-[5ch] pr-[0.08em] text-right text-red-600" style={panelFotoPrimaryDisplayStyle}>
+              {panelFotoPrimaryValue}
+            </div>
+            {powerOn ? (
+              <div className="absolute left-[41.8%] top-[50.0%] text-[18px] font-semibold text-red-600">°C</div>
+            ) : null}
+
+            <div className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5">
+              <img
+                src={selectedPhoto.imageSrc}
+                alt={`Imagen seleccionada: ${selectedPhoto.label}`}
+                className="h-full w-full object-contain"
+              />
+              <div className="absolute inset-x-1.5 bottom-1">
+                <select
+                  value={selectedPhotoId}
+                  onChange={(event) => setSelectedPhotoId(event.target.value)}
+                  className="h-6 w-full rounded border border-white/20 bg-black/70 px-1 text-[10px] text-white outline-none"
+                  aria-label="Imagen preseleccionada para panel foto"
+                >
+                  {legacyPanelPhotoOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <IotTelemetryDialog
+              asset={asset}
+              trigger={(
+                <button
+                  type="button"
+                  className="absolute left-[81.5%] top-[31.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+                  aria-label="Abrir historico de telemetria"
+                >
+                  <img src={telemetryIconSrc} alt="Grafica" className="h-full w-full object-contain" />
+                </button>
+              )}
+            />
+            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+              <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
+            </div>
+
+            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
+              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
+                MODE {legacyMode}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
+                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
+              >
+                PROBE {activeProbe}
+              </button>
+              <button
+                type="button"
+                onClick={cycleSkin}
+                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
+                title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              >
+                SKIN
+              </button>
+            </div>
+          </>
         ) : null}
-        {relay3On ? (
-          <div className="absolute left-[56%] top-[62.2%] h-[10.7%] w-[5.7%]">
-            <img src="/iot/lh1t/images/defross.png" alt="Defross" className="h-full w-full object-contain" />
-          </div>
-        ) : null}
-        <IotDesiredStateDialog
-          asset={asset}
-          trigger={(
-            <button
-              type="button"
-              className="absolute left-[68.8%] top-[34.3%] h-[15.5%] w-[8.5%] transition hover:opacity-90"
-              aria-label="Abrir desired state"
-            >
-              <img src="/iot/lh1t/images/set.png" alt="Set" className="h-full w-full object-cover" />
-            </button>
-          )}
-        />
-        <div className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717]">
-          <div className="flex h-full w-full items-center justify-center">
-            <Settings className="h-[58%] w-[58%] text-slate-200" strokeWidth={2.2} />
-          </div>
-        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
