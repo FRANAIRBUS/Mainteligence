@@ -1367,9 +1367,15 @@ function LegacyThermostatPanel({
                 alt={`Imagen seleccionada: ${selectedPhoto.label}`}
                 className="h-full w-full object-contain"
               />
-              <div className="absolute inset-x-1.5 bottom-1 rounded bg-black/65 px-1 py-0.5 text-center text-[9px] uppercase tracking-[0.12em] text-slate-200">
-                {selectedPhoto.label}
-              </div>
+              <button
+                type="button"
+                onClick={() => setPhotoGalleryOpen(true)}
+                className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/20 bg-black/55 text-slate-100 transition hover:border-sky-300/80 hover:text-sky-100"
+                aria-label="Abrir galeria de imagenes"
+                title="Seleccionar imagen del panel foto"
+              >
+                <Settings className="h-4 w-4" strokeWidth={2.2} />
+              </button>
             </div>
 
             <IotTelemetryDialog
@@ -1387,16 +1393,6 @@ function LegacyThermostatPanel({
             <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
             </div>
-            <button
-              type="button"
-              onClick={() => setPhotoGalleryOpen(true)}
-              className="absolute left-[78.4%] top-[81.7%] flex h-[10.3%] w-[6.3%] items-center justify-center rounded-[10px] border border-white/20 bg-black/35 text-slate-100 transition hover:border-sky-300/80 hover:text-sky-100"
-              aria-label="Abrir galeria de imagenes"
-              title="Seleccionar imagen del panel foto"
-            >
-              <Settings className="h-[65%] w-[65%]" strokeWidth={2.2} />
-            </button>
-
             <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
               <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
                 MODE {legacyMode}

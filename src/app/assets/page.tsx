@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AddAssetDialog } from '@/components/add-asset-dialog';
+import { EditAssetDialog } from '@/components/edit-asset-dialog';
 import { doc, deleteDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -43,12 +44,14 @@ function AssetsTable({
   assets,
   sites,
   loading,
+  onEdit,
   onDelete,
   canEdit,
 }: {
   assets: Asset[];
   sites: Site[];
   loading: boolean;
+  onEdit: (asset: Asset) => void;
   onDelete: (assetId: string) => void;
   canEdit: boolean;
 }) {
@@ -94,7 +97,7 @@ function AssetsTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-                    <DropdownMenuItem disabled>Editar</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onEdit(asset)}>Editar</DropdownMenuItem>
                     <DropdownMenuItem
                       className="text-red-600"
                       onClick={() => onDelete(asset.id)}
@@ -140,8 +143,22 @@ export default function AssetsPage() {
   );
 
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
+  const [isEditAssetOpen, setIsEditAssetOpen] = useState(false);
+  const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
+
+  const handleEditRequest = (asset: Asset) => {
+    setEditingAsset(asset);
+    setIsEditAssetOpen(true);
+  };
+
+  const handleEditDialogChange = (open: boolean) => {
+    setIsEditAssetOpen(open);
+    if (!open) {
+      setEditingAsset(null);
+    }
+  };
 
   const handleDeleteRequest = (assetId: string) => {
     setDeletingAssetId(assetId);
@@ -201,7 +218,14 @@ export default function AssetsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <AssetsTable assets={assets} sites={sites} loading={tableIsLoading} onDelete={handleDeleteRequest} canEdit={canManage} />
+            <AssetsTable
+              assets={assets}
+              sites={sites}
+              loading={tableIsLoading}
+              onEdit={handleEditRequest}
+              onDelete={handleDeleteRequest}
+              canEdit={canManage}
+            />
           </CardContent>
         </Card>
       ) : (
@@ -215,6 +239,14 @@ export default function AssetsPage() {
         </Card>
       )}
       {canManage && <AddAssetDialog open={isAddAssetOpen} onOpenChange={setIsAddAssetOpen} sites={sites} />}
+      {canManage && (
+        <EditAssetDialog
+          open={isEditAssetOpen}
+          onOpenChange={handleEditDialogChange}
+          asset={editingAsset}
+          sites={sites}
+        />
+      )}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
