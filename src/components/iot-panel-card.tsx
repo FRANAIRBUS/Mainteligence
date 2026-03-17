@@ -1097,7 +1097,7 @@ function LegacyThermostatPanel({
           {primaryValue}
         </div>
         {powerOn ? (
-          <div className="absolute left-[48.5%] top-[51.5%] h-[8.3%] w-[4.5%]">
+          <div className="absolute left-[45.5%] top-[50%] h-[8.3%] w-[4.5%]">
             <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
           </div>
         ) : null}
