@@ -5338,6 +5338,9 @@ export const createAsset = functions.https.onCall(async (data, context) => {
   const name = requireStringField(data.payload.name, 'name');
   const code = requireStringField(data.payload.code, 'code');
   const siteId = requireStringField(data.payload.siteId, 'siteId');
+  const orgRef = db.collection('organizations').doc(orgId);
+  const siteRef = orgRef.collection('sites').doc(siteId);
+  const assetRef = orgRef.collection('assets').doc();
 
   const iotPayload = data.payload.iot;
   let iot: Record<string, unknown> | undefined;
@@ -5354,7 +5357,7 @@ export const createAsset = functions.https.onCall(async (data, context) => {
       iot = stripUndefinedDeep({
         enabled: true,
         panelType,
-        deviceKey: sanitizeDeviceKey(requireStringField(iotPayload.deviceKey, 'iot.deviceKey')),
+        deviceKey: sanitizeDeviceKey(optionalStringValue(iotPayload.deviceKey) ?? `ASSET-${assetRef.id}`),
         locationLabel: String(iotPayload.locationLabel ?? '').trim() || undefined,
         dataSource: String(iotPayload.dataSource ?? 'maintelligence_api').trim() || 'maintelligence_api',
       });
@@ -5363,9 +5366,6 @@ export const createAsset = functions.https.onCall(async (data, context) => {
 
   requireScopedAccessToSite(role, scope, siteId);
 
-  const orgRef = db.collection('organizations').doc(orgId);
-  const siteRef = orgRef.collection('sites').doc(siteId);
-  const assetRef = orgRef.collection('assets').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   await db.runTransaction(async (tx) => {
@@ -8067,7 +8067,6 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Webhook handler error.');
   }
 });
-
 
 
 

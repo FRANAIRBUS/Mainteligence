@@ -48,27 +48,15 @@ const panelTypes: { value: IotPanelType; label: string }[] = [
   { value: 'relay', label: 'Reles' },
 ];
 
-const formSchema = z
-  .object({
-    name: z.string().min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
-    code: z.string().min(1, { message: 'El codigo no puede estar vacio.' }),
-    siteId: z.string({ required_error: 'Debe seleccionar una ubicacion.' }),
-    iotEnabled: z.boolean().default(false),
-    iotPanelType: z.enum(['thermostat', 'sensor', 'relay']).default('thermostat'),
-    iotDeviceKey: z.string().optional(),
-    iotLocationLabel: z.string().optional(),
-  })
-  .superRefine((values, ctx) => {
-    if (!values.iotEnabled) return;
-
-    if (!values.iotDeviceKey || values.iotDeviceKey.trim().length === 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['iotDeviceKey'],
-        message: 'Indica el identificador del dispositivo IoT.',
-      });
-    }
-  });
+const formSchema = z.object({
+  name: z.string().min(2, { message: 'El nombre debe tener al menos 2 caracteres.' }),
+  code: z.string().min(1, { message: 'El codigo no puede estar vacio.' }),
+  siteId: z.string({ required_error: 'Debe seleccionar una ubicacion.' }),
+  iotEnabled: z.boolean().default(false),
+  iotPanelType: z.enum(['thermostat', 'sensor', 'relay']).default('thermostat'),
+  iotDeviceKey: z.string().optional(),
+  iotLocationLabel: z.string().optional(),
+});
 
 type AddAssetFormValues = z.infer<typeof formSchema>;
 
@@ -109,7 +97,6 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
     defaultValues,
   });
   const nameValue = useWatch({ control: form.control, name: 'name' });
-  const codeValue = useWatch({ control: form.control, name: 'code' });
   const iotEnabled = useWatch({ control: form.control, name: 'iotEnabled' });
   const { dirtyFields } = useFormState({ control: form.control });
 
@@ -127,21 +114,6 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
       });
     }
   }, [dirtyFields.code, form, nameValue]);
-
-  useEffect(() => {
-    if (!iotEnabled || dirtyFields.iotDeviceKey) {
-      return;
-    }
-
-    const nextDeviceKey = codeValue ? codeValue.toUpperCase() : '';
-    if (nextDeviceKey !== form.getValues('iotDeviceKey')) {
-      form.setValue('iotDeviceKey', nextDeviceKey, {
-        shouldDirty: false,
-        shouldTouch: false,
-        shouldValidate: false,
-      });
-    }
-  }, [codeValue, dirtyFields.iotDeviceKey, form, iotEnabled]);
 
   const onSubmit = async (data: AddAssetFormValues) => {
     if (!app) {
@@ -170,7 +142,9 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
                 iot: {
                   enabled: true,
                   panelType: data.iotPanelType,
-                  deviceKey: data.iotDeviceKey?.trim().toUpperCase(),
+                  deviceKey: data.iotDeviceKey?.trim()
+                    ? data.iotDeviceKey.trim().toUpperCase()
+                    : undefined,
                   locationLabel: data.iotLocationLabel?.trim() || undefined,
                   dataSource: 'maintelligence_api',
                 },
@@ -337,9 +311,9 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
                     name="iotDeviceKey"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>ID del dispositivo</FormLabel>
+                        <FormLabel>ID del dispositivo (opcional)</FormLabel>
                         <FormControl>
-                          <Input placeholder="Ej: LH-T300-OBR-01" {...field} />
+                          <Input placeholder="Si lo dejas vacio, se genera automaticamente" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
