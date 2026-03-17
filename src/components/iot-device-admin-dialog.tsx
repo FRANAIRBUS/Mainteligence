@@ -62,6 +62,7 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
     return JSON.stringify(
       {
         organizationId: provisioning.organizationId,
+        assetId: provisioning.assetId,
         deviceKey: provisioning.deviceKey,
         bootstrapToken: provisioning.bootstrapToken,
         bootstrapUrl: provisioning.bootstrapUrl,
@@ -132,9 +133,13 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
             </div>
             <div className="space-y-3 text-sm text-muted-foreground">
               <p>Genera un token temporal. Solo sirve una vez y se pega en el portal local del ESP.</p>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="grid gap-2 sm:grid-cols-3">
                 <div>
-                  <Label>deviceKey</Label>
+                  <Label>assetId</Label>
+                  <Input value={asset.id} readOnly />
+                </div>
+                <div>
+                  <Label>deviceKey (estable)</Label>
                   <Input value={asset.iot?.deviceKey ?? ''} readOnly />
                 </div>
                 <div>
