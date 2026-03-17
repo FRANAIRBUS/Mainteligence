@@ -119,12 +119,13 @@ const legacyPanelSkins: LegacyPanelSkinOption[] = [
 ];
 
 const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
-  { id: 'compressor', label: 'Compresor', imageSrc: '/iot/PANEL_FOTO/options/compressor.svg' },
-  { id: 'tank', label: 'Tanque', imageSrc: '/iot/PANEL_FOTO/options/tank.svg' },
-  { id: 'milk-tank', label: 'Milk Tank', imageSrc: '/iot/PANEL_FOTO/options/milk-tank.svg' },
-  { id: 'accumulator', label: 'Acumulador', imageSrc: '/iot/PANEL_FOTO/options/accumulator.svg' },
-  { id: 'fancoil', label: 'Fancoil', imageSrc: '/iot/PANEL_FOTO/options/fancoil.svg' },
-  { id: 'window', label: 'Ventana', imageSrc: '/iot/PANEL_FOTO/options/window.svg' },
+  { id: 'compresor', label: 'Compresor', imageSrc: '/iot/PANEL_FOTO/options/compresor.png' },
+  { id: 'caldera', label: 'Caldera', imageSrc: '/iot/PANEL_FOTO/options/caldera.png' },
+  { id: 'tanque-grande', label: 'Tanque grande', imageSrc: '/iot/PANEL_FOTO/options/tanque_grande.png' },
+  { id: 'tanque-peq', label: 'Tanque pequeno', imageSrc: '/iot/PANEL_FOTO/options/tanque_peq.png' },
+  { id: 'fancoil', label: 'Fancoil', imageSrc: '/iot/PANEL_FOTO/options/fancoil.png' },
+  { id: 'ventana', label: 'Ventana', imageSrc: '/iot/PANEL_FOTO/options/ventana.png' },
+  { id: 'aire-acond', label: 'Aire acondicionado', imageSrc: '/iot/PANEL_FOTO/options/aire_acond.png' },
 ];
 
 function toDateValue(value: DateLike): Date | null {
@@ -1038,7 +1039,8 @@ function LegacyThermostatPanel({
 }) {
   const [activeProbe, setActiveProbe] = useState<number>(1);
   const [activeSkin, setActiveSkin] = useState<LegacyPanelSkinId>('lh1t');
-  const [selectedPhotoId, setSelectedPhotoId] = useState<string>(legacyPanelPhotoOptions[0]?.id ?? 'compressor');
+  const [selectedPhotoId, setSelectedPhotoId] = useState<string>(legacyPanelPhotoOptions[0]?.id ?? 'compresor');
+  const [photoGalleryOpen, setPhotoGalleryOpen] = useState(false);
   const displayContainerRef = useRef<HTMLDivElement | null>(null);
   const [displayWidth, setDisplayWidth] = useState<number>(557);
   const skinStorageKey = `iot:legacy-skin:${asset.id}`;
@@ -1064,7 +1066,7 @@ function LegacyThermostatPanel({
       legacyPanelPhotoOptions[0] ?? {
         id: 'default',
         label: 'Imagen',
-        imageSrc: '/iot/PANEL_FOTO/options/compressor.svg',
+        imageSrc: '/iot/PANEL_FOTO/options/compresor.png',
       },
     [selectedPhotoId],
   );
@@ -1142,7 +1144,7 @@ function LegacyThermostatPanel({
     setSelectedPhotoId(
       legacyPanelPhotoOptions.some((option) => option.id === savedPhoto)
         ? String(savedPhoto)
-        : (legacyPanelPhotoOptions[0]?.id ?? 'compressor'),
+        : (legacyPanelPhotoOptions[0]?.id ?? 'compresor'),
     );
   }, [photoStorageKey, skinStorageKey]);
 
@@ -1365,19 +1367,8 @@ function LegacyThermostatPanel({
                 alt={`Imagen seleccionada: ${selectedPhoto.label}`}
                 className="h-full w-full object-contain"
               />
-              <div className="absolute inset-x-1.5 bottom-1">
-                <select
-                  value={selectedPhotoId}
-                  onChange={(event) => setSelectedPhotoId(event.target.value)}
-                  className="h-6 w-full rounded border border-white/20 bg-black/70 px-1 text-[10px] text-white outline-none"
-                  aria-label="Imagen preseleccionada para panel foto"
-                >
-                  {legacyPanelPhotoOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+              <div className="absolute inset-x-1.5 bottom-1 rounded bg-black/65 px-1 py-0.5 text-center text-[9px] uppercase tracking-[0.12em] text-slate-200">
+                {selectedPhoto.label}
               </div>
             </div>
 
@@ -1396,6 +1387,15 @@ function LegacyThermostatPanel({
             <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
             </div>
+            <button
+              type="button"
+              onClick={() => setPhotoGalleryOpen(true)}
+              className="absolute left-[78.4%] top-[81.7%] flex h-[10.3%] w-[6.3%] items-center justify-center rounded-[10px] border border-white/20 bg-black/35 text-slate-100 transition hover:border-sky-300/80 hover:text-sky-100"
+              aria-label="Abrir galeria de imagenes"
+              title="Seleccionar imagen del panel foto"
+            >
+              <Settings className="h-[65%] w-[65%]" strokeWidth={2.2} />
+            </button>
 
             <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
               <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
@@ -1420,6 +1420,42 @@ function LegacyThermostatPanel({
           </>
         ) : null}
       </div>
+
+      <Dialog open={photoGalleryOpen} onOpenChange={setPhotoGalleryOpen}>
+        <DialogContent className="max-w-4xl border-white/10 bg-slate-950 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Galeria de imagenes del panel foto</DialogTitle>
+            <DialogDescription className="text-slate-300">
+              Selecciona una imagen para mantener en el recuadro del panel.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid max-h-[62vh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4">
+            {legacyPanelPhotoOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  setSelectedPhotoId(option.id);
+                  setPhotoGalleryOpen(false);
+                }}
+                className={`overflow-hidden rounded-xl border text-left transition ${
+                  selectedPhotoId === option.id
+                    ? 'border-sky-300 bg-sky-400/10'
+                    : 'border-white/10 bg-white/5 hover:border-sky-300/60'
+                }`}
+                aria-label={`Seleccionar imagen ${option.label}`}
+              >
+                <div className="aspect-[4/3] w-full bg-black/40 p-1.5">
+                  <img src={option.imageSrc} alt={option.label} className="h-full w-full object-contain" />
+                </div>
+                <div className="border-t border-white/10 px-2 py-1.5 text-xs font-medium text-slate-100">
+                  {option.label}
+                </div>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-2 gap-2">
         <MetricTile
