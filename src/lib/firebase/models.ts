@@ -253,6 +253,19 @@ export interface AssetIotDesiredState {
   mode?: string | null;
   fan?: string | null;
   setpoint?: number | null;
+  setpoint2?: number | null;
+  differentialX10?: number | null;
+  highAlarmX10?: number | null;
+  lowAlarmX10?: number | null;
+  tempAlarmDelayMin?: number | null;
+  controlPeriodMs?: number | null;
+  defrostIntervalMin?: number | null;
+  defrostDurationMin?: number | null;
+  defrostStopX10?: number | null;
+  stopRelay1OnDefrost?: boolean | null;
+  stopRelay2OnDefrost?: boolean | null;
+  relay2Mode?: number | null;
+  relay3Mode?: number | null;
   relays?: Record<string, boolean> | null;
   note?: string | null;
 }
