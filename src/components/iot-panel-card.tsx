@@ -1047,85 +1047,50 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
             Desired state
           </div>
           <div className="grid gap-3">
-            <div className="grid grid-cols-3 gap-3">
-              {supportsSetpoint ? (
-                <div>
-                  <Label htmlFor={`panel-setpoint-${asset.id}`}>Setpoint</Label>
-                  <Input id={`panel-setpoint-${asset.id}`} value={setpoint} onChange={(e) => setSetpoint(e.target.value)} placeholder="Ej: 5" />
-                </div>
-              ) : null}
-              {supportsThermostatLogic ? (
-                <div>
-                  <Label htmlFor={`panel-setpoint2-${asset.id}`}>Setpoint 2</Label>
-                  <Input
-                    id={`panel-setpoint2-${asset.id}`}
-                    value={thermostatLogic.setpoint2}
-                    onChange={(e) => setThermostatLogic((current) => ({ ...current, setpoint2: e.target.value }))}
-                    placeholder="Ej: 6"
-                  />
-                </div>
-              ) : null}
-              {supportsPower ? (
-                <div>
-                  <Label htmlFor={`panel-power-${asset.id}`}>Power</Label>
-                  <select
-                    id={`panel-power-${asset.id}`}
-                    value={power ? 'on' : 'off'}
-                    onChange={(e) => setPower(e.target.value === 'on')}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="on">ON</option>
-                    <option value="off">OFF</option>
-                  </select>
-                </div>
-              ) : null}
-            </div>
-
-            {supportsMode || supportsFan ? (
-              <div className="grid grid-cols-3 gap-3">
-                {supportsMode ? (
-                  <div>
-                    <Label htmlFor={`panel-mode-${asset.id}`}>Mode</Label>
-                    <select
-                      id={`panel-mode-${asset.id}`}
-                      value={mode}
-                      onChange={(e) => setMode(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      {modeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-                {supportsFan ? (
-                  <div>
-                    <Label htmlFor={`panel-fan-${asset.id}`}>Fan</Label>
-                    <select
-                      id={`panel-fan-${asset.id}`}
-                      value={fan}
-                      onChange={(e) => setFan(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      {fanOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
             {supportsThermostatLogic ? (
               <>
                 <div className="rounded-xl border bg-muted/20 p-2 text-xs text-muted-foreground">
                   Campos `X10`: se muestran en grados (valor / 10) y se envian internamente como enteros x10.
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {supportsPower ? (
+                    <div>
+                      <Label htmlFor={`panel-power-${asset.id}`}>Power</Label>
+                      <select
+                        id={`panel-power-${asset.id}`}
+                        value={power ? 'on' : 'off'}
+                        onChange={(e) => setPower(e.target.value === 'on')}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="on">ON</option>
+                        <option value="off">OFF</option>
+                      </select>
+                    </div>
+                  ) : null}
+                  {supportsMode ? (
+                    <div>
+                      <Label htmlFor={`panel-mode-${asset.id}`}>Mode</Label>
+                      <select
+                        id={`panel-mode-${asset.id}`}
+                        value={mode}
+                        onChange={(e) => setMode(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        {modeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+
+                  {supportsSetpoint ? (
+                    <div>
+                      <Label htmlFor={`panel-setpoint-${asset.id}`}>Setpoint</Label>
+                      <Input id={`panel-setpoint-${asset.id}`} value={setpoint} onChange={(e) => setSetpoint(e.target.value)} placeholder="Ej: 5" />
+                    </div>
+                  ) : null}
                   <div>
                     <Label htmlFor={`panel-differentialX10-${asset.id}`}>Differential</Label>
                     <Input
@@ -1135,6 +1100,17 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                       placeholder="Ej: 1.0"
                     />
                   </div>
+
+                  <div className="md:col-span-2">
+                    <Label htmlFor={`panel-setpoint2-${asset.id}`}>Setpoint 2</Label>
+                    <Input
+                      id={`panel-setpoint2-${asset.id}`}
+                      value={thermostatLogic.setpoint2}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, setpoint2: e.target.value }))}
+                      placeholder="Ej: 6"
+                    />
+                  </div>
+
                   <div>
                     <Label htmlFor={`panel-highAlarmX10-${asset.id}`}>High Alarm</Label>
                     <Input
@@ -1153,7 +1129,8 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                       placeholder="Ej: 30.0"
                     />
                   </div>
-                  <div>
+
+                  <div className="md:col-span-2">
                     <Label htmlFor={`panel-tempAlarmDelayMin-${asset.id}`}>Alarm Delay (min)</Label>
                     <Input
                       id={`panel-tempAlarmDelayMin-${asset.id}`}
@@ -1162,15 +1139,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                       placeholder="Ej: 0"
                     />
                   </div>
-                  <div>
-                    <Label htmlFor={`panel-controlPeriodMs-${asset.id}`}>Control Period ms</Label>
-                    <Input
-                      id={`panel-controlPeriodMs-${asset.id}`}
-                      value={thermostatLogic.controlPeriodMs}
-                      onChange={(e) => setThermostatLogic((current) => ({ ...current, controlPeriodMs: e.target.value }))}
-                      placeholder="Ej: 250"
-                    />
-                  </div>
+
                   <div>
                     <Label htmlFor={`panel-defrostIntervalMin-${asset.id}`}>Defrost Interval min</Label>
                     <Input
@@ -1189,7 +1158,8 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                       placeholder="Ej: 20"
                     />
                   </div>
-                  <div>
+
+                  <div className="md:col-span-2">
                     <Label htmlFor={`panel-defrostStopX10-${asset.id}`}>Defrost Stop</Label>
                     <Input
                       id={`panel-defrostStopX10-${asset.id}`}
@@ -1198,30 +1168,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                       placeholder="Ej: 8.0"
                     />
                   </div>
-                  <div>
-                    <Label htmlFor={`panel-stopRelay1OnDefrost-${asset.id}`}>Stop Relay1 on Defrost</Label>
-                    <select
-                      id={`panel-stopRelay1OnDefrost-${asset.id}`}
-                      value={thermostatLogic.stopRelay1OnDefrost ? 'on' : 'off'}
-                      onChange={(e) => setThermostatLogic((current) => ({ ...current, stopRelay1OnDefrost: e.target.value === 'on' }))}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="on">ON</option>
-                      <option value="off">OFF</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label htmlFor={`panel-stopRelay2OnDefrost-${asset.id}`}>Stop Relay2 on Defrost</Label>
-                    <select
-                      id={`panel-stopRelay2OnDefrost-${asset.id}`}
-                      value={thermostatLogic.stopRelay2OnDefrost ? 'on' : 'off'}
-                      onChange={(e) => setThermostatLogic((current) => ({ ...current, stopRelay2OnDefrost: e.target.value === 'on' }))}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="on">ON</option>
-                      <option value="off">OFF</option>
-                    </select>
-                  </div>
+
                   <div>
                     <Label htmlFor={`panel-relay2Mode-${asset.id}`}>Relay2 Mode</Label>
                     <select
@@ -1252,14 +1199,108 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                       ))}
                     </select>
                   </div>
+
+                  <div>
+                    <Label htmlFor={`panel-stopRelay1OnDefrost-${asset.id}`}>Stop Relay1 on Defrost</Label>
+                    <select
+                      id={`panel-stopRelay1OnDefrost-${asset.id}`}
+                      value={thermostatLogic.stopRelay1OnDefrost ? 'on' : 'off'}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, stopRelay1OnDefrost: e.target.value === 'on' }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="on">ON</option>
+                      <option value="off">OFF</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-stopRelay2OnDefrost-${asset.id}`}>Stop Relay2 on Defrost</Label>
+                    <select
+                      id={`panel-stopRelay2OnDefrost-${asset.id}`}
+                      value={thermostatLogic.stopRelay2OnDefrost ? 'on' : 'off'}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, stopRelay2OnDefrost: e.target.value === 'on' }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="on">ON</option>
+                      <option value="off">OFF</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <Label htmlFor={`panel-controlPeriodMs-${asset.id}`}>Control Period ms</Label>
+                    <Input
+                      id={`panel-controlPeriodMs-${asset.id}`}
+                      value={thermostatLogic.controlPeriodMs}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, controlPeriodMs: e.target.value }))}
+                      placeholder="Ej: 250"
+                    />
+                  </div>
                 </div>
               </>
-            ) : null}
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {supportsSetpoint ? (
+                    <div>
+                      <Label htmlFor={`panel-setpoint-${asset.id}`}>Setpoint</Label>
+                      <Input id={`panel-setpoint-${asset.id}`} value={setpoint} onChange={(e) => setSetpoint(e.target.value)} placeholder="Ej: 5" />
+                    </div>
+                  ) : null}
+                  {supportsPower ? (
+                    <div>
+                      <Label htmlFor={`panel-power-${asset.id}`}>Power</Label>
+                      <select
+                        id={`panel-power-${asset.id}`}
+                        value={power ? 'on' : 'off'}
+                        onChange={(e) => setPower(e.target.value === 'on')}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="on">ON</option>
+                        <option value="off">OFF</option>
+                      </select>
+                    </div>
+                  ) : null}
+                  {supportsMode ? (
+                    <div>
+                      <Label htmlFor={`panel-mode-${asset.id}`}>Mode</Label>
+                      <select
+                        id={`panel-mode-${asset.id}`}
+                        value={mode}
+                        onChange={(e) => setMode(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        {modeOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                  {supportsFan ? (
+                    <div>
+                      <Label htmlFor={`panel-fan-${asset.id}`}>Fan</Label>
+                      <select
+                        id={`panel-fan-${asset.id}`}
+                        value={fan}
+                        onChange={(e) => setFan(e.target.value)}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        {fanOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            )}
 
             {supportsRelays ? (
               <div className="grid gap-2">
                 <Label>Reles</Label>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   {relayLabels.map((label) => (
                     <div key={label}>
                       <Label htmlFor={`panel-relay-${asset.id}-${label}`}>{label}</Label>
