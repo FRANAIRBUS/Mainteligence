@@ -1220,7 +1220,7 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute top-[38.5%] right-[60.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[20%] lg:right-[55.6%] lg:w-[21%]"
+              className="absolute top-[38.5%] right-[65.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[20%] lg:right-[55.6%] lg:w-[21%]"
               style={primaryDisplayStyle}
             >
               {primaryValue}
@@ -1354,7 +1354,7 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute top-[45.8%] right-[58.8%] w-[24%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[64.8%] sm:w-[26%] lg:right-[70.6%] lg:w-[28%]" style={panelFotoPrimaryDisplayStyle}>
+            <div className="absolute top-[45.8%] right-[58.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[60.8%] sm:w-[20%] lg:right-[62.6%] lg:w-[21%]" style={panelFotoPrimaryDisplayStyle}>
               {panelFotoPrimaryValue}
             </div>
             {powerOn ? (
