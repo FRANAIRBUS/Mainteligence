@@ -930,7 +930,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     setThermostatLogic(buildThermostatLogicState(asset));
     setRelayStates(resolveRelayStateMap(asset));
     setNote('');
-  }, [open, asset]);
+  }, [open]);
 
   const handleSendDesiredState = async () => {
     if (!app || !organizationId) return;
@@ -1558,14 +1558,10 @@ function LegacyThermostatPanel({
               trigger={(
                 <button
                   type="button"
-                  className="absolute left-[68.8%] top-[34.3%] h-[15.5%] w-[8.5%] overflow-hidden rounded-[12px] border border-sky-300/30 bg-gradient-to-br from-sky-400/35 via-cyan-400/20 to-slate-900/40 shadow-[0_0_18px_rgba(56,189,248,0.35)] transition hover:brightness-110"
+                  className="absolute left-[68.8%] top-[34.3%] h-[15.5%] w-[8.5%] transition hover:opacity-90"
                   aria-label="Abrir desired state"
                 >
-                  <img src="/iot/lh1t/images/set.png" alt="Set" className="absolute inset-0 h-full w-full object-cover opacity-35" />
-                  <div className="relative flex h-full w-full flex-col items-center justify-center gap-0.5 text-[9px] font-bold tracking-[0.12em] text-white">
-                    <Settings className="h-[38%] w-[38%]" />
-                    <span>SET</span>
-                  </div>
+                  <img src="/iot/lh1t/images/set.png" alt="Set" className="h-full w-full object-cover" />
                 </button>
               )}
             />
