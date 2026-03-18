@@ -2054,9 +2054,22 @@ function sanitizeDesiredStatePatch(input: unknown) {
   const patch: Record<string, unknown> = {};
 
   if ('setpoint' in input) patch.setpoint = optionalFiniteNumber(input.setpoint, 'state.setpoint');
+  if ('setpoint2' in input) patch.setpoint2 = optionalFiniteNumber(input.setpoint2, 'state.setpoint2');
   if ('power' in input) patch.power = optionalBoolean(input.power, 'state.power');
   if ('mode' in input) patch.mode = optionalStringValue(input.mode);
   if ('fan' in input) patch.fan = optionalStringValue(input.fan);
+  if ('differentialX10' in input) patch.differentialX10 = optionalFiniteNumber(input.differentialX10, 'state.differentialX10');
+  if ('highAlarmX10' in input) patch.highAlarmX10 = optionalFiniteNumber(input.highAlarmX10, 'state.highAlarmX10');
+  if ('lowAlarmX10' in input) patch.lowAlarmX10 = optionalFiniteNumber(input.lowAlarmX10, 'state.lowAlarmX10');
+  if ('tempAlarmDelayMin' in input) patch.tempAlarmDelayMin = optionalFiniteNumber(input.tempAlarmDelayMin, 'state.tempAlarmDelayMin');
+  if ('controlPeriodMs' in input) patch.controlPeriodMs = optionalFiniteNumber(input.controlPeriodMs, 'state.controlPeriodMs');
+  if ('defrostIntervalMin' in input) patch.defrostIntervalMin = optionalFiniteNumber(input.defrostIntervalMin, 'state.defrostIntervalMin');
+  if ('defrostDurationMin' in input) patch.defrostDurationMin = optionalFiniteNumber(input.defrostDurationMin, 'state.defrostDurationMin');
+  if ('defrostStopX10' in input) patch.defrostStopX10 = optionalFiniteNumber(input.defrostStopX10, 'state.defrostStopX10');
+  if ('stopRelay1OnDefrost' in input) patch.stopRelay1OnDefrost = optionalBoolean(input.stopRelay1OnDefrost, 'state.stopRelay1OnDefrost');
+  if ('stopRelay2OnDefrost' in input) patch.stopRelay2OnDefrost = optionalBoolean(input.stopRelay2OnDefrost, 'state.stopRelay2OnDefrost');
+  if ('relay2Mode' in input) patch.relay2Mode = optionalFiniteNumber(input.relay2Mode, 'state.relay2Mode');
+  if ('relay3Mode' in input) patch.relay3Mode = optionalFiniteNumber(input.relay3Mode, 'state.relay3Mode');
   if ('note' in input) patch.note = optionalStringValue(input.note);
 
   if (isPlainObject(input.relays)) {
@@ -8067,7 +8080,6 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Webhook handler error.');
   }
 });
-
 
 
 

@@ -91,6 +91,35 @@ const fanOptions = [
   { value: 'high', label: 'High' },
 ];
 
+const relay2ModeOptions = [
+  { value: '0', label: 'Disabled' },
+  { value: '1', label: 'Always On' },
+  { value: '2', label: 'Follow Relay1' },
+  { value: '3', label: 'Follow Setpoint2' },
+];
+
+const relay3ModeOptions = [
+  { value: '0', label: 'Disabled' },
+  { value: '1', label: 'Defrost' },
+  { value: '2', label: 'Alarm' },
+];
+
+type ThermostatLogicFormState = {
+  setpoint2: string;
+  differentialX10: string;
+  highAlarmX10: string;
+  lowAlarmX10: string;
+  tempAlarmDelayMin: string;
+  controlPeriodMs: string;
+  defrostIntervalMin: string;
+  defrostDurationMin: string;
+  defrostStopX10: string;
+  stopRelay1OnDefrost: boolean;
+  stopRelay2OnDefrost: boolean;
+  relay2Mode: string;
+  relay3Mode: string;
+};
+
 const digitalFontStyle: CSSProperties = {
   fontFamily: "'Digital-7', monospace",
   letterSpacing: '0.08em',
@@ -547,6 +576,83 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function parseOptionalNumber(value: string) {
+  const normalized = value.trim().replace(',', '.');
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseOptionalX10Number(value: string) {
+  const parsed = parseOptionalNumber(value);
+  return parsed == null ? null : Math.round(parsed * 10);
+}
+
+function formatDisplayNumber(value: unknown) {
+  const parsed = asNumber(value);
+  if (parsed == null) return '';
+  return Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(1).replace(/\.0$/, '');
+}
+
+function formatDisplayX10(value: unknown) {
+  const parsed = asNumber(value);
+  if (parsed == null) return '';
+  const scaled = parsed / 10;
+  return Number.isInteger(scaled) ? String(scaled) : scaled.toFixed(1).replace(/\.0$/, '');
+}
+
+function firstDefinedIotValue(values: unknown[]) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    if (typeof value === 'string' && !value.trim()) continue;
+    return value;
+  }
+  return null;
+}
+
+function readIotFieldValue(asset: Asset, key: string, rawKeys: string[] = []) {
+  const desired = isPlainObject(asset.iot?.desiredState) ? asset.iot?.desiredState as Record<string, unknown> : null;
+  const reported = isPlainObject(asset.iot?.reportedState) ? asset.iot?.reportedState as Record<string, unknown> : null;
+  const last = isPlainObject(asset.iot?.lastReading) ? asset.iot?.lastReading as Record<string, unknown> : null;
+
+  const readingCandidates = [reported, last].flatMap((reading) => {
+    if (!reading) return [];
+    const raw = isPlainObject(reading.raw) ? reading.raw as Record<string, unknown> : null;
+    return [
+      reading[key],
+      ...rawKeys.map((rawKey) => raw?.[rawKey]),
+    ];
+  });
+
+  return firstDefinedIotValue([
+    desired?.[key],
+    ...readingCandidates,
+  ]);
+}
+
+function buildThermostatLogicState(asset: Asset): ThermostatLogicFormState {
+  const stopRelay1 = asBoolean(readIotFieldValue(asset, 'stopRelay1OnDefrost')) ?? false;
+  const stopRelay2 = asBoolean(readIotFieldValue(asset, 'stopRelay2OnDefrost')) ?? false;
+  const relay2ModeValue = readIotFieldValue(asset, 'relay2Mode');
+  const relay3ModeValue = readIotFieldValue(asset, 'relay3Mode');
+
+  return {
+    setpoint2: formatDisplayNumber(readIotFieldValue(asset, 'setpoint2', ['Set2'])),
+    differentialX10: formatDisplayX10(readIotFieldValue(asset, 'differentialX10')),
+    highAlarmX10: formatDisplayX10(readIotFieldValue(asset, 'highAlarmX10')),
+    lowAlarmX10: formatDisplayX10(readIotFieldValue(asset, 'lowAlarmX10')),
+    tempAlarmDelayMin: formatDisplayNumber(readIotFieldValue(asset, 'tempAlarmDelayMin')),
+    controlPeriodMs: formatDisplayNumber(readIotFieldValue(asset, 'controlPeriodMs')),
+    defrostIntervalMin: formatDisplayNumber(readIotFieldValue(asset, 'defrostIntervalMin')),
+    defrostDurationMin: formatDisplayNumber(readIotFieldValue(asset, 'defrostDurationMin')),
+    defrostStopX10: formatDisplayX10(readIotFieldValue(asset, 'defrostStopX10')),
+    stopRelay1OnDefrost: stopRelay1,
+    stopRelay2OnDefrost: stopRelay2,
+    relay2Mode: relay2ModeValue == null ? '2' : String(relay2ModeValue),
+    relay3Mode: relay3ModeValue == null ? '1' : String(relay3ModeValue),
+  };
+}
+
 function jsonReplacer(_key: string, value: unknown) {
   if (value instanceof Date) {
     return value.toISOString();
@@ -799,6 +905,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const [mode, setMode] = useState(asset.iot?.desiredState?.mode ?? 'cool');
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
+  const [thermostatLogic, setThermostatLogic] = useState<ThermostatLogicFormState>(() => buildThermostatLogicState(asset));
   const [note, setNote] = useState('');
   const panelType = asset.iot?.panelType ?? 'sensor';
   const relayLabels = useMemo(() => resolveRelayLabels(asset), [asset]);
@@ -812,6 +919,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     || typeof asset.iot?.reportedState?.fan === 'string'
     || typeof asset.iot?.desiredState?.fan === 'string';
   const supportsRelays = panelType === 'relay' || capabilitySet.has('relays') || relayLabels.length > 0;
+  const supportsThermostatLogic = panelType === 'thermostat';
 
   useEffect(() => {
     if (!open) return;
@@ -819,6 +927,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     setMode(asset.iot?.desiredState?.mode ?? 'cool');
     setFan(asset.iot?.desiredState?.fan ?? 'auto');
     setPower(asset.iot?.desiredState?.power ?? true);
+    setThermostatLogic(buildThermostatLogicState(asset));
     setRelayStates(resolveRelayStateMap(asset));
     setNote('');
   }, [open, asset]);
@@ -843,6 +952,44 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
       const numericSetpoint = Number(String(setpoint).replace(',', '.'));
       if (supportsSetpoint && String(setpoint).trim() !== '' && Number.isFinite(numericSetpoint)) {
         state.setpoint = numericSetpoint;
+      }
+
+      if (supportsThermostatLogic) {
+        const setpoint2 = parseOptionalNumber(thermostatLogic.setpoint2);
+        if (setpoint2 != null) state.setpoint2 = setpoint2;
+
+        const differentialX10 = parseOptionalX10Number(thermostatLogic.differentialX10);
+        if (differentialX10 != null) state.differentialX10 = differentialX10;
+
+        const highAlarmX10 = parseOptionalX10Number(thermostatLogic.highAlarmX10);
+        if (highAlarmX10 != null) state.highAlarmX10 = highAlarmX10;
+
+        const lowAlarmX10 = parseOptionalX10Number(thermostatLogic.lowAlarmX10);
+        if (lowAlarmX10 != null) state.lowAlarmX10 = lowAlarmX10;
+
+        const tempAlarmDelayMin = parseOptionalNumber(thermostatLogic.tempAlarmDelayMin);
+        if (tempAlarmDelayMin != null) state.tempAlarmDelayMin = Math.round(tempAlarmDelayMin);
+
+        const controlPeriodMs = parseOptionalNumber(thermostatLogic.controlPeriodMs);
+        if (controlPeriodMs != null) state.controlPeriodMs = Math.round(controlPeriodMs);
+
+        const defrostIntervalMin = parseOptionalNumber(thermostatLogic.defrostIntervalMin);
+        if (defrostIntervalMin != null) state.defrostIntervalMin = Math.round(defrostIntervalMin);
+
+        const defrostDurationMin = parseOptionalNumber(thermostatLogic.defrostDurationMin);
+        if (defrostDurationMin != null) state.defrostDurationMin = Math.round(defrostDurationMin);
+
+        const defrostStopX10 = parseOptionalX10Number(thermostatLogic.defrostStopX10);
+        if (defrostStopX10 != null) state.defrostStopX10 = defrostStopX10;
+
+        const relay2Mode = parseOptionalNumber(thermostatLogic.relay2Mode);
+        if (relay2Mode != null) state.relay2Mode = Math.round(relay2Mode);
+
+        const relay3Mode = parseOptionalNumber(thermostatLogic.relay3Mode);
+        if (relay3Mode != null) state.relay3Mode = Math.round(relay3Mode);
+
+        state.stopRelay1OnDefrost = thermostatLogic.stopRelay1OnDefrost;
+        state.stopRelay2OnDefrost = thermostatLogic.stopRelay2OnDefrost;
       }
 
       if (supportsRelays && relayLabels.length > 0) {
@@ -874,7 +1021,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{asset.name}</DialogTitle>
           <DialogDescription>
@@ -888,11 +1035,22 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
             Desired state
           </div>
           <div className="grid gap-3">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-3 gap-3">
               {supportsSetpoint ? (
                 <div>
                   <Label htmlFor={`panel-setpoint-${asset.id}`}>Setpoint</Label>
                   <Input id={`panel-setpoint-${asset.id}`} value={setpoint} onChange={(e) => setSetpoint(e.target.value)} placeholder="Ej: 5" />
+                </div>
+              ) : null}
+              {supportsThermostatLogic ? (
+                <div>
+                  <Label htmlFor={`panel-setpoint2-${asset.id}`}>Setpoint 2</Label>
+                  <Input
+                    id={`panel-setpoint2-${asset.id}`}
+                    value={thermostatLogic.setpoint2}
+                    onChange={(e) => setThermostatLogic((current) => ({ ...current, setpoint2: e.target.value }))}
+                    placeholder="Ej: 6"
+                  />
                 </div>
               ) : null}
               {supportsPower ? (
@@ -909,46 +1067,187 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                   </select>
                 </div>
               ) : null}
-              {supportsMode ? (
-                <div>
-                  <Label htmlFor={`panel-mode-${asset.id}`}>Mode</Label>
-                  <select
-                    id={`panel-mode-${asset.id}`}
-                    value={mode}
-                    onChange={(e) => setMode(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    {modeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
-              {supportsFan ? (
-                <div>
-                  <Label htmlFor={`panel-fan-${asset.id}`}>Fan</Label>
-                  <select
-                    id={`panel-fan-${asset.id}`}
-                    value={fan}
-                    onChange={(e) => setFan(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    {fanOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
             </div>
+
+            {supportsMode || supportsFan ? (
+              <div className="grid grid-cols-3 gap-3">
+                {supportsMode ? (
+                  <div>
+                    <Label htmlFor={`panel-mode-${asset.id}`}>Mode</Label>
+                    <select
+                      id={`panel-mode-${asset.id}`}
+                      value={mode}
+                      onChange={(e) => setMode(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {modeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+                {supportsFan ? (
+                  <div>
+                    <Label htmlFor={`panel-fan-${asset.id}`}>Fan</Label>
+                    <select
+                      id={`panel-fan-${asset.id}`}
+                      value={fan}
+                      onChange={(e) => setFan(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {fanOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {supportsThermostatLogic ? (
+              <>
+                <div className="rounded-xl border bg-muted/20 p-2 text-xs text-muted-foreground">
+                  Campos `X10`: se muestran en grados (valor / 10) y se envian internamente como enteros x10.
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label htmlFor={`panel-differentialX10-${asset.id}`}>Differential</Label>
+                    <Input
+                      id={`panel-differentialX10-${asset.id}`}
+                      value={thermostatLogic.differentialX10}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, differentialX10: e.target.value }))}
+                      placeholder="Ej: 1.0"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-highAlarmX10-${asset.id}`}>High Alarm</Label>
+                    <Input
+                      id={`panel-highAlarmX10-${asset.id}`}
+                      value={thermostatLogic.highAlarmX10}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, highAlarmX10: e.target.value }))}
+                      placeholder="Ej: 90.0"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-lowAlarmX10-${asset.id}`}>Low Alarm</Label>
+                    <Input
+                      id={`panel-lowAlarmX10-${asset.id}`}
+                      value={thermostatLogic.lowAlarmX10}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, lowAlarmX10: e.target.value }))}
+                      placeholder="Ej: 30.0"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-tempAlarmDelayMin-${asset.id}`}>Alarm Delay (min)</Label>
+                    <Input
+                      id={`panel-tempAlarmDelayMin-${asset.id}`}
+                      value={thermostatLogic.tempAlarmDelayMin}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, tempAlarmDelayMin: e.target.value }))}
+                      placeholder="Ej: 0"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-controlPeriodMs-${asset.id}`}>Control Period ms</Label>
+                    <Input
+                      id={`panel-controlPeriodMs-${asset.id}`}
+                      value={thermostatLogic.controlPeriodMs}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, controlPeriodMs: e.target.value }))}
+                      placeholder="Ej: 250"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-defrostIntervalMin-${asset.id}`}>Defrost Interval min</Label>
+                    <Input
+                      id={`panel-defrostIntervalMin-${asset.id}`}
+                      value={thermostatLogic.defrostIntervalMin}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, defrostIntervalMin: e.target.value }))}
+                      placeholder="Ej: 360"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-defrostDurationMin-${asset.id}`}>Defrost Duration min</Label>
+                    <Input
+                      id={`panel-defrostDurationMin-${asset.id}`}
+                      value={thermostatLogic.defrostDurationMin}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, defrostDurationMin: e.target.value }))}
+                      placeholder="Ej: 20"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-defrostStopX10-${asset.id}`}>Defrost Stop</Label>
+                    <Input
+                      id={`panel-defrostStopX10-${asset.id}`}
+                      value={thermostatLogic.defrostStopX10}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, defrostStopX10: e.target.value }))}
+                      placeholder="Ej: 8.0"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-stopRelay1OnDefrost-${asset.id}`}>Stop Relay1 on Defrost</Label>
+                    <select
+                      id={`panel-stopRelay1OnDefrost-${asset.id}`}
+                      value={thermostatLogic.stopRelay1OnDefrost ? 'on' : 'off'}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, stopRelay1OnDefrost: e.target.value === 'on' }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="on">ON</option>
+                      <option value="off">OFF</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-stopRelay2OnDefrost-${asset.id}`}>Stop Relay2 on Defrost</Label>
+                    <select
+                      id={`panel-stopRelay2OnDefrost-${asset.id}`}
+                      value={thermostatLogic.stopRelay2OnDefrost ? 'on' : 'off'}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, stopRelay2OnDefrost: e.target.value === 'on' }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="on">ON</option>
+                      <option value="off">OFF</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-relay2Mode-${asset.id}`}>Relay2 Mode</Label>
+                    <select
+                      id={`panel-relay2Mode-${asset.id}`}
+                      value={thermostatLogic.relay2Mode}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, relay2Mode: e.target.value }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {relay2ModeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor={`panel-relay3Mode-${asset.id}`}>Relay3 Mode</Label>
+                    <select
+                      id={`panel-relay3Mode-${asset.id}`}
+                      value={thermostatLogic.relay3Mode}
+                      onChange={(e) => setThermostatLogic((current) => ({ ...current, relay3Mode: e.target.value }))}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {relay3ModeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            ) : null}
 
             {supportsRelays ? (
               <div className="grid gap-2">
                 <Label>Reles</Label>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-3 gap-3">
                   {relayLabels.map((label) => (
                     <div key={label}>
                       <Label htmlFor={`panel-relay-${asset.id}-${label}`}>{label}</Label>
@@ -1259,10 +1558,14 @@ function LegacyThermostatPanel({
               trigger={(
                 <button
                   type="button"
-                  className="absolute left-[68.8%] top-[34.3%] h-[15.5%] w-[8.5%] transition hover:opacity-90"
+                  className="absolute left-[68.8%] top-[34.3%] h-[15.5%] w-[8.5%] overflow-hidden rounded-[12px] border border-sky-300/30 bg-gradient-to-br from-sky-400/35 via-cyan-400/20 to-slate-900/40 shadow-[0_0_18px_rgba(56,189,248,0.35)] transition hover:brightness-110"
                   aria-label="Abrir desired state"
                 >
-                  <img src="/iot/lh1t/images/set.png" alt="Set" className="h-full w-full object-cover" />
+                  <img src="/iot/lh1t/images/set.png" alt="Set" className="absolute inset-0 h-full w-full object-cover opacity-35" />
+                  <div className="relative flex h-full w-full flex-col items-center justify-center gap-0.5 text-[9px] font-bold tracking-[0.12em] text-white">
+                    <Settings className="h-[38%] w-[38%]" />
+                    <span>SET</span>
+                  </div>
                 </button>
               )}
             />
