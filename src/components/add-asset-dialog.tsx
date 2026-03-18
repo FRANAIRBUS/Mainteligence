@@ -54,8 +54,6 @@ const formSchema = z.object({
   siteId: z.string({ required_error: 'Debe seleccionar una ubicacion.' }),
   iotEnabled: z.boolean().default(false),
   iotPanelType: z.enum(['thermostat', 'sensor', 'relay']).default('thermostat'),
-  iotDeviceKey: z.string().optional(),
-  iotLocationLabel: z.string().optional(),
 });
 
 type AddAssetFormValues = z.infer<typeof formSchema>;
@@ -72,8 +70,6 @@ const defaultValues: AddAssetFormValues = {
   siteId: '',
   iotEnabled: false,
   iotPanelType: 'thermostat',
-  iotDeviceKey: '',
-  iotLocationLabel: '',
 };
 
 export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProps) {
@@ -142,10 +138,6 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
                 iot: {
                   enabled: true,
                   panelType: data.iotPanelType,
-                  deviceKey: data.iotDeviceKey?.trim()
-                    ? data.iotDeviceKey.trim().toUpperCase()
-                    : undefined,
-                  locationLabel: data.iotLocationLabel?.trim() || undefined,
                   dataSource: 'maintelligence_api',
                 },
               }
@@ -302,32 +294,6 @@ export function AddAssetDialog({ open, onOpenChange, sites }: AddAssetDialogProp
                             ))}
                           </SelectContent>
                         </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="iotDeviceKey"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ID del dispositivo (opcional)</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Si lo dejas vacio, se genera automaticamente" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="iotLocationLabel"
-                    render={({ field }) => (
-                      <FormItem className="sm:col-span-2">
-                        <FormLabel>Etiqueta visual del panel</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Ej: Camara 1 - Obrador" {...field} />
-                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
