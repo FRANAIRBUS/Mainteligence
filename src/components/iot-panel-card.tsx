@@ -1056,7 +1056,7 @@ function LegacyThermostatPanel({
   const humidity = probeHumidity(reading, activeProbe);
   const setpoint = probeSetpoint(reading, activeProbe) ?? probeSetpoint(reading, 1);
   const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
-  const panelFotoPrimaryValue = powerOn ? formatLedValue(temperature, 2) : 'OFF';
+  const panelFotoPrimaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
   const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
   const relayDisplayStates = relayDisplayItems(relays);
   const relaySlots = useMemo(() => relayPanelSlots(relays), [relays]);
@@ -1172,7 +1172,7 @@ function LegacyThermostatPanel({
         {activeSkin === 'lh1t' ? (
           <>
             <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
-              Ultimo Dato: {timestamp}
+              Dato: {timestamp}
             </div>
             <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
               {asset.name}
@@ -1277,7 +1277,7 @@ function LegacyThermostatPanel({
         {activeSkin === 'rele' ? (
           <>
             <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
-              Ultimo Dato: {timestamp}
+              Dato: {timestamp}
             </div>
             <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
               {asset.name}
@@ -1348,7 +1348,7 @@ function LegacyThermostatPanel({
         {activeSkin === 'foto' ? (
           <>
             <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
-              Ultimo Dato: {timestamp}
+              Dato: {timestamp}
             </div>
             <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
               {asset.name}
@@ -1358,7 +1358,9 @@ function LegacyThermostatPanel({
               {panelFotoPrimaryValue}
             </div>
             {powerOn ? (
-              <div className="absolute left-[40.2%] top-[50.0%] text-[18px] font-semibold text-red-600">°C</div>
+              <div className="absolute left-[40.2%] top-[50.0%] h-[8.3%] w-[4.5%]">
+                <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
+              </div>
             ) : null}
 
             <div className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5">
