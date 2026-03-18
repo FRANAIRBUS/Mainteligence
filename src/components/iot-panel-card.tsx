@@ -900,6 +900,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const { organizationId } = useUser();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
+  const [lockedAsset, setLockedAsset] = useState<Asset | null>(null);
   const [loadingDesiredState, setLoadingDesiredState] = useState(false);
   const [setpoint, setSetpoint] = useState(() => String(asset.iot?.desiredState?.setpoint ?? asset.iot?.lastReading?.setpoint ?? ''));
   const [mode, setMode] = useState(asset.iot?.desiredState?.mode ?? 'cool');
@@ -907,30 +908,40 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
   const [thermostatLogic, setThermostatLogic] = useState<ThermostatLogicFormState>(() => buildThermostatLogicState(asset));
   const [note, setNote] = useState('');
-  const panelType = asset.iot?.panelType ?? 'sensor';
-  const relayLabels = useMemo(() => resolveRelayLabels(asset), [asset]);
+  const sourceAsset = open && lockedAsset ? lockedAsset : asset;
+  const panelType = sourceAsset.iot?.panelType ?? 'sensor';
+  const relayLabels = useMemo(() => resolveRelayLabels(sourceAsset), [sourceAsset]);
   const [relayStates, setRelayStates] = useState<Record<string, boolean>>(() => resolveRelayStateMap(asset));
-  const capabilitySet = useMemo(() => new Set(normalizeCapabilities(asset.iot?.capabilities)), [asset.iot?.capabilities]);
+  const capabilitySet = useMemo(() => new Set(normalizeCapabilities(sourceAsset.iot?.capabilities)), [sourceAsset.iot?.capabilities]);
   const supportsSetpoint = panelType === 'thermostat' || capabilitySet.has('setpoint');
   const supportsPower = panelType === 'thermostat' || capabilitySet.has('power');
   const supportsMode = panelType === 'thermostat' || capabilitySet.has('mode');
   const supportsFan = capabilitySet.has('fan')
-    || typeof asset.iot?.lastReading?.fan === 'string'
-    || typeof asset.iot?.reportedState?.fan === 'string'
-    || typeof asset.iot?.desiredState?.fan === 'string';
+    || typeof sourceAsset.iot?.lastReading?.fan === 'string'
+    || typeof sourceAsset.iot?.reportedState?.fan === 'string'
+    || typeof sourceAsset.iot?.desiredState?.fan === 'string';
   const supportsRelays = panelType === 'relay' || capabilitySet.has('relays') || relayLabels.length > 0;
   const supportsThermostatLogic = panelType === 'thermostat';
 
-  useEffect(() => {
-    if (!open) return;
-    setSetpoint(String(asset.iot?.desiredState?.setpoint ?? asset.iot?.lastReading?.setpoint ?? ''));
-    setMode(asset.iot?.desiredState?.mode ?? 'cool');
-    setFan(asset.iot?.desiredState?.fan ?? 'auto');
-    setPower(asset.iot?.desiredState?.power ?? true);
-    setThermostatLogic(buildThermostatLogicState(asset));
-    setRelayStates(resolveRelayStateMap(asset));
+  const hydrateDraftFromAsset = (draftAsset: Asset) => {
+    setSetpoint(String(draftAsset.iot?.desiredState?.setpoint ?? draftAsset.iot?.lastReading?.setpoint ?? ''));
+    setMode(draftAsset.iot?.desiredState?.mode ?? 'cool');
+    setFan(draftAsset.iot?.desiredState?.fan ?? 'auto');
+    setPower(draftAsset.iot?.desiredState?.power ?? true);
+    setThermostatLogic(buildThermostatLogicState(draftAsset));
+    setRelayStates(resolveRelayStateMap(draftAsset));
     setNote('');
-  }, [open]);
+  };
+
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) {
+      setLockedAsset(asset);
+      hydrateDraftFromAsset(asset);
+      return;
+    }
+    setLockedAsset(null);
+  };
 
   const handleSendDesiredState = async () => {
     if (!app || !organizationId) return;
@@ -1007,6 +1018,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
       });
       setNote('');
       setOpen(false);
+      setLockedAsset(null);
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -1019,7 +1031,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent className="sm:max-w-5xl">
         <DialogHeader>
