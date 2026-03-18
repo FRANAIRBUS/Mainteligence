@@ -5338,6 +5338,9 @@ export const createAsset = functions.https.onCall(async (data, context) => {
   const name = requireStringField(data.payload.name, 'name');
   const code = requireStringField(data.payload.code, 'code');
   const siteId = requireStringField(data.payload.siteId, 'siteId');
+  const orgRef = db.collection('organizations').doc(orgId);
+  const siteRef = orgRef.collection('sites').doc(siteId);
+  const assetRef = orgRef.collection('assets').doc();
 
   const iotPayload = data.payload.iot;
   let iot: Record<string, unknown> | undefined;
@@ -5354,7 +5357,7 @@ export const createAsset = functions.https.onCall(async (data, context) => {
       iot = stripUndefinedDeep({
         enabled: true,
         panelType,
-        deviceKey: sanitizeDeviceKey(requireStringField(iotPayload.deviceKey, 'iot.deviceKey')),
+        deviceKey: sanitizeDeviceKey(optionalStringValue(iotPayload.deviceKey) ?? `ASSET-${assetRef.id}`),
         locationLabel: String(iotPayload.locationLabel ?? '').trim() || undefined,
         dataSource: String(iotPayload.dataSource ?? 'maintelligence_api').trim() || 'maintelligence_api',
       });
@@ -5363,9 +5366,6 @@ export const createAsset = functions.https.onCall(async (data, context) => {
 
   requireScopedAccessToSite(role, scope, siteId);
 
-  const orgRef = db.collection('organizations').doc(orgId);
-  const siteRef = orgRef.collection('sites').doc(siteId);
-  const assetRef = orgRef.collection('assets').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   await db.runTransaction(async (tx) => {
@@ -5739,13 +5739,44 @@ export const iotDeviceBootstrap = functions.https.onRequest(async (req, res) => 
     if (!isPlainObject(req.body)) throw httpsError('invalid-argument', 'payload requerido.');
 
     const orgId = sanitizeOrganizationId(String(req.body.organizationId ?? ''));
-    const deviceKey = sanitizeDeviceKey(req.body.deviceKey);
+    const assetIdHint = optionalStringValue(req.body.assetId);
+    const deviceKeyHint = optionalStringValue(req.body.deviceKey);
     const bootstrapToken = requireNonEmptyString(req.body.bootstrapToken, 'bootstrapToken');
     if (!orgId) throw httpsError('invalid-argument', 'organizationId requerido.');
+    if (!assetIdHint && !deviceKeyHint) {
+      throw httpsError('invalid-argument', 'Debes enviar assetId o deviceKey.');
+    }
 
-    const assetSnap = await readOrgAssetByDeviceKey(orgId, deviceKey);
+    const orgRef = db.collection('organizations').doc(orgId);
+    let assetSnap: FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData>;
+    let assetId = '';
+    let deviceKey = '';
+
+    if (assetIdHint) {
+      const directAssetSnap = await orgRef.collection('assets').doc(assetIdHint).get();
+      if (!directAssetSnap.exists || String(directAssetSnap.get('organizationId') ?? '') !== orgId) {
+        throw httpsError('not-found', 'Activo IoT no encontrado.');
+      }
+
+      const iotData = directAssetSnap.get('iot') as Record<string, unknown> | undefined;
+      if (!iotData?.enabled) {
+        throw httpsError('failed-precondition', 'El activo no esta marcado como IoT.');
+      }
+
+      assetSnap = directAssetSnap;
+      assetId = directAssetSnap.id;
+      deviceKey = sanitizeDeviceKey(iotData.deviceKey);
+
+      if (deviceKeyHint && sanitizeDeviceKey(deviceKeyHint) !== deviceKey) {
+        throw httpsError('failed-precondition', 'El deviceKey no coincide con el activo indicado.');
+      }
+    } else {
+      deviceKey = sanitizeDeviceKey(deviceKeyHint);
+      assetSnap = await readOrgAssetByDeviceKey(orgId, deviceKey);
+      assetId = assetSnap.id;
+    }
+
     const assetRef = assetSnap.ref;
-    const assetId = assetSnap.id;
     const deviceRef = db.collection(IOT_DEVICE_COLLECTION).doc(iotDeviceDocId(orgId, deviceKey));
     const deviceSnap = await deviceRef.get();
 
@@ -8036,8 +8067,6 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Webhook handler error.');
   }
 });
-
-
 
 
 
