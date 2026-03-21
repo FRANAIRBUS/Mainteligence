@@ -1878,11 +1878,23 @@ const IOT_ALLOWED_STATUS = new Set(['online', 'offline', 'warning']);
 const IOT_ALLOWED_APPLY_STATUS = new Set(['idle', 'applied', 'partial', 'rejected', 'error']);
 const FUNCTIONS_REGION = 'us-central1';
 const PROJECT_ID = process.env.GCLOUD_PROJECT || admin.app().options.projectId || '';
+const IOT_DEFAULT_BOOTSTRAP_PUBLIC_URL = 'https://deviceBootstrap.maintelligence.app';
+const IOT_DEFAULT_SYNC_PUBLIC_URL = 'https://deviceSync.maintelligence.app';
 
 function buildFunctionUrl(name: string) {
   return PROJECT_ID
     ? `https://${FUNCTIONS_REGION}-${PROJECT_ID}.cloudfunctions.net/${name}`
     : name;
+}
+
+function preferredBootstrapUrl() {
+  const configured = String(process.env.IOT_PUBLIC_BOOTSTRAP_URL ?? '').trim();
+  return configured || IOT_DEFAULT_BOOTSTRAP_PUBLIC_URL;
+}
+
+function preferredSyncUrl() {
+  const configured = String(process.env.IOT_PUBLIC_SYNC_URL ?? '').trim();
+  return configured || IOT_DEFAULT_SYNC_PUBLIC_URL;
 }
 
 function sha256Hex(input: string) {
@@ -5501,6 +5513,9 @@ export const createIotProvisioningToken = functions.https.onCall(async (data, co
     },
   });
 
+  const bootstrapUrlReal = buildFunctionUrl('iotDeviceBootstrap');
+  const syncUrlReal = buildFunctionUrl('iotDeviceSync');
+
   return {
     ok: true,
     organizationId: orgId,
@@ -5508,8 +5523,12 @@ export const createIotProvisioningToken = functions.https.onCall(async (data, co
     deviceKey,
     bootstrapToken,
     bootstrapExpiresAt: expiresAt.toDate().toISOString(),
-    bootstrapUrl: buildFunctionUrl('iotDeviceBootstrap'),
-    syncUrl: buildFunctionUrl('iotDeviceSync'),
+    bootstrapUrl: bootstrapUrlReal,
+    syncUrl: syncUrlReal,
+    bootstrapUrlPreferred: preferredBootstrapUrl(),
+    syncUrlPreferred: preferredSyncUrl(),
+    bootstrapUrlReal,
+    syncUrlReal,
     pollIntervalMs: IOT_DEFAULT_POLL_INTERVAL_MS,
   };
 });
@@ -5854,13 +5873,17 @@ export const iotDeviceBootstrap = functions.https.onRequest(async (req, res) => 
       { merge: true }
     );
 
+    const syncUrlReal = buildFunctionUrl('iotDeviceSync');
+
     res.status(200).json({
       ok: true,
       organizationId: orgId,
       assetId,
       deviceKey,
       deviceSecret,
-      syncUrl: buildFunctionUrl('iotDeviceSync'),
+      syncUrl: syncUrlReal,
+      syncUrlPreferred: preferredSyncUrl(),
+      syncUrlReal,
       pollIntervalMs: IOT_DEFAULT_POLL_INTERVAL_MS,
     });
   } catch (err) {
@@ -8080,7 +8103,5 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Webhook handler error.');
   }
 });
-
-
 
 
