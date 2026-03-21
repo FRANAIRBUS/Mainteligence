@@ -5,7 +5,7 @@ const ByteData = require('./byte-data')
 const KanjiData = require('./kanji-data')
 const Regex = require('./regex')
 const Utils = require('./utils')
-const dijkstra = require('dijkstrajs')
+const dijkstra = require('../dijkstrajs')
 
 /**
  * Returns UTF8 byte length
