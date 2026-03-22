@@ -51,6 +51,16 @@ type ProvisioningSnippet = {
   pollIntervalMs: number;
 };
 
+type ProvisioningCompactSnippet = {
+  organizationId: string;
+  assetId: string;
+  deviceKey: string;
+  bootstrapToken: string;
+  bootstrapUrl: string;
+  syncUrl: string;
+  pollIntervalMs: number;
+};
+
 function formatMaybeDate(value: unknown) {
   if (!value) return null;
   if (value instanceof Date) return value.toLocaleString('es-ES');
@@ -121,11 +131,24 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
     return JSON.stringify(provisioningSnippet, null, 2);
   }, [provisioningSnippet]);
 
-  const concatenatedCode = useMemo(() => {
-    if (!provisioningSnippet) return '';
-    const compact = JSON.stringify(provisioningSnippet);
-    return `${PROVISIONING_CODE_PREFIX}${encodeBase64Url(compact)}`;
+  const provisioningCompactSnippet = useMemo<ProvisioningCompactSnippet | null>(() => {
+    if (!provisioningSnippet) return null;
+    return {
+      organizationId: provisioningSnippet.organizationId,
+      assetId: provisioningSnippet.assetId,
+      deviceKey: provisioningSnippet.deviceKey,
+      bootstrapToken: provisioningSnippet.bootstrapToken,
+      bootstrapUrl: provisioningSnippet.bootstrapUrl,
+      syncUrl: provisioningSnippet.syncUrl,
+      pollIntervalMs: provisioningSnippet.pollIntervalMs,
+    };
   }, [provisioningSnippet]);
+
+  const concatenatedCode = useMemo(() => {
+    if (!provisioningCompactSnippet) return '';
+    const compact = JSON.stringify(provisioningCompactSnippet);
+    return `${PROVISIONING_CODE_PREFIX}${encodeBase64Url(compact)}`;
+  }, [provisioningCompactSnippet]);
 
   const bootstrapExpiresLabel = useMemo(() => {
     if (!provisioning?.bootstrapExpiresAt) return '';
@@ -142,9 +165,9 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
       }
       try {
         const nextQrDataUrl = await toQrDataUrl(concatenatedCode, {
-          errorCorrectionLevel: 'M',
-          margin: 1,
-          width: 280,
+          errorCorrectionLevel: 'L',
+          margin: 2,
+          width: 420,
         });
         if (!cancelled) setQrDataUrl(nextQrDataUrl);
       } catch {
@@ -257,6 +280,28 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
                     <Input value={bootstrapExpiresLabel} readOnly />
                   </div>
                   <div>
+                    <Label>QR de provision</Label>
+                    <div className="mt-2 flex justify-center rounded-xl border p-3">
+                      {qrDataUrl ? (
+                        <img src={qrDataUrl} alt="QR provisioning code" className="h-80 w-80 max-w-full rounded-md" />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No se pudo generar el QR en este navegador.</p>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Codigo completo</Label>
+                    <Textarea value={concatenatedCode} readOnly rows={6} />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="mt-2 w-full"
+                      onClick={() => void handleCopy(concatenatedCode, 'Codigo concatenado')}
+                    >
+                      Copiar codigo completo
+                    </Button>
+                  </div>
+                  <div>
                     <Label>Campos separados</Label>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <div>
@@ -291,28 +336,6 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
                         <Label>syncUrl real</Label>
                         <Input value={provisioningSnippet.syncUrlReal} readOnly />
                       </div>
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Codigo concatenado unico</Label>
-                    <Textarea value={concatenatedCode} readOnly rows={4} />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="mt-2 w-full"
-                      onClick={() => void handleCopy(concatenatedCode, 'Codigo concatenado')}
-                    >
-                      Copiar codigo concatenado
-                    </Button>
-                  </div>
-                  <div>
-                    <Label>QR de provision</Label>
-                    <div className="mt-2 flex justify-center rounded-xl border p-3">
-                      {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR provisioning code" className="h-56 w-56 rounded-md" />
-                      ) : (
-                        <p className="text-xs text-muted-foreground">No se pudo generar el QR en este navegador.</p>
-                      )}
                     </div>
                   </div>
                   <div>
