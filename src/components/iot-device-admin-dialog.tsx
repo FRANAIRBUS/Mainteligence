@@ -22,7 +22,6 @@ import { Textarea } from '@/components/ui/textarea';
 
 const SHORT_BOOTSTRAP_URL = 'https://deviceBootstrap.maintelligence.app';
 const SHORT_SYNC_URL = 'https://deviceSync.maintelligence.app';
-const PROVISIONING_CODE_PREFIX = 'MTLIOT1:';
 
 type ProvisioningResult = {
   organizationId: string;
@@ -87,11 +86,12 @@ function normalizeUrl(input: unknown, fallback: string) {
   return `https://${value}`;
 }
 
-function encodeBase64Url(text: string) {
-  const utf8 = new TextEncoder().encode(text);
-  let binary = '';
-  for (const byte of utf8) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+function encodePart(value: string | number) {
+  return encodeURIComponent(String(value ?? '').trim());
+}
+
+function stripProtocol(url: string) {
+  return String(url ?? '').trim().replace(/^https?:\/\//i, '');
 }
 
 export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
@@ -146,8 +146,16 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
 
   const concatenatedCode = useMemo(() => {
     if (!provisioningCompactSnippet) return '';
-    const compact = JSON.stringify(provisioningCompactSnippet);
-    return `${PROVISIONING_CODE_PREFIX}${encodeBase64Url(compact)}`;
+    const parts = [
+      `organizationId=${encodePart(provisioningCompactSnippet.organizationId)}`,
+      `assetId=${encodePart(provisioningCompactSnippet.assetId)}`,
+      `deviceKey=${encodePart(provisioningCompactSnippet.deviceKey)}`,
+      `bootstrapToken=${encodePart(provisioningCompactSnippet.bootstrapToken)}`,
+      `bootstrapUrl=${encodePart(stripProtocol(provisioningCompactSnippet.bootstrapUrl))}`,
+      `syncUrl=${encodePart(stripProtocol(provisioningCompactSnippet.syncUrl))}`,
+      `pollIntervalMs=${encodePart(provisioningCompactSnippet.pollIntervalMs)}`,
+    ];
+    return parts.join('|');
   }, [provisioningCompactSnippet]);
 
   const bootstrapExpiresLabel = useMemo(() => {
@@ -166,8 +174,8 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
       try {
         const nextQrDataUrl = await toQrDataUrl(concatenatedCode, {
           errorCorrectionLevel: 'L',
-          margin: 2,
-          width: 420,
+          margin: 4,
+          width: 360,
         });
         if (!cancelled) setQrDataUrl(nextQrDataUrl);
       } catch {
@@ -283,7 +291,12 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
                     <Label>QR de provision</Label>
                     <div className="mt-2 flex justify-center rounded-xl border p-3">
                       {qrDataUrl ? (
-                        <img src={qrDataUrl} alt="QR provisioning code" className="h-80 w-80 max-w-full rounded-md" />
+                        <img
+                          src={qrDataUrl}
+                          alt="QR provisioning code"
+                          className="h-[360px] w-[360px] max-w-full rounded-md"
+                          style={{ imageRendering: 'pixelated' }}
+                        />
                       ) : (
                         <p className="text-xs text-muted-foreground">No se pudo generar el QR en este navegador.</p>
                       )}
