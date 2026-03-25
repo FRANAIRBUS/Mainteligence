@@ -1878,8 +1878,8 @@ const IOT_ALLOWED_STATUS = new Set(['online', 'offline', 'warning']);
 const IOT_ALLOWED_APPLY_STATUS = new Set(['idle', 'applied', 'partial', 'rejected', 'error']);
 const FUNCTIONS_REGION = 'us-central1';
 const PROJECT_ID = process.env.GCLOUD_PROJECT || admin.app().options.projectId || '';
-const IOT_DEFAULT_BOOTSTRAP_PUBLIC_URL = 'https://deviceBootstrap.maintelligence.app';
-const IOT_DEFAULT_SYNC_PUBLIC_URL = 'https://deviceSync.maintelligence.app';
+const IOT_DEFAULT_BOOTSTRAP_PUBLIC_URL = 'https://maintelligence.app/iotDeviceBootstrap';
+const IOT_DEFAULT_SYNC_PUBLIC_URL = 'https://maintelligence.app/iotDeviceSync';
 
 function buildFunctionUrl(name: string) {
   return PROJECT_ID
@@ -5515,6 +5515,8 @@ export const createIotProvisioningToken = functions.https.onCall(async (data, co
 
   const bootstrapUrlReal = buildFunctionUrl('iotDeviceBootstrap');
   const syncUrlReal = buildFunctionUrl('iotDeviceSync');
+  const bootstrapUrlPreferred = preferredBootstrapUrl();
+  const syncUrlPreferred = preferredSyncUrl();
 
   return {
     ok: true,
@@ -5523,10 +5525,10 @@ export const createIotProvisioningToken = functions.https.onCall(async (data, co
     deviceKey,
     bootstrapToken,
     bootstrapExpiresAt: expiresAt.toDate().toISOString(),
-    bootstrapUrl: bootstrapUrlReal,
-    syncUrl: syncUrlReal,
-    bootstrapUrlPreferred: preferredBootstrapUrl(),
-    syncUrlPreferred: preferredSyncUrl(),
+    bootstrapUrl: bootstrapUrlPreferred,
+    syncUrl: syncUrlPreferred,
+    bootstrapUrlPreferred,
+    syncUrlPreferred,
     bootstrapUrlReal,
     syncUrlReal,
     pollIntervalMs: IOT_DEFAULT_POLL_INTERVAL_MS,
@@ -5874,6 +5876,7 @@ export const iotDeviceBootstrap = functions.https.onRequest(async (req, res) => 
     );
 
     const syncUrlReal = buildFunctionUrl('iotDeviceSync');
+    const syncUrlPreferred = preferredSyncUrl();
 
     res.status(200).json({
       ok: true,
@@ -5881,8 +5884,8 @@ export const iotDeviceBootstrap = functions.https.onRequest(async (req, res) => 
       assetId,
       deviceKey,
       deviceSecret,
-      syncUrl: syncUrlReal,
-      syncUrlPreferred: preferredSyncUrl(),
+      syncUrl: syncUrlPreferred,
+      syncUrlPreferred,
       syncUrlReal,
       pollIntervalMs: IOT_DEFAULT_POLL_INTERVAL_MS,
     });
@@ -8103,5 +8106,4 @@ export const stripeWebhook = functions.https.onRequest(async (req, res) => {
     res.status(500).send('Webhook handler error.');
   }
 });
-
 
