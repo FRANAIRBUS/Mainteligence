@@ -1878,11 +1878,10 @@ const IOT_ALLOWED_STATUS = new Set(['online', 'offline', 'warning']);
 const IOT_ALLOWED_APPLY_STATUS = new Set(['idle', 'applied', 'partial', 'rejected', 'error']);
 const FUNCTIONS_REGION = 'us-central1';
 const PROJECT_ID = process.env.GCLOUD_PROJECT || admin.app().options.projectId || '';
-const IOT_PUBLIC_CANONICAL_HOST = 'maintelligence.app';
-const IOT_BOOTSTRAP_PATH = '/iotDeviceBootstrap';
-const IOT_SYNC_PATH = '/iotDeviceSync';
-const IOT_DEFAULT_BOOTSTRAP_PUBLIC_URL = 'https://maintelligence.app/iotDeviceBootstrap';
-const IOT_DEFAULT_SYNC_PUBLIC_URL = 'https://maintelligence.app/iotDeviceSync';
+const IOT_DEFAULT_BOOTSTRAP_PUBLIC_URL =
+  'https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceBootstrap';
+const IOT_DEFAULT_SYNC_PUBLIC_URL =
+  'https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceSync';
 
 function buildFunctionUrl(name: string) {
   return PROJECT_ID
@@ -1890,46 +1889,14 @@ function buildFunctionUrl(name: string) {
     : name;
 }
 
-function normalizePublicIotUrl(input: string, requiredPath: string, fallback: string) {
-  const raw = String(input ?? '').trim();
-  if (!raw) return fallback;
-  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-
-  try {
-    const parsed = new URL(withProtocol);
-    const host = parsed.hostname.toLowerCase();
-    const path = String(parsed.pathname || '').toLowerCase();
-    const requiredPathLc = requiredPath.toLowerCase();
-    const isLegacyBootstrapAlias = host === 'devicebootstrap.maintelligence.app';
-    const isLegacySyncAlias = host === 'devicesync.maintelligence.app';
-    const requiresBootstrap = requiredPathLc === IOT_BOOTSTRAP_PATH.toLowerCase();
-    const requiresSync = requiredPathLc === IOT_SYNC_PATH.toLowerCase();
-
-    if ((requiresBootstrap && isLegacyBootstrapAlias) || (requiresSync && isLegacySyncAlias)) {
-      return fallback;
-    }
-
-    if (host === IOT_PUBLIC_CANONICAL_HOST && (path === '/' || path.length === 0)) {
-      parsed.pathname = requiredPath;
-      parsed.search = '';
-      parsed.hash = '';
-      return parsed.toString();
-    }
-
-    return withProtocol;
-  } catch {
-    return fallback;
-  }
-}
-
 function preferredBootstrapUrl() {
-  const configured = String(process.env.IOT_PUBLIC_BOOTSTRAP_URL ?? '').trim();
-  return normalizePublicIotUrl(configured, IOT_BOOTSTRAP_PATH, IOT_DEFAULT_BOOTSTRAP_PUBLIC_URL);
+  const resolved = buildFunctionUrl('iotDeviceBootstrap');
+  return /^https?:\/\//i.test(resolved) ? resolved : IOT_DEFAULT_BOOTSTRAP_PUBLIC_URL;
 }
 
 function preferredSyncUrl() {
-  const configured = String(process.env.IOT_PUBLIC_SYNC_URL ?? '').trim();
-  return normalizePublicIotUrl(configured, IOT_SYNC_PATH, IOT_DEFAULT_SYNC_PUBLIC_URL);
+  const resolved = buildFunctionUrl('iotDeviceSync');
+  return /^https?:\/\//i.test(resolved) ? resolved : IOT_DEFAULT_SYNC_PUBLIC_URL;
 }
 
 function sha256Hex(input: string) {
