@@ -630,6 +630,19 @@ function readIotFieldValue(asset: Asset, key: string, rawKeys: string[] = []) {
   ]);
 }
 
+function resolveDeviceIp(asset: Asset) {
+  const ipValue = firstDefinedIotValue([
+    asset.iot?.reportedState?.ipAddress,
+    asset.iot?.lastReading?.raw?.ipAddress,
+    asset.iot?.lastReading?.raw?.ip,
+    asset.iot?.reportedState?.raw?.ipAddress,
+    asset.iot?.reportedState?.raw?.ip,
+  ]);
+
+  if (!ipValue) return null;
+  return String(ipValue).trim() || null;
+}
+
 function buildThermostatLogicState(asset: Asset): ThermostatLogicFormState {
   const stopRelay1 = asBoolean(readIotFieldValue(asset, 'stopRelay1OnDefrost')) ?? false;
   const stopRelay2 = asBoolean(readIotFieldValue(asset, 'stopRelay2OnDefrost')) ?? false;
@@ -1849,6 +1862,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
   const reading = resolveDisplayReading(asset);
   const panelType = asset.iot?.panelType ?? 'sensor';
   const status = readingStatus(asset);
+  const deviceIp = resolveDeviceIp(asset);
   const temperature = readingMetric(reading, 'temperature', 'Temp1');
   const humidity = readingMetric(reading, 'humidity', 'Hum1');
   const setpoint = readingMetric(reading, 'setpoint', 'Set1');
@@ -1869,6 +1883,13 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
                 <Badge variant="outline" className="border-sky-300/20 bg-sky-400/10 text-sky-100">
                   {asset.iot?.deviceKey ?? asset.code}
+                </Badge>
+
+                <Badge
+                  variant="outline"
+                  className={deviceIp ? 'border-white/15 bg-white/5 text-slate-100' : 'border-white/10 bg-white/5 text-slate-400'}
+                >
+                  IP: {deviceIp ?? 'sin dato'}
                 </Badge>
 
                 {siteName ? (
