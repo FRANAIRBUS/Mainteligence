@@ -79,6 +79,13 @@ type LegacyPanelPhotoOption = {
   imageSrc: string;
 };
 
+type LegacyPanelDisplayConfig = {
+  probeUnits: [string, string, string, string];
+  humidityUnit: string;
+  setpointUnit: string;
+  relayLabels: Record<string, string>;
+};
+
 const modeOptions = [
   { value: 'cool', label: 'Cool' },
   { value: 'heat', label: 'Heat' },
@@ -159,6 +166,50 @@ const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
   { id: 'ventana', label: 'Ventana', imageSrc: '/iot/PANEL_FOTO/options/ventana.png' },
   { id: 'aire-acond', label: 'Aire acondicionado', imageSrc: '/iot/PANEL_FOTO/options/aire_acond.png' },
 ];
+
+function defaultLegacyPanelDisplayConfig(): LegacyPanelDisplayConfig {
+  return {
+    probeUnits: ['C', 'C', 'C', 'C'],
+    humidityUnit: '%',
+    setpointUnit: 'C',
+    relayLabels: {},
+  };
+}
+
+function normalizeLegacyPanelDisplayConfig(value: unknown): LegacyPanelDisplayConfig {
+  const defaults = defaultLegacyPanelDisplayConfig();
+  if (!isPlainObject(value)) return defaults;
+
+  const probeUnitsRaw = Array.isArray(value.probeUnits) ? value.probeUnits : [];
+  const probeUnits: [string, string, string, string] = [0, 1, 2, 3].map((index) => {
+    const rawValue = probeUnitsRaw[index];
+    const text = typeof rawValue === 'string' ? rawValue.trim() : '';
+    return text || defaults.probeUnits[index];
+  }) as [string, string, string, string];
+
+  const humidityUnit = typeof value.humidityUnit === 'string' && value.humidityUnit.trim()
+    ? value.humidityUnit.trim()
+    : defaults.humidityUnit;
+  const setpointUnit = typeof value.setpointUnit === 'string' && value.setpointUnit.trim()
+    ? value.setpointUnit.trim()
+    : defaults.setpointUnit;
+
+  const relayLabels = isPlainObject(value.relayLabels)
+    ? Object.entries(value.relayLabels).reduce<Record<string, string>>((acc, [relayLabel, relayText]) => {
+      const normalizedLabel = relayLabel.trim().toUpperCase();
+      if (!normalizedLabel) return acc;
+      acc[normalizedLabel] = typeof relayText === 'string' ? relayText.trim() : '';
+      return acc;
+    }, {})
+    : {};
+
+  return {
+    probeUnits,
+    humidityUnit,
+    setpointUnit,
+    relayLabels,
+  };
+}
 
 function toDateValue(value: DateLike): Date | null {
   if (!value) return null;
@@ -1409,10 +1460,13 @@ function LegacyThermostatPanel({
   const [activeSkin, setActiveSkin] = useState<LegacyPanelSkinId>('lh1t');
   const [selectedPhotoId, setSelectedPhotoId] = useState<string>(legacyPanelPhotoOptions[0]?.id ?? 'compresor');
   const [photoGalleryOpen, setPhotoGalleryOpen] = useState(false);
+  const [displayConfigOpen, setDisplayConfigOpen] = useState(false);
+  const [displayConfig, setDisplayConfig] = useState<LegacyPanelDisplayConfig>(() => defaultLegacyPanelDisplayConfig());
   const displayContainerRef = useRef<HTMLDivElement | null>(null);
   const [displayWidth, setDisplayWidth] = useState<number>(557);
   const skinStorageKey = `iot:legacy-skin:${asset.id}`;
   const photoStorageKey = `iot:legacy-photo:${asset.id}`;
+  const displayConfigStorageKey = `iot:legacy-display-config:${asset.id}`;
   const powerOn = readingBoolean(reading, 'power', 'RUN') ?? status !== 'offline';
   const relay1On = getRelayState(relays, 'REL1');
   const relay2On = getRelayState(relays, 'REL2');
@@ -1428,6 +1482,18 @@ function LegacyThermostatPanel({
   const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
   const relayDisplayStates = relayDisplayItems(relays);
   const relaySlots = useMemo(() => relayPanelSlots(relays), [relays]);
+  const configurableRelayLabels = useMemo(() => {
+    const labels = relayDisplayStates.map((relay) => relay.label.trim().toUpperCase()).filter(Boolean);
+    if (labels.length > 0) return labels;
+    return ['REL1', 'REL2', 'REL3', 'REL4'];
+  }, [relayDisplayStates]);
+  const activeProbeUnit = displayConfig.probeUnits[activeProbe - 1] ?? 'C';
+  const humidityUnit = displayConfig.humidityUnit || '%';
+  const setpointUnit = displayConfig.setpointUnit || activeProbeUnit;
+  const relayDisplayLabel = (label: string) => {
+    const normalizedLabel = label.trim().toUpperCase();
+    return displayConfig.relayLabels[normalizedLabel] || normalizedLabel;
+  };
   const selectedPhoto = useMemo<LegacyPanelPhotoOption>(
     () =>
       legacyPanelPhotoOptions.find((option) => option.id === selectedPhotoId) ??
@@ -1507,6 +1573,7 @@ function LegacyThermostatPanel({
     if (typeof window === 'undefined') return;
     const savedSkin = window.localStorage.getItem(skinStorageKey);
     const savedPhoto = window.localStorage.getItem(photoStorageKey);
+    const savedDisplayConfig = window.localStorage.getItem(displayConfigStorageKey);
 
     setActiveSkin(isLegacyPanelSkin(savedSkin) ? savedSkin : 'lh1t');
     setSelectedPhotoId(
@@ -1514,7 +1581,17 @@ function LegacyThermostatPanel({
         ? String(savedPhoto)
         : (legacyPanelPhotoOptions[0]?.id ?? 'compresor'),
     );
-  }, [photoStorageKey, skinStorageKey]);
+    if (savedDisplayConfig) {
+      try {
+        const parsedConfig = JSON.parse(savedDisplayConfig);
+        setDisplayConfig(normalizeLegacyPanelDisplayConfig(parsedConfig));
+      } catch {
+        setDisplayConfig(defaultLegacyPanelDisplayConfig());
+      }
+      return;
+    }
+    setDisplayConfig(defaultLegacyPanelDisplayConfig());
+  }, [displayConfigStorageKey, photoStorageKey, skinStorageKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1525,6 +1602,11 @@ function LegacyThermostatPanel({
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(photoStorageKey, selectedPhotoId);
   }, [photoStorageKey, selectedPhotoId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(displayConfigStorageKey, JSON.stringify(displayConfig));
+  }, [displayConfig, displayConfigStorageKey]);
 
   const cycleSkin = () => {
     setActiveSkin((currentSkin) => nextLegacyPanelSkin(currentSkin));
@@ -1594,8 +1676,8 @@ function LegacyThermostatPanel({
               {primaryValue}
             </div>
             {powerOn ? (
-              <div className="absolute left-[45.5%] top-[50%] h-[8.3%] w-[4.5%]">
-                <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
+              <div className="absolute left-[44.8%] top-[50.0%] text-[18px] font-bold text-red-600">
+                {activeProbeUnit}
               </div>
             ) : null}
 
@@ -1603,9 +1685,7 @@ function LegacyThermostatPanel({
             <div className="absolute right-[50.5%] top-[64.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
               {humidityValue}
             </div>
-            <div className="absolute left-[49.0%] top-[68.0%] h-[6.5%] w-[4.2%]">
-              <img src="/iot/lh1t/images/porcent.png" alt="Porcentaje" className="h-full w-full object-contain" />
-            </div>
+            <div className="absolute left-[49.0%] top-[67.8%] text-[15px] font-bold text-red-600">{humidityUnit}</div>
 
             {relay1On ? (
               <div className="absolute left-[55.8%] top-[35%] h-[10.7%] w-[5.7%]">
@@ -1634,11 +1714,17 @@ function LegacyThermostatPanel({
                 </button>
               )}
             />
-            <div className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717]">
+            <button
+              type="button"
+              onClick={() => setDisplayConfigOpen(true)}
+              className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717] transition hover:border-sky-300/70"
+              aria-label="Abrir configuracion del panel"
+              title="Configurar unidades y etiquetas"
+            >
               <div className="flex h-full w-full items-center justify-center">
                 <Settings className="h-[58%] w-[58%] text-slate-200" strokeWidth={2.2} />
               </div>
-            </div>
+            </button>
           </>
         ) : null}
 
@@ -1652,13 +1738,13 @@ function LegacyThermostatPanel({
             </div>
 
             <div className="absolute left-[7.9%] top-[31.8%] h-[9.3%] w-[17.1%] rounded-[8px] border border-white/45 bg-white/10 text-center text-[11px] font-semibold uppercase text-slate-200">
-              R-1
+              {relayDisplayLabel(relaySlots[0]?.label ?? 'REL1')}
             </div>
             <div className="absolute left-[34.1%] top-[31.8%] h-[9.3%] w-[17.1%] rounded-[8px] border border-white/45 bg-white/10 text-center text-[11px] font-semibold uppercase text-slate-200">
-              R-2
+              {relayDisplayLabel(relaySlots[1]?.label ?? 'REL2')}
             </div>
             <div className="absolute left-[60.3%] top-[31.8%] h-[9.3%] w-[17.1%] rounded-[8px] border border-white/45 bg-white/10 text-center text-[11px] font-semibold uppercase text-slate-200">
-              R-3
+              {relayDisplayLabel(relaySlots[2]?.label ?? 'REL3')}
             </div>
 
             {relaySlots.map((relay, index) => (
@@ -1726,9 +1812,7 @@ function LegacyThermostatPanel({
               {panelFotoPrimaryValue}
             </div>
             {powerOn ? (
-              <div className="absolute left-[37.5%] top-[50.0%] h-[8.3%] w-[4.5%]">
-                <img src="/iot/lh1t/images/centigrados.png" alt="Grados" className="h-full w-full object-contain" />
-              </div>
+              <div className="absolute left-[37.4%] top-[50.0%] text-[18px] font-bold text-red-600">{activeProbeUnit}</div>
             ) : null}
 
             <div className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5">
@@ -1823,18 +1907,133 @@ function LegacyThermostatPanel({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={displayConfigOpen} onOpenChange={setDisplayConfigOpen}>
+        <DialogContent className="max-w-2xl border-white/10 bg-slate-950 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Configuracion de unidades y etiquetas</DialogTitle>
+            <DialogDescription className="text-slate-300">
+              Personaliza unidades para sondas y texto para relays del panel.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="mb-2 text-sm font-semibold text-slate-200">Unidades de sondas</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {displayConfig.probeUnits.map((unit, index) => (
+                  <div key={`probe-unit-${index + 1}`}>
+                    <Label htmlFor={`probe-unit-${asset.id}-${index + 1}`}>Sonda {index + 1}</Label>
+                    <Input
+                      id={`probe-unit-${asset.id}-${index + 1}`}
+                      value={unit}
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
+                        setDisplayConfig((currentConfig) => {
+                          const nextProbeUnits = [...currentConfig.probeUnits] as [string, string, string, string];
+                          nextProbeUnits[index] = nextValue;
+                          return {
+                            ...currentConfig,
+                            probeUnits: nextProbeUnits,
+                          };
+                        });
+                      }}
+                      placeholder="Ej: C, Hz, V, A"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="mb-2 text-sm font-semibold text-slate-200">Unidades adicionales</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor={`humidity-unit-${asset.id}`}>Humedad</Label>
+                  <Input
+                    id={`humidity-unit-${asset.id}`}
+                    value={displayConfig.humidityUnit}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setDisplayConfig((currentConfig) => ({
+                        ...currentConfig,
+                        humidityUnit: nextValue,
+                      }));
+                    }}
+                    placeholder="Ej: %"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor={`setpoint-unit-${asset.id}`}>Consigna</Label>
+                  <Input
+                    id={`setpoint-unit-${asset.id}`}
+                    value={displayConfig.setpointUnit}
+                    onChange={(e) => {
+                      const nextValue = e.target.value;
+                      setDisplayConfig((currentConfig) => ({
+                        ...currentConfig,
+                        setpointUnit: nextValue,
+                      }));
+                    }}
+                    placeholder="Ej: C"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="mb-2 text-sm font-semibold text-slate-200">Etiquetas de relays</div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {configurableRelayLabels.map((label) => (
+                  <div key={`relay-label-${label}`}>
+                    <Label htmlFor={`relay-label-${asset.id}-${label}`}>{label}</Label>
+                    <Input
+                      id={`relay-label-${asset.id}-${label}`}
+                      value={displayConfig.relayLabels[label] ?? ''}
+                      onChange={(e) => {
+                        const nextValue = e.target.value;
+                        setDisplayConfig((currentConfig) => ({
+                          ...currentConfig,
+                          relayLabels: {
+                            ...currentConfig.relayLabels,
+                            [label]: nextValue,
+                          },
+                        }));
+                      }}
+                      placeholder={`Etiqueta para ${label}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDisplayConfig(defaultLegacyPanelDisplayConfig())}
+              >
+                Restablecer
+              </Button>
+              <Button type="button" onClick={() => setDisplayConfigOpen(false)}>
+                Guardar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="grid grid-cols-2 gap-2">
         <MetricTile
           label={`Sonda ${activeProbe}`}
           value={temperature != null ? formatLedValue(temperature, 0) : '--'}
-          suffix="C"
+          suffix={activeProbeUnit}
           icon={<Thermometer className="h-3.5 w-3.5" />}
           centered
         />
         <MetricTile
           label="Consigna"
           value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
-          suffix="C"
+          suffix={setpointUnit}
           icon={<Gauge className="h-3.5 w-3.5" />}
           centered
         />
@@ -1852,7 +2051,7 @@ function LegacyThermostatPanel({
                   : 'rounded-full border border-white/10 bg-slate-900/70 px-2.5 py-1 text-[11px] font-semibold text-slate-300'
               }
             >
-              {relay.label}: {relay.active ? 'ON' : 'OFF'}
+              {relayDisplayLabel(relay.label)}: {relay.active ? 'ON' : 'OFF'}
             </div>
           ))}
         </div>
