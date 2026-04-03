@@ -20,8 +20,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
-const SHORT_BOOTSTRAP_URL = 'https://deviceBootstrap.maintelligence.app';
-const SHORT_SYNC_URL = 'https://deviceSync.maintelligence.app';
+const SHORT_BOOTSTRAP_URL = 'https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceBootstrap';
+const SHORT_SYNC_URL = 'https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceSync';
 
 type ProvisioningResult = {
   organizationId: string;

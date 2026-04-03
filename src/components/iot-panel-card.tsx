@@ -150,6 +150,9 @@ const legacyPanelSkins: LegacyPanelSkinOption[] = [
 const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
   { id: 'compresor', label: 'Compresor', imageSrc: '/iot/PANEL_FOTO/options/compresor.png' },
   { id: 'caldera', label: 'Caldera', imageSrc: '/iot/PANEL_FOTO/options/caldera.png' },
+  { id: 'intercambiador', label: 'Intercambiador', imageSrc: '/iot/PANEL_FOTO/options/intercambiador.png' },
+  { id: 'variador', label: 'Variador', imageSrc: '/iot/PANEL_FOTO/options/variador.png' },
+  { id: 'piscina', label: 'Piscina', imageSrc: '/iot/PANEL_FOTO/options/piscina.png' },
   { id: 'tanque-grande', label: 'Tanque grande', imageSrc: '/iot/PANEL_FOTO/options/tanque_grande.png' },
   { id: 'tanque-peq', label: 'Tanque pequeno', imageSrc: '/iot/PANEL_FOTO/options/tanque_peq.png' },
   { id: 'fancoil', label: 'Fancoil', imageSrc: '/iot/PANEL_FOTO/options/fancoil.png' },
@@ -628,6 +631,19 @@ function readIotFieldValue(asset: Asset, key: string, rawKeys: string[] = []) {
     desired?.[key],
     ...readingCandidates,
   ]);
+}
+
+function resolveDeviceIp(asset: Asset) {
+  const ipValue = firstDefinedIotValue([
+    asset.iot?.reportedState?.ipAddress,
+    asset.iot?.lastReading?.raw?.ipAddress,
+    asset.iot?.lastReading?.raw?.ip,
+    asset.iot?.reportedState?.raw?.ipAddress,
+    asset.iot?.reportedState?.raw?.ip,
+  ]);
+
+  if (!ipValue) return null;
+  return String(ipValue).trim() || null;
 }
 
 function buildThermostatLogicState(asset: Asset): ThermostatLogicFormState {
@@ -1849,6 +1865,7 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
   const reading = resolveDisplayReading(asset);
   const panelType = asset.iot?.panelType ?? 'sensor';
   const status = readingStatus(asset);
+  const deviceIp = resolveDeviceIp(asset);
   const temperature = readingMetric(reading, 'temperature', 'Temp1');
   const humidity = readingMetric(reading, 'humidity', 'Hum1');
   const setpoint = readingMetric(reading, 'setpoint', 'Set1');
@@ -1869,6 +1886,13 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
                 <Badge variant="outline" className="border-sky-300/20 bg-sky-400/10 text-sky-100">
                   {asset.iot?.deviceKey ?? asset.code}
+                </Badge>
+
+                <Badge
+                  variant="outline"
+                  className={deviceIp ? 'border-white/15 bg-white/5 text-slate-100' : 'border-white/10 bg-white/5 text-slate-400'}
+                >
+                  IP: {deviceIp ?? 'sin dato'}
                 </Badge>
 
                 {siteName ? (

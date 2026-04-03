@@ -14,5 +14,18 @@
   },
   "storage": {
     "rules": "storage.rules"
+  },
+  "hosting": {
+    "public": "public",
+    "rewrites": [
+      {
+        "source": "/iotDeviceBootstrap",
+        "function": "iotDeviceBootstrap"
+      },
+      {
+        "source": "/iotDeviceSync",
+        "function": "iotDeviceSync"
+      }
+    ]
   }
 }
