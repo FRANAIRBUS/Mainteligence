@@ -151,6 +151,8 @@ const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
   { id: 'compresor', label: 'Compresor', imageSrc: '/iot/PANEL_FOTO/options/compresor.png' },
   { id: 'caldera', label: 'Caldera', imageSrc: '/iot/PANEL_FOTO/options/caldera.png' },
   { id: 'intercambiador', label: 'Intercambiador', imageSrc: '/iot/PANEL_FOTO/options/intercambiador.png' },
+  { id: 'variador', label: 'Variador', imageSrc: '/iot/PANEL_FOTO/options/variador.png' },
+  { id: 'piscina', label: 'Piscina', imageSrc: '/iot/PANEL_FOTO/options/piscina.png' },
   { id: 'tanque-grande', label: 'Tanque grande', imageSrc: '/iot/PANEL_FOTO/options/tanque_grande.png' },
   { id: 'tanque-peq', label: 'Tanque pequeno', imageSrc: '/iot/PANEL_FOTO/options/tanque_peq.png' },
   { id: 'fancoil', label: 'Fancoil', imageSrc: '/iot/PANEL_FOTO/options/fancoil.png' },
