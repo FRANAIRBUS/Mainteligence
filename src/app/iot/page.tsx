@@ -258,22 +258,42 @@ export default function IotPage() {
 
       <Card className="mt-8 border-white/60 bg-sky-400/15">
         <CardHeader>
-          <CardTitle>Puente de migracion</CardTitle>
+          <CardTitle>Guia rapida del panel IoT</CardTitle>
           <CardDescription>
-            Informacion de referencia para la transicion desde paneles legacy hacia lecturas y control IoT nativo dentro de Mainteligence.
+            Referencia practica para entender que estas viendo en esta pantalla y como interactuar con los dispositivos.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm text-muted-foreground md:grid-cols-2">
           <div className="rounded-xl border border-white/60 bg-background p-4">
             <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
               <Thermometer className="h-4 w-4 text-sky-500" />
-              Campos legacy compatibles
+              Que es un activo IoT
             </div>
-            Temp1, Temp2, Hum1, Set1, REL1..REL4, AL0..AL8.
+            <p>
+              Un activo IoT es un activo normal de Mainteligence al que se le conecta un equipo en campo
+              (termostato, sensor o rele) para enviar lecturas y recibir ordenes.
+            </p>
+            <p className="mt-2">
+              En esta vista puedes ver estado online/offline, ultimo registro, variables medidas y salidas activas.
+            </p>
           </div>
           <div className="rounded-xl border border-white/60 bg-background p-4">
-            <div className="mb-2 font-semibold text-foreground">Ruta recomendada</div>
-            Firestore `organizations/{'{orgId}'}/assets/{'{assetId}'}` con `iot.deviceKey`, `panelType`, `lastReading`.
+            <div className="mb-2 font-semibold text-foreground">Como funcionan los botones</div>
+            <p>
+              <strong>SET:</strong> abre el panel de ordenes para enviar cambios (consigna, relays, modos).
+            </p>
+            <p className="mt-1">
+              <strong>GRAF:</strong> abre historico y exportacion CSV de telemetria.
+            </p>
+            <p className="mt-1">
+              <strong>SKIN:</strong> cambia el estilo visual del panel (no cambia la logica del dispositivo).
+            </p>
+            <p className="mt-1">
+              <strong>Engranaje:</strong> abre configuracion de unidades y etiquetas del panel para ese activo IoT.
+            </p>
+            <p className="mt-1">
+              <strong>PROBE:</strong> alterna la sonda mostrada cuando el equipo reporta varias entradas.
+            </p>
           </div>
         </CardContent>
       </Card>
