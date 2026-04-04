@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import {
   Activity,
   AlertTriangle,
@@ -30,7 +31,8 @@ import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { useFirebaseApp, useUser } from '@/lib/firebase';
+import { useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
+import { orgDocPath } from '@/lib/organization';
 import type { Asset, AssetIotReading, AssetIotRelay } from '@/lib/firebase/models';
 
 type IotPanelCardProps = {
@@ -440,13 +442,14 @@ function latestDateValue(candidates: DateLike[]) {
 }
 
 function lastIotActivityTimestamp(asset: Asset, reading: AssetIotReading | null | undefined) {
+  const rawReading = reading?.raw as Record<string, unknown> | null | undefined;
   return latestDateValue([
     reading?.readingAt,
     asset.iot?.lastReading?.readingAt,
     asset.iot?.reportedState?.readingAt,
-    reading?.raw?.readingAt,
-    reading?.raw?.reading_at,
-    reading?.raw?.reading_time,
+    rawReading?.readingAt as DateLike,
+    rawReading?.reading_at as DateLike,
+    rawReading?.reading_time as DateLike,
     asset.iot?.lastSeenAt,
     asset.iot?.provisioning?.lastSyncAt,
     asset.updatedAt,
@@ -1456,11 +1459,15 @@ function LegacyThermostatPanel({
   relays: AssetIotRelay[];
   alarms: string[];
 }) {
+  const firestore = useFirestore();
+  const { organizationId } = useUser();
+  const { toast } = useToast();
   const [activeProbe, setActiveProbe] = useState<number>(1);
   const [activeSkin, setActiveSkin] = useState<LegacyPanelSkinId>('lh1t');
   const [selectedPhotoId, setSelectedPhotoId] = useState<string>(legacyPanelPhotoOptions[0]?.id ?? 'compresor');
   const [photoGalleryOpen, setPhotoGalleryOpen] = useState(false);
   const [displayConfigOpen, setDisplayConfigOpen] = useState(false);
+  const [savingDisplayConfig, setSavingDisplayConfig] = useState(false);
   const [displayConfig, setDisplayConfig] = useState<LegacyPanelDisplayConfig>(() => defaultLegacyPanelDisplayConfig());
   const displayContainerRef = useRef<HTMLDivElement | null>(null);
   const [displayWidth, setDisplayWidth] = useState<number>(557);
@@ -1581,6 +1588,10 @@ function LegacyThermostatPanel({
         ? String(savedPhoto)
         : (legacyPanelPhotoOptions[0]?.id ?? 'compresor'),
     );
+    if (asset.iot?.panelDisplayConfig) {
+      setDisplayConfig(normalizeLegacyPanelDisplayConfig(asset.iot.panelDisplayConfig));
+      return;
+    }
     if (savedDisplayConfig) {
       try {
         const parsedConfig = JSON.parse(savedDisplayConfig);
@@ -1591,7 +1602,7 @@ function LegacyThermostatPanel({
       return;
     }
     setDisplayConfig(defaultLegacyPanelDisplayConfig());
-  }, [displayConfigStorageKey, photoStorageKey, skinStorageKey]);
+  }, [asset.iot?.panelDisplayConfig, displayConfigStorageKey, photoStorageKey, skinStorageKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1610,6 +1621,38 @@ function LegacyThermostatPanel({
 
   const cycleSkin = () => {
     setActiveSkin((currentSkin) => nextLegacyPanelSkin(currentSkin));
+  };
+
+  const handleSaveDisplayConfig = async () => {
+    if (!firestore || !organizationId) {
+      setDisplayConfigOpen(false);
+      return;
+    }
+
+    setSavingDisplayConfig(true);
+    try {
+      const assetRef = doc(firestore, orgDocPath(organizationId, 'assets', asset.id));
+      await setDoc(assetRef, {
+        iot: {
+          panelDisplayConfig: displayConfig,
+          panelDisplayConfigUpdatedAt: serverTimestamp(),
+        },
+      }, { merge: true });
+
+      toast({
+        title: 'Configuracion guardada',
+        description: 'La configuracion del panel ya es compartida para este activo.',
+      });
+      setDisplayConfigOpen(false);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'No se pudo guardar',
+        description: error?.message || 'Error guardando la configuracion del panel.',
+      });
+    } finally {
+      setSavingDisplayConfig(false);
+    }
   };
 
   return (
@@ -2011,11 +2054,12 @@ function LegacyThermostatPanel({
                 type="button"
                 variant="outline"
                 onClick={() => setDisplayConfig(defaultLegacyPanelDisplayConfig())}
+                disabled={savingDisplayConfig}
               >
                 Restablecer
               </Button>
-              <Button type="button" onClick={() => setDisplayConfigOpen(false)}>
-                Guardar
+              <Button type="button" onClick={() => void handleSaveDisplayConfig()} disabled={savingDisplayConfig}>
+                {savingDisplayConfig ? 'Guardando...' : 'Guardar'}
               </Button>
             </div>
           </div>
