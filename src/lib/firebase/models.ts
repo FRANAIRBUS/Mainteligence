@@ -288,6 +288,13 @@ export interface AssetIotProvisioning {
   lastSyncAt?: Timestamp | Date | string | number | null;
 }
 
+export interface AssetIotPanelDisplayConfig {
+  probeUnits?: [string, string, string, string] | string[];
+  humidityUnit?: string;
+  setpointUnit?: string;
+  relayLabels?: Record<string, string>;
+}
+
 export interface AssetIotConfig {
   enabled: boolean;
   panelType: IotPanelType;
@@ -300,6 +307,8 @@ export interface AssetIotConfig {
   reportedState?: AssetIotReportedState | null;
   desiredState?: AssetIotDesiredState | null;
   provisioning?: AssetIotProvisioning | null;
+  panelDisplayConfig?: AssetIotPanelDisplayConfig | null;
+  panelDisplayConfigUpdatedAt?: Timestamp | Date | string | number | null;
 }
 
 export interface Asset extends BaseEntity {
