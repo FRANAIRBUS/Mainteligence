@@ -270,6 +270,20 @@ function cloneLegacyPanelDisplayConfig(displayConfig: LegacyPanelDisplayConfig):
   };
 }
 
+function areLegacyPanelDisplayConfigsEqual(a: LegacyPanelDisplayConfig, b: LegacyPanelDisplayConfig) {
+  if (a.humidityUnit !== b.humidityUnit || a.setpointUnit !== b.setpointUnit) return false;
+
+  for (let index = 0; index < 4; index += 1) {
+    if (a.probeUnits[index] !== b.probeUnits[index]) return false;
+  }
+
+  const aRelayEntries = Object.entries(a.relayLabels);
+  const bRelayEntries = Object.entries(b.relayLabels);
+  if (aRelayEntries.length !== bRelayEntries.length) return false;
+
+  return aRelayEntries.every(([key, value]) => b.relayLabels[key] === value);
+}
+
 function toDateValue(value: DateLike): Date | null {
   if (!value) return null;
   if (value instanceof Date) {
@@ -1702,29 +1716,36 @@ function LegacyThermostatPanel({
         ? String(savedPhoto)
         : (legacyPanelPhotoOptions[0]?.id ?? 'compresor')),
     );
+    let nextDisplayConfig: LegacyPanelDisplayConfig;
+
     if (asset.iot?.panelDisplayConfig) {
-      const nextDisplayConfig = normalizeLegacyPanelDisplayConfig(asset.iot.panelDisplayConfig);
-      setDisplayConfig(nextDisplayConfig);
-      setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(nextDisplayConfig));
+      nextDisplayConfig = normalizeLegacyPanelDisplayConfig(asset.iot.panelDisplayConfig);
     } else if (savedDisplayConfig) {
       try {
         const parsedConfig = JSON.parse(savedDisplayConfig);
-        const nextDisplayConfig = normalizeLegacyPanelDisplayConfig(parsedConfig);
-        setDisplayConfig(nextDisplayConfig);
-        setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(nextDisplayConfig));
+        nextDisplayConfig = normalizeLegacyPanelDisplayConfig(parsedConfig);
       } catch {
-        const nextDisplayConfig = defaultLegacyPanelDisplayConfig();
-        setDisplayConfig(nextDisplayConfig);
-        setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(nextDisplayConfig));
+        nextDisplayConfig = defaultLegacyPanelDisplayConfig();
       }
     } else {
-      const nextDisplayConfig = defaultLegacyPanelDisplayConfig();
-      setDisplayConfig(nextDisplayConfig);
-      setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(nextDisplayConfig));
+      nextDisplayConfig = defaultLegacyPanelDisplayConfig();
+    }
+
+    setDisplayConfig((currentConfig) =>
+      areLegacyPanelDisplayConfigsEqual(currentConfig, nextDisplayConfig)
+        ? currentConfig
+        : nextDisplayConfig,
+    );
+    if (!displayConfigOpen) {
+      setDisplayConfigDraft((currentDraft) =>
+        areLegacyPanelDisplayConfigsEqual(currentDraft, nextDisplayConfig)
+          ? currentDraft
+          : cloneLegacyPanelDisplayConfig(nextDisplayConfig),
+      );
     }
 
     panelConfigHydratedRef.current = true;
-  }, [asset.iot?.panelDisplayConfig, displayConfigStorageKey, photoStorageKey, skinStorageKey]);
+  }, [asset.iot?.panelDisplayConfig, displayConfigOpen, displayConfigStorageKey, photoStorageKey, skinStorageKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1749,17 +1770,14 @@ function LegacyThermostatPanel({
       const assetRef = doc(firestore, orgDocPath(organizationId, 'assets', asset.id));
       void setDoc(assetRef, {
         iot: {
-          panelDisplayConfig: {
-            selectedSkin: activeSkin,
-            selectedPhotoId,
-          },
+          panelDisplayConfig: buildLegacyPanelPersistedConfig(displayConfig, activeSkin, selectedPhotoId),
           panelDisplayConfigUpdatedAt: serverTimestamp(),
         },
       }, { merge: true });
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
-  }, [activeSkin, selectedPhotoId, asset.id, firestore, organizationId]);
+  }, [activeSkin, asset.id, displayConfig, firestore, organizationId, selectedPhotoId]);
 
   const cycleSkin = () => {
     setActiveSkin((currentSkin) => nextLegacyPanelSkin(currentSkin));
