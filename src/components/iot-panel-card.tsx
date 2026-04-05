@@ -2043,7 +2043,7 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute right-[67.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[69.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
@@ -2054,7 +2054,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[67.0%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[69.0%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
@@ -2065,7 +2065,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[18.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[17.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
@@ -2076,7 +2076,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[18.0%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[17.0%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
