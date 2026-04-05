@@ -1637,7 +1637,7 @@ function LegacyThermostatPanel({
   }, [displayWidth]);
   const inoutDisplayFontSize = useMemo(() => {
     const scaled = displayWidth * 0.045;
-    return `${Math.min(35, Math.max(22, scaled)).toFixed(1)}px`;
+    return `${Math.min(38, Math.max(22, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const primaryDisplayStyle = useMemo<CSSProperties>(
     () => ({
@@ -2123,7 +2123,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[17.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[16.5%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
@@ -2134,7 +2134,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[17.0%] top-[64.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[16.5%] top-[64.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
