@@ -152,7 +152,7 @@ const secondaryDigitalValueStyle: CSSProperties = {
 
 const inoutDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
-  fontSize: 'clamp(11px, 1.9vw, 15px)',
+  fontSize: 'clamp(13px, 2.2vw, 18px)',
   letterSpacing: '0.04em',
   lineHeight: 1,
 };
