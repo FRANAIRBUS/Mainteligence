@@ -2005,7 +2005,7 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute right-[6.0%] top-[37.2%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute right-[60.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[0]}
@@ -2017,7 +2017,7 @@ function LegacyThermostatPanel({
               {inoutProbeReadings[2]}
             </div>
             <div
-              className="absolute left-[58.8%] top-[37.2%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute left-[58.8%] top-[36.%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[1]}
