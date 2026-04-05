@@ -194,6 +194,7 @@ const legacyPanelSkins: LegacyPanelSkinOption[] = [
 const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
   { id: 'compresor', label: 'Compresor', imageSrc: '/iot/PANEL_FOTO/options/compresor.png' },
   { id: 'caldera', label: 'Caldera', imageSrc: '/iot/PANEL_FOTO/options/caldera.png' },
+  { id: 'pasteurizador', label: 'Pasteurizador', imageSrc: '/iot/PANEL_FOTO/options/pasteurizador.png' },
   { id: 'intercambiador', label: 'Intercambiador', imageSrc: '/iot/PANEL_FOTO/options/intercambiador.png' },
   { id: 'variador', label: 'Variador', imageSrc: '/iot/PANEL_FOTO/options/variador.png' },
   { id: 'piscina', label: 'Piscina', imageSrc: '/iot/PANEL_FOTO/options/piscina.png' },
