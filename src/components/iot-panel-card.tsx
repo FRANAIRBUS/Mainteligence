@@ -1538,7 +1538,7 @@ function LegacyThermostatPanel({
   const displayBackgroundImage = useMemo(() => {
     if (activeSkin === 'rele') return '/iot/PANEL_RELE/DISPLAY_FONDO_RELE_1OFF.png';
     if (activeSkin === 'foto') return '/iot/PANEL_FOTO/DISPLAY_FOTO.png';
-    if (activeSkin === 'inout') return '/iot/PANEL_INOUT/DISPLAY_FONDO_INOUT.png';
+    if (activeSkin === 'inout') return '/iot/PANEL_INOUT/DISPLAY_FONDO_INOUT2.png';
     return '/iot/lh1t/images/DISPLAY_FONDO_TEMP.png';
   }, [activeSkin]);
   const primaryDisplayFontSize = useMemo(() => {
@@ -1946,25 +1946,25 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute left-[8.2%] top-[48.6%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
+              className="absolute left-[7.0%] top-[40.8%] flex h-[11.2%] w-[19.4%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[0]}
             </div>
             <div
-              className="absolute left-[8.2%] top-[65.4%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
+              className="absolute left-[7.0%] top-[59.3%] flex h-[11.2%] w-[19.4%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[2]}
             </div>
             <div
-              className="absolute left-[60.4%] top-[48.6%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
+              className="absolute left-[59.2%] top-[40.8%] flex h-[11.2%] w-[19.4%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[1]}
             </div>
             <div
-              className="absolute left-[60.4%] top-[65.4%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
+              className="absolute left-[59.2%] top-[59.3%] flex h-[11.2%] w-[19.4%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[3]}
