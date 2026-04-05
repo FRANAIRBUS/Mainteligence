@@ -150,6 +150,13 @@ const secondaryDigitalValueStyle: CSSProperties = {
   lineHeight: 1,
 };
 
+const inoutDigitalValueStyle: CSSProperties = {
+  ...digitalFontStyle,
+  fontSize: 'clamp(11px, 1.9vw, 15px)',
+  letterSpacing: '0.04em',
+  lineHeight: 1,
+};
+
 const legacyPanelSkins: LegacyPanelSkinOption[] = [
   { id: 'lh1t', label: 'LH1T' },
   { id: 'rele', label: 'RELE' },
@@ -1940,27 +1947,44 @@ function LegacyThermostatPanel({
 
             <div
               className="absolute left-[8.2%] top-[48.6%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
-              style={secondaryDigitalValueStyle}
+              style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[0]}
             </div>
             <div
               className="absolute left-[8.2%] top-[65.4%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
-              style={secondaryDigitalValueStyle}
-            >
-              {inoutProbeReadings[1]}
-            </div>
-            <div
-              className="absolute left-[60.4%] top-[48.6%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
-              style={secondaryDigitalValueStyle}
+              style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[2]}
             </div>
             <div
+              className="absolute left-[60.4%] top-[48.6%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
+              style={inoutDigitalValueStyle}
+            >
+              {inoutProbeReadings[1]}
+            </div>
+            <div
               className="absolute left-[60.4%] top-[65.4%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
-              style={secondaryDigitalValueStyle}
+              style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[3]}
+            </div>
+
+            <div className="absolute left-[27.6%] top-[31.7%] h-[44.7%] w-[29.8%] overflow-hidden rounded-[14px] border border-white/20 bg-black/60 p-1.5">
+              <img
+                src={selectedPhoto.imageSrc}
+                alt={`Imagen seleccionada: ${selectedPhoto.label}`}
+                className="h-full w-full object-contain"
+              />
+              <button
+                type="button"
+                onClick={() => setPhotoGalleryOpen(true)}
+                className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/20 bg-black/55 text-slate-100 transition hover:border-sky-300/80 hover:text-sky-100"
+                aria-label="Abrir galeria de imagenes"
+                title="Seleccionar imagen del panel INOUT"
+              >
+                <Settings className="h-4 w-4" strokeWidth={2.2} />
+              </button>
             </div>
 
             <IotTelemetryDialog
