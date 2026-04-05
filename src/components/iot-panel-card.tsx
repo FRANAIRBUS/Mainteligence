@@ -555,6 +555,18 @@ function formatLedValue(value: number | null, decimals = 1) {
   return value.toFixed(decimals);
 }
 
+function formatLedValueWithUnit(
+  value: number | null,
+  unit: string,
+  { decimals = 1, powerOn = true }: { decimals?: number; powerOn?: boolean } = {},
+) {
+  if (!powerOn) return 'OFF';
+  const trimmedUnit = unit.trim();
+  if (value == null) return trimmedUnit ? `-- ${trimmedUnit}` : '--';
+  const formattedValue = formatLedValue(value, decimals);
+  return trimmedUnit ? `${formattedValue} ${trimmedUnit}` : formattedValue;
+}
+
 function telemetryRange(preset: TelemetryPreset) {
   const now = new Date();
   const from = new Date(now);
@@ -1510,9 +1522,12 @@ function LegacyThermostatPanel({
   const temperature = probeTemperature(reading, activeProbe);
   const humidity = probeHumidity(reading, activeProbe);
   const setpoint = probeSetpoint(reading, activeProbe) ?? probeSetpoint(reading, 1);
-  const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
-  const panelFotoPrimaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
-  const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
+  const activeProbeUnit = displayConfig.probeUnits[activeProbe - 1] ?? 'C';
+  const humidityUnit = displayConfig.humidityUnit || '%';
+  const setpointUnit = displayConfig.setpointUnit || activeProbeUnit;
+  const primaryValue = formatLedValueWithUnit(temperature, activeProbeUnit, { decimals: 1, powerOn });
+  const panelFotoPrimaryValue = primaryValue;
+  const humidityValue = formatLedValueWithUnit(humidity, humidityUnit, { decimals: 0, powerOn });
   const relayDisplayStates = relayDisplayItems(relays);
   const relaySlots = useMemo(() => relayPanelSlots(relays), [relays]);
   const configurableRelayLabels = useMemo(() => {
@@ -1520,9 +1535,6 @@ function LegacyThermostatPanel({
     if (labels.length > 0) return labels;
     return ['REL1', 'REL2', 'REL3', 'REL4'];
   }, [relayDisplayStates]);
-  const activeProbeUnit = displayConfig.probeUnits[activeProbe - 1] ?? 'C';
-  const humidityUnit = displayConfig.humidityUnit || '%';
-  const setpointUnit = displayConfig.setpointUnit || activeProbeUnit;
   const relayDisplayLabel = (label: string) => {
     const normalizedLabel = label.trim().toUpperCase();
     return displayConfig.relayLabels[normalizedLabel] || normalizedLabel;
@@ -1586,10 +1598,7 @@ function LegacyThermostatPanel({
       [1, 2, 3, 4].map((probeIndex) => {
         const probeValue = probeTemperature(reading, probeIndex);
         const probeUnit = displayConfig.probeUnits[probeIndex - 1] ?? 'C';
-        if (!powerOn) return 'OFF';
-        if (probeValue == null) return probeUnit ? `-- ${probeUnit}` : '--';
-        const formattedValue = formatLedValue(probeValue, 1);
-        return probeUnit ? `${formattedValue} ${probeUnit}` : formattedValue;
+        return formatLedValueWithUnit(probeValue, probeUnit, { decimals: 1, powerOn });
       }),
     [displayConfig.probeUnits, powerOn, reading],
   );
@@ -1795,22 +1804,16 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute top-[38.5%] right-[58.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[20%] lg:right-[55.6%] lg:w-[21%]"
+              className="absolute top-[38.5%] right-[45.8%] w-[35%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[44.4%] sm:w-[34%] lg:right-[44.2%] lg:w-[34%]"
               style={primaryDisplayStyle}
             >
               {primaryValue}
             </div>
-            {powerOn ? (
-              <div className="absolute left-[44.8%] top-[50.0%] text-[18px] font-bold text-red-600">
-                {activeProbeUnit}
-              </div>
-            ) : null}
 
             <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-            <div className="absolute right-[50.5%] top-[64.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
+            <div className="absolute right-[44.0%] top-[64.9%] w-[14.0%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
               {humidityValue}
             </div>
-            <div className="absolute left-[49.0%] top-[67.8%] text-[15px] font-bold text-red-600">{humidityUnit}</div>
 
             {relay1On ? (
               <div className="absolute left-[55.8%] top-[35%] h-[10.7%] w-[5.7%]">
@@ -1933,12 +1936,9 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute top-[45.8%] right-[65.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[60.8%] sm:w-[20%] lg:right-[62.6%] lg:w-[21%]" style={panelFotoPrimaryDisplayStyle}>
+            <div className="absolute top-[45.8%] right-[57.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
               {panelFotoPrimaryValue}
             </div>
-            {powerOn ? (
-              <div className="absolute left-[37.4%] top-[50.0%] text-[18px] font-bold text-red-600">{activeProbeUnit}</div>
-            ) : null}
 
             <div className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5">
               <img
@@ -2005,25 +2005,25 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute left-[6.8%] top-[39.2%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute right-[6.0%] top-[37.2%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[0]}
             </div>
             <div
-              className="absolute left-[6.8%] top-[61.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute left-[6.8%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[2]}
             </div>
             <div
-              className="absolute left-[58.8%] top-[39.2%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute left-[58.8%] top-[37.2%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[1]}
             </div>
             <div
-              className="absolute left-[58.8%] top-[61.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute left-[58.8%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[3]}
