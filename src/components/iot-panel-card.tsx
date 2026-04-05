@@ -162,7 +162,6 @@ const secondaryDigitalValueStyle: CSSProperties = {
 
 const inoutDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
-  fontSize: 'clamp(20px, 2.45vw, 20px)',
   letterSpacing: '0.04em',
   lineHeight: 1,
 };
@@ -1636,6 +1635,10 @@ function LegacyThermostatPanel({
     const scaled = displayWidth * 0.104;
     return `${Math.min(62, Math.max(30, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
+  const inoutDisplayFontSize = useMemo(() => {
+    const scaled = displayWidth * 0.035;
+    return `${Math.min(22, Math.max(14, scaled)).toFixed(1)}px`;
+  }, [displayWidth]);
   const primaryDisplayStyle = useMemo<CSSProperties>(
     () => ({
       ...primaryDigitalValueStyle,
@@ -1649,6 +1652,13 @@ function LegacyThermostatPanel({
       fontSize: panelFotoPrimaryDisplayFontSize,
     }),
     [panelFotoPrimaryDisplayFontSize],
+  );
+  const inoutDisplayStyle = useMemo<CSSProperties>(
+    () => ({
+      ...inoutDigitalValueStyle,
+      fontSize: inoutDisplayFontSize,
+    }),
+    [inoutDisplayFontSize],
   );
   const inoutProbeReadingParts = useMemo(
     () =>
@@ -2092,7 +2102,7 @@ function LegacyThermostatPanel({
 
             <div
               className="absolute right-[69.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
-              style={inoutDigitalValueStyle}
+              style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
                 <span>{inoutProbeReadingParts[0].valueText}</span>
@@ -2103,7 +2113,7 @@ function LegacyThermostatPanel({
             </div>
             <div
               className="absolute right-[69.0%] top-[64.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
-              style={inoutDigitalValueStyle}
+              style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
                 <span>{inoutProbeReadingParts[2].valueText}</span>
@@ -2114,7 +2124,7 @@ function LegacyThermostatPanel({
             </div>
             <div
               className="absolute right-[17.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
-              style={inoutDigitalValueStyle}
+              style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
                 <span>{inoutProbeReadingParts[1].valueText}</span>
@@ -2125,7 +2135,7 @@ function LegacyThermostatPanel({
             </div>
             <div
               className="absolute right-[17.0%] top-[64.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
-              style={inoutDigitalValueStyle}
+              style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
                 <span>{inoutProbeReadingParts[3].valueText}</span>
