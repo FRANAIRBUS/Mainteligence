@@ -68,7 +68,7 @@ type CsvResult = {
   csv: string;
 };
 
-type LegacyPanelSkinId = 'lh1t' | 'rele' | 'foto';
+type LegacyPanelSkinId = 'lh1t' | 'rele' | 'foto' | 'inout';
 
 type LegacyPanelSkinOption = {
   id: LegacyPanelSkinId;
@@ -154,6 +154,7 @@ const legacyPanelSkins: LegacyPanelSkinOption[] = [
   { id: 'lh1t', label: 'LH1T' },
   { id: 'rele', label: 'RELE' },
   { id: 'foto', label: 'FOTO' },
+  { id: 'inout', label: 'INOUT' },
 ];
 
 const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
@@ -1518,16 +1519,19 @@ function LegacyThermostatPanel({
   const telemetryIconSrc = useMemo(() => {
     if (activeSkin === 'rele') return '/iot/PANEL_RELE/graf.png';
     if (activeSkin === 'foto') return '/iot/PANEL_FOTO/graf.png';
+    if (activeSkin === 'inout') return '/iot/PANEL_RELE/graf.png';
     return '/iot/lh1t/images/graf.png';
   }, [activeSkin]);
   const powerIconSrc = useMemo(() => {
     if (activeSkin === 'rele') return powerOn ? '/iot/PANEL_RELE/power_on.png' : '/iot/PANEL_RELE/power_off.png';
     if (activeSkin === 'foto') return powerOn ? '/iot/PANEL_FOTO/power_on.png' : '/iot/PANEL_FOTO/power_off.png';
+    if (activeSkin === 'inout') return powerOn ? '/iot/PANEL_RELE/power_on.png' : '/iot/PANEL_RELE/power_off.png';
     return powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png';
   }, [activeSkin, powerOn]);
   const displayBackgroundImage = useMemo(() => {
     if (activeSkin === 'rele') return '/iot/PANEL_RELE/DISPLAY_FONDO_RELE_1OFF.png';
     if (activeSkin === 'foto') return '/iot/PANEL_FOTO/DISPLAY_FOTO.png';
+    if (activeSkin === 'inout') return '/iot/PANEL_INOUT/DISPLAY_FONDO_INOUT.png';
     return '/iot/lh1t/images/DISPLAY_FONDO_TEMP.png';
   }, [activeSkin]);
   const primaryDisplayFontSize = useMemo(() => {
@@ -1551,6 +1555,18 @@ function LegacyThermostatPanel({
       fontSize: panelFotoPrimaryDisplayFontSize,
     }),
     [panelFotoPrimaryDisplayFontSize],
+  );
+  const inoutProbeReadings = useMemo(
+    () =>
+      [1, 2, 3, 4].map((probeIndex) => {
+        const probeValue = probeTemperature(reading, probeIndex);
+        const probeUnit = displayConfig.probeUnits[probeIndex - 1] ?? 'C';
+        if (!powerOn) return 'OFF';
+        if (probeValue == null) return probeUnit ? `-- ${probeUnit}` : '--';
+        const formattedValue = formatLedValue(probeValue, 1);
+        return probeUnit ? `${formattedValue} ${probeUnit}` : formattedValue;
+      }),
+    [displayConfig.probeUnits, powerOn, reading],
   );
 
   useEffect(() => {
@@ -1890,6 +1906,79 @@ function LegacyThermostatPanel({
             <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
             </div>
+            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
+              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
+                MODE {legacyMode}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
+                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
+              >
+                PROBE {activeProbe}
+              </button>
+              <button
+                type="button"
+                onClick={cycleSkin}
+                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
+                title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              >
+                SKIN
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {activeSkin === 'inout' ? (
+          <>
+            <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
+              Dato: {timestamp}
+            </div>
+            <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
+              {asset.name}
+            </div>
+
+            <div
+              className="absolute left-[8.2%] top-[48.6%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
+              style={secondaryDigitalValueStyle}
+            >
+              {inoutProbeReadings[0]}
+            </div>
+            <div
+              className="absolute left-[8.2%] top-[65.4%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
+              style={secondaryDigitalValueStyle}
+            >
+              {inoutProbeReadings[1]}
+            </div>
+            <div
+              className="absolute left-[60.4%] top-[48.6%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
+              style={secondaryDigitalValueStyle}
+            >
+              {inoutProbeReadings[2]}
+            </div>
+            <div
+              className="absolute left-[60.4%] top-[65.4%] flex h-[10.0%] w-[17.6%] items-center justify-center text-center text-red-600"
+              style={secondaryDigitalValueStyle}
+            >
+              {inoutProbeReadings[3]}
+            </div>
+
+            <IotTelemetryDialog
+              asset={asset}
+              trigger={(
+                <button
+                  type="button"
+                  className="absolute left-[81.5%] top-[31.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+                  aria-label="Abrir historico de telemetria"
+                >
+                  <img src={telemetryIconSrc} alt="Grafica" className="h-full w-full object-contain" />
+                </button>
+              )}
+            />
+            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+              <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
+            </div>
+
             <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
               <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
                 MODE {legacyMode}
