@@ -2051,7 +2051,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[69.0%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[69.0%] top-[64.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
@@ -2073,7 +2073,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[17.0%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[17.0%] top-[64.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
@@ -2087,7 +2087,7 @@ function LegacyThermostatPanel({
             <button
               type="button"
               onClick={() => setPhotoGalleryOpen(true)}
-              className="absolute left-[28.0%] top-[31.7%] h-[44.7%] w-[29.8%] overflow-hidden rounded-[14px] border border-white/20 bg-black/60 p-1.5 text-left transition hover:border-sky-300/80"
+              className="absolute left-[28.0%] top-[31.7%] h-[44.7%] w-[29.8%] overflow-hidden rounded-[14px] border border-white/1 bg-black/60 p-1.5 text-left transition hover:border-sky-300/80"
               aria-label="Abrir galeria de imagenes"
               title="Seleccionar imagen del panel INOUT"
             >
