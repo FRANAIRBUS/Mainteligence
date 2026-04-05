@@ -172,6 +172,8 @@ const primaryUnitDigitalValueStyle: CSSProperties = {
   fontSize: '0.46em',
   letterSpacing: '0.03em',
   lineHeight: 1,
+  display: 'inline-block',
+  transform: 'translateY(-0.22em)',
 };
 
 const secondaryUnitDigitalValueStyle: CSSProperties = {
@@ -179,6 +181,8 @@ const secondaryUnitDigitalValueStyle: CSSProperties = {
   fontSize: '0.62em',
   letterSpacing: '0.03em',
   lineHeight: 1,
+  display: 'inline-block',
+  transform: 'translateY(-0.22em)',
 };
 
 const legacyPanelSkins: LegacyPanelSkinOption[] = [
@@ -2039,10 +2043,10 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute right-[70.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute right-[70.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
-              <span className="inline-flex items-end gap-[0.12em]">
+              <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
                 <span>{inoutProbeReadingParts[0].valueText}</span>
                 {inoutProbeReadingParts[0].unitText ? (
                   <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[0].unitText}</span>
@@ -2050,10 +2054,10 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute left-[6.8%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute left-[6.8%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
-              <span className="inline-flex items-end gap-[0.12em]">
+              <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
                 <span>{inoutProbeReadingParts[2].valueText}</span>
                 {inoutProbeReadingParts[2].unitText ? (
                   <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[2].unitText}</span>
@@ -2061,10 +2065,10 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute left-[58.8%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute left-[58.8%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
-              <span className="inline-flex items-end gap-[0.12em]">
+              <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
                 <span>{inoutProbeReadingParts[1].valueText}</span>
                 {inoutProbeReadingParts[1].unitText ? (
                   <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[1].unitText}</span>
@@ -2072,10 +2076,10 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute left-[58.8%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute left-[58.8%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDigitalValueStyle}
             >
-              <span className="inline-flex items-end gap-[0.12em]">
+              <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
                 <span>{inoutProbeReadingParts[3].valueText}</span>
                 {inoutProbeReadingParts[3].unitText ? (
                   <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[3].unitText}</span>
