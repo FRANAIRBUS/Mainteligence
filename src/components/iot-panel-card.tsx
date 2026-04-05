@@ -88,6 +88,11 @@ type LegacyPanelDisplayConfig = {
   relayLabels: Record<string, string>;
 };
 
+type LegacyPanelPersistedConfig = LegacyPanelDisplayConfig & {
+  selectedSkin?: LegacyPanelSkinId;
+  selectedPhotoId?: string;
+};
+
 const modeOptions = [
   { value: 'cool', label: 'Cool' },
   { value: 'heat', label: 'Heat' },
@@ -218,6 +223,18 @@ function normalizeLegacyPanelDisplayConfig(value: unknown): LegacyPanelDisplayCo
     humidityUnit,
     setpointUnit,
     relayLabels,
+  };
+}
+
+function buildLegacyPanelPersistedConfig(
+  displayConfig: LegacyPanelDisplayConfig,
+  selectedSkin: LegacyPanelSkinId,
+  selectedPhotoId: string,
+): LegacyPanelPersistedConfig {
+  return {
+    ...displayConfig,
+    selectedSkin,
+    selectedPhotoId,
   };
 }
 
@@ -1477,6 +1494,7 @@ function LegacyThermostatPanel({
   const [displayConfigOpen, setDisplayConfigOpen] = useState(false);
   const [savingDisplayConfig, setSavingDisplayConfig] = useState(false);
   const [displayConfig, setDisplayConfig] = useState<LegacyPanelDisplayConfig>(() => defaultLegacyPanelDisplayConfig());
+  const panelConfigHydratedRef = useRef(false);
   const displayContainerRef = useRef<HTMLDivElement | null>(null);
   const [displayWidth, setDisplayWidth] = useState<number>(557);
   const skinStorageKey = `iot:legacy-skin:${asset.id}`;
@@ -1601,30 +1619,51 @@ function LegacyThermostatPanel({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    panelConfigHydratedRef.current = false;
+
     const savedSkin = window.localStorage.getItem(skinStorageKey);
     const savedPhoto = window.localStorage.getItem(photoStorageKey);
     const savedDisplayConfig = window.localStorage.getItem(displayConfigStorageKey);
+    const remotePanelConfig = isPlainObject(asset.iot?.panelDisplayConfig)
+      ? asset.iot.panelDisplayConfig as Record<string, unknown>
+      : null;
 
-    setActiveSkin(isLegacyPanelSkin(savedSkin) ? savedSkin : 'lh1t');
+    const remoteSelectedSkinRaw = typeof remotePanelConfig?.selectedSkin === 'string'
+      ? remotePanelConfig.selectedSkin
+      : null;
+    const remoteSelectedSkin: LegacyPanelSkinId | null = isLegacyPanelSkin(remoteSelectedSkinRaw)
+      ? remoteSelectedSkinRaw
+      : null;
+
+    const remoteSelectedPhotoRaw = typeof remotePanelConfig?.selectedPhotoId === 'string'
+      ? remotePanelConfig.selectedPhotoId
+      : null;
+    const remoteSelectedPhoto = remoteSelectedPhotoRaw
+      && legacyPanelPhotoOptions.some((option) => option.id === remoteSelectedPhotoRaw)
+      ? remoteSelectedPhotoRaw
+      : null;
+
+    setActiveSkin(remoteSelectedSkin ?? (isLegacyPanelSkin(savedSkin) ? savedSkin : 'lh1t'));
     setSelectedPhotoId(
-      legacyPanelPhotoOptions.some((option) => option.id === savedPhoto)
+      remoteSelectedPhoto
+        ?? (legacyPanelPhotoOptions.some((option) => option.id === savedPhoto)
         ? String(savedPhoto)
-        : (legacyPanelPhotoOptions[0]?.id ?? 'compresor'),
+        : (legacyPanelPhotoOptions[0]?.id ?? 'compresor')),
     );
     if (asset.iot?.panelDisplayConfig) {
       setDisplayConfig(normalizeLegacyPanelDisplayConfig(asset.iot.panelDisplayConfig));
-      return;
-    }
-    if (savedDisplayConfig) {
+    } else if (savedDisplayConfig) {
       try {
         const parsedConfig = JSON.parse(savedDisplayConfig);
         setDisplayConfig(normalizeLegacyPanelDisplayConfig(parsedConfig));
       } catch {
         setDisplayConfig(defaultLegacyPanelDisplayConfig());
       }
-      return;
+    } else {
+      setDisplayConfig(defaultLegacyPanelDisplayConfig());
     }
-    setDisplayConfig(defaultLegacyPanelDisplayConfig());
+
+    panelConfigHydratedRef.current = true;
   }, [asset.iot?.panelDisplayConfig, displayConfigStorageKey, photoStorageKey, skinStorageKey]);
 
   useEffect(() => {
@@ -1642,6 +1681,26 @@ function LegacyThermostatPanel({
     window.localStorage.setItem(displayConfigStorageKey, JSON.stringify(displayConfig));
   }, [displayConfig, displayConfigStorageKey]);
 
+  useEffect(() => {
+    if (!panelConfigHydratedRef.current) return;
+    if (!firestore || !organizationId) return;
+
+    const timeoutId = window.setTimeout(() => {
+      const assetRef = doc(firestore, orgDocPath(organizationId, 'assets', asset.id));
+      void setDoc(assetRef, {
+        iot: {
+          panelDisplayConfig: {
+            selectedSkin: activeSkin,
+            selectedPhotoId,
+          },
+          panelDisplayConfigUpdatedAt: serverTimestamp(),
+        },
+      }, { merge: true });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeSkin, selectedPhotoId, asset.id, firestore, organizationId]);
+
   const cycleSkin = () => {
     setActiveSkin((currentSkin) => nextLegacyPanelSkin(currentSkin));
   };
@@ -1657,7 +1716,7 @@ function LegacyThermostatPanel({
       const assetRef = doc(firestore, orgDocPath(organizationId, 'assets', asset.id));
       await setDoc(assetRef, {
         iot: {
-          panelDisplayConfig: displayConfig,
+          panelDisplayConfig: buildLegacyPanelPersistedConfig(displayConfig, activeSkin, selectedPhotoId),
           panelDisplayConfigUpdatedAt: serverTimestamp(),
         },
       }, { merge: true });

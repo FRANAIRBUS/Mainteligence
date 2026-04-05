@@ -293,6 +293,8 @@ export interface AssetIotPanelDisplayConfig {
   humidityUnit?: string;
   setpointUnit?: string;
   relayLabels?: Record<string, string>;
+  selectedSkin?: string;
+  selectedPhotoId?: string;
 }
 
 export interface AssetIotConfig {
