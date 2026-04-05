@@ -1628,16 +1628,20 @@ function LegacyThermostatPanel({
     return '/iot/lh1t/images/DISPLAY_FONDO_TEMP.png';
   }, [activeSkin]);
   const primaryDisplayFontSize = useMemo(() => {
-    const scaled = displayWidth * 0.118;
-    return `${Math.min(65, Math.max(34, scaled)).toFixed(1)}px`;
+    const scaled = displayWidth * 0.112;
+    return `${Math.min(60, Math.max(30, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const panelFotoPrimaryDisplayFontSize = useMemo(() => {
-    const scaled = displayWidth * 0.104;
-    return `${Math.min(62, Math.max(30, scaled)).toFixed(1)}px`;
+    const scaled = displayWidth * 0.099;
+    return `${Math.min(56, Math.max(28, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const inoutDisplayFontSize = useMemo(() => {
-    const scaled = displayWidth * 0.045;
-    return `${Math.min(38, Math.max(18, scaled)).toFixed(1)}px`;
+    const scaled = displayWidth * 0.047;
+    return `${Math.min(34, Math.max(18, scaled)).toFixed(1)}px`;
+  }, [displayWidth]);
+  const secondaryDisplayFontSize = useMemo(() => {
+    const scaled = displayWidth * 0.041;
+    return `${Math.min(22, Math.max(14, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const primaryDisplayStyle = useMemo<CSSProperties>(
     () => ({
@@ -1659,6 +1663,13 @@ function LegacyThermostatPanel({
       fontSize: inoutDisplayFontSize,
     }),
     [inoutDisplayFontSize],
+  );
+  const secondaryDisplayStyle = useMemo<CSSProperties>(
+    () => ({
+      ...secondaryDigitalValueStyle,
+      fontSize: secondaryDisplayFontSize,
+    }),
+    [secondaryDisplayFontSize],
   );
   const inoutProbeReadingParts = useMemo(
     () =>
@@ -1900,7 +1911,7 @@ function LegacyThermostatPanel({
             </div>
 
             <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-            <div className="absolute right-[47.0%] top-[64.9%] w-[14.0%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
+            <div className="absolute right-[47.0%] top-[64.9%] w-[14.0%] pr-[0.6%] text-right text-red-600" style={secondaryDisplayStyle}>
               <span className="inline-flex items-end justify-end gap-[0.14em]">
                 <span>{humidityValueParts.valueText}</span>
                 {humidityValueParts.unitText ? (
