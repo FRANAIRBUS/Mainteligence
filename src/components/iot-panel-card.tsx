@@ -162,7 +162,7 @@ const secondaryDigitalValueStyle: CSSProperties = {
 
 const inoutDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
-  fontSize: 'clamp(18px, 2.45vw, 21px)',
+  fontSize: 'clamp(20px, 2.45vw, 24px)',
   letterSpacing: '0.04em',
   lineHeight: 1,
 };
@@ -1978,22 +1978,19 @@ function LegacyThermostatPanel({
               </span>
             </div>
 
-            <div className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5">
+            <button
+              type="button"
+              onClick={() => setPhotoGalleryOpen(true)}
+              className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5 text-left transition hover:border-sky-300/80"
+              aria-label="Abrir galeria de imagenes"
+              title="Seleccionar imagen del panel foto"
+            >
               <img
                 src={selectedPhoto.imageSrc}
                 alt={`Imagen seleccionada: ${selectedPhoto.label}`}
                 className="h-full w-full object-contain"
               />
-              <button
-                type="button"
-                onClick={() => setPhotoGalleryOpen(true)}
-                className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/20 bg-black/55 text-slate-100 transition hover:border-sky-300/80 hover:text-sky-100"
-                aria-label="Abrir galeria de imagenes"
-                title="Seleccionar imagen del panel foto"
-              >
-                <Settings className="h-4 w-4" strokeWidth={2.2} />
-              </button>
-            </div>
+            </button>
 
             <IotTelemetryDialog
               asset={asset}
@@ -2087,22 +2084,19 @@ function LegacyThermostatPanel({
               </span>
             </div>
 
-            <div className="absolute left-[28.0%] top-[31.7%] h-[44.7%] w-[29.8%] overflow-hidden rounded-[14px] border border-white/20 bg-black/60 p-1.5">
+            <button
+              type="button"
+              onClick={() => setPhotoGalleryOpen(true)}
+              className="absolute left-[28.0%] top-[31.7%] h-[44.7%] w-[29.8%] overflow-hidden rounded-[14px] border border-white/20 bg-black/60 p-1.5 text-left transition hover:border-sky-300/80"
+              aria-label="Abrir galeria de imagenes"
+              title="Seleccionar imagen del panel INOUT"
+            >
               <img
                 src={selectedPhoto.imageSrc}
                 alt={`Imagen seleccionada: ${selectedPhoto.label}`}
                 className="h-full w-full object-contain"
               />
-              <button
-                type="button"
-                onClick={() => setPhotoGalleryOpen(true)}
-                className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/20 bg-black/55 text-slate-100 transition hover:border-sky-300/80 hover:text-sky-100"
-                aria-label="Abrir galeria de imagenes"
-                title="Seleccionar imagen del panel INOUT"
-              >
-                <Settings className="h-4 w-4" strokeWidth={2.2} />
-              </button>
-            </div>
+            </button>
 
             <IotTelemetryDialog
               asset={asset}
