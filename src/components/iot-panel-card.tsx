@@ -68,6 +68,11 @@ type CsvResult = {
   csv: string;
 };
 
+type LedDisplayParts = {
+  valueText: string;
+  unitText: string;
+};
+
 type LegacyPanelSkinId = 'lh1t' | 'rele' | 'foto' | 'inout';
 
 type LegacyPanelSkinOption = {
@@ -159,6 +164,20 @@ const inoutDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
   fontSize: 'clamp(14px, 2.45vw, 20px)',
   letterSpacing: '0.04em',
+  lineHeight: 1,
+};
+
+const primaryUnitDigitalValueStyle: CSSProperties = {
+  ...digitalFontStyle,
+  fontSize: '0.46em',
+  letterSpacing: '0.03em',
+  lineHeight: 1,
+};
+
+const secondaryUnitDigitalValueStyle: CSSProperties = {
+  ...digitalFontStyle,
+  fontSize: '0.62em',
+  letterSpacing: '0.03em',
   lineHeight: 1,
 };
 
@@ -555,16 +574,16 @@ function formatLedValue(value: number | null, decimals = 1) {
   return value.toFixed(decimals);
 }
 
-function formatLedValueWithUnit(
+function formatLedValueParts(
   value: number | null,
   unit: string,
   { decimals = 1, powerOn = true }: { decimals?: number; powerOn?: boolean } = {},
-) {
-  if (!powerOn) return 'OFF';
+): LedDisplayParts {
+  if (!powerOn) return { valueText: 'OFF', unitText: '' };
   const trimmedUnit = unit.trim();
-  if (value == null) return trimmedUnit ? `-- ${trimmedUnit}` : '--';
+  if (value == null) return { valueText: '--', unitText: trimmedUnit };
   const formattedValue = formatLedValue(value, decimals);
-  return trimmedUnit ? `${formattedValue} ${trimmedUnit}` : formattedValue;
+  return { valueText: formattedValue, unitText: trimmedUnit };
 }
 
 function telemetryRange(preset: TelemetryPreset) {
@@ -1525,9 +1544,9 @@ function LegacyThermostatPanel({
   const activeProbeUnit = displayConfig.probeUnits[activeProbe - 1] ?? 'C';
   const humidityUnit = displayConfig.humidityUnit || '%';
   const setpointUnit = displayConfig.setpointUnit || activeProbeUnit;
-  const primaryValue = formatLedValueWithUnit(temperature, activeProbeUnit, { decimals: 1, powerOn });
-  const panelFotoPrimaryValue = primaryValue;
-  const humidityValue = formatLedValueWithUnit(humidity, humidityUnit, { decimals: 0, powerOn });
+  const primaryValueParts = formatLedValueParts(temperature, activeProbeUnit, { decimals: 1, powerOn });
+  const panelFotoPrimaryValueParts = primaryValueParts;
+  const humidityValueParts = formatLedValueParts(humidity, humidityUnit, { decimals: 0, powerOn });
   const relayDisplayStates = relayDisplayItems(relays);
   const relaySlots = useMemo(() => relayPanelSlots(relays), [relays]);
   const configurableRelayLabels = useMemo(() => {
@@ -1593,12 +1612,12 @@ function LegacyThermostatPanel({
     }),
     [panelFotoPrimaryDisplayFontSize],
   );
-  const inoutProbeReadings = useMemo(
+  const inoutProbeReadingParts = useMemo(
     () =>
       [1, 2, 3, 4].map((probeIndex) => {
         const probeValue = probeTemperature(reading, probeIndex);
         const probeUnit = displayConfig.probeUnits[probeIndex - 1] ?? 'C';
-        return formatLedValueWithUnit(probeValue, probeUnit, { decimals: 1, powerOn });
+        return formatLedValueParts(probeValue, probeUnit, { decimals: 1, powerOn });
       }),
     [displayConfig.probeUnits, powerOn, reading],
   );
@@ -1807,12 +1826,22 @@ function LegacyThermostatPanel({
               className="absolute top-[38.5%] right-[45.8%] w-[35%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[44.4%] sm:w-[34%] lg:right-[44.2%] lg:w-[34%]"
               style={primaryDisplayStyle}
             >
-              {primaryValue}
+              <span className="inline-flex items-end justify-end gap-[0.16em]">
+                <span>{primaryValueParts.valueText}</span>
+                {primaryValueParts.unitText ? (
+                  <span style={primaryUnitDigitalValueStyle}>{primaryValueParts.unitText}</span>
+                ) : null}
+              </span>
             </div>
 
             <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
             <div className="absolute right-[44.0%] top-[64.9%] w-[14.0%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
-              {humidityValue}
+              <span className="inline-flex items-end justify-end gap-[0.14em]">
+                <span>{humidityValueParts.valueText}</span>
+                {humidityValueParts.unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{humidityValueParts.unitText}</span>
+                ) : null}
+              </span>
             </div>
 
             {relay1On ? (
@@ -1937,7 +1966,12 @@ function LegacyThermostatPanel({
             </div>
 
             <div className="absolute top-[45.8%] right-[57.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
-              {panelFotoPrimaryValue}
+              <span className="inline-flex items-end justify-end gap-[0.16em]">
+                <span>{panelFotoPrimaryValueParts.valueText}</span>
+                {panelFotoPrimaryValueParts.unitText ? (
+                  <span style={primaryUnitDigitalValueStyle}>{panelFotoPrimaryValueParts.unitText}</span>
+                ) : null}
+              </span>
             </div>
 
             <div className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5">
@@ -2005,28 +2039,48 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute right-[60.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute right-[70.0%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
-              {inoutProbeReadings[0]}
+              <span className="inline-flex items-end gap-[0.12em]">
+                <span>{inoutProbeReadingParts[0].valueText}</span>
+                {inoutProbeReadingParts[0].unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[0].unitText}</span>
+                ) : null}
+              </span>
             </div>
             <div
               className="absolute left-[6.8%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
-              {inoutProbeReadings[2]}
+              <span className="inline-flex items-end gap-[0.12em]">
+                <span>{inoutProbeReadingParts[2].valueText}</span>
+                {inoutProbeReadingParts[2].unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[2].unitText}</span>
+                ) : null}
+              </span>
             </div>
             <div
-              className="absolute left-[58.8%] top-[36.%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
+              className="absolute left-[58.8%] top-[36.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
-              {inoutProbeReadings[1]}
+              <span className="inline-flex items-end gap-[0.12em]">
+                <span>{inoutProbeReadingParts[1].valueText}</span>
+                {inoutProbeReadingParts[1].unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[1].unitText}</span>
+                ) : null}
+              </span>
             </div>
             <div
               className="absolute left-[58.8%] top-[62.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
-              {inoutProbeReadings[3]}
+              <span className="inline-flex items-end gap-[0.12em]">
+                <span>{inoutProbeReadingParts[3].valueText}</span>
+                {inoutProbeReadingParts[3].unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[3].unitText}</span>
+                ) : null}
+              </span>
             </div>
 
             <div className="absolute left-[27.6%] top-[31.7%] h-[44.7%] w-[29.8%] overflow-hidden rounded-[14px] border border-white/20 bg-black/60 p-1.5">
