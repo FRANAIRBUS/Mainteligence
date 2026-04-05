@@ -157,7 +157,7 @@ const secondaryDigitalValueStyle: CSSProperties = {
 
 const inoutDigitalValueStyle: CSSProperties = {
   ...digitalFontStyle,
-  fontSize: 'clamp(13px, 2.2vw, 18px)',
+  fontSize: 'clamp(14px, 2.45vw, 20px)',
   letterSpacing: '0.04em',
   lineHeight: 1,
 };
@@ -2005,25 +2005,25 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute left-[7.0%] top-[40.8%] flex h-[11.2%] w-[19.4%] items-center justify-center text-center text-red-600"
+              className="absolute left-[6.8%] top-[39.2%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[0]}
             </div>
             <div
-              className="absolute left-[7.0%] top-[59.3%] flex h-[11.2%] w-[19.4%] items-center justify-center text-center text-red-600"
+              className="absolute left-[6.8%] top-[61.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[2]}
             </div>
             <div
-              className="absolute left-[59.2%] top-[40.8%] flex h-[11.2%] w-[19.4%] items-center justify-center text-center text-red-600"
+              className="absolute left-[58.8%] top-[39.2%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[1]}
             </div>
             <div
-              className="absolute left-[59.2%] top-[59.3%] flex h-[11.2%] w-[19.4%] items-center justify-center text-center text-red-600"
+              className="absolute left-[58.8%] top-[61.0%] flex h-[12.0%] w-[20.0%] items-center justify-center text-center text-red-600"
               style={inoutDigitalValueStyle}
             >
               {inoutProbeReadings[3]}
