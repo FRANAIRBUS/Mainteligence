@@ -261,6 +261,15 @@ function buildLegacyPanelPersistedConfig(
   };
 }
 
+function cloneLegacyPanelDisplayConfig(displayConfig: LegacyPanelDisplayConfig): LegacyPanelDisplayConfig {
+  return {
+    probeUnits: [...displayConfig.probeUnits] as [string, string, string, string],
+    humidityUnit: displayConfig.humidityUnit,
+    setpointUnit: displayConfig.setpointUnit,
+    relayLabels: { ...displayConfig.relayLabels },
+  };
+}
+
 function toDateValue(value: DateLike): Date | null {
   if (!value) return null;
   if (value instanceof Date) {
@@ -1529,6 +1538,7 @@ function LegacyThermostatPanel({
   const [displayConfigOpen, setDisplayConfigOpen] = useState(false);
   const [savingDisplayConfig, setSavingDisplayConfig] = useState(false);
   const [displayConfig, setDisplayConfig] = useState<LegacyPanelDisplayConfig>(() => defaultLegacyPanelDisplayConfig());
+  const [displayConfigDraft, setDisplayConfigDraft] = useState<LegacyPanelDisplayConfig>(() => defaultLegacyPanelDisplayConfig());
   const panelConfigHydratedRef = useRef(false);
   const displayContainerRef = useRef<HTMLDivElement | null>(null);
   const [displayWidth, setDisplayWidth] = useState<number>(557);
@@ -1561,6 +1571,16 @@ function LegacyThermostatPanel({
   const relayDisplayLabel = (label: string) => {
     const normalizedLabel = label.trim().toUpperCase();
     return displayConfig.relayLabels[normalizedLabel] || normalizedLabel;
+  };
+  const openDisplayConfigDialog = () => {
+    setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(displayConfig));
+    setDisplayConfigOpen(true);
+  };
+  const handleDisplayConfigOpenChange = (open: boolean) => {
+    if (open) {
+      setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(displayConfig));
+    }
+    setDisplayConfigOpen(open);
   };
   const selectedPhoto = useMemo<LegacyPanelPhotoOption>(
     () =>
@@ -1683,16 +1703,24 @@ function LegacyThermostatPanel({
         : (legacyPanelPhotoOptions[0]?.id ?? 'compresor')),
     );
     if (asset.iot?.panelDisplayConfig) {
-      setDisplayConfig(normalizeLegacyPanelDisplayConfig(asset.iot.panelDisplayConfig));
+      const nextDisplayConfig = normalizeLegacyPanelDisplayConfig(asset.iot.panelDisplayConfig);
+      setDisplayConfig(nextDisplayConfig);
+      setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(nextDisplayConfig));
     } else if (savedDisplayConfig) {
       try {
         const parsedConfig = JSON.parse(savedDisplayConfig);
-        setDisplayConfig(normalizeLegacyPanelDisplayConfig(parsedConfig));
+        const nextDisplayConfig = normalizeLegacyPanelDisplayConfig(parsedConfig);
+        setDisplayConfig(nextDisplayConfig);
+        setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(nextDisplayConfig));
       } catch {
-        setDisplayConfig(defaultLegacyPanelDisplayConfig());
+        const nextDisplayConfig = defaultLegacyPanelDisplayConfig();
+        setDisplayConfig(nextDisplayConfig);
+        setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(nextDisplayConfig));
       }
     } else {
-      setDisplayConfig(defaultLegacyPanelDisplayConfig());
+      const nextDisplayConfig = defaultLegacyPanelDisplayConfig();
+      setDisplayConfig(nextDisplayConfig);
+      setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(nextDisplayConfig));
     }
 
     panelConfigHydratedRef.current = true;
@@ -1738,7 +1766,10 @@ function LegacyThermostatPanel({
   };
 
   const handleSaveDisplayConfig = async () => {
+    const nextDisplayConfig = cloneLegacyPanelDisplayConfig(displayConfigDraft);
+
     if (!firestore || !organizationId) {
+      setDisplayConfig(nextDisplayConfig);
       setDisplayConfigOpen(false);
       return;
     }
@@ -1748,10 +1779,12 @@ function LegacyThermostatPanel({
       const assetRef = doc(firestore, orgDocPath(organizationId, 'assets', asset.id));
       await setDoc(assetRef, {
         iot: {
-          panelDisplayConfig: buildLegacyPanelPersistedConfig(displayConfig, activeSkin, selectedPhotoId),
+          panelDisplayConfig: buildLegacyPanelPersistedConfig(nextDisplayConfig, activeSkin, selectedPhotoId),
           panelDisplayConfigUpdatedAt: serverTimestamp(),
         },
       }, { merge: true });
+
+      setDisplayConfig(nextDisplayConfig);
 
       toast({
         title: 'Configuracion guardada',
@@ -1827,7 +1860,7 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute top-[38.5%] right-[45.8%] w-[35%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[44.4%] sm:w-[34%] lg:right-[44.2%] lg:w-[34%]"
+              className="absolute top-[38.5%] right-[47.8%] w-[35%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[46.4%] sm:w-[34%] lg:right-[46.2%] lg:w-[34%]"
               style={primaryDisplayStyle}
             >
               <span className="inline-flex items-end justify-end gap-[0.16em]">
@@ -1839,7 +1872,7 @@ function LegacyThermostatPanel({
             </div>
 
             <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-            <div className="absolute right-[44.0%] top-[64.9%] w-[14.0%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
+            <div className="absolute right-[47.0%] top-[64.9%] w-[14.0%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
               <span className="inline-flex items-end justify-end gap-[0.14em]">
                 <span>{humidityValueParts.valueText}</span>
                 {humidityValueParts.unitText ? (
@@ -1877,7 +1910,7 @@ function LegacyThermostatPanel({
             />
             <button
               type="button"
-              onClick={() => setDisplayConfigOpen(true)}
+              onClick={openDisplayConfigDialog}
               className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717] transition hover:border-sky-300/70"
               aria-label="Abrir configuracion del panel"
               title="Configurar unidades y etiquetas"
@@ -2174,7 +2207,7 @@ function LegacyThermostatPanel({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={displayConfigOpen} onOpenChange={setDisplayConfigOpen}>
+      <Dialog open={displayConfigOpen} onOpenChange={handleDisplayConfigOpenChange}>
         <DialogContent className="max-w-2xl border-white/10 bg-slate-950 text-white">
           <DialogHeader>
             <DialogTitle className="text-white">Configuracion de unidades y etiquetas</DialogTitle>
@@ -2187,7 +2220,7 @@ function LegacyThermostatPanel({
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="mb-2 text-sm font-semibold text-slate-200">Unidades de sondas</div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {displayConfig.probeUnits.map((unit, index) => (
+                {displayConfigDraft.probeUnits.map((unit, index) => (
                   <div key={`probe-unit-${index + 1}`}>
                     <Label htmlFor={`probe-unit-${asset.id}-${index + 1}`}>Sonda {index + 1}</Label>
                     <Input
@@ -2195,7 +2228,7 @@ function LegacyThermostatPanel({
                       value={unit}
                       onChange={(e) => {
                         const nextValue = e.target.value;
-                        setDisplayConfig((currentConfig) => {
+                        setDisplayConfigDraft((currentConfig) => {
                           const nextProbeUnits = [...currentConfig.probeUnits] as [string, string, string, string];
                           nextProbeUnits[index] = nextValue;
                           return {
@@ -2218,10 +2251,10 @@ function LegacyThermostatPanel({
                   <Label htmlFor={`humidity-unit-${asset.id}`}>Humedad</Label>
                   <Input
                     id={`humidity-unit-${asset.id}`}
-                    value={displayConfig.humidityUnit}
+                    value={displayConfigDraft.humidityUnit}
                     onChange={(e) => {
                       const nextValue = e.target.value;
-                      setDisplayConfig((currentConfig) => ({
+                      setDisplayConfigDraft((currentConfig) => ({
                         ...currentConfig,
                         humidityUnit: nextValue,
                       }));
@@ -2233,10 +2266,10 @@ function LegacyThermostatPanel({
                   <Label htmlFor={`setpoint-unit-${asset.id}`}>Consigna</Label>
                   <Input
                     id={`setpoint-unit-${asset.id}`}
-                    value={displayConfig.setpointUnit}
+                    value={displayConfigDraft.setpointUnit}
                     onChange={(e) => {
                       const nextValue = e.target.value;
-                      setDisplayConfig((currentConfig) => ({
+                      setDisplayConfigDraft((currentConfig) => ({
                         ...currentConfig,
                         setpointUnit: nextValue,
                       }));
@@ -2255,10 +2288,10 @@ function LegacyThermostatPanel({
                     <Label htmlFor={`relay-label-${asset.id}-${label}`}>{label}</Label>
                     <Input
                       id={`relay-label-${asset.id}-${label}`}
-                      value={displayConfig.relayLabels[label] ?? ''}
+                      value={displayConfigDraft.relayLabels[label] ?? ''}
                       onChange={(e) => {
                         const nextValue = e.target.value;
-                        setDisplayConfig((currentConfig) => ({
+                        setDisplayConfigDraft((currentConfig) => ({
                           ...currentConfig,
                           relayLabels: {
                             ...currentConfig.relayLabels,
@@ -2277,7 +2310,7 @@ function LegacyThermostatPanel({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setDisplayConfig(defaultLegacyPanelDisplayConfig())}
+                onClick={() => setDisplayConfigDraft(defaultLegacyPanelDisplayConfig())}
                 disabled={savingDisplayConfig}
               >
                 Restablecer
