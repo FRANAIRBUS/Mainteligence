@@ -2032,7 +2032,7 @@ function LegacyThermostatPanel({
             <button
               type="button"
               onClick={() => setPhotoGalleryOpen(true)}
-              className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5 text-left transition hover:border-sky-300/80"
+              className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] text-left"
               aria-label="Abrir galeria de imagenes"
               title="Seleccionar imagen del panel foto"
             >
@@ -2138,7 +2138,7 @@ function LegacyThermostatPanel({
             <button
               type="button"
               onClick={() => setPhotoGalleryOpen(true)}
-              className="absolute left-[28.0%] top-[31.7%] h-[44.7%] w-[29.8%] overflow-hidden rounded-[14px] border border-white/1 bg-black/60 p-1.5 text-left transition hover:border-sky-300/80"
+              className="absolute left-[28.0%] top-[31.7%] h-[44.7%] w-[29.8%] overflow-hidden rounded-[14px] text-left"
               aria-label="Abrir galeria de imagenes"
               title="Seleccionar imagen del panel INOUT"
             >
