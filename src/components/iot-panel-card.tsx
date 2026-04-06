@@ -2113,7 +2113,7 @@ function LegacyThermostatPanel({
             </div>
 
             <div
-              className="absolute right-[66.0%] top-[38.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[66.0%] top-[37.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
@@ -2124,7 +2124,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[66.0%] top-[62.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[66.0%] top-[61.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
@@ -2135,7 +2135,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[16.5%] top-[38.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[16.5%] top-[37.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
@@ -2146,7 +2146,7 @@ function LegacyThermostatPanel({
               </span>
             </div>
             <div
-              className="absolute right-[16.5%] top-[62.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              className="absolute right-[16.5%] top-[61.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
               style={inoutDisplayStyle}
             >
               <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
