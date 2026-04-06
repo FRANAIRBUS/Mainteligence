@@ -1638,11 +1638,11 @@ function LegacyThermostatPanel({
   }, [displayWidth]);
   const inoutDisplayFontSize = useMemo(() => {
     const scaled = displayWidth * 0.047;
-    return `${Math.min(34, Math.max(18, scaled)).toFixed(1)}px`;
+    return `${Math.min(36, Math.max(22, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const secondaryDisplayFontSize = useMemo(() => {
     const scaled = displayWidth * 0.041;
-    return `${Math.min(34, Math.max(18, scaled)).toFixed(1)}px`;
+    return `${Math.min(36, Math.max(22, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const primaryDisplayStyle = useMemo<CSSProperties>(
     () => ({
