@@ -2167,7 +2167,7 @@ function LegacyThermostatPanel({
               <img
                 src={selectedPhoto.imageSrc}
                 alt={`Imagen seleccionada: ${selectedPhoto.label}`}
-                className="h-full w-full object-contain"
+                className="h-full w-full origin-center scale-[0.8] object-contain"
               />
             </button>
 
@@ -2179,12 +2179,12 @@ function LegacyThermostatPanel({
                   className="absolute left-[81.5%] top-[31.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
                   aria-label="Abrir historico de telemetria"
                 >
-                  <img src={telemetryIconSrc} alt="Grafica" className="h-full w-full object-contain" />
+                  <img src={telemetryIconSrc} alt="Grafica" className="h-full w-full origin-center scale-[0.8] object-contain" />
                 </button>
               )}
             />
             <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
-              <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
+              <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full origin-center scale-[0.8] object-contain" />
             </div>
 
             <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
