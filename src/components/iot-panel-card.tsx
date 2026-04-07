@@ -2129,37 +2129,37 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute top-[40.0%] right-[57.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]">
-              <span className="inline-flex w-full items-end justify-end gap-[0.34em]">
-                <span className="text-[10px] font-semibold tracking-[0.08em] sm:text-[11px]">T1</span>
-                <span className="inline-flex items-end justify-end gap-[0.16em]" style={secondaryDisplayStyle}>
-                  <span>{panel2TempProbeReadingParts[0]?.valueText ?? '--'}</span>
-                  {panel2TempProbeReadingParts[0]?.unitText ? (
-                    <span style={secondaryUnitDigitalValueStyle}>{panel2TempProbeReadingParts[0].unitText}</span>
-                  ) : null}
-                </span>
+            <div className="absolute left-[18.2%] top-[47.2%] text-[10px] font-semibold tracking-[0.08em] text-red-600 sm:text-[11px]">
+              T1
+            </div>
+            <div className="absolute top-[45.8%] right-[57.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
+              <span className="inline-flex items-end justify-end gap-[0.16em]">
+                <span>{panel2TempProbeReadingParts[0]?.valueText ?? '--'}</span>
+                {panel2TempProbeReadingParts[0]?.unitText ? (
+                  <span style={primaryUnitDigitalValueStyle}>{panel2TempProbeReadingParts[0].unitText}</span>
+                ) : null}
               </span>
             </div>
-            <div className="absolute top-[54.8%] right-[57.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]">
-              <span className="inline-flex w-full items-end justify-end gap-[0.34em]">
-                <span className="text-[10px] font-semibold tracking-[0.08em] sm:text-[11px]">T2</span>
-                <span className="inline-flex items-end justify-end gap-[0.16em]" style={secondaryDisplayStyle}>
-                  <span>{panel2TempProbeReadingParts[1]?.valueText ?? '--'}</span>
-                  {panel2TempProbeReadingParts[1]?.unitText ? (
-                    <span style={secondaryUnitDigitalValueStyle}>{panel2TempProbeReadingParts[1].unitText}</span>
-                  ) : null}
-                </span>
+            <div className="absolute left-[18.2%] top-[61.9%] text-[10px] font-semibold tracking-[0.08em] text-red-600 sm:text-[11px]">
+              T2
+            </div>
+            <div className="absolute top-[60.5%] right-[57.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
+              <span className="inline-flex items-end justify-end gap-[0.16em]">
+                <span>{panel2TempProbeReadingParts[1]?.valueText ?? '--'}</span>
+                {panel2TempProbeReadingParts[1]?.unitText ? (
+                  <span style={primaryUnitDigitalValueStyle}>{panel2TempProbeReadingParts[1].unitText}</span>
+                ) : null}
               </span>
             </div>
-            <div className="absolute top-[68.8%] right-[57.8%] flex w-[30%] min-w-[8ch] items-center justify-end gap-2 pr-[0.08em] text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]">
-              {panel2TempRelayStates.map((relayActive, index) => (
-                <span
-                  key={`panel-2temp-relay-${index + 1}`}
-                  className={`text-[10px] font-semibold tracking-[0.1em] ${relayActive ? 'opacity-100' : 'opacity-35'}`}
-                >
-                  R{index + 1}
-                </span>
-              ))}
+
+            <div className={`absolute left-[16.8%] top-[69.3%] text-[10px] font-semibold tracking-[0.1em] text-red-600 ${panel2TempRelayStates[0] ? 'opacity-100' : 'opacity-35'}`}>
+              R1
+            </div>
+            <div className={`absolute left-[23.4%] top-[69.3%] text-[10px] font-semibold tracking-[0.1em] text-red-600 ${panel2TempRelayStates[1] ? 'opacity-100' : 'opacity-35'}`}>
+              R2
+            </div>
+            <div className={`absolute left-[30.0%] top-[69.3%] text-[10px] font-semibold tracking-[0.1em] text-red-600 ${panel2TempRelayStates[2] ? 'opacity-100' : 'opacity-35'}`}>
+              R3
             </div>
 
             <button
