@@ -73,7 +73,7 @@ type LedDisplayParts = {
   unitText: string;
 };
 
-type LegacyPanelSkinId = 'lh1t' | 'rele' | 'foto' | 'inout';
+type LegacyPanelSkinId = 'lh1t' | 'rele' | 'foto' | 'panel_2temp' | 'inout';
 
 type LegacyPanelSkinOption = {
   id: LegacyPanelSkinId;
@@ -188,6 +188,7 @@ const legacyPanelSkins: LegacyPanelSkinOption[] = [
   { id: 'lh1t', label: 'LH1T' },
   { id: 'rele', label: 'RELE' },
   { id: 'foto', label: 'FOTO' },
+  { id: 'panel_2temp', label: 'PANEL_2TEMP' },
   { id: 'inout', label: 'INOUT' },
 ];
 
@@ -1577,6 +1578,10 @@ function LegacyThermostatPanel({
   const humidityValueParts = formatLedValueParts(humidity, humidityUnit, { decimals: 0, powerOn });
   const relayDisplayStates = relayDisplayItems(relays);
   const relaySlots = useMemo(() => relayPanelSlots(relays), [relays]);
+  const panel2TempRelayStates = useMemo(
+    () => [0, 1, 2].map((index) => relaySlots[index]?.active ?? false),
+    [relaySlots],
+  );
   const configurableRelayLabels = useMemo(() => {
     const labels = relayDisplayStates.map((relay) => relay.label.trim().toUpperCase()).filter(Boolean);
     if (labels.length > 0) return labels;
@@ -1613,18 +1618,21 @@ function LegacyThermostatPanel({
   const telemetryIconSrc = useMemo(() => {
     if (activeSkin === 'rele') return '/iot/PANEL_RELE/graf.png';
     if (activeSkin === 'foto') return '/iot/PANEL_FOTO/graf.png';
+    if (activeSkin === 'panel_2temp') return '/iot/PANEL_FOTO/graf.png';
     if (activeSkin === 'inout') return '/iot/PANEL_RELE/graf.png';
     return '/iot/lh1t/images/graf.png';
   }, [activeSkin]);
   const powerIconSrc = useMemo(() => {
     if (activeSkin === 'rele') return powerOn ? '/iot/PANEL_RELE/power_on.png' : '/iot/PANEL_RELE/power_off.png';
     if (activeSkin === 'foto') return powerOn ? '/iot/PANEL_FOTO/power_on.png' : '/iot/PANEL_FOTO/power_off.png';
+    if (activeSkin === 'panel_2temp') return powerOn ? '/iot/PANEL_FOTO/power_on.png' : '/iot/PANEL_FOTO/power_off.png';
     if (activeSkin === 'inout') return powerOn ? '/iot/PANEL_RELE/power_on.png' : '/iot/PANEL_RELE/power_off.png';
     return powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png';
   }, [activeSkin, powerOn]);
   const displayBackgroundImage = useMemo(() => {
     if (activeSkin === 'rele') return '/iot/PANEL_RELE/DISPLAY_FONDO_RELE_1OFF.png';
     if (activeSkin === 'foto') return '/iot/PANEL_FOTO/DISPLAY_FOTO.png';
+    if (activeSkin === 'panel_2temp') return '/iot/PANEL_FOTO/DISPLAY_FOTO.png';
     if (activeSkin === 'inout') return '/iot/PANEL_INOUT/DISPLAY_FONDO_INOUT2.png';
     return '/iot/lh1t/images/DISPLAY_FONDO_TEMP.png';
   }, [activeSkin]);
@@ -1675,6 +1683,15 @@ function LegacyThermostatPanel({
   const inoutProbeReadingParts = useMemo(
     () =>
       [1, 2, 3, 4].map((probeIndex) => {
+        const probeValue = probeTemperature(reading, probeIndex);
+        const probeUnit = displayConfig.probeUnits[probeIndex - 1] ?? 'C';
+        return formatLedValueParts(probeValue, probeUnit, { decimals: 1, powerOn });
+      }),
+    [displayConfig.probeUnits, powerOn, reading],
+  );
+  const panel2TempProbeReadingParts = useMemo(
+    () =>
+      [1, 2].map((probeIndex) => {
         const probeValue = probeTemperature(reading, probeIndex);
         const probeUnit = displayConfig.probeUnits[probeIndex - 1] ?? 'C';
         return formatLedValueParts(probeValue, probeUnit, { decimals: 1, powerOn });
@@ -2057,6 +2074,101 @@ function LegacyThermostatPanel({
               className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] text-left"
               aria-label="Abrir galeria de imagenes"
               title="Seleccionar imagen del panel foto"
+            >
+              <img
+                src={selectedPhoto.imageSrc}
+                alt={`Imagen seleccionada: ${selectedPhoto.label}`}
+                className="h-full w-full object-contain"
+              />
+            </button>
+
+            <IotTelemetryDialog
+              asset={asset}
+              trigger={(
+                <button
+                  type="button"
+                  className="absolute left-[81.5%] top-[31.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+                  aria-label="Abrir historico de telemetria"
+                >
+                  <img src={telemetryIconSrc} alt="Grafica" className="h-full w-full object-contain" />
+                </button>
+              )}
+            />
+            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+              <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
+            </div>
+            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
+              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
+                MODE {legacyMode}
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
+                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
+              >
+                PROBE {activeProbe}
+              </button>
+              <button
+                type="button"
+                onClick={cycleSkin}
+                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
+                title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              >
+                SKIN
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {activeSkin === 'panel_2temp' ? (
+          <>
+            <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
+              Dato: {timestamp}
+            </div>
+            <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
+              {asset.name}
+            </div>
+
+            <div className="absolute left-[17.2%] top-[40.0%] h-[32.0%] w-[28.6%] rounded-[12px] border border-red-500/25 bg-black/10 px-[2.4%] py-[1.8%]">
+              <div className="grid h-full grid-rows-[1fr_1fr_auto]">
+                {panel2TempProbeReadingParts.map((probeParts, index) => (
+                  <div key={`panel-2temp-probe-${index + 1}`} className="grid grid-cols-[22%,1fr] items-end gap-[5%]">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-red-600 sm:text-[11px]">
+                      T{index + 1}
+                    </div>
+                    <div className="text-right text-red-600">
+                      <span className="inline-flex items-end justify-end gap-[0.12em]" style={secondaryDisplayStyle}>
+                        <span>{probeParts.valueText}</span>
+                        {probeParts.unitText ? (
+                          <span style={secondaryUnitDigitalValueStyle}>{probeParts.unitText}</span>
+                        ) : null}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-1.5 pt-[1%]">
+                  {panel2TempRelayStates.map((relayActive, index) => (
+                    <div
+                      key={`panel-2temp-relay-${index + 1}`}
+                      className={`rounded-md border px-2 py-0.5 text-[9px] font-semibold tracking-[0.1em] sm:text-[10px] ${
+                        relayActive
+                          ? 'border-red-500/70 bg-red-500/20 text-red-600 opacity-100'
+                          : 'border-red-500/55 bg-red-500/10 text-red-600 opacity-35'
+                      }`}
+                    >
+                      R{index + 1}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setPhotoGalleryOpen(true)}
+              className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] text-left"
+              aria-label="Abrir galeria de imagenes"
+              title="Seleccionar imagen del panel 2TEMP"
             >
               <img
                 src={selectedPhoto.imageSrc}
