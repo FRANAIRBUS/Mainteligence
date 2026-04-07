@@ -1499,17 +1499,6 @@ function getRelayState(relays: AssetIotRelay[], label: string) {
   return relays.find((relay) => relay.label === label)?.active ?? false;
 }
 
-function thermostatMode(reading: AssetIotReading | null | undefined) {
-  const directMode = typeof reading?.mode === 'string' ? reading.mode.toLowerCase() : '';
-  if (directMode === 'heat' || directMode === 'heating') return 'HEAT';
-  if (directMode === 'cool' || directMode === 'cooling') return 'COOL';
-
-  const rawMode = String(reading?.raw?.MODEUP ?? '').trim();
-  if (rawMode === '1') return 'HEAT';
-  if (rawMode === '0') return 'COOL';
-  return 'AUTO';
-}
-
 function isLegacyPanelSkin(value: string | null | undefined): value is LegacyPanelSkinId {
   return legacyPanelSkins.some((skin) => skin.id === value);
 }
@@ -1566,7 +1555,6 @@ function LegacyThermostatPanel({
   const relay3On = getRelayState(relays, 'REL3');
   const alarmOn = alarms.length > 0;
   const timestamp = formatReadingDate(readingTimestamp(asset, reading));
-  const legacyMode = thermostatMode(reading);
   const temperature = probeTemperature(reading, activeProbe);
   const humidity = probeHumidity(reading, activeProbe);
   const setpoint = probeSetpoint(reading, activeProbe) ?? probeSetpoint(reading, 1);
@@ -1875,27 +1863,6 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-                MODE {legacyMode}
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
-                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
-              >
-                PROBE {activeProbe}
-              </button>
-              <button
-                type="button"
-                onClick={cycleSkin}
-                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
-                title={`Cambiar skin (actual: ${activeSkinLabel})`}
-              >
-                SKIN
-              </button>
-            </div>
-
             <IotTelemetryDialog
               asset={asset}
               trigger={(
@@ -1908,9 +1875,15 @@ function LegacyThermostatPanel({
                 </button>
               )}
             />
-            <div className="absolute left-[84%] top-[62.5%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[84%] top-[62.5%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5 transition hover:bg-black/15"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
-            </div>
+            </button>
 
             <div className="absolute left-[6.3%] top-[18.3%] h-[8.3%] w-[4.5%]" style={{ opacity: alarmOn ? 1 : 0 }}>
               <img src="/iot/lh1t/images/alarma.png" alt="Alarma" className="h-full w-full object-contain" />
@@ -2023,30 +1996,15 @@ function LegacyThermostatPanel({
                 </button>
               )}
             />
-            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
-            </div>
-
-            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-                MODE {legacyMode}
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
-                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
-              >
-                PROBE {activeProbe}
-              </button>
-              <button
-                type="button"
-                onClick={cycleSkin}
-                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
-                title={`Cambiar skin (actual: ${activeSkinLabel})`}
-              >
-                SKIN
-              </button>
-            </div>
+            </button>
           </>
         ) : null}
 
@@ -2094,29 +2052,15 @@ function LegacyThermostatPanel({
                 </button>
               )}
             />
-            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
-            </div>
-            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-                MODE {legacyMode}
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
-                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
-              >
-                PROBE {activeProbe}
-              </button>
-              <button
-                type="button"
-                onClick={cycleSkin}
-                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
-                title={`Cambiar skin (actual: ${activeSkinLabel})`}
-              >
-                SKIN
-              </button>
-            </div>
+            </button>
           </>
         ) : null}
 
@@ -2188,29 +2132,15 @@ function LegacyThermostatPanel({
                 </button>
               )}
             />
-            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
-            </div>
-            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-                MODE {legacyMode}
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
-                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
-              >
-                PROBE {activeProbe}
-              </button>
-              <button
-                type="button"
-                onClick={cycleSkin}
-                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
-                title={`Cambiar skin (actual: ${activeSkinLabel})`}
-              >
-                SKIN
-              </button>
-            </div>
+            </button>
           </>
         ) : null}
 
@@ -2294,30 +2224,15 @@ function LegacyThermostatPanel({
                 </button>
               )}
             />
-            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full origin-center scale-[0.8] object-contain" />
-            </div>
-
-            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-                MODE {legacyMode}
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
-                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
-              >
-                PROBE {activeProbe}
-              </button>
-              <button
-                type="button"
-                onClick={cycleSkin}
-                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
-                title={`Cambiar skin (actual: ${activeSkinLabel})`}
-              >
-                SKIN
-              </button>
-            </div>
+            </button>
           </>
         ) : null}
       </div>
@@ -2475,13 +2390,21 @@ function LegacyThermostatPanel({
       </Dialog>
 
       <div className="grid grid-cols-2 gap-2">
-        <MetricTile
-          label={`Sonda ${activeProbe}`}
-          value={temperature != null ? formatLedValue(temperature, 0) : '--'}
-          suffix={activeProbeUnit}
-          icon={<Thermometer className="h-3.5 w-3.5" />}
-          centered
-        />
+        <button
+          type="button"
+          onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
+          className="w-full rounded-2xl text-left transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+          title={`Cambiar sonda (actual: ${activeProbe})`}
+          aria-label={`Cambiar sonda (actual: ${activeProbe})`}
+        >
+          <MetricTile
+            label={`Sonda ${activeProbe}`}
+            value={temperature != null ? formatLedValue(temperature, 0) : '--'}
+            suffix={activeProbeUnit}
+            icon={<Thermometer className="h-3.5 w-3.5" />}
+            centered
+          />
+        </button>
         <MetricTile
           label="Consigna"
           value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
