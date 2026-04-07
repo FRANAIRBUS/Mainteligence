@@ -1632,7 +1632,7 @@ function LegacyThermostatPanel({
   const displayBackgroundImage = useMemo(() => {
     if (activeSkin === 'rele') return '/iot/PANEL_RELE/DISPLAY_FONDO_RELE_1OFF.png';
     if (activeSkin === 'foto') return '/iot/PANEL_FOTO/DISPLAY_FOTO.png';
-    if (activeSkin === 'panel_2temp') return '/iot/PANEL_FOTO/DISPLAY_FOTO.png';
+    if (activeSkin === 'panel_2temp') return '/iot/PANEL_2TEMP/DISPLAY_FOTO_2TEMP.png';
     if (activeSkin === 'inout') return '/iot/PANEL_INOUT/DISPLAY_FONDO_INOUT2.png';
     return '/iot/lh1t/images/DISPLAY_FONDO_TEMP.png';
   }, [activeSkin]);
