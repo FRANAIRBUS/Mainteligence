@@ -1620,7 +1620,7 @@ function LegacyThermostatPanel({
   const displayBackgroundImage = useMemo(() => {
     if (activeSkin === 'rele') return '/iot/PANEL_RELE/DISPLAY_FONDO_RELE_1OFF.png';
     if (activeSkin === 'foto') return '/iot/PANEL_FOTO/DISPLAY_FOTO.png';
-    if (activeSkin === 'panel_2temp') return '/iot/PANEL_2TEMP/DISPLAY_FOTO_2TEMP.png';
+    if (activeSkin === 'panel_2temp') return '/iot/PANEL_2TEMP/2DISPLAY_FOTO_2TEMP.png';
     if (activeSkin === 'inout') return '/iot/PANEL_INOUT/DISPLAY_FONDO_INOUT2.png';
     return '/iot/lh1t/images/DISPLAY_FONDO_TEMP.png';
   }, [activeSkin]);
@@ -2405,12 +2405,24 @@ function LegacyThermostatPanel({
             centered
           />
         </button>
-        <MetricTile
-          label="Consigna"
-          value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
-          suffix={setpointUnit}
-          icon={<Gauge className="h-3.5 w-3.5" />}
-          centered
+        <IotDesiredStateDialog
+          asset={asset}
+          trigger={(
+            <button
+              type="button"
+              className="w-full rounded-2xl text-left transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+              title="Abrir ajustes de consigna"
+              aria-label="Abrir ajustes de consigna"
+            >
+              <MetricTile
+                label="Consigna"
+                value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
+                suffix={setpointUnit}
+                icon={<Gauge className="h-3.5 w-3.5" />}
+                centered
+              />
+            </button>
+          )}
         />
       </div>
 
