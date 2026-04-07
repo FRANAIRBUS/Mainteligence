@@ -93,16 +93,6 @@ type LegacyPanelDisplayConfig = {
   relayLabels: Record<string, string>;
 };
 
-type Panel2TempLayoutPreset = 'mobile' | 'tablet' | 'desktop';
-
-type Panel2TempLayoutConfig = {
-  valueBoxClass: string;
-  probeRowClass: string;
-  probeLabelClass: string;
-  relayRowClass: string;
-  relayChipClass: string;
-};
-
 type LegacyPanelPersistedConfig = LegacyPanelDisplayConfig & {
   selectedSkin?: LegacyPanelSkinId;
   selectedPhotoId?: string;
@@ -215,30 +205,6 @@ const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
   { id: 'ventana', label: 'Ventana', imageSrc: '/iot/PANEL_FOTO/options/ventana.png' },
   { id: 'aire-acond', label: 'Aire acondicionado', imageSrc: '/iot/PANEL_FOTO/options/aire_acond.png' },
 ];
-
-const panel2TempLayoutConfigs: Record<Panel2TempLayoutPreset, Panel2TempLayoutConfig> = {
-  mobile: {
-    valueBoxClass: 'left-[18.0%] top-[42.0%] h-[16.5%] w-[27.8%]',
-    probeRowClass: 'grid-cols-[14%,1fr] gap-[1.5%]',
-    probeLabelClass: 'text-[8px]',
-    relayRowClass: 'left-[17.8%] top-[66.3%] w-[28.3%] gap-1',
-    relayChipClass: 'px-1.5 py-0 text-[8px]',
-  },
-  tablet: {
-    valueBoxClass: 'left-[17.6%] top-[41.2%] h-[17.2%] w-[28.2%]',
-    probeRowClass: 'grid-cols-[15%,1fr] gap-[2%]',
-    probeLabelClass: 'text-[9px]',
-    relayRowClass: 'left-[17.5%] top-[66.8%] w-[28.8%] gap-1.5',
-    relayChipClass: 'px-2 py-0 text-[9px]',
-  },
-  desktop: {
-    valueBoxClass: 'left-[17.2%] top-[40.4%] h-[18.6%] w-[28.6%]',
-    probeRowClass: 'grid-cols-[16%,1fr] gap-[2.2%]',
-    probeLabelClass: 'text-[10px]',
-    relayRowClass: 'left-[17.2%] top-[67.4%] w-[29.0%] gap-1.5',
-    relayChipClass: 'px-2 py-0.5 text-[10px]',
-  },
-};
 
 function defaultLegacyPanelDisplayConfig(): LegacyPanelDisplayConfig {
   return {
@@ -1591,12 +1557,6 @@ function LegacyThermostatPanel({
   const panelConfigHydratedRef = useRef(false);
   const displayContainerRef = useRef<HTMLDivElement | null>(null);
   const [displayWidth, setDisplayWidth] = useState<number>(557);
-  const panel2TempLayoutPreset = useMemo<Panel2TempLayoutPreset>(() => {
-    if (displayWidth <= 390) return 'mobile';
-    if (displayWidth <= 505) return 'tablet';
-    return 'desktop';
-  }, [displayWidth]);
-  const panel2TempLayout = panel2TempLayoutConfigs[panel2TempLayoutPreset];
   const skinStorageKey = `iot:legacy-skin:${asset.id}`;
   const photoStorageKey = `iot:legacy-photo:${asset.id}`;
   const displayConfigStorageKey = `iot:legacy-display-config:${asset.id}`;
@@ -1690,7 +1650,7 @@ function LegacyThermostatPanel({
   }, [displayWidth]);
   const secondaryDisplayFontSize = useMemo(() => {
     const scaled = displayWidth * 0.041;
-    return `${Math.min(55, Math.max(20, scaled)).toFixed(1)}px`;
+    return `${Math.min(45, Math.max(20, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const primaryDisplayStyle = useMemo<CSSProperties>(
     () => ({
@@ -2169,37 +2129,36 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className={`absolute ${panel2TempLayout.valueBoxClass}`}>
-              <div className="grid h-full grid-rows-2">
-                {panel2TempProbeReadingParts.map((probeParts, index) => (
-                  <div key={`panel-2temp-probe-${index + 1}`} className={`grid items-end ${panel2TempLayout.probeRowClass}`}>
-                    <div className={`font-semibold uppercase tracking-[0.08em] text-red-600 ${panel2TempLayout.probeLabelClass}`}>
-                      T{index + 1}
-                    </div>
-                    <div className="text-right text-red-600">
-                      <span className="inline-flex items-end justify-end gap-[0.12em]" style={secondaryDisplayStyle}>
-                        <span>{probeParts.valueText}</span>
-                        {probeParts.unitText ? (
-                          <span style={secondaryUnitDigitalValueStyle}>{probeParts.unitText}</span>
-                        ) : null}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="absolute top-[40.0%] right-[57.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]">
+              <span className="inline-flex w-full items-end justify-end gap-[0.34em]">
+                <span className="text-[10px] font-semibold tracking-[0.08em] sm:text-[11px]">T1</span>
+                <span className="inline-flex items-end justify-end gap-[0.16em]" style={secondaryDisplayStyle}>
+                  <span>{panel2TempProbeReadingParts[0]?.valueText ?? '--'}</span>
+                  {panel2TempProbeReadingParts[0]?.unitText ? (
+                    <span style={secondaryUnitDigitalValueStyle}>{panel2TempProbeReadingParts[0].unitText}</span>
+                  ) : null}
+                </span>
+              </span>
             </div>
-            <div className={`absolute flex items-center justify-between ${panel2TempLayout.relayRowClass}`}>
+            <div className="absolute top-[54.8%] right-[57.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]">
+              <span className="inline-flex w-full items-end justify-end gap-[0.34em]">
+                <span className="text-[10px] font-semibold tracking-[0.08em] sm:text-[11px]">T2</span>
+                <span className="inline-flex items-end justify-end gap-[0.16em]" style={secondaryDisplayStyle}>
+                  <span>{panel2TempProbeReadingParts[1]?.valueText ?? '--'}</span>
+                  {panel2TempProbeReadingParts[1]?.unitText ? (
+                    <span style={secondaryUnitDigitalValueStyle}>{panel2TempProbeReadingParts[1].unitText}</span>
+                  ) : null}
+                </span>
+              </span>
+            </div>
+            <div className="absolute top-[68.8%] right-[57.8%] flex w-[30%] min-w-[8ch] items-center justify-end gap-2 pr-[0.08em] text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]">
               {panel2TempRelayStates.map((relayActive, index) => (
-                <div
+                <span
                   key={`panel-2temp-relay-${index + 1}`}
-                  className={`rounded-md border font-semibold tracking-[0.1em] text-red-600 ${panel2TempLayout.relayChipClass} ${
-                    relayActive
-                      ? 'border-red-500/70 bg-red-500/18 opacity-100'
-                      : 'border-red-500/45 bg-red-500/5 opacity-35'
-                  }`}
+                  className={`text-[10px] font-semibold tracking-[0.1em] ${relayActive ? 'opacity-100' : 'opacity-35'}`}
                 >
                   R{index + 1}
-                </div>
+                </span>
               ))}
             </div>
 
