@@ -1642,7 +1642,7 @@ function LegacyThermostatPanel({
   }, [displayWidth]);
   const panelFotoPrimaryDisplayFontSize = useMemo(() => {
     const scaled = displayWidth * 0.099;
-    return `${Math.min(56, Math.max(28, scaled)).toFixed(1)}px`;
+    return `${Math.min(50, Math.max(24, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const inoutDisplayFontSize = useMemo(() => {
     const scaled = displayWidth * 0.047;
@@ -2132,7 +2132,7 @@ function LegacyThermostatPanel({
             <div className="absolute left-[10.2%] top-[33.8%] text-[10px] font-semibold tracking-[0.08em] text-red-600 sm:text-[11px]">
               T1
             </div>
-            <div className="absolute top-[33.8%] right-[54.8%] w-[20%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[20%] lg:right-[56.6%] lg:w-[20%]" style={panelFotoPrimaryDisplayStyle}>
+            <div className="absolute top-[33.8%] right-[55.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
               <span className="inline-flex items-end justify-end gap-[0.16em]">
                 <span>{panel2TempProbeReadingParts[0]?.valueText ?? '--'}</span>
                 {panel2TempProbeReadingParts[0]?.unitText ? (
@@ -2143,7 +2143,7 @@ function LegacyThermostatPanel({
             <div className="absolute left-[10.2%] top-[50.5%] text-[10px] font-semibold tracking-[0.08em] text-red-600 sm:text-[11px]">
               T2
             </div>
-            <div className="absolute top-[50.5%] right-[54.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
+            <div className="absolute top-[50.5%] right-[55.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
               <span className="inline-flex items-end justify-end gap-[0.16em]">
                 <span>{panel2TempProbeReadingParts[1]?.valueText ?? '--'}</span>
                 {panel2TempProbeReadingParts[1]?.unitText ? (
