@@ -2130,7 +2130,7 @@ function LegacyThermostatPanel({
             </div>
 
             <div className="absolute left-[10.2%] top-[33.8%] text-[10px] font-semibold tracking-[0.08em] text-red-600 sm:text-[11px]">
-              IN
+              S1
             </div>
             <div className="absolute top-[33.8%] right-[55.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
               <span className="inline-flex items-end justify-end gap-[0.16em]">
@@ -2140,10 +2140,10 @@ function LegacyThermostatPanel({
                 ) : null}
               </span>
             </div>
-            <div className="absolute left-[10.2%] top-[54.5%] text-[10px] font-semibold tracking-[0.08em] text-red-600 sm:text-[11px]">
-              OUT
+            <div className="absolute left-[10.2%] top-[60.5%] text-[10px] font-semibold tracking-[0.08em] text-red-600 sm:text-[11px]">
+              S2
             </div>
-            <div className="absolute top-[54.5%] right-[55.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
+            <div className="absolute top-[60.5%] right-[55.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
               <span className="inline-flex items-end justify-end gap-[0.16em]">
                 <span>{panel2TempProbeReadingParts[1]?.valueText ?? '--'}</span>
                 {panel2TempProbeReadingParts[1]?.unitText ? (
@@ -2152,13 +2152,13 @@ function LegacyThermostatPanel({
               </span>
             </div>
 
-            <div className={`absolute left-[12.8%] top-[69.3%] text-[10px] font-semibold tracking-[0.1em] text-red-600 ${panel2TempRelayStates[0] ? 'opacity-100' : 'opacity-35'}`}>
+            <div className={`absolute left-[12.8%] top-[80.3%] text-[10px] font-semibold tracking-[0.1em] text-red-600 ${panel2TempRelayStates[0] ? 'opacity-100' : 'opacity-35'}`}>
               R1
             </div>
-            <div className={`absolute left-[19.4%] top-[69.3%] text-[10px] font-semibold tracking-[0.1em] text-red-600 ${panel2TempRelayStates[1] ? 'opacity-100' : 'opacity-35'}`}>
+            <div className={`absolute left-[19.4%] top-[80.3%] text-[10px] font-semibold tracking-[0.1em] text-red-600 ${panel2TempRelayStates[1] ? 'opacity-100' : 'opacity-35'}`}>
               R2
             </div>
-            <div className={`absolute left-[27.0%] top-[69.3%] text-[10px] font-semibold tracking-[0.1em] text-red-600 ${panel2TempRelayStates[2] ? 'opacity-100' : 'opacity-35'}`}>
+            <div className={`absolute left-[27.0%] top-[80.3%] text-[10px] font-semibold tracking-[0.1em] text-red-600 ${panel2TempRelayStates[2] ? 'opacity-100' : 'opacity-35'}`}>
               R3
             </div>
 
