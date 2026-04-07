@@ -2129,7 +2129,7 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute right-[65.0%] top-[35.0%] h-[40.0%] w-[35.0%] rounded-[12px] border border-red-500/25 bg-black/10 px-[2.4%] py-[1.8%]">
+            <div className="absolute right-[55.0%] top-[33.0%] h-[45.0%] w-[35.0%] rounded-[12px] border border-red-500/25 bg-black/10 px-[2.4%] py-[1.8%]">
               <div className="grid h-full grid-rows-[1fr_1fr_auto]">
                 {panel2TempProbeReadingParts.map((probeParts, index) => (
                   <div key={`panel-2temp-probe-${index + 1}`} className="grid grid-cols-[22%,1fr] items-end gap-[5%]">
