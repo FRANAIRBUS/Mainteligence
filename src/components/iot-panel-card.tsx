@@ -1641,7 +1641,7 @@ function LegacyThermostatPanel({
     return `${Math.min(60, Math.max(30, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const panelFotoPrimaryDisplayFontSize = useMemo(() => {
-    const scaled = displayWidth * 0.099;
+    const scaled = displayWidth * 0.080;
     return `${Math.min(45, Math.max(20, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const inoutDisplayFontSize = useMemo(() => {
