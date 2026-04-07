@@ -93,6 +93,16 @@ type LegacyPanelDisplayConfig = {
   relayLabels: Record<string, string>;
 };
 
+type Panel2TempLayoutPreset = 'mobile' | 'tablet' | 'desktop';
+
+type Panel2TempLayoutConfig = {
+  valueBoxClass: string;
+  probeRowClass: string;
+  probeLabelClass: string;
+  relayRowClass: string;
+  relayChipClass: string;
+};
+
 type LegacyPanelPersistedConfig = LegacyPanelDisplayConfig & {
   selectedSkin?: LegacyPanelSkinId;
   selectedPhotoId?: string;
@@ -205,6 +215,30 @@ const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
   { id: 'ventana', label: 'Ventana', imageSrc: '/iot/PANEL_FOTO/options/ventana.png' },
   { id: 'aire-acond', label: 'Aire acondicionado', imageSrc: '/iot/PANEL_FOTO/options/aire_acond.png' },
 ];
+
+const panel2TempLayoutConfigs: Record<Panel2TempLayoutPreset, Panel2TempLayoutConfig> = {
+  mobile: {
+    valueBoxClass: 'left-[18.0%] top-[42.0%] h-[16.5%] w-[27.8%]',
+    probeRowClass: 'grid-cols-[14%,1fr] gap-[1.5%]',
+    probeLabelClass: 'text-[8px]',
+    relayRowClass: 'left-[17.8%] top-[66.3%] w-[28.3%] gap-1',
+    relayChipClass: 'px-1.5 py-0 text-[8px]',
+  },
+  tablet: {
+    valueBoxClass: 'left-[17.6%] top-[41.2%] h-[17.2%] w-[28.2%]',
+    probeRowClass: 'grid-cols-[15%,1fr] gap-[2%]',
+    probeLabelClass: 'text-[9px]',
+    relayRowClass: 'left-[17.5%] top-[66.8%] w-[28.8%] gap-1.5',
+    relayChipClass: 'px-2 py-0 text-[9px]',
+  },
+  desktop: {
+    valueBoxClass: 'left-[17.2%] top-[40.4%] h-[18.6%] w-[28.6%]',
+    probeRowClass: 'grid-cols-[16%,1fr] gap-[2.2%]',
+    probeLabelClass: 'text-[10px]',
+    relayRowClass: 'left-[17.2%] top-[67.4%] w-[29.0%] gap-1.5',
+    relayChipClass: 'px-2 py-0.5 text-[10px]',
+  },
+};
 
 function defaultLegacyPanelDisplayConfig(): LegacyPanelDisplayConfig {
   return {
@@ -1557,6 +1591,12 @@ function LegacyThermostatPanel({
   const panelConfigHydratedRef = useRef(false);
   const displayContainerRef = useRef<HTMLDivElement | null>(null);
   const [displayWidth, setDisplayWidth] = useState<number>(557);
+  const panel2TempLayoutPreset = useMemo<Panel2TempLayoutPreset>(() => {
+    if (displayWidth <= 390) return 'mobile';
+    if (displayWidth <= 505) return 'tablet';
+    return 'desktop';
+  }, [displayWidth]);
+  const panel2TempLayout = panel2TempLayoutConfigs[panel2TempLayoutPreset];
   const skinStorageKey = `iot:legacy-skin:${asset.id}`;
   const photoStorageKey = `iot:legacy-photo:${asset.id}`;
   const displayConfigStorageKey = `iot:legacy-display-config:${asset.id}`;
@@ -2129,11 +2169,11 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute right-[55.0%] top-[33.0%] h-[45.0%] w-[35.0%] rounded-[12px] border border-red-500/25 bg-black/10 px-[2.4%] py-[1.8%]">
-              <div className="grid h-full grid-rows-[1fr_1fr_auto]">
+            <div className={`absolute ${panel2TempLayout.valueBoxClass}`}>
+              <div className="grid h-full grid-rows-2">
                 {panel2TempProbeReadingParts.map((probeParts, index) => (
-                  <div key={`panel-2temp-probe-${index + 1}`} className="grid grid-cols-[22%,1fr] items-end gap-[5%]">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-red-600 sm:text-[12px]">
+                  <div key={`panel-2temp-probe-${index + 1}`} className={`grid items-end ${panel2TempLayout.probeRowClass}`}>
+                    <div className={`font-semibold uppercase tracking-[0.08em] text-red-600 ${panel2TempLayout.probeLabelClass}`}>
                       T{index + 1}
                     </div>
                     <div className="text-right text-red-600">
@@ -2146,21 +2186,21 @@ function LegacyThermostatPanel({
                     </div>
                   </div>
                 ))}
-                <div className="flex items-center justify-between gap-1.5 pt-[1%]">
-                  {panel2TempRelayStates.map((relayActive, index) => (
-                    <div
-                      key={`panel-2temp-relay-${index + 1}`}
-                      className={`rounded-md border px-2 py-0.5 text-[9px] font-semibold tracking-[0.1em] sm:text-[10px] ${
-                        relayActive
-                          ? 'border-red-500/70 bg-red-500/20 text-red-600 opacity-100'
-                          : 'border-red-500/55 bg-red-500/10 text-red-600 opacity-35'
-                      }`}
-                    >
-                      R{index + 1}
-                    </div>
-                  ))}
-                </div>
               </div>
+            </div>
+            <div className={`absolute flex items-center justify-between ${panel2TempLayout.relayRowClass}`}>
+              {panel2TempRelayStates.map((relayActive, index) => (
+                <div
+                  key={`panel-2temp-relay-${index + 1}`}
+                  className={`rounded-md border font-semibold tracking-[0.1em] text-red-600 ${panel2TempLayout.relayChipClass} ${
+                    relayActive
+                      ? 'border-red-500/70 bg-red-500/18 opacity-100'
+                      : 'border-red-500/45 bg-red-500/5 opacity-35'
+                  }`}
+                >
+                  R{index + 1}
+                </div>
+              ))}
             </div>
 
             <button
