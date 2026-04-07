@@ -1650,7 +1650,7 @@ function LegacyThermostatPanel({
   }, [displayWidth]);
   const secondaryDisplayFontSize = useMemo(() => {
     const scaled = displayWidth * 0.041;
-    return `${Math.min(45, Math.max(20, scaled)).toFixed(1)}px`;
+    return `${Math.min(55, Math.max(20, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const primaryDisplayStyle = useMemo<CSSProperties>(
     () => ({
@@ -2129,11 +2129,11 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute left-[17.2%] top-[40.0%] h-[32.0%] w-[28.6%] rounded-[12px] border border-red-500/25 bg-black/10 px-[2.4%] py-[1.8%]">
+            <div className="absolute right-[30.2%] top-[35.0%] h-[40.0%] w-[35.0%] rounded-[12px] border border-red-500/25 bg-black/10 px-[2.4%] py-[1.8%]">
               <div className="grid h-full grid-rows-[1fr_1fr_auto]">
                 {panel2TempProbeReadingParts.map((probeParts, index) => (
                   <div key={`panel-2temp-probe-${index + 1}`} className="grid grid-cols-[22%,1fr] items-end gap-[5%]">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-red-600 sm:text-[11px]">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-red-600 sm:text-[12px]">
                       T{index + 1}
                     </div>
                     <div className="text-right text-red-600">
