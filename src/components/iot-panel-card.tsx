@@ -2132,7 +2132,7 @@ function LegacyThermostatPanel({
             <div className="absolute left-[10.2%] top-[33.8%] text-[10px] font-semibold tracking-[0.08em] text-red-600 sm:text-[11px]">
               T1
             </div>
-            <div className="absolute top-[33.8%] right-[55.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
+            <div className="absolute top-[33.8%] right-[53.8%] w-[25%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[25%] lg:right-[56.6%] lg:w-[25%]" style={panelFotoPrimaryDisplayStyle}>
               <span className="inline-flex items-end justify-end gap-[0.16em]">
                 <span>{panel2TempProbeReadingParts[0]?.valueText ?? '--'}</span>
                 {panel2TempProbeReadingParts[0]?.unitText ? (
