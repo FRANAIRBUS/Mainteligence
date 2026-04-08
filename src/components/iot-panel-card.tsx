@@ -2434,11 +2434,11 @@ function LegacyThermostatPanel({
           trigger={(
             <button
               type="button"
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
               title="Abrir Provision y control"
               aria-label="Abrir Provision y control"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center gap-2">
                 <Send className="h-4 w-4 text-sky-300" />
                 <span>Provision</span>
               </div>
@@ -2448,11 +2448,11 @@ function LegacyThermostatPanel({
         <button
           type="button"
           onClick={openDisplayConfigDialog}
-          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
           title="Cambiar unidades y etiquetas"
           aria-label="Cambiar unidades y etiquetas"
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center gap-2">
             <Settings className="h-4 w-4 text-sky-300" />
             <span>Etiquetas</span>
           </div>
