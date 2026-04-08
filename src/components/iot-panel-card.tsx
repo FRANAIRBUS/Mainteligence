@@ -91,6 +91,7 @@ type LegacyPanelDisplayConfig = {
   humidityUnit: string;
   setpointUnit: string;
   relayLabels: Record<string, string>;
+  relayVisible: Record<string, boolean>;
 };
 
 type LegacyPanelPersistedConfig = LegacyPanelDisplayConfig & {
@@ -212,6 +213,7 @@ function defaultLegacyPanelDisplayConfig(): LegacyPanelDisplayConfig {
     humidityUnit: '%',
     setpointUnit: 'C',
     relayLabels: {},
+    relayVisible: {},
   };
 }
 
@@ -242,11 +244,23 @@ function normalizeLegacyPanelDisplayConfig(value: unknown): LegacyPanelDisplayCo
     }, {})
     : {};
 
+  const relayVisible = isPlainObject(value.relayVisible)
+    ? Object.entries(value.relayVisible).reduce<Record<string, boolean>>((acc, [relayLabel, relayValue]) => {
+      const normalizedLabel = relayLabel.trim().toUpperCase();
+      if (!normalizedLabel) return acc;
+      const normalizedVisible = asBoolean(relayValue);
+      if (normalizedVisible == null) return acc;
+      acc[normalizedLabel] = normalizedVisible;
+      return acc;
+    }, {})
+    : {};
+
   return {
     probeUnits,
     humidityUnit,
     setpointUnit,
     relayLabels,
+    relayVisible,
   };
 }
 
@@ -268,6 +282,7 @@ function cloneLegacyPanelDisplayConfig(displayConfig: LegacyPanelDisplayConfig):
     humidityUnit: displayConfig.humidityUnit,
     setpointUnit: displayConfig.setpointUnit,
     relayLabels: { ...displayConfig.relayLabels },
+    relayVisible: { ...displayConfig.relayVisible },
   };
 }
 
@@ -281,8 +296,12 @@ function areLegacyPanelDisplayConfigsEqual(a: LegacyPanelDisplayConfig, b: Legac
   const aRelayEntries = Object.entries(a.relayLabels);
   const bRelayEntries = Object.entries(b.relayLabels);
   if (aRelayEntries.length !== bRelayEntries.length) return false;
+  const aRelayVisibleEntries = Object.entries(a.relayVisible);
+  const bRelayVisibleEntries = Object.entries(b.relayVisible);
+  if (aRelayVisibleEntries.length !== bRelayVisibleEntries.length) return false;
 
-  return aRelayEntries.every(([key, value]) => b.relayLabels[key] === value);
+  return aRelayEntries.every(([key, value]) => b.relayLabels[key] === value)
+    && aRelayVisibleEntries.every(([key, value]) => b.relayVisible[key] === value);
 }
 
 function toDateValue(value: DateLike): Date | null {
@@ -1565,6 +1584,14 @@ function LegacyThermostatPanel({
   const panelFotoPrimaryValueParts = primaryValueParts;
   const humidityValueParts = formatLedValueParts(humidity, humidityUnit, { decimals: 0, powerOn });
   const relayDisplayStates = relayDisplayItems(relays);
+  const visibleRelayDisplayStates = useMemo(
+    () =>
+      relayDisplayStates.filter((relay) => {
+        const normalizedLabel = relay.label.trim().toUpperCase();
+        return displayConfig.relayVisible[normalizedLabel] ?? true;
+      }),
+    [displayConfig.relayVisible, relayDisplayStates],
+  );
   const relaySlots = useMemo(() => relayPanelSlots(relays), [relays]);
   const configurableRelayLabels = useMemo(() => {
     const labels = relayDisplayStates.map((relay) => relay.label.trim().toUpperCase()).filter(Boolean);
@@ -2333,13 +2360,37 @@ function LegacyThermostatPanel({
 
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="mb-2 text-sm font-semibold text-slate-200">Etiquetas de relays</div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="space-y-2">
                 {configurableRelayLabels.map((label) => (
-                  <div key={`relay-label-${label}`}>
-                    <Label htmlFor={`relay-label-${asset.id}-${label}`}>{label}</Label>
+                  <div
+                    key={`relay-label-${label}`}
+                    className="grid grid-cols-[auto,auto,1fr] items-center gap-2 rounded-lg border border-white/10 bg-black/10 px-2 py-1.5"
+                  >
+                    <Label htmlFor={`relay-label-${asset.id}-${label}`} className="mb-0 text-xs text-slate-200">
+                      {label}
+                    </Label>
+                    <label className="flex items-center gap-1 whitespace-nowrap text-[11px] text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={displayConfigDraft.relayVisible[label] ?? true}
+                        onChange={(e) => {
+                          const visible = e.target.checked;
+                          setDisplayConfigDraft((currentConfig) => ({
+                            ...currentConfig,
+                            relayVisible: {
+                              ...currentConfig.relayVisible,
+                              [label]: visible,
+                            },
+                          }));
+                        }}
+                        className="h-3.5 w-3.5 rounded border border-white/30 bg-transparent accent-sky-400"
+                      />
+                      <span>Mostrar</span>
+                    </label>
                     <Input
                       id={`relay-label-${asset.id}-${label}`}
                       value={displayConfigDraft.relayLabels[label] ?? ''}
+                      className="h-8 text-xs"
                       onChange={(e) => {
                         const nextValue = e.target.value;
                         setDisplayConfigDraft((currentConfig) => ({
@@ -2376,7 +2427,7 @@ function LegacyThermostatPanel({
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-xs text-slate-300">
         <div className="flex flex-wrap justify-center gap-1.5">
-          {relayDisplayStates.map((relay) => (
+          {visibleRelayDisplayStates.map((relay) => (
             <div
               key={relay.label}
               className={
