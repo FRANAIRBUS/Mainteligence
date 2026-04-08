@@ -106,8 +106,9 @@ const modeOptions = [
 
 const operatingModeOptions = [
   { value: 'thermostat', label: 'Termostato' },
-  { value: 'manual_disable', label: 'Manual disable' },
-  { value: 'pushbotton', label: 'Pushbotton' },
+  { value: 'pushbutton', label: 'Pushbutton' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'disabled', label: 'Desactivado' },
 ];
 
 const fanOptions = [
@@ -767,6 +768,15 @@ function formatDisplayX10(value: unknown) {
   return Number.isInteger(scaled) ? String(scaled) : scaled.toFixed(1).replace(/\.0$/, '');
 }
 
+function normalizeOperatingMode(value: unknown) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return 'thermostat';
+  if (normalized === 'manual_disable') return 'disabled';
+  if (normalized === 'pushbotton') return 'pushbutton';
+  if (['thermostat', 'pushbutton', 'manual', 'disabled'].includes(normalized)) return normalized;
+  return 'thermostat';
+}
+
 function firstDefinedIotValue(values: unknown[]) {
   for (const value of values) {
     if (value === null || value === undefined) continue;
@@ -1085,7 +1095,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const [mode, setMode] = useState(asset.iot?.desiredState?.mode ?? 'cool');
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
-  const [operatingMode, setOperatingMode] = useState(() => String(asset.iot?.desiredState?.operatingMode ?? 'thermostat'));
+  const [operatingMode, setOperatingMode] = useState(() => normalizeOperatingMode(asset.iot?.desiredState?.operatingMode));
   const [editableFunctionName, setEditableFunctionName] = useState(() => String(asset.iot?.desiredState?.editableFunctionName ?? ''));
   const [thermostatLogic, setThermostatLogic] = useState<ThermostatLogicFormState>(() => buildThermostatLogicState(asset));
   const [note, setNote] = useState('');
@@ -1109,7 +1119,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     setMode(draftAsset.iot?.desiredState?.mode ?? 'cool');
     setFan(draftAsset.iot?.desiredState?.fan ?? 'auto');
     setPower(draftAsset.iot?.desiredState?.power ?? true);
-    setOperatingMode(String(draftAsset.iot?.desiredState?.operatingMode ?? 'thermostat'));
+    setOperatingMode(normalizeOperatingMode(draftAsset.iot?.desiredState?.operatingMode));
     setEditableFunctionName(String(draftAsset.iot?.desiredState?.editableFunctionName ?? ''));
     setThermostatLogic(buildThermostatLogicState(draftAsset));
     setRelayStates(resolveRelayStateMap(draftAsset));
@@ -1232,6 +1242,32 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
             Desired state
           </div>
           <div className="grid gap-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <Label htmlFor={`panel-operatingMode-${asset.id}`}>Funcionamiento IoT</Label>
+                <select
+                  id={`panel-operatingMode-${asset.id}`}
+                  value={operatingMode}
+                  onChange={(e) => setOperatingMode(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  {operatingModeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label htmlFor={`panel-editableFunctionName-${asset.id}`}>Funcion editable (nombre)</Label>
+                <Input
+                  id={`panel-editableFunctionName-${asset.id}`}
+                  value={editableFunctionName}
+                  onChange={(e) => setEditableFunctionName(e.target.value)}
+                  placeholder="Ej: Bomba recirculacion"
+                />
+              </div>
+            </div>
             {supportsThermostatLogic ? (
               <>
                 <div className="rounded-xl border bg-muted/20 p-2 text-xs text-muted-foreground">
@@ -1481,33 +1517,6 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                 </div>
               </>
             )}
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <Label htmlFor={`panel-operatingMode-${asset.id}`}>Funcionamiento IoT</Label>
-                <select
-                  id={`panel-operatingMode-${asset.id}`}
-                  value={operatingMode}
-                  onChange={(e) => setOperatingMode(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  {operatingModeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label htmlFor={`panel-editableFunctionName-${asset.id}`}>Funcion editable (nombre)</Label>
-                <Input
-                  id={`panel-editableFunctionName-${asset.id}`}
-                  value={editableFunctionName}
-                  onChange={(e) => setEditableFunctionName(e.target.value)}
-                  placeholder="Ej: Bomba recirculacion"
-                />
-              </div>
-            </div>
 
             {supportsRelays ? (
               <div className="grid gap-2">

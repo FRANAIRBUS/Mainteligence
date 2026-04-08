@@ -1957,6 +1957,17 @@ function optionalStringValue(input: unknown) {
   return normalized ? normalized : null;
 }
 
+const validOperatingModes = new Set(['thermostat', 'pushbutton', 'manual', 'disabled']);
+
+function optionalOperatingModeValue(input: unknown) {
+  const normalized = optionalStringValue(input)?.toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'manual_disable') return 'disabled';
+  if (normalized === 'pushbotton') return 'pushbutton';
+  if (validOperatingModes.has(normalized)) return normalized;
+  throw httpsError('invalid-argument', 'state.operatingMode invalido.');
+}
+
 function sanitizeCapabilities(input: unknown) {
   if (!Array.isArray(input)) return undefined;
   const capabilities = input
@@ -2084,7 +2095,7 @@ function sanitizeDesiredStatePatch(input: unknown) {
   if ('stopRelay2OnDefrost' in input) patch.stopRelay2OnDefrost = optionalBoolean(input.stopRelay2OnDefrost, 'state.stopRelay2OnDefrost');
   if ('relay2Mode' in input) patch.relay2Mode = optionalFiniteNumber(input.relay2Mode, 'state.relay2Mode');
   if ('relay3Mode' in input) patch.relay3Mode = optionalFiniteNumber(input.relay3Mode, 'state.relay3Mode');
-  if ('operatingMode' in input) patch.operatingMode = optionalStringValue(input.operatingMode);
+  if ('operatingMode' in input) patch.operatingMode = optionalOperatingModeValue(input.operatingMode);
   if ('editableFunctionName' in input) patch.editableFunctionName = optionalStringValue(input.editableFunctionName);
   if ('note' in input) patch.note = optionalStringValue(input.note);
 
