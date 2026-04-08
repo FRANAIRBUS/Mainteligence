@@ -2374,6 +2374,23 @@ function LegacyThermostatPanel({
         </DialogContent>
       </Dialog>
 
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-xs text-slate-300">
+        <div className="flex flex-wrap justify-center gap-1.5">
+          {relayDisplayStates.map((relay) => (
+            <div
+              key={relay.label}
+              className={
+                relay.active
+                  ? 'rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-100'
+                  : 'rounded-full border border-white/10 bg-slate-900/70 px-2.5 py-1 text-[11px] font-semibold text-slate-300'
+              }
+            >
+              {relayDisplayLabel(relay.label)}: {relay.active ? 'ON' : 'OFF'}
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
@@ -2411,22 +2428,35 @@ function LegacyThermostatPanel({
         />
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-xs text-slate-300">
-        <div className="mb-1 text-center text-[10px] uppercase tracking-[0.22em] text-slate-400">Salidas</div>
-        <div className="flex flex-wrap justify-center gap-1.5">
-          {relayDisplayStates.map((relay) => (
-            <div
-              key={relay.label}
-              className={
-                relay.active
-                  ? 'rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-100'
-                  : 'rounded-full border border-white/10 bg-slate-900/70 px-2.5 py-1 text-[11px] font-semibold text-slate-300'
-              }
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <IotDesiredStateDialog
+          asset={asset}
+          trigger={(
+            <button
+              type="button"
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+              title="Abrir Provision y control"
+              aria-label="Abrir Provision y control"
             >
-              {relayDisplayLabel(relay.label)}: {relay.active ? 'ON' : 'OFF'}
-            </div>
-          ))}
-        </div>
+              <div className="flex items-center gap-2">
+                <Send className="h-4 w-4 text-sky-300" />
+                <span>Provision y control</span>
+              </div>
+            </button>
+          )}
+        />
+        <button
+          type="button"
+          onClick={openDisplayConfigDialog}
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+          title="Cambiar unidades y etiquetas"
+          aria-label="Cambiar unidades y etiquetas"
+        >
+          <div className="flex items-center gap-2">
+            <Settings className="h-4 w-4 text-sky-300" />
+            <span>Cambiar unidades y etiquetas</span>
+          </div>
+        </button>
       </div>
     </div>
   );
