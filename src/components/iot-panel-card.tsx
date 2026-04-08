@@ -2440,7 +2440,7 @@ function LegacyThermostatPanel({
             >
               <div className="flex items-center gap-2">
                 <Send className="h-4 w-4 text-sky-300" />
-                <span>Provision y control</span>
+                <span>Provision Code</span>
               </div>
             </button>
           )}
@@ -2454,7 +2454,7 @@ function LegacyThermostatPanel({
         >
           <div className="flex items-center gap-2">
             <Settings className="h-4 w-4 text-sky-300" />
-            <span>Cambiar unidades y etiquetas</span>
+            <span>Etiquetas</span>
           </div>
         </button>
       </div>
