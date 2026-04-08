@@ -266,6 +266,8 @@ export interface AssetIotDesiredState {
   stopRelay2OnDefrost?: boolean | null;
   relay2Mode?: number | null;
   relay3Mode?: number | null;
+  operatingMode?: string | null;
+  editableFunctionName?: string | null;
   relays?: Record<string, boolean> | null;
   note?: string | null;
 }
@@ -293,6 +295,7 @@ export interface AssetIotPanelDisplayConfig {
   humidityUnit?: string;
   setpointUnit?: string;
   relayLabels?: Record<string, string>;
+  relayVisible?: Record<string, boolean>;
   selectedSkin?: string;
   selectedPhotoId?: string;
 }
@@ -418,7 +421,6 @@ export interface Ticket extends BaseEntity {
   reopenedBy?: string;
   reopenedAt?: Timestamp;
 }
-
 
 
 

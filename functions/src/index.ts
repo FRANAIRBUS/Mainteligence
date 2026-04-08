@@ -2084,6 +2084,8 @@ function sanitizeDesiredStatePatch(input: unknown) {
   if ('stopRelay2OnDefrost' in input) patch.stopRelay2OnDefrost = optionalBoolean(input.stopRelay2OnDefrost, 'state.stopRelay2OnDefrost');
   if ('relay2Mode' in input) patch.relay2Mode = optionalFiniteNumber(input.relay2Mode, 'state.relay2Mode');
   if ('relay3Mode' in input) patch.relay3Mode = optionalFiniteNumber(input.relay3Mode, 'state.relay3Mode');
+  if ('operatingMode' in input) patch.operatingMode = optionalStringValue(input.operatingMode);
+  if ('editableFunctionName' in input) patch.editableFunctionName = optionalStringValue(input.editableFunctionName);
   if ('note' in input) patch.note = optionalStringValue(input.note);
 
   if (isPlainObject(input.relays)) {
