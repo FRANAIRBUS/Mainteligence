@@ -2440,7 +2440,7 @@ function LegacyThermostatPanel({
             >
               <div className="flex items-center gap-2">
                 <Send className="h-4 w-4 text-sky-300" />
-                <span>Provision Code</span>
+                <span>Provision</span>
               </div>
             </button>
           )}
