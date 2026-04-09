@@ -68,7 +68,12 @@ type CsvResult = {
   csv: string;
 };
 
-type LegacyPanelSkinId = 'lh1t' | 'rele' | 'foto';
+type LedDisplayParts = {
+  valueText: string;
+  unitText: string;
+};
+
+type LegacyPanelSkinId = 'lh1t' | 'rele' | 'foto' | 'panel_2temp' | 'inout';
 
 type LegacyPanelSkinOption = {
   id: LegacyPanelSkinId;
@@ -86,11 +91,25 @@ type LegacyPanelDisplayConfig = {
   humidityUnit: string;
   setpointUnit: string;
   relayLabels: Record<string, string>;
+  relayVisible: Record<string, boolean>;
+};
+
+type LegacyPanelPersistedConfig = LegacyPanelDisplayConfig & {
+  selectedSkin?: LegacyPanelSkinId;
+  selectedPhotoId?: string;
 };
 
 const modeOptions = [
   { value: 'cool', label: 'Cool' },
   { value: 'heat', label: 'Heat' },
+];
+
+const operatingModeOptions = [
+  { value: 'thermostat', label: 'Termostato' },
+  { value: 'pushbutton', label: 'Pushbutton' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'custom', label: 'Custom' },
+  { value: 'disabled', label: 'Desactivado' },
 ];
 
 const fanOptions = [
@@ -129,6 +148,130 @@ type ThermostatLogicFormState = {
   relay3Mode: string;
 };
 
+type CustomProgramTemplate = {
+  id: string;
+  title: string;
+  description: string;
+  program: string;
+};
+
+const customProgramOperations = [
+  'SET RELn ON|OFF',
+  'BLINK RELn onMs [offMs] (50..3600000 ms)',
+  'TIMER RELn onMs offMs (50..3600000 ms)',
+  'ONCHANGE INn TOGGLE RELm',
+  'PULSE INn RELm onMs count [gapMs] (count 1..20)',
+  'THERMOSTAT RELn TEMPm setpoint diff [AUTO|COOL|HEAT]',
+  'IF TEMPn op valor THEN RELm ON|OFF',
+  'IF HUMn op valor THEN RELm ON|OFF',
+  'IF INn op ON|OFF THEN RELm ON|OFF',
+  'IFALL src1 op v1 src2 op v2 THEN RELm ON|OFF',
+  'IFANY src1 op v1 src2 op v2 THEN RELm ON|OFF',
+  'Operadores: == != > >= < <=',
+];
+
+const customProgramFullExample = [
+  '# Ejemplo completo de referencia',
+  '# Usa SET, TIMER, IF, IFALL/IFANY, ONCHANGE, PULSE y THERMOSTAT',
+  'SET REL1 OFF',
+  'SET REL2 OFF',
+  'SET REL3 OFF',
+  'SET REL4 OFF',
+  '',
+  '# REL1: control de temperatura por termostato',
+  'THERMOSTAT REL1 TEMP1 4.0 0.8 COOL',
+  '',
+  '# REL2: extractor por timer + compuertas',
+  'TIMER REL2 4000 2000',
+  'IFALL TEMP1 >= 30 HUM1 >= 70 THEN REL2 ON',
+  'IFANY IN1 == ON IN2 == ON THEN REL2 OFF',
+  '',
+  '# REL3: conmutacion por pulsador (flanco)',
+  'ONCHANGE IN3 TOGGLE REL3',
+  '',
+  '# REL4: campana doble al detectar timbre en IN4',
+  'PULSE IN4 REL4 2000 2 300',
+  '',
+  '# Paro de seguridad global por IN2',
+  'IF IN2 == ON THEN REL1 OFF',
+  'IF IN2 == ON THEN REL2 OFF',
+  'IF IN2 == ON THEN REL4 OFF',
+].join('\n');
+
+const customProgramTemplates: CustomProgramTemplate[] = [
+  {
+    id: 'full-systems',
+    title: 'Demo completa (todos los sistemas)',
+    description: 'Prueba SET, TIMER, IF/IFALL/IFANY, ONCHANGE, PULSE y THERMOSTAT en un solo programa.',
+    program: customProgramFullExample,
+  },
+  {
+    id: 'garage-door',
+    title: 'Puerta de garaje',
+    description: 'IN1 controla motor de puerta en REL1. IN2 actua como paro de seguridad.',
+    program: [
+      '# Puerta de garaje',
+      'IF IN1 == ON THEN REL1 ON',
+      'IF IN1 == OFF THEN REL1 OFF',
+      'IF IN2 == ON THEN REL1 OFF',
+      'SET REL2 OFF',
+      'SET REL3 OFF',
+      'SET REL4 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'close-windows-hot',
+    title: 'Cerrar ventanas si hace calor',
+    description: 'Cierra actuador en REL2 cuando TEMP1 sube y reabre cuando baja.',
+    program: [
+      '# Cerrar ventanas por temperatura',
+      'IF TEMP1 >= 30 THEN REL2 ON',
+      'IF TEMP1 <= 27 THEN REL2 OFF',
+      'SET REL1 OFF',
+      'SET REL3 OFF',
+      'SET REL4 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'doorbell-double-ring',
+    title: 'Campana doble exacta',
+    description: 'Al detectar pulso en IN1, REL3 emite 2 pulsos de 2s con pausa de 300ms.',
+    program: [
+      '# Campana doble exacta',
+      'PULSE IN1 REL3 2000 2 300',
+      'SET REL1 OFF',
+      'SET REL2 OFF',
+      'SET REL4 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'irrigation',
+    title: 'Riego automatico',
+    description: 'Activa bomba en REL1 segun humedad y horario externo via IN2.',
+    program: [
+      '# Riego automatico',
+      'IF HUM1 <= 35 THEN REL1 ON',
+      'IF HUM1 >= 45 THEN REL1 OFF',
+      'IF IN2 == OFF THEN REL1 OFF',
+      'SET REL2 OFF',
+      'SET REL3 OFF',
+      'SET REL4 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'lights-pushbutton',
+    title: 'Luces con pulsador',
+    description: 'Cada cambio en IN3 conmuta REL4 y REL2 (toggle por flanco).',
+    program: [
+      '# Conmutador de luces por pulsador',
+      'ONCHANGE IN3 TOGGLE REL4',
+      'ONCHANGE IN3 TOGGLE REL2',
+      'SET REL1 OFF',
+      'SET REL3 OFF',
+    ].join('\n'),
+  },
+];
+
 const digitalFontStyle: CSSProperties = {
   fontFamily: "'Digital-7', monospace",
   letterSpacing: '0.08em',
@@ -150,16 +293,46 @@ const secondaryDigitalValueStyle: CSSProperties = {
   lineHeight: 1,
 };
 
+const inoutDigitalValueStyle: CSSProperties = {
+  ...digitalFontStyle,
+  letterSpacing: '0.04em',
+  lineHeight: 1,
+};
+
+const primaryUnitDigitalValueStyle: CSSProperties = {
+  ...digitalFontStyle,
+  fontSize: '0.46em',
+  letterSpacing: '0.03em',
+  lineHeight: 1,
+  display: 'inline-block',
+  transform: 'translateY(-0.22em)',
+};
+
+const secondaryUnitDigitalValueStyle: CSSProperties = {
+  ...digitalFontStyle,
+  fontSize: '0.62em',
+  letterSpacing: '0.03em',
+  lineHeight: 1,
+  display: 'inline-block',
+  transform: 'translateY(-0.22em)',
+};
+
 const legacyPanelSkins: LegacyPanelSkinOption[] = [
   { id: 'lh1t', label: 'LH1T' },
   { id: 'rele', label: 'RELE' },
   { id: 'foto', label: 'FOTO' },
+  { id: 'panel_2temp', label: 'PANEL_2TEMP' },
+  { id: 'inout', label: 'INOUT' },
 ];
 
 const legacyPanelPhotoOptions: LegacyPanelPhotoOption[] = [
   { id: 'compresor', label: 'Compresor', imageSrc: '/iot/PANEL_FOTO/options/compresor.png' },
   { id: 'caldera', label: 'Caldera', imageSrc: '/iot/PANEL_FOTO/options/caldera.png' },
+  { id: 'quemador', label: 'Quemador', imageSrc: '/iot/PANEL_FOTO/options/quemador.png' },
+  { id: 'horno', label: 'Horno', imageSrc: '/iot/PANEL_FOTO/options/horno.png' },
+  { id: 'pasteurizador', label: 'Pasteurizador', imageSrc: '/iot/PANEL_FOTO/options/pasteurizador.png' },
   { id: 'intercambiador', label: 'Intercambiador', imageSrc: '/iot/PANEL_FOTO/options/intercambiador.png' },
+  { id: 'inversor', label: 'Inversor', imageSrc: '/iot/PANEL_FOTO/options/inversor.png' },
   { id: 'variador', label: 'Variador', imageSrc: '/iot/PANEL_FOTO/options/variador.png' },
   { id: 'piscina', label: 'Piscina', imageSrc: '/iot/PANEL_FOTO/options/piscina.png' },
   { id: 'tanque-grande', label: 'Tanque grande', imageSrc: '/iot/PANEL_FOTO/options/tanque_grande.png' },
@@ -175,6 +348,7 @@ function defaultLegacyPanelDisplayConfig(): LegacyPanelDisplayConfig {
     humidityUnit: '%',
     setpointUnit: 'C',
     relayLabels: {},
+    relayVisible: {},
   };
 }
 
@@ -205,12 +379,64 @@ function normalizeLegacyPanelDisplayConfig(value: unknown): LegacyPanelDisplayCo
     }, {})
     : {};
 
+  const relayVisible = isPlainObject(value.relayVisible)
+    ? Object.entries(value.relayVisible).reduce<Record<string, boolean>>((acc, [relayLabel, relayValue]) => {
+      const normalizedLabel = relayLabel.trim().toUpperCase();
+      if (!normalizedLabel) return acc;
+      const normalizedVisible = asBoolean(relayValue);
+      if (normalizedVisible == null) return acc;
+      acc[normalizedLabel] = normalizedVisible;
+      return acc;
+    }, {})
+    : {};
+
   return {
     probeUnits,
     humidityUnit,
     setpointUnit,
     relayLabels,
+    relayVisible,
   };
+}
+
+function buildLegacyPanelPersistedConfig(
+  displayConfig: LegacyPanelDisplayConfig,
+  selectedSkin: LegacyPanelSkinId,
+  selectedPhotoId: string,
+): LegacyPanelPersistedConfig {
+  return {
+    ...displayConfig,
+    selectedSkin,
+    selectedPhotoId,
+  };
+}
+
+function cloneLegacyPanelDisplayConfig(displayConfig: LegacyPanelDisplayConfig): LegacyPanelDisplayConfig {
+  return {
+    probeUnits: [...displayConfig.probeUnits] as [string, string, string, string],
+    humidityUnit: displayConfig.humidityUnit,
+    setpointUnit: displayConfig.setpointUnit,
+    relayLabels: { ...displayConfig.relayLabels },
+    relayVisible: { ...displayConfig.relayVisible },
+  };
+}
+
+function areLegacyPanelDisplayConfigsEqual(a: LegacyPanelDisplayConfig, b: LegacyPanelDisplayConfig) {
+  if (a.humidityUnit !== b.humidityUnit || a.setpointUnit !== b.setpointUnit) return false;
+
+  for (let index = 0; index < 4; index += 1) {
+    if (a.probeUnits[index] !== b.probeUnits[index]) return false;
+  }
+
+  const aRelayEntries = Object.entries(a.relayLabels);
+  const bRelayEntries = Object.entries(b.relayLabels);
+  if (aRelayEntries.length !== bRelayEntries.length) return false;
+  const aRelayVisibleEntries = Object.entries(a.relayVisible);
+  const bRelayVisibleEntries = Object.entries(b.relayVisible);
+  if (aRelayVisibleEntries.length !== bRelayVisibleEntries.length) return false;
+
+  return aRelayEntries.every(([key, value]) => b.relayLabels[key] === value)
+    && aRelayVisibleEntries.every(([key, value]) => b.relayVisible[key] === value);
 }
 
 function toDateValue(value: DateLike): Date | null {
@@ -530,6 +756,18 @@ function formatLedValue(value: number | null, decimals = 1) {
   return value.toFixed(decimals);
 }
 
+function formatLedValueParts(
+  value: number | null,
+  unit: string,
+  { decimals = 1, powerOn = true }: { decimals?: number; powerOn?: boolean } = {},
+): LedDisplayParts {
+  if (!powerOn) return { valueText: 'OFF', unitText: '' };
+  const trimmedUnit = unit.trim();
+  if (value == null) return { valueText: '--', unitText: trimmedUnit };
+  const formattedValue = formatLedValue(value, decimals);
+  return { valueText: formattedValue, unitText: trimmedUnit };
+}
+
 function telemetryRange(preset: TelemetryPreset) {
   const now = new Date();
   const from = new Date(now);
@@ -656,6 +894,35 @@ function formatDisplayX10(value: unknown) {
   if (parsed == null) return '';
   const scaled = parsed / 10;
   return Number.isInteger(scaled) ? String(scaled) : scaled.toFixed(1).replace(/\.0$/, '');
+}
+
+function normalizeOperatingMode(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value === 0) return 'disabled';
+    if (value === 1) return 'thermostat';
+    if (value === 2) return 'pushbutton';
+    if (value === 3) return 'manual';
+    if (value === 4) return 'custom';
+  }
+
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return 'thermostat';
+  if (['0', 'disabled', 'manual_disable'].includes(normalized)) return 'disabled';
+  if (['1', 'thermostat'].includes(normalized)) return 'thermostat';
+  if (['2', 'pushbutton', 'pushbotton'].includes(normalized)) return 'pushbutton';
+  if (['3', 'manual'].includes(normalized)) return 'manual';
+  if (['4', 'custom', 'work_custom'].includes(normalized)) return 'custom';
+  if (['thermostat', 'pushbutton', 'manual', 'custom', 'disabled'].includes(normalized)) return normalized;
+  return 'thermostat';
+}
+
+function workModeFromOperatingMode(value: string) {
+  if (value === 'disabled') return 0;
+  if (value === 'thermostat') return 1;
+  if (value === 'pushbutton') return 2;
+  if (value === 'manual') return 3;
+  if (value === 'custom') return 4;
+  return 1;
 }
 
 function firstDefinedIotValue(values: unknown[]) {
@@ -976,6 +1243,10 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const [mode, setMode] = useState(asset.iot?.desiredState?.mode ?? 'cool');
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
+  const [operatingMode, setOperatingMode] = useState(() => normalizeOperatingMode(asset.iot?.desiredState?.workMode ?? asset.iot?.desiredState?.operatingMode));
+  const [customProgram, setCustomProgram] = useState(() => String(asset.iot?.desiredState?.customProgram ?? ''));
+  const [customGuideOpen, setCustomGuideOpen] = useState(false);
+  const [editableFunctionName, setEditableFunctionName] = useState(() => String(asset.iot?.desiredState?.editableFunctionName ?? ''));
   const [thermostatLogic, setThermostatLogic] = useState<ThermostatLogicFormState>(() => buildThermostatLogicState(asset));
   const [note, setNote] = useState('');
   const sourceAsset = open && lockedAsset ? lockedAsset : asset;
@@ -992,12 +1263,30 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     || typeof sourceAsset.iot?.desiredState?.fan === 'string';
   const supportsRelays = panelType === 'relay' || capabilitySet.has('relays') || relayLabels.length > 0;
   const supportsThermostatLogic = panelType === 'thermostat';
+  const editingCustomMode = operatingMode === 'custom';
+  const customProgramLength = customProgram.replace(/\r/g, '').length;
+
+  const handleLoadCustomTemplate = (template: CustomProgramTemplate) => {
+    setCustomProgram(template.program);
+  };
+
+  const handleInsertCustomTemplate = (template: CustomProgramTemplate) => {
+    setCustomProgram((current) => {
+      const base = current.replace(/\s+$/, '');
+      if (!base) return template.program;
+      return `${base}\n\n${template.program}`;
+    });
+  };
 
   const hydrateDraftFromAsset = (draftAsset: Asset) => {
     setSetpoint(String(draftAsset.iot?.desiredState?.setpoint ?? draftAsset.iot?.lastReading?.setpoint ?? ''));
     setMode(draftAsset.iot?.desiredState?.mode ?? 'cool');
     setFan(draftAsset.iot?.desiredState?.fan ?? 'auto');
     setPower(draftAsset.iot?.desiredState?.power ?? true);
+    setOperatingMode(normalizeOperatingMode(draftAsset.iot?.desiredState?.workMode ?? draftAsset.iot?.desiredState?.operatingMode));
+    setCustomProgram(String(draftAsset.iot?.desiredState?.customProgram ?? ''));
+    setCustomGuideOpen(false);
+    setEditableFunctionName(String(draftAsset.iot?.desiredState?.editableFunctionName ?? ''));
     setThermostatLogic(buildThermostatLogicState(draftAsset));
     setRelayStates(resolveRelayStateMap(draftAsset));
     setNote('');
@@ -1024,6 +1313,19 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
       if (supportsPower) state.power = power;
       if (supportsMode) state.mode = mode;
       if (supportsFan) state.fan = fan;
+      state.operatingMode = operatingMode;
+      state.workMode = workModeFromOperatingMode(operatingMode);
+      if (operatingMode === 'custom') {
+        const normalizedProgram = customProgram.replace(/\r/g, '').trim();
+        if (!normalizedProgram) {
+          throw new Error('Debes escribir un customProgram valido para usar modo Custom.');
+        }
+        if (normalizedProgram.length > 640) {
+          throw new Error('El customProgram supera 640 caracteres. Reduce el contenido antes de enviar.');
+        }
+        state.customProgram = normalizedProgram;
+      }
+      state.editableFunctionName = editableFunctionName;
 
       const payload: Record<string, unknown> = {
         assetId: asset.id,
@@ -1117,7 +1419,135 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
             Desired state
           </div>
           <div className="grid gap-3">
-            {supportsThermostatLogic ? (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <Label htmlFor={`panel-operatingMode-${asset.id}`}>Funcionamiento IoT</Label>
+                <select
+                  id={`panel-operatingMode-${asset.id}`}
+                  value={operatingMode}
+                  onChange={(e) => setOperatingMode(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  {operatingModeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Mapea a workMode remoto: disabled=0, thermostat=1, pushbutton=2, manual=3, custom=4.
+                </p>
+              </div>
+              <div>
+                <Label htmlFor={`panel-editableFunctionName-${asset.id}`}>Funcion editable (nombre)</Label>
+                <Input
+                  id={`panel-editableFunctionName-${asset.id}`}
+                  value={editableFunctionName}
+                  onChange={(e) => setEditableFunctionName(e.target.value)}
+                  placeholder="Ej: Bomba recirculacion"
+                />
+              </div>
+            </div>
+
+            {editingCustomMode ? (
+              <div className="grid gap-2 rounded-xl border border-sky-300/30 bg-sky-500/10 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label htmlFor={`panel-customProgram-${asset.id}`}>Programa custom remoto</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCustomGuideOpen((current) => !current)}
+                  >
+                    {customGuideOpen ? 'Ocultar guia y galeria' : 'Info, operaciones y galeria'}
+                  </Button>
+                </div>
+
+                {customGuideOpen ? (
+                  <div className="grid gap-3 rounded-lg border bg-background/70 p-3">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div className="rounded-md border p-2">
+                        <p className="text-xs font-semibold">Operaciones permitidas</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                          {customProgramOperations.map((operation) => (
+                            <li key={operation}>{operation}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="rounded-md border p-2">
+                        <p className="text-xs font-semibold">Limites y notas</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                          <li>Maximo 24 reglas activas por programa.</li>
+                          <li>Longitud maxima recomendada/remota: 640 caracteres.</li>
+                          <li>No soporta expresiones libres (+, -, *, /, AND, OR, ELSE).</li>
+                          <li>Comentarios validos: # o //.</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border p-2">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-semibold">Ejemplo completo (todos los sistemas)</p>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" variant="outline" onClick={() => setCustomProgram(customProgramFullExample)}>
+                            Cargar ejemplo
+                          </Button>
+                          <Button type="button" size="sm" variant="outline" onClick={() => handleInsertCustomTemplate(customProgramTemplates[0])}>
+                            Insertar ejemplo
+                          </Button>
+                        </div>
+                      </div>
+                      <pre className="max-h-52 overflow-auto rounded bg-muted/60 p-2 text-[11px] leading-5">{customProgramFullExample}</pre>
+                    </div>
+
+                    <div className="rounded-md border p-2">
+                      <p className="mb-2 text-xs font-semibold">Galeria de programas</p>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {customProgramTemplates.filter((template) => template.id !== 'full-systems').map((template) => (
+                          <div key={template.id} className="rounded-md border bg-muted/30 p-2">
+                            <p className="text-xs font-medium">{template.title}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{template.description}</p>
+                            <div className="mt-2 flex gap-2">
+                              <Button type="button" size="sm" variant="outline" onClick={() => handleLoadCustomTemplate(template)}>
+                                Cargar
+                              </Button>
+                              <Button type="button" size="sm" variant="outline" onClick={() => handleInsertCustomTemplate(template)}>
+                                Insertar
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                <Textarea
+                  id={`panel-customProgram-${asset.id}`}
+                  value={customProgram}
+                  onChange={(e) => setCustomProgram(e.target.value)}
+                  rows={10}
+                  placeholder={[
+                    '# Ejemplo rapido',
+                    'THERMOSTAT REL1 TEMP1 4.0 0.8 COOL',
+                    'IF HUM1 >= 85 THEN REL2 ON',
+                    'IF HUM1 <= 78 THEN REL2 OFF',
+                    'BLINK REL3 5000 3000',
+                    'SET REL4 OFF',
+                  ].join('\n')}
+                />
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>
+                    Se guarda en desiredState.customProgram y el firmware lo valida al sincronizar.
+                  </span>
+                  <span className={customProgramLength > 640 ? 'font-semibold text-red-500' : ''}>
+                    {customProgramLength}/640
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            {supportsThermostatLogic && !editingCustomMode ? (
               <>
                 <div className="rounded-xl border bg-muted/20 p-2 text-xs text-muted-foreground">
                   Campos `X10`: se muestran en grados (valor / 10) y se envian internamente como enteros x10.
@@ -1415,17 +1845,6 @@ function getRelayState(relays: AssetIotRelay[], label: string) {
   return relays.find((relay) => relay.label === label)?.active ?? false;
 }
 
-function thermostatMode(reading: AssetIotReading | null | undefined) {
-  const directMode = typeof reading?.mode === 'string' ? reading.mode.toLowerCase() : '';
-  if (directMode === 'heat' || directMode === 'heating') return 'HEAT';
-  if (directMode === 'cool' || directMode === 'cooling') return 'COOL';
-
-  const rawMode = String(reading?.raw?.MODEUP ?? '').trim();
-  if (rawMode === '1') return 'HEAT';
-  if (rawMode === '0') return 'COOL';
-  return 'AUTO';
-}
-
 function isLegacyPanelSkin(value: string | null | undefined): value is LegacyPanelSkinId {
   return legacyPanelSkins.some((skin) => skin.id === value);
 }
@@ -1469,6 +1888,8 @@ function LegacyThermostatPanel({
   const [displayConfigOpen, setDisplayConfigOpen] = useState(false);
   const [savingDisplayConfig, setSavingDisplayConfig] = useState(false);
   const [displayConfig, setDisplayConfig] = useState<LegacyPanelDisplayConfig>(() => defaultLegacyPanelDisplayConfig());
+  const [displayConfigDraft, setDisplayConfigDraft] = useState<LegacyPanelDisplayConfig>(() => defaultLegacyPanelDisplayConfig());
+  const panelConfigHydratedRef = useRef(false);
   const displayContainerRef = useRef<HTMLDivElement | null>(null);
   const [displayWidth, setDisplayWidth] = useState<number>(557);
   const skinStorageKey = `iot:legacy-skin:${asset.id}`;
@@ -1480,26 +1901,43 @@ function LegacyThermostatPanel({
   const relay3On = getRelayState(relays, 'REL3');
   const alarmOn = alarms.length > 0;
   const timestamp = formatReadingDate(readingTimestamp(asset, reading));
-  const legacyMode = thermostatMode(reading);
   const temperature = probeTemperature(reading, activeProbe);
   const humidity = probeHumidity(reading, activeProbe);
   const setpoint = probeSetpoint(reading, activeProbe) ?? probeSetpoint(reading, 1);
-  const primaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
-  const panelFotoPrimaryValue = powerOn ? formatLedValue(temperature, 1) : 'OFF';
-  const humidityValue = humidity != null ? formatLedValue(humidity, 0) : '--';
+  const activeProbeUnit = displayConfig.probeUnits[activeProbe - 1] ?? 'C';
+  const humidityUnit = displayConfig.humidityUnit || '%';
+  const setpointUnit = displayConfig.setpointUnit || activeProbeUnit;
+  const primaryValueParts = formatLedValueParts(temperature, activeProbeUnit, { decimals: 1, powerOn });
+  const panelFotoPrimaryValueParts = primaryValueParts;
+  const humidityValueParts = formatLedValueParts(humidity, humidityUnit, { decimals: 0, powerOn });
   const relayDisplayStates = relayDisplayItems(relays);
+  const visibleRelayDisplayStates = useMemo(
+    () =>
+      relayDisplayStates.filter((relay) => {
+        const normalizedLabel = relay.label.trim().toUpperCase();
+        return displayConfig.relayVisible[normalizedLabel] ?? true;
+      }),
+    [displayConfig.relayVisible, relayDisplayStates],
+  );
   const relaySlots = useMemo(() => relayPanelSlots(relays), [relays]);
   const configurableRelayLabels = useMemo(() => {
     const labels = relayDisplayStates.map((relay) => relay.label.trim().toUpperCase()).filter(Boolean);
     if (labels.length > 0) return labels;
     return ['REL1', 'REL2', 'REL3', 'REL4'];
   }, [relayDisplayStates]);
-  const activeProbeUnit = displayConfig.probeUnits[activeProbe - 1] ?? 'C';
-  const humidityUnit = displayConfig.humidityUnit || '%';
-  const setpointUnit = displayConfig.setpointUnit || activeProbeUnit;
   const relayDisplayLabel = (label: string) => {
     const normalizedLabel = label.trim().toUpperCase();
     return displayConfig.relayLabels[normalizedLabel] || normalizedLabel;
+  };
+  const openDisplayConfigDialog = () => {
+    setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(displayConfig));
+    setDisplayConfigOpen(true);
+  };
+  const handleDisplayConfigOpenChange = (open: boolean) => {
+    if (open) {
+      setDisplayConfigDraft(cloneLegacyPanelDisplayConfig(displayConfig));
+    }
+    setDisplayConfigOpen(open);
   };
   const selectedPhoto = useMemo<LegacyPanelPhotoOption>(
     () =>
@@ -1518,25 +1956,39 @@ function LegacyThermostatPanel({
   const telemetryIconSrc = useMemo(() => {
     if (activeSkin === 'rele') return '/iot/PANEL_RELE/graf.png';
     if (activeSkin === 'foto') return '/iot/PANEL_FOTO/graf.png';
+    if (activeSkin === 'panel_2temp') return '/iot/PANEL_FOTO/graf.png';
+    if (activeSkin === 'inout') return '/iot/PANEL_RELE/graf.png';
     return '/iot/lh1t/images/graf.png';
   }, [activeSkin]);
   const powerIconSrc = useMemo(() => {
     if (activeSkin === 'rele') return powerOn ? '/iot/PANEL_RELE/power_on.png' : '/iot/PANEL_RELE/power_off.png';
     if (activeSkin === 'foto') return powerOn ? '/iot/PANEL_FOTO/power_on.png' : '/iot/PANEL_FOTO/power_off.png';
+    if (activeSkin === 'panel_2temp') return powerOn ? '/iot/PANEL_FOTO/power_on.png' : '/iot/PANEL_FOTO/power_off.png';
+    if (activeSkin === 'inout') return powerOn ? '/iot/PANEL_RELE/power_on.png' : '/iot/PANEL_RELE/power_off.png';
     return powerOn ? '/iot/lh1t/images/power_on.png' : '/iot/lh1t/images/power_off.png';
   }, [activeSkin, powerOn]);
   const displayBackgroundImage = useMemo(() => {
     if (activeSkin === 'rele') return '/iot/PANEL_RELE/DISPLAY_FONDO_RELE_1OFF.png';
     if (activeSkin === 'foto') return '/iot/PANEL_FOTO/DISPLAY_FOTO.png';
+    if (activeSkin === 'panel_2temp') return '/iot/PANEL_2TEMP/2DISPLAY_FOTO_2TEMP.png';
+    if (activeSkin === 'inout') return '/iot/PANEL_INOUT/DISPLAY_FONDO_INOUT2.png';
     return '/iot/lh1t/images/DISPLAY_FONDO_TEMP.png';
   }, [activeSkin]);
   const primaryDisplayFontSize = useMemo(() => {
-    const scaled = displayWidth * 0.118;
-    return `${Math.min(65, Math.max(34, scaled)).toFixed(1)}px`;
+    const scaled = displayWidth * 0.112;
+    return `${Math.min(60, Math.max(30, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const panelFotoPrimaryDisplayFontSize = useMemo(() => {
-    const scaled = displayWidth * 0.104;
-    return `${Math.min(62, Math.max(30, scaled)).toFixed(1)}px`;
+    const scaled = displayWidth * 0.080;
+    return `${Math.min(45, Math.max(20, scaled)).toFixed(1)}px`;
+  }, [displayWidth]);
+  const inoutDisplayFontSize = useMemo(() => {
+    const scaled = displayWidth * 0.047;
+    return `${Math.min(45, Math.max(20, scaled)).toFixed(1)}px`;
+  }, [displayWidth]);
+  const secondaryDisplayFontSize = useMemo(() => {
+    const scaled = displayWidth * 0.041;
+    return `${Math.min(45, Math.max(20, scaled)).toFixed(1)}px`;
   }, [displayWidth]);
   const primaryDisplayStyle = useMemo<CSSProperties>(
     () => ({
@@ -1551,6 +2003,38 @@ function LegacyThermostatPanel({
       fontSize: panelFotoPrimaryDisplayFontSize,
     }),
     [panelFotoPrimaryDisplayFontSize],
+  );
+  const inoutDisplayStyle = useMemo<CSSProperties>(
+    () => ({
+      ...inoutDigitalValueStyle,
+      fontSize: inoutDisplayFontSize,
+    }),
+    [inoutDisplayFontSize],
+  );
+  const secondaryDisplayStyle = useMemo<CSSProperties>(
+    () => ({
+      ...secondaryDigitalValueStyle,
+      fontSize: secondaryDisplayFontSize,
+    }),
+    [secondaryDisplayFontSize],
+  );
+  const inoutProbeReadingParts = useMemo(
+    () =>
+      [1, 2, 3, 4].map((probeIndex) => {
+        const probeValue = probeTemperature(reading, probeIndex);
+        const probeUnit = displayConfig.probeUnits[probeIndex - 1] ?? 'C';
+        return formatLedValueParts(probeValue, probeUnit, { decimals: 1, powerOn });
+      }),
+    [displayConfig.probeUnits, powerOn, reading],
+  );
+  const panel2TempProbeReadingParts = useMemo(
+    () =>
+      [1, 2].map((probeIndex) => {
+        const probeValue = probeTemperature(reading, probeIndex);
+        const probeUnit = displayConfig.probeUnits[probeIndex - 1] ?? 'C';
+        return formatLedValueParts(probeValue, probeUnit, { decimals: 1, powerOn });
+      }),
+    [displayConfig.probeUnits, powerOn, reading],
   );
 
   useEffect(() => {
@@ -1578,31 +2062,67 @@ function LegacyThermostatPanel({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    panelConfigHydratedRef.current = false;
+
     const savedSkin = window.localStorage.getItem(skinStorageKey);
     const savedPhoto = window.localStorage.getItem(photoStorageKey);
     const savedDisplayConfig = window.localStorage.getItem(displayConfigStorageKey);
+    const remotePanelConfig = isPlainObject(asset.iot?.panelDisplayConfig)
+      ? asset.iot.panelDisplayConfig as Record<string, unknown>
+      : null;
 
-    setActiveSkin(isLegacyPanelSkin(savedSkin) ? savedSkin : 'lh1t');
+    const remoteSelectedSkinRaw = typeof remotePanelConfig?.selectedSkin === 'string'
+      ? remotePanelConfig.selectedSkin
+      : null;
+    const remoteSelectedSkin: LegacyPanelSkinId | null = isLegacyPanelSkin(remoteSelectedSkinRaw)
+      ? remoteSelectedSkinRaw
+      : null;
+
+    const remoteSelectedPhotoRaw = typeof remotePanelConfig?.selectedPhotoId === 'string'
+      ? remotePanelConfig.selectedPhotoId
+      : null;
+    const remoteSelectedPhoto = remoteSelectedPhotoRaw
+      && legacyPanelPhotoOptions.some((option) => option.id === remoteSelectedPhotoRaw)
+      ? remoteSelectedPhotoRaw
+      : null;
+
+    setActiveSkin(remoteSelectedSkin ?? (isLegacyPanelSkin(savedSkin) ? savedSkin : 'lh1t'));
     setSelectedPhotoId(
-      legacyPanelPhotoOptions.some((option) => option.id === savedPhoto)
+      remoteSelectedPhoto
+        ?? (legacyPanelPhotoOptions.some((option) => option.id === savedPhoto)
         ? String(savedPhoto)
-        : (legacyPanelPhotoOptions[0]?.id ?? 'compresor'),
+        : (legacyPanelPhotoOptions[0]?.id ?? 'compresor')),
     );
+    let nextDisplayConfig: LegacyPanelDisplayConfig;
+
     if (asset.iot?.panelDisplayConfig) {
-      setDisplayConfig(normalizeLegacyPanelDisplayConfig(asset.iot.panelDisplayConfig));
-      return;
-    }
-    if (savedDisplayConfig) {
+      nextDisplayConfig = normalizeLegacyPanelDisplayConfig(asset.iot.panelDisplayConfig);
+    } else if (savedDisplayConfig) {
       try {
         const parsedConfig = JSON.parse(savedDisplayConfig);
-        setDisplayConfig(normalizeLegacyPanelDisplayConfig(parsedConfig));
+        nextDisplayConfig = normalizeLegacyPanelDisplayConfig(parsedConfig);
       } catch {
-        setDisplayConfig(defaultLegacyPanelDisplayConfig());
+        nextDisplayConfig = defaultLegacyPanelDisplayConfig();
       }
-      return;
+    } else {
+      nextDisplayConfig = defaultLegacyPanelDisplayConfig();
     }
-    setDisplayConfig(defaultLegacyPanelDisplayConfig());
-  }, [asset.iot?.panelDisplayConfig, displayConfigStorageKey, photoStorageKey, skinStorageKey]);
+
+    setDisplayConfig((currentConfig) =>
+      areLegacyPanelDisplayConfigsEqual(currentConfig, nextDisplayConfig)
+        ? currentConfig
+        : nextDisplayConfig,
+    );
+    if (!displayConfigOpen) {
+      setDisplayConfigDraft((currentDraft) =>
+        areLegacyPanelDisplayConfigsEqual(currentDraft, nextDisplayConfig)
+          ? currentDraft
+          : cloneLegacyPanelDisplayConfig(nextDisplayConfig),
+      );
+    }
+
+    panelConfigHydratedRef.current = true;
+  }, [asset.iot?.panelDisplayConfig, displayConfigOpen, displayConfigStorageKey, photoStorageKey, skinStorageKey]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1619,12 +2139,32 @@ function LegacyThermostatPanel({
     window.localStorage.setItem(displayConfigStorageKey, JSON.stringify(displayConfig));
   }, [displayConfig, displayConfigStorageKey]);
 
+  useEffect(() => {
+    if (!panelConfigHydratedRef.current) return;
+    if (!firestore || !organizationId) return;
+
+    const timeoutId = window.setTimeout(() => {
+      const assetRef = doc(firestore, orgDocPath(organizationId, 'assets', asset.id));
+      void setDoc(assetRef, {
+        iot: {
+          panelDisplayConfig: buildLegacyPanelPersistedConfig(displayConfig, activeSkin, selectedPhotoId),
+          panelDisplayConfigUpdatedAt: serverTimestamp(),
+        },
+      }, { merge: true });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeSkin, asset.id, displayConfig, firestore, organizationId, selectedPhotoId]);
+
   const cycleSkin = () => {
     setActiveSkin((currentSkin) => nextLegacyPanelSkin(currentSkin));
   };
 
   const handleSaveDisplayConfig = async () => {
+    const nextDisplayConfig = cloneLegacyPanelDisplayConfig(displayConfigDraft);
+
     if (!firestore || !organizationId) {
+      setDisplayConfig(nextDisplayConfig);
       setDisplayConfigOpen(false);
       return;
     }
@@ -1634,10 +2174,12 @@ function LegacyThermostatPanel({
       const assetRef = doc(firestore, orgDocPath(organizationId, 'assets', asset.id));
       await setDoc(assetRef, {
         iot: {
-          panelDisplayConfig: displayConfig,
+          panelDisplayConfig: buildLegacyPanelPersistedConfig(nextDisplayConfig, activeSkin, selectedPhotoId),
           panelDisplayConfigUpdatedAt: serverTimestamp(),
         },
       }, { merge: true });
+
+      setDisplayConfig(nextDisplayConfig);
 
       toast({
         title: 'Configuracion guardada',
@@ -1671,27 +2213,6 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-                MODE {legacyMode}
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
-                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
-              >
-                PROBE {activeProbe}
-              </button>
-              <button
-                type="button"
-                onClick={cycleSkin}
-                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
-                title={`Cambiar skin (actual: ${activeSkinLabel})`}
-              >
-                SKIN
-              </button>
-            </div>
-
             <IotTelemetryDialog
               asset={asset}
               trigger={(
@@ -1704,31 +2225,41 @@ function LegacyThermostatPanel({
                 </button>
               )}
             />
-            <div className="absolute left-[84%] top-[62.5%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5">
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[84%] top-[62.5%] h-[11.7%] w-[6.3%] rounded-full bg-black/5 p-0.5 transition hover:bg-black/15"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
-            </div>
+            </button>
 
             <div className="absolute left-[6.3%] top-[18.3%] h-[8.3%] w-[4.5%]" style={{ opacity: alarmOn ? 1 : 0 }}>
               <img src="/iot/lh1t/images/alarma.png" alt="Alarma" className="h-full w-full object-contain" />
             </div>
 
             <div
-              className="absolute top-[38.5%] right-[58.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[20%] lg:right-[55.6%] lg:w-[21%]"
+              className="absolute top-[38.5%] right-[47.8%] w-[35%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[46.4%] sm:w-[34%] lg:right-[46.2%] lg:w-[34%]"
               style={primaryDisplayStyle}
             >
-              {primaryValue}
+              <span className="inline-flex items-end justify-end gap-[0.16em]">
+                <span>{primaryValueParts.valueText}</span>
+                {primaryValueParts.unitText ? (
+                  <span style={primaryUnitDigitalValueStyle}>{primaryValueParts.unitText}</span>
+                ) : null}
+              </span>
             </div>
-            {powerOn ? (
-              <div className="absolute left-[44.8%] top-[50.0%] text-[18px] font-bold text-red-600">
-                {activeProbeUnit}
-              </div>
-            ) : null}
 
             <div className="absolute left-[17.6%] top-[64.5%] text-[12px] text-red-600 sm:text-[14px]">Humidity =</div>
-            <div className="absolute right-[50.5%] top-[64.9%] w-[7.5%] pr-[0.6%] text-right text-red-600" style={secondaryDigitalValueStyle}>
-              {humidityValue}
+            <div className="absolute right-[47.0%] top-[64.9%] w-[14.0%] pr-[0.6%] text-right text-red-600" style={secondaryDisplayStyle}>
+              <span className="inline-flex items-end justify-end gap-[0.14em]">
+                <span>{humidityValueParts.valueText}</span>
+                {humidityValueParts.unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{humidityValueParts.unitText}</span>
+                ) : null}
+              </span>
             </div>
-            <div className="absolute left-[49.0%] top-[67.8%] text-[15px] font-bold text-red-600">{humidityUnit}</div>
 
             {relay1On ? (
               <div className="absolute left-[55.8%] top-[35%] h-[10.7%] w-[5.7%]">
@@ -1759,7 +2290,7 @@ function LegacyThermostatPanel({
             />
             <button
               type="button"
-              onClick={() => setDisplayConfigOpen(true)}
+              onClick={openDisplayConfigDialog}
               className="absolute left-[67.7%] top-[59%] h-[17.7%] w-[10.2%] overflow-hidden rounded-[12px] border border-white/10 bg-[#171717] transition hover:border-sky-300/70"
               aria-label="Abrir configuracion del panel"
               title="Configurar unidades y etiquetas"
@@ -1815,30 +2346,15 @@ function LegacyThermostatPanel({
                 </button>
               )}
             />
-            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
-            </div>
-
-            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-                MODE {legacyMode}
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
-                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
-              >
-                PROBE {activeProbe}
-              </button>
-              <button
-                type="button"
-                onClick={cycleSkin}
-                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
-                title={`Cambiar skin (actual: ${activeSkinLabel})`}
-              >
-                SKIN
-              </button>
-            </div>
+            </button>
           </>
         ) : null}
 
@@ -1851,29 +2367,28 @@ function LegacyThermostatPanel({
               {asset.name}
             </div>
 
-            <div className="absolute top-[45.8%] right-[65.8%] w-[22%] min-w-[5ch] pr-[0.08em] text-right text-red-600 sm:right-[60.8%] sm:w-[20%] lg:right-[62.6%] lg:w-[21%]" style={panelFotoPrimaryDisplayStyle}>
-              {panelFotoPrimaryValue}
+            <div className="absolute top-[45.8%] right-[57.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
+              <span className="inline-flex items-end justify-end gap-[0.16em]">
+                <span>{panelFotoPrimaryValueParts.valueText}</span>
+                {panelFotoPrimaryValueParts.unitText ? (
+                  <span style={primaryUnitDigitalValueStyle}>{panelFotoPrimaryValueParts.unitText}</span>
+                ) : null}
+              </span>
             </div>
-            {powerOn ? (
-              <div className="absolute left-[37.4%] top-[50.0%] text-[18px] font-bold text-red-600">{activeProbeUnit}</div>
-            ) : null}
 
-            <div className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] border border-white/20 bg-black/60 p-1.5">
+            <button
+              type="button"
+              onClick={() => setPhotoGalleryOpen(true)}
+              className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] text-left"
+              aria-label="Abrir galeria de imagenes"
+              title="Seleccionar imagen del panel foto"
+            >
               <img
                 src={selectedPhoto.imageSrc}
                 alt={`Imagen seleccionada: ${selectedPhoto.label}`}
                 className="h-full w-full object-contain"
               />
-              <button
-                type="button"
-                onClick={() => setPhotoGalleryOpen(true)}
-                className="absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-md border border-white/20 bg-black/55 text-slate-100 transition hover:border-sky-300/80 hover:text-sky-100"
-                aria-label="Abrir galeria de imagenes"
-                title="Seleccionar imagen del panel foto"
-              >
-                <Settings className="h-4 w-4" strokeWidth={2.2} />
-              </button>
-            </div>
+            </button>
 
             <IotTelemetryDialog
               asset={asset}
@@ -1887,29 +2402,176 @@ function LegacyThermostatPanel({
                 </button>
               )}
             />
-            <div className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2">
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
+            </button>
+          </>
+        ) : null}
+
+        {activeSkin === 'panel_2temp' ? (
+          <>
+            <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
+              Dato: {timestamp}
             </div>
-            <div className="absolute left-[8.1%] top-[81.7%] flex gap-1.5 text-[7px] sm:text-[9px]">
-              <div className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm">
-                MODE {legacyMode}
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
-                className="rounded border border-gray-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-sky-300/80 hover:text-sky-100"
-              >
-                PROBE {activeProbe}
-              </button>
-              <button
-                type="button"
-                onClick={cycleSkin}
-                className="rounded border border-red-500/80 bg-transparent px-2 py-1 text-white shadow-sm transition hover:border-red-300 hover:text-red-100"
-                title={`Cambiar skin (actual: ${activeSkinLabel})`}
-              >
-                SKIN
-              </button>
+            <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
+              {asset.name}
             </div>
+
+            <div className="absolute left-[10.2%] top-[33.8%] text-[10px] font-semibold tracking-[0.08em] text-white sm:text-[11px]">
+              S1
+            </div>
+            <div className="absolute top-[33.8%] right-[55.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
+              <span className="inline-flex items-end justify-end gap-[0.16em]">
+                <span>{panel2TempProbeReadingParts[0]?.valueText ?? '--'}</span>
+                {panel2TempProbeReadingParts[0]?.unitText ? (
+                  <span style={primaryUnitDigitalValueStyle}>{panel2TempProbeReadingParts[0].unitText}</span>
+                ) : null}
+              </span>
+            </div>
+            <div className="absolute left-[10.2%] top-[60.5%] text-[10px] font-semibold tracking-[0.08em] text-white sm:text-[11px]">
+              S2
+            </div>
+            <div className="absolute top-[60.5%] right-[55.8%] w-[30%] min-w-[8ch] pr-[0.08em] text-right text-red-600 sm:right-[55.8%] sm:w-[30%] lg:right-[56.6%] lg:w-[30%]" style={panelFotoPrimaryDisplayStyle}>
+              <span className="inline-flex items-end justify-end gap-[0.16em]">
+                <span>{panel2TempProbeReadingParts[1]?.valueText ?? '--'}</span>
+                {panel2TempProbeReadingParts[1]?.unitText ? (
+                  <span style={primaryUnitDigitalValueStyle}>{panel2TempProbeReadingParts[1].unitText}</span>
+                ) : null}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPhotoGalleryOpen(true)}
+              className="absolute left-[49.6%] top-[32.7%] h-[44.3%] w-[28.0%] overflow-hidden rounded-[12px] text-left"
+              aria-label="Abrir galeria de imagenes"
+              title="Seleccionar imagen del panel 2TEMP"
+            >
+              <img
+                src={selectedPhoto.imageSrc}
+                alt={`Imagen seleccionada: ${selectedPhoto.label}`}
+                className="h-full w-full object-contain"
+              />
+            </button>
+
+            <IotTelemetryDialog
+              asset={asset}
+              trigger={(
+                <button
+                  type="button"
+                  className="absolute left-[81.5%] top-[31.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+                  aria-label="Abrir historico de telemetria"
+                >
+                  <img src={telemetryIconSrc} alt="Grafica" className="h-full w-full object-contain" />
+                </button>
+              )}
+            />
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
+              <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
+            </button>
+          </>
+        ) : null}
+
+        {activeSkin === 'inout' ? (
+          <>
+            <div className="absolute left-1/2 top-[4.0%] -translate-x-1/2 text-center text-[10px] font-bold text-black sm:text-[14px]">
+              Dato: {timestamp}
+            </div>
+            <div className="absolute left-1/2 top-[16.7%] -translate-x-1/2 whitespace-nowrap text-center text-[14px] font-bold text-red-600 sm:text-[18px]">
+              {asset.name}
+            </div>
+
+            <div
+              className="absolute right-[66.0%] top-[37.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              style={inoutDisplayStyle}
+            >
+              <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
+                <span>{inoutProbeReadingParts[0].valueText}</span>
+                {inoutProbeReadingParts[0].unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[0].unitText}</span>
+                ) : null}
+              </span>
+            </div>
+            <div
+              className="absolute right-[66.0%] top-[61.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              style={inoutDisplayStyle}
+            >
+              <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
+                <span>{inoutProbeReadingParts[2].valueText}</span>
+                {inoutProbeReadingParts[2].unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[2].unitText}</span>
+                ) : null}
+              </span>
+            </div>
+            <div
+              className="absolute right-[16.5%] top-[37.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              style={inoutDisplayStyle}
+            >
+              <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
+                <span>{inoutProbeReadingParts[1].valueText}</span>
+                {inoutProbeReadingParts[1].unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[1].unitText}</span>
+                ) : null}
+              </span>
+            </div>
+            <div
+              className="absolute right-[16.5%] top-[61.0%] flex h-[15.0%] w-[20.0%] items-center justify-end pr-[6%] text-right text-red-600"
+              style={inoutDisplayStyle}
+            >
+              <span className="inline-flex w-full items-end justify-end gap-[0.12em]">
+                <span>{inoutProbeReadingParts[3].valueText}</span>
+                {inoutProbeReadingParts[3].unitText ? (
+                  <span style={secondaryUnitDigitalValueStyle}>{inoutProbeReadingParts[3].unitText}</span>
+                ) : null}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setPhotoGalleryOpen(true)}
+              className="absolute left-[28.0%] top-[31.7%] h-[44.7%] w-[29.8%] overflow-hidden rounded-[14px] text-left"
+              aria-label="Abrir galeria de imagenes"
+              title="Seleccionar imagen del panel INOUT"
+            >
+              <img
+                src={selectedPhoto.imageSrc}
+                alt={`Imagen seleccionada: ${selectedPhoto.label}`}
+                className="h-full w-full origin-center scale-[0.8] object-contain"
+              />
+            </button>
+
+            <IotTelemetryDialog
+              asset={asset}
+              trigger={(
+                <button
+                  type="button"
+                  className="absolute left-[81.5%] top-[31.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+                  aria-label="Abrir historico de telemetria"
+                >
+                  <img src={telemetryIconSrc} alt="Grafica" className="h-full w-full origin-center scale-[0.8] object-contain" />
+                </button>
+              )}
+            />
+            <button
+              type="button"
+              onClick={cycleSkin}
+              className="absolute left-[81.5%] top-[58.7%] h-[18.3%] w-[10.4%] rounded-[14px] bg-black/10 p-2 transition hover:bg-black/20"
+              title={`Cambiar skin (actual: ${activeSkinLabel})`}
+              aria-label="Cambiar skin del panel"
+            >
+              <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full origin-center scale-[0.8] object-contain" />
+            </button>
           </>
         ) : null}
       </div>
@@ -1950,7 +2612,7 @@ function LegacyThermostatPanel({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={displayConfigOpen} onOpenChange={setDisplayConfigOpen}>
+      <Dialog open={displayConfigOpen} onOpenChange={handleDisplayConfigOpenChange}>
         <DialogContent className="max-w-2xl border-white/10 bg-slate-950 text-white">
           <DialogHeader>
             <DialogTitle className="text-white">Configuracion de unidades y etiquetas</DialogTitle>
@@ -1963,7 +2625,7 @@ function LegacyThermostatPanel({
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="mb-2 text-sm font-semibold text-slate-200">Unidades de sondas</div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {displayConfig.probeUnits.map((unit, index) => (
+                {displayConfigDraft.probeUnits.map((unit, index) => (
                   <div key={`probe-unit-${index + 1}`}>
                     <Label htmlFor={`probe-unit-${asset.id}-${index + 1}`}>Sonda {index + 1}</Label>
                     <Input
@@ -1971,7 +2633,7 @@ function LegacyThermostatPanel({
                       value={unit}
                       onChange={(e) => {
                         const nextValue = e.target.value;
-                        setDisplayConfig((currentConfig) => {
+                        setDisplayConfigDraft((currentConfig) => {
                           const nextProbeUnits = [...currentConfig.probeUnits] as [string, string, string, string];
                           nextProbeUnits[index] = nextValue;
                           return {
@@ -1994,10 +2656,10 @@ function LegacyThermostatPanel({
                   <Label htmlFor={`humidity-unit-${asset.id}`}>Humedad</Label>
                   <Input
                     id={`humidity-unit-${asset.id}`}
-                    value={displayConfig.humidityUnit}
+                    value={displayConfigDraft.humidityUnit}
                     onChange={(e) => {
                       const nextValue = e.target.value;
-                      setDisplayConfig((currentConfig) => ({
+                      setDisplayConfigDraft((currentConfig) => ({
                         ...currentConfig,
                         humidityUnit: nextValue,
                       }));
@@ -2009,10 +2671,10 @@ function LegacyThermostatPanel({
                   <Label htmlFor={`setpoint-unit-${asset.id}`}>Consigna</Label>
                   <Input
                     id={`setpoint-unit-${asset.id}`}
-                    value={displayConfig.setpointUnit}
+                    value={displayConfigDraft.setpointUnit}
                     onChange={(e) => {
                       const nextValue = e.target.value;
-                      setDisplayConfig((currentConfig) => ({
+                      setDisplayConfigDraft((currentConfig) => ({
                         ...currentConfig,
                         setpointUnit: nextValue,
                       }));
@@ -2025,16 +2687,40 @@ function LegacyThermostatPanel({
 
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="mb-2 text-sm font-semibold text-slate-200">Etiquetas de relays</div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="space-y-2">
                 {configurableRelayLabels.map((label) => (
-                  <div key={`relay-label-${label}`}>
-                    <Label htmlFor={`relay-label-${asset.id}-${label}`}>{label}</Label>
+                  <div
+                    key={`relay-label-${label}`}
+                    className="grid grid-cols-[auto,auto,1fr] items-center gap-2 rounded-lg border border-white/10 bg-black/10 px-2 py-1.5"
+                  >
+                    <Label htmlFor={`relay-label-${asset.id}-${label}`} className="mb-0 text-xs text-slate-200">
+                      {label}
+                    </Label>
+                    <label className="flex items-center gap-1 whitespace-nowrap text-[11px] text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={displayConfigDraft.relayVisible[label] ?? true}
+                        onChange={(e) => {
+                          const visible = e.target.checked;
+                          setDisplayConfigDraft((currentConfig) => ({
+                            ...currentConfig,
+                            relayVisible: {
+                              ...currentConfig.relayVisible,
+                              [label]: visible,
+                            },
+                          }));
+                        }}
+                        className="h-3.5 w-3.5 rounded border border-white/30 bg-transparent accent-sky-400"
+                      />
+                      <span>Mostrar</span>
+                    </label>
                     <Input
                       id={`relay-label-${asset.id}-${label}`}
-                      value={displayConfig.relayLabels[label] ?? ''}
+                      value={displayConfigDraft.relayLabels[label] ?? ''}
+                      className="h-8 text-xs"
                       onChange={(e) => {
                         const nextValue = e.target.value;
-                        setDisplayConfig((currentConfig) => ({
+                        setDisplayConfigDraft((currentConfig) => ({
                           ...currentConfig,
                           relayLabels: {
                             ...currentConfig.relayLabels,
@@ -2053,7 +2739,7 @@ function LegacyThermostatPanel({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setDisplayConfig(defaultLegacyPanelDisplayConfig())}
+                onClick={() => setDisplayConfigDraft(defaultLegacyPanelDisplayConfig())}
                 disabled={savingDisplayConfig}
               >
                 Restablecer
@@ -2066,27 +2752,9 @@ function LegacyThermostatPanel({
         </DialogContent>
       </Dialog>
 
-      <div className="grid grid-cols-2 gap-2">
-        <MetricTile
-          label={`Sonda ${activeProbe}`}
-          value={temperature != null ? formatLedValue(temperature, 0) : '--'}
-          suffix={activeProbeUnit}
-          icon={<Thermometer className="h-3.5 w-3.5" />}
-          centered
-        />
-        <MetricTile
-          label="Consigna"
-          value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
-          suffix={setpointUnit}
-          icon={<Gauge className="h-3.5 w-3.5" />}
-          centered
-        />
-      </div>
-
       <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-xs text-slate-300">
-        <div className="mb-1 text-center text-[10px] uppercase tracking-[0.22em] text-slate-400">Salidas</div>
         <div className="flex flex-wrap justify-center gap-1.5">
-          {relayDisplayStates.map((relay) => (
+          {visibleRelayDisplayStates.map((relay) => (
             <div
               key={relay.label}
               className={
@@ -2099,6 +2767,74 @@ function LegacyThermostatPanel({
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => setActiveProbe((currentProbe) => (currentProbe % 4) + 1)}
+          className="w-full rounded-2xl text-left transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+          title={`Cambiar sonda (actual: ${activeProbe})`}
+          aria-label={`Cambiar sonda (actual: ${activeProbe})`}
+        >
+          <MetricTile
+            label={`Sonda ${activeProbe}`}
+            value={temperature != null ? formatLedValue(temperature, 0) : '--'}
+            suffix={activeProbeUnit}
+            icon={<Thermometer className="h-3.5 w-3.5" />}
+            centered
+          />
+        </button>
+        <IotDesiredStateDialog
+          asset={asset}
+          trigger={(
+            <button
+              type="button"
+              className="w-full rounded-2xl text-left transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+              title="Abrir ajustes de consigna"
+              aria-label="Abrir ajustes de consigna"
+            >
+              <MetricTile
+                label="Consigna"
+                value={setpoint != null ? formatLedValue(setpoint, 1) : '--'}
+                suffix={setpointUnit}
+                icon={<Gauge className="h-3.5 w-3.5" />}
+                centered
+              />
+            </button>
+          )}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <IotDesiredStateDialog
+          asset={asset}
+          trigger={(
+            <button
+              type="button"
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+              title="Abrir Provision y control"
+              aria-label="Abrir Provision y control"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <Send className="h-4 w-4 text-sky-300" />
+                <span>Provision</span>
+              </div>
+            </button>
+          )}
+        />
+        <button
+          type="button"
+          onClick={openDisplayConfigDialog}
+          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+          title="Cambiar unidades y etiquetas"
+          aria-label="Cambiar unidades y etiquetas"
+        >
+          <div className="flex items-center justify-center gap-2">
+            <Settings className="h-4 w-4 text-sky-300" />
+            <span>Etiquetas</span>
+          </div>
+        </button>
       </div>
     </div>
   );

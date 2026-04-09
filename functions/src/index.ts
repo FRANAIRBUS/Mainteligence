@@ -1957,6 +1957,48 @@ function optionalStringValue(input: unknown) {
   return normalized ? normalized : null;
 }
 
+const validOperatingModes = new Set(['thermostat', 'pushbutton', 'manual', 'disabled', 'custom']);
+
+function optionalOperatingModeValue(input: unknown) {
+  const normalized = optionalStringValue(input)?.toLowerCase();
+  if (!normalized) return null;
+  if (normalized === 'manual_disable') return 'disabled';
+  if (normalized === 'pushbotton') return 'pushbutton';
+  if (normalized === 'work_custom') return 'custom';
+  if (validOperatingModes.has(normalized)) return normalized;
+  throw httpsError('invalid-argument', 'state.operatingMode invalido.');
+}
+
+function optionalWorkModeValue(input: unknown) {
+  if (input === null || input === undefined || input === '') return null;
+
+  if (typeof input === 'number') {
+    if (!Number.isInteger(input) || input < 0 || input > 4) {
+      throw httpsError('invalid-argument', 'state.workMode invalido.');
+    }
+    return input;
+  }
+
+  const normalized = String(input).trim().toLowerCase();
+  if (!normalized) return null;
+  if (['0', 'disabled'].includes(normalized)) return 0;
+  if (['1', 'thermostat'].includes(normalized)) return 1;
+  if (['2', 'pushbutton', 'pushbotton'].includes(normalized)) return 2;
+  if (['3', 'manual'].includes(normalized)) return 3;
+  if (['4', 'custom', 'work_custom'].includes(normalized)) return 4;
+  throw httpsError('invalid-argument', 'state.workMode invalido.');
+}
+
+function optionalCustomProgramValue(input: unknown) {
+  if (input === null || input === undefined) return null;
+  const normalized = String(input).replace(/\r/g, '').trim();
+  if (!normalized) return null;
+  if (normalized.length > 640) {
+    throw httpsError('invalid-argument', 'state.customProgram supera 640 caracteres.');
+  }
+  return normalized;
+}
+
 function sanitizeCapabilities(input: unknown) {
   if (!Array.isArray(input)) return undefined;
   const capabilities = input
@@ -2084,6 +2126,10 @@ function sanitizeDesiredStatePatch(input: unknown) {
   if ('stopRelay2OnDefrost' in input) patch.stopRelay2OnDefrost = optionalBoolean(input.stopRelay2OnDefrost, 'state.stopRelay2OnDefrost');
   if ('relay2Mode' in input) patch.relay2Mode = optionalFiniteNumber(input.relay2Mode, 'state.relay2Mode');
   if ('relay3Mode' in input) patch.relay3Mode = optionalFiniteNumber(input.relay3Mode, 'state.relay3Mode');
+  if ('operatingMode' in input) patch.operatingMode = optionalOperatingModeValue(input.operatingMode);
+  if ('workMode' in input) patch.workMode = optionalWorkModeValue(input.workMode);
+  if ('customProgram' in input) patch.customProgram = optionalCustomProgramValue(input.customProgram);
+  if ('editableFunctionName' in input) patch.editableFunctionName = optionalStringValue(input.editableFunctionName);
   if ('note' in input) patch.note = optionalStringValue(input.note);
 
   if (isPlainObject(input.relays)) {
