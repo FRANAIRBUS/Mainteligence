@@ -148,6 +148,128 @@ type ThermostatLogicFormState = {
   relay3Mode: string;
 };
 
+type CustomProgramTemplate = {
+  id: string;
+  title: string;
+  description: string;
+  program: string;
+};
+
+const customProgramOperations = [
+  'SET RELn ON|OFF',
+  'BLINK RELn onMs [offMs] (50..3600000 ms)',
+  'THERMOSTAT RELn TEMPm setpoint diff [AUTO|COOL|HEAT]',
+  'IF TEMPn op valor THEN RELm ON|OFF',
+  'IF HUMn op valor THEN RELm ON|OFF',
+  'IF INn op ON|OFF THEN RELm ON|OFF',
+  'Operadores: == != > >= < <=',
+];
+
+const customProgramFullExample = [
+  '# Ejemplo completo de referencia',
+  '# Usa SET, BLINK, IF (TEMP/HUM/IN) y THERMOSTAT',
+  'SET REL1 OFF',
+  'SET REL2 OFF',
+  'SET REL3 OFF',
+  'SET REL4 OFF',
+  '',
+  '# REL1: control de temperatura por termostato',
+  'THERMOSTAT REL1 TEMP1 4.0 0.8 COOL',
+  '',
+  '# REL2: extractor por humedad',
+  'IF HUM1 >= 85 THEN REL2 ON',
+  'IF HUM1 <= 78 THEN REL2 OFF',
+  '',
+  '# REL3: salida por entrada digital',
+  'IF IN1 == ON THEN REL3 ON',
+  'IF IN1 == OFF THEN REL3 OFF',
+  '',
+  '# REL4: test de intermitencia',
+  'BLINK REL4 5000 3000',
+  '',
+  '# Paro de seguridad global por IN2',
+  'IF IN2 == ON THEN REL1 OFF',
+  'IF IN2 == ON THEN REL2 OFF',
+  'IF IN2 == ON THEN REL4 OFF',
+].join('\n');
+
+const customProgramTemplates: CustomProgramTemplate[] = [
+  {
+    id: 'full-systems',
+    title: 'Demo completa (todos los sistemas)',
+    description: 'Prueba SET, BLINK, IF con TEMP/HUM/IN y THERMOSTAT en un solo programa.',
+    program: customProgramFullExample,
+  },
+  {
+    id: 'garage-door',
+    title: 'Puerta de garaje',
+    description: 'IN1 controla motor de puerta en REL1. IN2 actua como paro de seguridad.',
+    program: [
+      '# Puerta de garaje',
+      'IF IN1 == ON THEN REL1 ON',
+      'IF IN1 == OFF THEN REL1 OFF',
+      'IF IN2 == ON THEN REL1 OFF',
+      'SET REL2 OFF',
+      'SET REL3 OFF',
+      'SET REL4 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'close-windows-hot',
+    title: 'Cerrar ventanas si hace calor',
+    description: 'Cierra actuador en REL2 cuando TEMP1 sube y reabre cuando baja.',
+    program: [
+      '# Cerrar ventanas por temperatura',
+      'IF TEMP1 >= 30 THEN REL2 ON',
+      'IF TEMP1 <= 27 THEN REL2 OFF',
+      'SET REL1 OFF',
+      'SET REL3 OFF',
+      'SET REL4 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'doorbell-double-ring',
+    title: 'Campana doble (aprox.)',
+    description: 'Mientras IN1 este ON, REL3 parpadea 2s ON / 2s OFF (aproximacion del doble toque).',
+    program: [
+      '# Campana doble aproximada',
+      'IF IN1 == OFF THEN REL3 OFF',
+      'BLINK REL3 2000 2000',
+      'SET REL1 OFF',
+      'SET REL2 OFF',
+      'SET REL4 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'irrigation',
+    title: 'Riego automatico',
+    description: 'Activa bomba en REL1 segun humedad y horario externo via IN2.',
+    program: [
+      '# Riego automatico',
+      'IF HUM1 <= 35 THEN REL1 ON',
+      'IF HUM1 >= 45 THEN REL1 OFF',
+      'IF IN2 == OFF THEN REL1 OFF',
+      'SET REL2 OFF',
+      'SET REL3 OFF',
+      'SET REL4 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'lights-pushbutton',
+    title: 'Luces con pulsador',
+    description: 'IN3 gobierna luz en REL4 y REL2 en paralelo.',
+    program: [
+      '# Conmutador de luces por pulsador',
+      'IF IN3 == ON THEN REL4 ON',
+      'IF IN3 == OFF THEN REL4 OFF',
+      'IF IN3 == ON THEN REL2 ON',
+      'IF IN3 == OFF THEN REL2 OFF',
+      'SET REL1 OFF',
+      'SET REL3 OFF',
+    ].join('\n'),
+  },
+];
+
 const digitalFontStyle: CSSProperties = {
   fontFamily: "'Digital-7', monospace",
   letterSpacing: '0.08em',
@@ -1121,6 +1243,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
   const [operatingMode, setOperatingMode] = useState(() => normalizeOperatingMode(asset.iot?.desiredState?.workMode ?? asset.iot?.desiredState?.operatingMode));
   const [customProgram, setCustomProgram] = useState(() => String(asset.iot?.desiredState?.customProgram ?? ''));
+  const [customGuideOpen, setCustomGuideOpen] = useState(false);
   const [editableFunctionName, setEditableFunctionName] = useState(() => String(asset.iot?.desiredState?.editableFunctionName ?? ''));
   const [thermostatLogic, setThermostatLogic] = useState<ThermostatLogicFormState>(() => buildThermostatLogicState(asset));
   const [note, setNote] = useState('');
@@ -1139,6 +1262,19 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const supportsRelays = panelType === 'relay' || capabilitySet.has('relays') || relayLabels.length > 0;
   const supportsThermostatLogic = panelType === 'thermostat';
   const editingCustomMode = operatingMode === 'custom';
+  const customProgramLength = customProgram.replace(/\r/g, '').length;
+
+  const handleLoadCustomTemplate = (template: CustomProgramTemplate) => {
+    setCustomProgram(template.program);
+  };
+
+  const handleInsertCustomTemplate = (template: CustomProgramTemplate) => {
+    setCustomProgram((current) => {
+      const base = current.replace(/\s+$/, '');
+      if (!base) return template.program;
+      return `${base}\n\n${template.program}`;
+    });
+  };
 
   const hydrateDraftFromAsset = (draftAsset: Asset) => {
     setSetpoint(String(draftAsset.iot?.desiredState?.setpoint ?? draftAsset.iot?.lastReading?.setpoint ?? ''));
@@ -1147,6 +1283,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     setPower(draftAsset.iot?.desiredState?.power ?? true);
     setOperatingMode(normalizeOperatingMode(draftAsset.iot?.desiredState?.workMode ?? draftAsset.iot?.desiredState?.operatingMode));
     setCustomProgram(String(draftAsset.iot?.desiredState?.customProgram ?? ''));
+    setCustomGuideOpen(false);
     setEditableFunctionName(String(draftAsset.iot?.desiredState?.editableFunctionName ?? ''));
     setThermostatLogic(buildThermostatLogicState(draftAsset));
     setRelayStates(resolveRelayStateMap(draftAsset));
@@ -1180,6 +1317,9 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
         const normalizedProgram = customProgram.replace(/\r/g, '').trim();
         if (!normalizedProgram) {
           throw new Error('Debes escribir un customProgram valido para usar modo Custom.');
+        }
+        if (normalizedProgram.length > 640) {
+          throw new Error('El customProgram supera 640 caracteres. Reduce el contenido antes de enviar.');
         }
         state.customProgram = normalizedProgram;
       }
@@ -1309,7 +1449,77 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
 
             {editingCustomMode ? (
               <div className="grid gap-2 rounded-xl border border-sky-300/30 bg-sky-500/10 p-3">
-                <Label htmlFor={`panel-customProgram-${asset.id}`}>Programa custom remoto</Label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label htmlFor={`panel-customProgram-${asset.id}`}>Programa custom remoto</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCustomGuideOpen((current) => !current)}
+                  >
+                    {customGuideOpen ? 'Ocultar guia y galeria' : 'Info, operaciones y galeria'}
+                  </Button>
+                </div>
+
+                {customGuideOpen ? (
+                  <div className="grid gap-3 rounded-lg border bg-background/70 p-3">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <div className="rounded-md border p-2">
+                        <p className="text-xs font-semibold">Operaciones permitidas</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                          {customProgramOperations.map((operation) => (
+                            <li key={operation}>{operation}</li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="rounded-md border p-2">
+                        <p className="text-xs font-semibold">Limites y notas</p>
+                        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                          <li>Maximo 24 reglas activas por programa.</li>
+                          <li>Longitud maxima recomendada/remota: 640 caracteres.</li>
+                          <li>No soporta expresiones libres (+, -, *, /, AND, OR, ELSE).</li>
+                          <li>Comentarios validos: # o //.</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border p-2">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-semibold">Ejemplo completo (todos los sistemas)</p>
+                        <div className="flex gap-2">
+                          <Button type="button" size="sm" variant="outline" onClick={() => setCustomProgram(customProgramFullExample)}>
+                            Cargar ejemplo
+                          </Button>
+                          <Button type="button" size="sm" variant="outline" onClick={() => handleInsertCustomTemplate(customProgramTemplates[0])}>
+                            Insertar ejemplo
+                          </Button>
+                        </div>
+                      </div>
+                      <pre className="max-h-52 overflow-auto rounded bg-muted/60 p-2 text-[11px] leading-5">{customProgramFullExample}</pre>
+                    </div>
+
+                    <div className="rounded-md border p-2">
+                      <p className="mb-2 text-xs font-semibold">Galeria de programas</p>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {customProgramTemplates.filter((template) => template.id !== 'full-systems').map((template) => (
+                          <div key={template.id} className="rounded-md border bg-muted/30 p-2">
+                            <p className="text-xs font-medium">{template.title}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{template.description}</p>
+                            <div className="mt-2 flex gap-2">
+                              <Button type="button" size="sm" variant="outline" onClick={() => handleLoadCustomTemplate(template)}>
+                                Cargar
+                              </Button>
+                              <Button type="button" size="sm" variant="outline" onClick={() => handleInsertCustomTemplate(template)}>
+                                Insertar
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <Textarea
                   id={`panel-customProgram-${asset.id}`}
                   value={customProgram}
@@ -1324,8 +1534,13 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                     'SET REL4 OFF',
                   ].join('\n')}
                 />
-                <div className="text-xs text-muted-foreground">
-                  El campo se guarda en desiredState.customProgram (max 640 caracteres) y el firmware lo valida al sincronizar.
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                  <span>
+                    Se guarda en desiredState.customProgram y el firmware lo valida al sincronizar.
+                  </span>
+                  <span className={customProgramLength > 640 ? 'font-semibold text-red-500' : ''}>
+                    {customProgramLength}/640
+                  </span>
                 </div>
               </div>
             ) : null}
