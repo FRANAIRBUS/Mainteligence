@@ -108,6 +108,7 @@ const operatingModeOptions = [
   { value: 'thermostat', label: 'Termostato' },
   { value: 'pushbutton', label: 'Pushbutton' },
   { value: 'manual', label: 'Manual' },
+  { value: 'custom', label: 'Custom' },
   { value: 'disabled', label: 'Desactivado' },
 ];
 
@@ -772,12 +773,32 @@ function formatDisplayX10(value: unknown) {
 }
 
 function normalizeOperatingMode(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    if (value === 0) return 'disabled';
+    if (value === 1) return 'thermostat';
+    if (value === 2) return 'pushbutton';
+    if (value === 3) return 'manual';
+    if (value === 4) return 'custom';
+  }
+
   const normalized = String(value ?? '').trim().toLowerCase();
   if (!normalized) return 'thermostat';
-  if (normalized === 'manual_disable') return 'disabled';
-  if (normalized === 'pushbotton') return 'pushbutton';
-  if (['thermostat', 'pushbutton', 'manual', 'disabled'].includes(normalized)) return normalized;
+  if (['0', 'disabled', 'manual_disable'].includes(normalized)) return 'disabled';
+  if (['1', 'thermostat'].includes(normalized)) return 'thermostat';
+  if (['2', 'pushbutton', 'pushbotton'].includes(normalized)) return 'pushbutton';
+  if (['3', 'manual'].includes(normalized)) return 'manual';
+  if (['4', 'custom', 'work_custom'].includes(normalized)) return 'custom';
+  if (['thermostat', 'pushbutton', 'manual', 'custom', 'disabled'].includes(normalized)) return normalized;
   return 'thermostat';
+}
+
+function workModeFromOperatingMode(value: string) {
+  if (value === 'disabled') return 0;
+  if (value === 'thermostat') return 1;
+  if (value === 'pushbutton') return 2;
+  if (value === 'manual') return 3;
+  if (value === 'custom') return 4;
+  return 1;
 }
 
 function firstDefinedIotValue(values: unknown[]) {
@@ -1098,7 +1119,8 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const [mode, setMode] = useState(asset.iot?.desiredState?.mode ?? 'cool');
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
-  const [operatingMode, setOperatingMode] = useState(() => normalizeOperatingMode(asset.iot?.desiredState?.operatingMode));
+  const [operatingMode, setOperatingMode] = useState(() => normalizeOperatingMode(asset.iot?.desiredState?.workMode ?? asset.iot?.desiredState?.operatingMode));
+  const [customProgram, setCustomProgram] = useState(() => String(asset.iot?.desiredState?.customProgram ?? ''));
   const [editableFunctionName, setEditableFunctionName] = useState(() => String(asset.iot?.desiredState?.editableFunctionName ?? ''));
   const [thermostatLogic, setThermostatLogic] = useState<ThermostatLogicFormState>(() => buildThermostatLogicState(asset));
   const [note, setNote] = useState('');
@@ -1116,13 +1138,15 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     || typeof sourceAsset.iot?.desiredState?.fan === 'string';
   const supportsRelays = panelType === 'relay' || capabilitySet.has('relays') || relayLabels.length > 0;
   const supportsThermostatLogic = panelType === 'thermostat';
+  const editingCustomMode = operatingMode === 'custom';
 
   const hydrateDraftFromAsset = (draftAsset: Asset) => {
     setSetpoint(String(draftAsset.iot?.desiredState?.setpoint ?? draftAsset.iot?.lastReading?.setpoint ?? ''));
     setMode(draftAsset.iot?.desiredState?.mode ?? 'cool');
     setFan(draftAsset.iot?.desiredState?.fan ?? 'auto');
     setPower(draftAsset.iot?.desiredState?.power ?? true);
-    setOperatingMode(normalizeOperatingMode(draftAsset.iot?.desiredState?.operatingMode));
+    setOperatingMode(normalizeOperatingMode(draftAsset.iot?.desiredState?.workMode ?? draftAsset.iot?.desiredState?.operatingMode));
+    setCustomProgram(String(draftAsset.iot?.desiredState?.customProgram ?? ''));
     setEditableFunctionName(String(draftAsset.iot?.desiredState?.editableFunctionName ?? ''));
     setThermostatLogic(buildThermostatLogicState(draftAsset));
     setRelayStates(resolveRelayStateMap(draftAsset));
@@ -1151,6 +1175,14 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
       if (supportsMode) state.mode = mode;
       if (supportsFan) state.fan = fan;
       state.operatingMode = operatingMode;
+      state.workMode = workModeFromOperatingMode(operatingMode);
+      if (operatingMode === 'custom') {
+        const normalizedProgram = customProgram.replace(/\r/g, '').trim();
+        if (!normalizedProgram) {
+          throw new Error('Debes escribir un customProgram valido para usar modo Custom.');
+        }
+        state.customProgram = normalizedProgram;
+      }
       state.editableFunctionName = editableFunctionName;
 
       const payload: Record<string, unknown> = {
@@ -1260,6 +1292,9 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                     </option>
                   ))}
                 </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Mapea a workMode remoto: disabled=0, thermostat=1, pushbutton=2, manual=3, custom=4.
+                </p>
               </div>
               <div>
                 <Label htmlFor={`panel-editableFunctionName-${asset.id}`}>Funcion editable (nombre)</Label>
@@ -1271,7 +1306,31 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                 />
               </div>
             </div>
-            {supportsThermostatLogic ? (
+
+            {editingCustomMode ? (
+              <div className="grid gap-2 rounded-xl border border-sky-300/30 bg-sky-500/10 p-3">
+                <Label htmlFor={`panel-customProgram-${asset.id}`}>Programa custom remoto</Label>
+                <Textarea
+                  id={`panel-customProgram-${asset.id}`}
+                  value={customProgram}
+                  onChange={(e) => setCustomProgram(e.target.value)}
+                  rows={10}
+                  placeholder={[
+                    '# Ejemplo rapido',
+                    'THERMOSTAT REL1 TEMP1 4.0 0.8 COOL',
+                    'IF HUM1 >= 85 THEN REL2 ON',
+                    'IF HUM1 <= 78 THEN REL2 OFF',
+                    'BLINK REL3 5000 3000',
+                    'SET REL4 OFF',
+                  ].join('\n')}
+                />
+                <div className="text-xs text-muted-foreground">
+                  El campo se guarda en desiredState.customProgram (max 640 caracteres) y el firmware lo valida al sincronizar.
+                </div>
+              </div>
+            ) : null}
+
+            {supportsThermostatLogic && !editingCustomMode ? (
               <>
                 <div className="rounded-xl border bg-muted/20 p-2 text-xs text-muted-foreground">
                   Campos `X10`: se muestran en grados (valor / 10) y se envian internamente como enteros x10.

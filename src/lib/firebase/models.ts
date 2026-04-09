@@ -267,6 +267,8 @@ export interface AssetIotDesiredState {
   relay2Mode?: number | null;
   relay3Mode?: number | null;
   operatingMode?: string | null;
+  workMode?: number | null;
+  customProgram?: string | null;
   editableFunctionName?: string | null;
   relays?: Record<string, boolean> | null;
   note?: string | null;
