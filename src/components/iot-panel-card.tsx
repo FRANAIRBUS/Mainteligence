@@ -2261,14 +2261,6 @@ function LegacyThermostatPanel({
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
             </button>
 
-            <div
-              className="pointer-events-none absolute left-[11.2%] top-[80.2%] flex h-[7.9%] min-w-[18.0%] items-center justify-center rounded-[6px] border border-white/45 bg-black/70 px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-100 sm:text-[11px]"
-              title="Modo de trabajo actual"
-              aria-label="Modo de trabajo actual"
-            >
-              MODE {currentOperatingModeLabel}
-            </div>
-
             <div className="absolute left-[6.3%] top-[18.3%] h-[8.3%] w-[4.5%]" style={{ opacity: alarmOn ? 1 : 0 }}>
               <img src="/iot/lh1t/images/alarma.png" alt="Alarma" className="h-full w-full object-contain" />
             </div>
@@ -2608,6 +2600,15 @@ function LegacyThermostatPanel({
             </button>
           </>
         ) : null}
+
+        <div
+          className="pointer-events-none absolute left-[11.2%] flex h-[7.9%] min-w-[18.0%] items-center justify-center rounded-[6px] border border-white/45 bg-black/70 px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-100 sm:text-[11px]"
+          style={{ top: 'calc(80.2% + 5px)' }}
+          title="Modo de trabajo actual"
+          aria-label="Modo de trabajo actual"
+        >
+          MODE {currentOperatingModeLabel}
+        </div>
       </div>
 
       <Dialog open={photoGalleryOpen} onOpenChange={setPhotoGalleryOpen}>
