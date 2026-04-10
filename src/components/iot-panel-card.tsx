@@ -931,6 +931,15 @@ function resolveOperatingModeFromAsset(asset: Asset) {
   );
 }
 
+function operatingModeDisplayLabel(value: string) {
+  if (value === 'disabled') return 'DISABLED';
+  if (value === 'thermostat') return 'THERMOSTAT';
+  if (value === 'pushbutton') return 'PUSHBUTTON';
+  if (value === 'manual') return 'MANUAL';
+  if (value === 'custom') return 'CUSTOM';
+  return 'THERMOSTAT';
+}
+
 function workModeFromOperatingMode(value: string) {
   if (value === 'disabled') return 0;
   if (value === 'thermostat') return 1;
@@ -1914,6 +1923,8 @@ function LegacyThermostatPanel({
   const relay1On = getRelayState(relays, 'REL1');
   const relay2On = getRelayState(relays, 'REL2');
   const relay3On = getRelayState(relays, 'REL3');
+  const currentOperatingMode = resolveOperatingModeFromAsset(asset);
+  const currentOperatingModeLabel = operatingModeDisplayLabel(currentOperatingMode);
   const alarmOn = alarms.length > 0;
   const timestamp = formatReadingDate(readingTimestamp(asset, reading));
   const temperature = probeTemperature(reading, activeProbe);
@@ -2249,6 +2260,14 @@ function LegacyThermostatPanel({
             >
               <img src={powerIconSrc} alt={powerOn ? 'Encendido' : 'Apagado'} className="h-full w-full object-contain" />
             </button>
+
+            <div
+              className="pointer-events-none absolute left-[11.2%] top-[80.2%] flex h-[7.9%] min-w-[18.0%] items-center justify-center rounded-[6px] border border-white/45 bg-black/70 px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-100 sm:text-[11px]"
+              title="Modo de trabajo actual"
+              aria-label="Modo de trabajo actual"
+            >
+              MODE {currentOperatingModeLabel}
+            </div>
 
             <div className="absolute left-[6.3%] top-[18.3%] h-[8.3%] w-[4.5%]" style={{ opacity: alarmOn ? 1 : 0 }}>
               <img src="/iot/lh1t/images/alarma.png" alt="Alarma" className="h-full w-full object-contain" />
