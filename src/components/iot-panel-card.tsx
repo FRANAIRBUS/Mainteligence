@@ -907,13 +907,28 @@ function normalizeOperatingMode(value: unknown) {
 
   const normalized = String(value ?? '').trim().toLowerCase();
   if (!normalized) return 'thermostat';
-  if (['0', 'disabled', 'manual_disable'].includes(normalized)) return 'disabled';
+  if (['0', 'disabled', 'disable', 'manual_disable'].includes(normalized)) return 'disabled';
   if (['1', 'thermostat'].includes(normalized)) return 'thermostat';
   if (['2', 'pushbutton', 'pushbotton'].includes(normalized)) return 'pushbutton';
   if (['3', 'manual'].includes(normalized)) return 'manual';
   if (['4', 'custom', 'work_custom'].includes(normalized)) return 'custom';
   if (['thermostat', 'pushbutton', 'manual', 'custom', 'disabled'].includes(normalized)) return normalized;
   return 'thermostat';
+}
+
+function resolveOperatingModeFromAsset(asset: Asset) {
+  return normalizeOperatingMode(
+    firstDefinedIotValue([
+      asset.iot?.reportedState?.workMode,
+      asset.iot?.reportedState?.workModeLabel,
+      asset.iot?.reportedState?.operatingMode,
+      asset.iot?.lastReading?.workMode,
+      asset.iot?.lastReading?.workModeLabel,
+      asset.iot?.lastReading?.operatingMode,
+      asset.iot?.desiredState?.workMode,
+      asset.iot?.desiredState?.operatingMode,
+    ]),
+  );
 }
 
 function workModeFromOperatingMode(value: string) {
@@ -1243,7 +1258,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const [mode, setMode] = useState(asset.iot?.desiredState?.mode ?? 'cool');
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
-  const [operatingMode, setOperatingMode] = useState(() => normalizeOperatingMode(asset.iot?.desiredState?.workMode ?? asset.iot?.desiredState?.operatingMode));
+  const [operatingMode, setOperatingMode] = useState(() => resolveOperatingModeFromAsset(asset));
   const [customProgram, setCustomProgram] = useState(() => String(asset.iot?.desiredState?.customProgram ?? ''));
   const [customGuideOpen, setCustomGuideOpen] = useState(false);
   const [editableFunctionName, setEditableFunctionName] = useState(() => String(asset.iot?.desiredState?.editableFunctionName ?? ''));
@@ -1283,7 +1298,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     setMode(draftAsset.iot?.desiredState?.mode ?? 'cool');
     setFan(draftAsset.iot?.desiredState?.fan ?? 'auto');
     setPower(draftAsset.iot?.desiredState?.power ?? true);
-    setOperatingMode(normalizeOperatingMode(draftAsset.iot?.desiredState?.workMode ?? draftAsset.iot?.desiredState?.operatingMode));
+    setOperatingMode(resolveOperatingModeFromAsset(draftAsset));
     setCustomProgram(String(draftAsset.iot?.desiredState?.customProgram ?? ''));
     setCustomGuideOpen(false);
     setEditableFunctionName(String(draftAsset.iot?.desiredState?.editableFunctionName ?? ''));

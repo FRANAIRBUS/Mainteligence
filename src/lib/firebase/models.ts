@@ -238,6 +238,9 @@ export interface AssetIotReading {
   setpoint?: number | string | null;
   power?: boolean | null;
   mode?: string | null;
+  workMode?: number | null;
+  workModeLabel?: string | null;
+  operatingMode?: string | null;
   fan?: string | null;
   status?: IotConnectionStatus | null;
   alarms?: string[] | null;
