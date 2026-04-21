@@ -8,7 +8,6 @@ import { Cpu, Plus, RadioTower, Search, Thermometer } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { AddAssetDialog } from '@/components/add-asset-dialog';
 import { IotPanelCard } from '@/components/iot-panel-card';
-import { IotDeviceAdminDialog } from '@/components/iot-device-admin-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -221,10 +220,7 @@ export default function IotPage() {
           </div>
         ) : filteredIotAssets.length > 0 ? (
           filteredIotAssets.map((asset) => (
-            <div key={asset.id} className="space-y-3">
-              <IotPanelCard asset={asset} siteName={siteNameById[asset.siteId]} />
-              {canManage ? <IotDeviceAdminDialog asset={asset} /> : null}
-            </div>
+            <IotPanelCard key={asset.id} asset={asset} siteName={siteNameById[asset.siteId]} />
           ))
         ) : iotAssets.length > 0 ? (
           <Card className="border-dashed border-white/60 bg-background xl:col-span-2">
@@ -331,7 +327,6 @@ function SummaryCard({
     </Card>
   );
 }
-
 
 
 

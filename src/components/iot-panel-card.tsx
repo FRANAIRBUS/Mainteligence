@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { IotDeviceAdminDialog } from '@/components/iot-device-admin-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -34,6 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
 import { orgDocPath } from '@/lib/organization';
 import type { Asset, AssetIotReading, AssetIotRelay } from '@/lib/firebase/models';
+import { canManageMasterData, normalizeRole } from '@/lib/rbac';
 
 type IotPanelCardProps = {
   asset: Asset;
@@ -2848,12 +2850,12 @@ function LegacyThermostatPanel({
             <button
               type="button"
               className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
-              title="Abrir Provision y control"
-              aria-label="Abrir Provision y control"
+              title="Abrir configuracion de control"
+              aria-label="Abrir configuracion de control"
             >
               <div className="flex items-center justify-center gap-2">
                 <Send className="h-4 w-4 text-sky-300" />
-                <span>Provision</span>
+                <span>Configuracion</span>
               </div>
             </button>
           )}
@@ -2876,8 +2878,10 @@ function LegacyThermostatPanel({
 }
 
 export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
+  const { role } = useUser();
   const reading = resolveDisplayReading(asset);
   const panelType = asset.iot?.panelType ?? 'sensor';
+  const canManage = canManageMasterData(normalizeRole(role));
   const status = readingStatus(asset);
   const deviceIp = resolveDeviceIp(asset);
   const temperature = readingMetric(reading, 'temperature', 'Temp1');
@@ -3012,6 +3016,20 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
               {canInspectPayload ? <IotPayloadDialog asset={asset} reading={reading} /> : null}
             </div>
           </div>
+          
+          {canManage ? (
+            <IotDeviceAdminDialog
+              asset={asset}
+              trigger={(
+                <Button
+                  variant="outline"
+                  className="w-full border-sky-300/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
+                >
+                  Provision dispositivo
+                </Button>
+              )}
+            />
+          ) : null}
 
           {alarms.length > 0 ? (
             <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm text-amber-100">

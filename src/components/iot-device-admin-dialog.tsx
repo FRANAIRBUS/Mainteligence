@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Bot, KeyRound, SlidersHorizontal } from 'lucide-react';
 
@@ -15,6 +15,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -94,7 +95,15 @@ function stripProtocol(url: string) {
   return String(url ?? '').trim().replace(/^https?:\/\//i, '');
 }
 
-export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
+export function IotDeviceAdminDialog({
+  asset,
+  trigger,
+  buttonLabel = 'Provision y control',
+}: {
+  asset: Asset;
+  trigger?: ReactNode;
+  buttonLabel?: string;
+}) {
   const app = useFirebaseApp();
   const { toast } = useToast();
   const { organizationId } = useUser();
@@ -241,134 +250,138 @@ export function IotDeviceAdminDialog({ asset }: { asset: Asset }) {
   };
 
   return (
-    <>
-      <Button variant="outline" className="w-full" onClick={() => setOpen(true)}>
-        <SlidersHorizontal className="mr-2 h-4 w-4" />
-        Provision y control
-      </Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      {trigger ? (
+        <DialogTrigger asChild>{trigger}</DialogTrigger>
+      ) : (
+        <DialogTrigger asChild>
+          <Button variant="outline" className="w-full">
+            <SlidersHorizontal className="mr-2 h-4 w-4" />
+            {buttonLabel}
+          </Button>
+        </DialogTrigger>
+      )}
+      
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{asset.name}</DialogTitle>
+          <DialogDescription>
+            Provisiona el dispositivo con un token temporal para completar el alta desde el portal local del ESP.
+          </DialogDescription>
+        </DialogHeader>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{asset.name}</DialogTitle>
-            <DialogDescription>
-              Provisiona el dispositivo con un token temporal para completar el alta desde el portal local del ESP.
-            </DialogDescription>
-          </DialogHeader>
-
-          <section className="rounded-2xl border p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-              <KeyRound className="h-4 w-4" />
-              Bootstrap seguro
-            </div>
-            <div className="space-y-3 text-sm text-muted-foreground">
-              <p>Genera un token temporal. Solo sirve una vez y se pega en el portal local del ESP.</p>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <div>
-                  <Label>assetId</Label>
-                  <Input value={asset.id} readOnly />
-                </div>
-                <div>
-                  <Label>deviceKey (estable)</Label>
-                  <Input value={asset.iot?.deviceKey ?? ''} readOnly />
-                </div>
-                <div>
-                  <Label>Estado actual</Label>
-                  <Input value={provisioningStatusText} readOnly />
-                </div>
+        <section className="rounded-2xl border p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <KeyRound className="h-4 w-4" />
+            Bootstrap seguro
+          </div>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>Genera un token temporal. Solo sirve una vez y se pega en el portal local del ESP.</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div>
+                <Label>assetId</Label>
+                <Input value={asset.id} readOnly />
               </div>
-              <Button onClick={handleProvision} disabled={loadingProvision} className="w-full">
-                <Bot className="mr-2 h-4 w-4" />
-                {loadingProvision ? 'Generando token...' : 'Generar bootstrap token'}
-              </Button>
-              {provisioningSnippet ? (
-                <>
-                  <div>
-                    <Label>Token expira</Label>
-                    <Input value={bootstrapExpiresLabel} readOnly />
-                  </div>
-                  <div>
-                    <Label>QR de provision</Label>
-                    <div className="mt-2 flex justify-center rounded-xl border p-3">
-                      {qrDataUrl ? (
-                        <img
-                          src={qrDataUrl}
-                          alt="QR provisioning code"
-                          className="h-[360px] w-[360px] max-w-full rounded-md"
-                          style={{ imageRendering: 'pixelated' }}
-                        />
-                      ) : (
-                        <p className="text-xs text-muted-foreground">No se pudo generar el QR en este navegador.</p>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Codigo completo</Label>
-                    <Textarea value={concatenatedCode} readOnly rows={6} />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="mt-2 w-full"
-                      onClick={() => void handleCopy(concatenatedCode, 'Codigo concatenado')}
-                    >
-                      Copiar codigo completo
-                    </Button>
-                  </div>
-                  <div>
-                    <Label>Campos separados</Label>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div>
-                        <Label>organizationId</Label>
-                        <Input value={provisioningSnippet.organizationId} readOnly />
-                      </div>
-                      <div>
-                        <Label>assetId</Label>
-                        <Input value={provisioningSnippet.assetId} readOnly />
-                      </div>
-                      <div>
-                        <Label>deviceKey</Label>
-                        <Input value={provisioningSnippet.deviceKey} readOnly />
-                      </div>
-                      <div>
-                        <Label>bootstrapToken</Label>
-                        <Input value={provisioningSnippet.bootstrapToken} readOnly />
-                      </div>
-                      <div>
-                        <Label>bootstrapUrl (corta)</Label>
-                        <Input value={provisioningSnippet.bootstrapUrl} readOnly />
-                      </div>
-                      <div>
-                        <Label>syncUrl (corta)</Label>
-                        <Input value={provisioningSnippet.syncUrl} readOnly />
-                      </div>
-                      <div>
-                        <Label>bootstrapUrl real</Label>
-                        <Input value={provisioningSnippet.bootstrapUrlReal} readOnly />
-                      </div>
-                      <div>
-                        <Label>syncUrl real</Label>
-                        <Input value={provisioningSnippet.syncUrlReal} readOnly />
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <Label>JSON de compatibilidad</Label>
-                    <Textarea value={deviceSnippet} readOnly rows={12} />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="mt-2 w-full"
-                      onClick={() => void handleCopy(deviceSnippet, 'JSON')}
-                    >
-                      Copiar JSON
-                    </Button>
-                  </div>
-                </>
-              ) : null}
+              <div>
+                <Label>deviceKey (estable)</Label>
+                <Input value={asset.iot?.deviceKey ?? ''} readOnly />
+              </div>
+              <div>
+                <Label>Estado actual</Label>
+                <Input value={provisioningStatusText} readOnly />
+              </div>
             </div>
-          </section>
-        </DialogContent>
-      </Dialog>
-    </>
+            <Button onClick={handleProvision} disabled={loadingProvision} className="w-full">
+              <Bot className="mr-2 h-4 w-4" />
+              {loadingProvision ? 'Generando token...' : 'Generar bootstrap token'}
+            </Button>
+            {provisioningSnippet ? (
+              <>
+                <div>
+                  <Label>Token expira</Label>
+                  <Input value={bootstrapExpiresLabel} readOnly />
+                </div>
+                <div>
+                  <Label>QR de provision</Label>
+                  <div className="mt-2 flex justify-center rounded-xl border p-3">
+                    {qrDataUrl ? (
+                      <img
+                        src={qrDataUrl}
+                        alt="QR provisioning code"
+                        className="h-[360px] w-[360px] max-w-full rounded-md"
+                        style={{ imageRendering: 'pixelated' }}
+                      />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">No se pudo generar el QR en este navegador.</p>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <Label>Codigo completo</Label>
+                  <Textarea value={concatenatedCode} readOnly rows={6} />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-2 w-full"
+                    onClick={() => void handleCopy(concatenatedCode, 'Codigo concatenado')}
+                  >
+                    Copiar codigo completo
+                  </Button>
+                </div>
+                <div>
+                  <Label>Campos separados</Label>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <Label>organizationId</Label>
+                      <Input value={provisioningSnippet.organizationId} readOnly />
+                    </div>
+                    <div>
+                      <Label>assetId</Label>
+                      <Input value={provisioningSnippet.assetId} readOnly />
+                    </div>
+                    <div>
+                      <Label>deviceKey</Label>
+                      <Input value={provisioningSnippet.deviceKey} readOnly />
+                    </div>
+                    <div>
+                      <Label>bootstrapToken</Label>
+                      <Input value={provisioningSnippet.bootstrapToken} readOnly />
+                    </div>
+                    <div>
+                      <Label>bootstrapUrl (corta)</Label>
+                      <Input value={provisioningSnippet.bootstrapUrl} readOnly />
+                    </div>
+                    <div>
+                      <Label>syncUrl (corta)</Label>
+                      <Input value={provisioningSnippet.syncUrl} readOnly />
+                    </div>
+                    <div>
+                      <Label>bootstrapUrl real</Label>
+                      <Input value={provisioningSnippet.bootstrapUrlReal} readOnly />
+                    </div>
+                    <div>
+                      <Label>syncUrl real</Label>
+                      <Input value={provisioningSnippet.syncUrlReal} readOnly />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <Label>JSON de compatibilidad</Label>
+                  <Textarea value={deviceSnippet} readOnly rows={12} />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mt-2 w-full"
+                    onClick={() => void handleCopy(deviceSnippet, 'JSON')}
+                  >
+                    Copiar JSON
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </section>
+      </DialogContent>
+    </Dialog>
   );
 }
