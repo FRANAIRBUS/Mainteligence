@@ -1,0 +1,907 @@
+
+
+<!doctype html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="utf-8">
+
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>LH Industrial V6</title>
+
+<style>
+
+:root{--bg:#08131a;--panel:#102630;--ink:#eef4f6;--muted:#93aab4;--line:#2d5868;--accent:#ff9340;--accent2:#11b7a1;--ok:#8ce08f;--warn:#ffd166;--danger:#ff7b7b;--shadow:0 18px 40px rgba(0,0,0,.28)}
+
+*{box-sizing:border-box}
+
+html{-webkit-text-size-adjust:100%}
+
+body{margin:0;font-family:"Trebuchet MS","Gill Sans",sans-serif;background:radial-gradient(circle at top left,#244c59 0,#08131a 42%),linear-gradient(145deg,#08131a,#15303c 58%,#21414c);color:var(--ink);min-height:100vh;overflow-x:hidden}
+
+button,input,select,textarea{font:inherit}
+
+a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+
+header{padding:24px 18px 10px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}
+
+header>div:first-child{min-width:0}
+
+h1{margin:0;font-size:clamp(28px,4vw,42px);letter-spacing:.08em;text-transform:uppercase}
+
+.sub{color:var(--muted);max-width:860px}
+
+.wrap{padding:0 18px 24px;display:grid;gap:18px}
+
+.hero,.panel{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid rgba(255,255,255,.08);border-radius:18px;box-shadow:var(--shadow)}
+
+.hero{padding:18px}
+
+.hero-grid,.config-grid{display:grid;gap:12px}
+
+.hero-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+
+.stat{padding:14px;border-radius:14px;background:rgba(6,17,24,.45);border:1px solid rgba(255,255,255,.06);overflow-wrap:anywhere;word-break:break-word}
+
+.stat b{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+
+.stat span{font-size:24px;font-weight:700}
+
+.panel{padding:16px}
+
+.panel h2{margin:0 0 14px;font-size:18px;text-transform:uppercase;letter-spacing:.08em}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+
+.badge{padding:6px 10px;border-radius:999px;background:#10222b;border:1px solid rgba(255,255,255,.08);font-size:12px;letter-spacing:.08em;text-transform:uppercase;overflow-wrap:anywhere;word-break:break-word}
+
+.badge.ok{color:var(--ok)}
+
+.badge.warn{color:var(--warn)}
+
+.badge.danger{color:#ff9a9a}
+
+.grid-2{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+
+.controls{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));align-items:end}
+
+.field{display:grid;gap:6px}
+
+.field label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+
+.field input:not([type="checkbox"]),.field select,.field textarea{width:100%;padding:10px 12px;border-radius:12px;background:#08161d;color:var(--ink);border:1px solid var(--line);min-height:44px}
+
+.field textarea{min-height:140px;resize:vertical}
+
+.field.checkbox{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#08161d}
+
+.field.checkbox label{margin:0;color:var(--ink)}
+
+.field.checkbox input{width:18px;height:18px;min-height:18px;margin:0;accent-color:var(--accent2)}
+
+.reg-inline{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+
+.word-flag{display:flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#08161d;min-height:44px;white-space:nowrap;font-size:11px;color:var(--muted)}
+
+.word-flag input{width:14px;height:14px;min-height:14px;margin:0;accent-color:var(--accent2)}
+
+.word-flag.disabled{opacity:.72}
+
+.array-block{padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(7,20,28,.45)}
+
+.array-title{margin-bottom:4px}
+
+.hint,.footer-note{font-size:11px;color:var(--muted);overflow-wrap:anywhere;word-break:break-word}
+
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+
+.btn{padding:11px 16px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--accent),#ffb266);color:#20150b;font-weight:700;cursor:pointer;min-height:44px;touch-action:manipulation}
+
+.btn.alt{background:linear-gradient(135deg,#1d4a59,#2d7a90);color:var(--ink)}
+
+.btn.ghost{background:#0b1a21;color:var(--ink);border:1px solid var(--line)}
+
+.btn.danger{background:linear-gradient(135deg,#c03f3f,#ff7a7a);color:#fff}
+
+.relay-row,.sensor-table{display:grid;gap:10px}
+
+.relay-row{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+
+.relay-btn{padding:14px;border-radius:14px;border:1px solid var(--line);background:#08161d;color:var(--ink);cursor:pointer;min-height:44px;font-size:15px;font-weight:600;touch-action:manipulation}
+
+.relay-btn.active{background:linear-gradient(135deg,#0d8f78,#14b498);border-color:#28d7b7}
+
+.sensor-table{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+
+.sensor-box{padding:12px;border-radius:14px;background:#08161d;border:1px solid var(--line);overflow-wrap:anywhere;word-break:break-word}
+
+pre{margin:0;padding:14px;background:#061017;border:1px solid var(--line);border-radius:14px;min-height:200px;max-height:320px;overflow:auto;color:#d8e1e4;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+
+.config-grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+
+.section-title{margin:0 0 10px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.1em}
+
+.menu-row{display:grid;gap:10px;grid-template-columns:minmax(220px,1fr) repeat(4,minmax(140px,auto));align-items:end;margin-top:14px}
+
+details{margin-top:12px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:#08161d}
+
+details summary{cursor:pointer;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-size:12px}
+
+@media (max-width:900px){.grid-2{grid-template-columns:1fr}.hero-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.config-grid{grid-template-columns:1fr}.controls{grid-template-columns:1fr}.relay-row{grid-template-columns:repeat(2,minmax(0,1fr))}.sensor-table{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+@media (max-width:720px){header{padding:14px 14px 8px;flex-direction:column;align-items:stretch}.wrap{padding:0 14px 18px;gap:14px}.hero,.panel{padding:14px;border-radius:14px}h1{font-size:24px;letter-spacing:.04em;line-height:1.15}.sub{font-size:14px;line-height:1.45}.toolbar{width:100%;gap:8px}.badge{flex:1 1 calc(50% - 8px);text-align:center;min-height:40px;display:flex;align-items:center;justify-content:center}.actions{flex-direction:column}.actions .btn,.actions a.btn{width:100%;min-height:46px}.hero-grid,.relay-row,.sensor-table,.config-grid,.controls,.menu-row{grid-template-columns:1fr}.stat span{font-size:20px}.field input,.field select,.field textarea{font-size:16px}.field textarea{min-height:120px}pre{min-height:160px;max-height:240px;font-size:12px}}
+
+</style>
+
+</head>
+
+<body>
+
+<header>
+
+  <div>
+
+    <h1>LH Industrial V6</h1>
+
+    <div class="sub">EdgeUnified remains in charge of cooperative multitasking. V6 focuses on Cloud IoT provisioning and sync only.</div>
+
+  </div>
+
+  <div class="toolbar">
+
+    <span class="badge" id="net-badge">Network</span>
+
+    <span class="badge" id="mode-badge">Mode</span>
+
+    <span class="badge" id="cloud-badge">Cloud</span>
+
+  </div>
+
+</header>
+
+<div class="wrap">
+
+
+
+  <section class="panel" id="nav-panel">
+
+    <h2>Menu</h2>
+
+    <div class="footer-note">Abre cada area sin saturar la pantalla principal.</div>
+
+    <div class="menu-row">
+
+      <div class="field">
+
+        <label for="page-select">Pagina</label>
+
+        <select id="page-select">
+
+          <option value="/app?page=main">Main control</option>
+
+          <option value="/app?page=deviceinfo">Informacion del dispositivo</option>
+
+          <option value="/app?page=network">Identidad y conectividad</option>
+
+          <option value="/app?page=board">Configuracion placa</option>
+
+          <option value="/app?page=modbus">Configuracion Modbus</option>
+
+          <option value="/app?page=cloud">Cloud IoT provision</option>
+
+        </select>
+
+      </div>
+
+      <a class="btn ghost" href="/app?page=modbus">Modbus Map</a>
+
+      <a class="btn ghost" href="/custom-program">Custom Program</a>
+
+      <a class="btn ghost" href="/setup">Setup Portal</a>
+
+      <a class="btn ghost" href="/ota">OTA Upload</a>
+
+    </div>
+
+    <div class="footer-note" id="flash">Ready.</div>
+
+  </section>
+
+
+
+  <section class="hero" id="device-summary-panel">
+
+    <h2>Informacion del dispositivo</h2>
+
+    <div class="hero-grid" id="stats"></div>
+
+  </section>
+
+
+
+  <div class="grid-2">
+
+    <section class="panel" id="quick-panel">
+
+      <h2>Quick Control</h2>
+
+      <div class="controls">
+
+        <div class="field"><label for="quick-mode">Work Mode</label><select id="quick-mode"></select></div>
+
+        <div class="field"><label for="quick-setpoint">Setpoint 1</label><input id="quick-setpoint" type="number" step="0.1"></div>
+
+        <div class="field"><label for="quick-setpoint2">Setpoint 2</label><input id="quick-setpoint2" type="number" step="0.1"></div>
+
+      </div>
+
+      <div class="relay-row" id="relay-buttons"></div>
+
+      <div class="actions">
+
+        <button class="btn" id="apply-control">Apply Control</button>
+
+        <button class="btn alt" id="reboot">Controlled Reboot</button>
+
+        <button class="btn danger" id="factory-reset">Factory Reset</button>
+
+      </div>
+
+      <div id="quick-logic-wrap" hidden>
+
+        <div class="section-title" id="quick-logic-title">Control Logic</div>
+
+        <div class="footer-note" id="quick-logic-note">This section is shown on /app only while Work Mode is Thermostat.</div>
+
+        <div id="quick-config-sections"></div>
+
+        <div class="actions">
+
+          <button class="btn" id="save-quick-config">Save Thermostat Logic</button>
+
+          <button class="btn ghost" id="reload-quick-config">Reload Logic</button>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+
+    <section class="panel" id="runtime-panel">
+
+      <h2>Sensores y estado</h2>
+
+      <div class="sensor-table" id="sensor-table"></div>
+
+    </section>
+
+
+
+    <section class="panel" id="cloud-panel">
+
+      <h2>Estado Cloud</h2>
+
+      <div class="sensor-table" id="cloud-diag"></div>
+
+      <div class="footer-note">This panel shows the exact cloud URLs currently loaded in the device, including length and endpoint validation (full path or short Maintelligence domains).</div>
+
+    </section>
+
+  </div>
+
+
+
+
+
+  <section class="panel" id="config-panel">
+
+    <h2 id="config-title">Configuration</h2>
+
+    <div class="footer-note" id="config-note">Save writes immediately without automatic reboot. Reboot manually if you change pins, OTA password or low-level network behavior.</div>
+
+    <div id="config-sections"></div>
+
+    <div class="actions">
+
+      <button class="btn" id="save-config">Save Configuration</button>
+
+      <button class="btn ghost" id="reload-config">Reload From Device</button>
+
+    </div>
+
+  </section>
+
+
+
+  <section class="panel" id="provisioning-panel">
+
+    <h2>Cloud IoT Provision y parametros esenciales</h2>
+
+    <div class="footer-note">Usa un codigo concatenado o los campos separados. Flujo recomendado: Cargar nueva provision, Revisar, Guardar provision cargada.</div>
+
+    <div class="field">
+
+      <label for="provisioning-code">Codigo completo concatenado</label>
+
+      <textarea id="provisioning-code" placeholder='organizationId=...|assetId=...|deviceKey=...|bootstrapToken=...'></textarea>
+
+    </div>
+
+    <div class="actions">
+
+      <button class="btn alt" id="apply-provisioning-code">Cargar nueva provision (codigo)</button>
+
+      <button class="btn ghost" id="load-current-provisioning">Leer actual</button>
+
+      <button class="btn" id="save-provisioning">Guardar provision cargada</button>
+
+    </div>
+
+    <div class="section-title">Manual separated fields</div>
+
+    <div class="config-grid">
+
+      <div class="field"><label for="provisioning-organization-id">Organization Id</label><input id="provisioning-organization-id" placeholder="burgerclub"></div>
+
+      <div class="field"><label for="provisioning-asset-id">Asset Id</label><input id="provisioning-asset-id" placeholder="asset_doc_id"></div>
+
+      <div class="field"><label for="provisioning-device-key">Device Key</label><input id="provisioning-device-key" placeholder="ASSET-..."></div>
+
+      <div class="field"><label for="provisioning-bootstrap-token">Bootstrap Token</label><input id="provisioning-bootstrap-token" placeholder="temporary token"></div>
+
+      <div class="field"><label for="provisioning-bootstrap-url">Bootstrap Url</label><input id="provisioning-bootstrap-url" placeholder="https://.../iotDeviceBootstrap"></div>
+
+      <div class="field"><label for="provisioning-sync-url">Sync Url</label><input id="provisioning-sync-url" placeholder="https://.../iotDeviceSync"></div>
+
+      <div class="field"><label for="provisioning-poll-ms">Poll Interval Ms</label><input id="provisioning-poll-ms" type="number" min="1000" step="1000" placeholder="15000"></div>
+
+    </div>
+
+    <div class="actions">
+
+      <button class="btn alt" id="apply-provisioning-fields">Cargar nueva provision</button>
+
+    </div>
+
+    
+
+  </section>
+
+
+
+  <section class="panel" id="logs-panel">
+
+    <h2>Logs</h2>
+
+    <pre id="logs"></pre>
+
+  </section>
+
+</div>
+
+<script>
+
+const SELECTS={workMode:{0:'Disabled',1:'Thermostat',2:'Pushbutton',3:'Manual',4:'Custom'},wifiUseDhcp:{1:'DHCP',0:'Static IP'},coolingMode:{1:'Cool',0:'Heat'},modbusMode:{0:'Off',1:'RTU Server',2:'TCP Server',3:'TCP to RTU',4:'Slave to Me',5:'Slave to Me Hybrid TCP Server'},modbusWordOrder32:{0:'MSW first (high-low)',1:'LSW first (low-high)'},relay2Mode:{0:'Disabled',1:'Always On',2:'Follow Relay1',3:'Follow Setpoint2'},relay3Mode:{0:'Disabled',1:'Defrost',2:'Alarm'}};
+
+const ARRAY_SELECTS={sensorTypes:{0:'None',1:'DS18B20',2:'DHT11',3:'DHT22',4:'On/Off',5:'NTC',6:'PTC',7:'PT100',8:'Internal',9:'Analog Linear (V->Value)'},modbusTempRegisterWords:{1:'1 registro (16-bit)',2:'2 registros (32-bit)'},modbusMirrorTempRegisterWords:{1:'1 registro (16-bit)',2:'2 registros (32-bit)'},modbusHumRegisterWords:{1:'1 registro (16-bit)',2:'2 registros (32-bit)'},modbusMirrorHumRegisterWords:{1:'1 registro (16-bit)',2:'2 registros (32-bit)'}};
+
+const SECTIONS=[
+
+{id:'identity',title:'Identity and Access',fields:['hostName','adminUser','adminPass','enableMdns','enableOta','otaPassword','resetIfWifiMissing','scheduledRestartHours']},
+
+{id:'connectivity',title:'Connectivity',fields:['wifiSsid','wifiPass','wifiUseDhcp','wifiStaticIp','wifiSubnetMask','wifiGateway','wifiDns1','wifiDns2','apPassword','keepApEnabled','wifiConnectTimeoutSec']},
+
+{id:'boardCore',title:'Board Runtime and IO Logic',fields:['relayActiveHigh','inputPullup','inputDebounceMs','sensorPeriodMs','ds18b20WaitMs','analogAverageSamples']},
+
+{id:'boardPins',title:'Pin Mapping',fields:['inputPins','relayPins','sensorPins']},
+
+{id:'boardSensors',title:'Sensor Type and Calibration',fields:['sensorTypes','sensorTempCalibrationX10','sensorHumCalibrationX10','sensorAnalogMinVoltageX100','sensorAnalogMaxVoltageX100','sensorAnalogMinValueX10','sensorAnalogMaxValueX10']},
+
+{id:'controlMain',title:'Control Logic',fields:['coolingMode','differentialX10','highAlarmX10','lowAlarmX10','tempAlarmDelayMin','controlPeriodMs','defrostIntervalMin','defrostDurationMin','defrostStopX10','stopRelay1OnDefrost','stopRelay2OnDefrost','relay2Mode','relay3Mode']},
+
+{id:'cloud',title:'Cloud IoT / Firebase Bridge',fields:['enableCloudIot','iotOrganizationId','iotAssetId','iotDeviceKey','iotBootstrapToken','iotBootstrapUrl','iotSyncUrl','iotFirmwareVersion','iotCapabilities','allowInsecureTls','iotStoreTelemetry','iotPollSeconds']},
+
+{id:'modbusCore',title:'Modbus Transport and Timing',fields:['enableModbus','modbusMode','modbusUnitId','modbusRemoteUnitId','modbusPort','modbusTaskMs','modbusScale','modbusTcpScale','modbusWordOrder32','modbusRtuBaud']},
+
+{id:'modbusMap',title:'Modbus Mapping (Publish + Mirror)',fields:['modbusTempRegisters','modbusHumRegisters','modbusRelayRegisters','modbusSetpointRegister','modbusStatusRegister']}
+
+];
+
+const PAGE_DEFS={
+
+main:{title:'Control Logic',note:'This section is shown on /app only while Work Mode is Thermostat.',sections:['controlMain'],showQuick:true,showRuntime:true,showCloud:false,showProvisioning:false,showLogs:false,showSummary:false,showConfig:true},
+
+deviceinfo:{title:'Informacion del dispositivo',note:'Estado del equipo, red y bridge cloud en una sola pagina.',sections:[],showQuick:false,showRuntime:false,showCloud:true,showProvisioning:false,showLogs:true,showSummary:true,showConfig:false},
+
+network:{title:'Identidad y conectividad',note:'Identity and Access plus Connectivity in a dedicated page.',sections:['identity','connectivity'],showQuick:false,showRuntime:false,showCloud:false,showProvisioning:false,showLogs:false,showSummary:false,showConfig:true},
+
+board:{title:'Configuracion avanzada de la placa',note:'Separado por bloques: logica IO, mapeado de pines y calibracion/tipo de sondas.',sections:['boardCore','boardPins','boardSensors'],showQuick:false,showRuntime:false,showCloud:false,showProvisioning:false,showLogs:false,showSummary:false,showConfig:true},
+
+modbus:{title:'Configuracion Modbus',note:'Mapeo unificado dentro de esta pagina. El editor de mapeo aplica en modos 3 (TCP-RTU), 4 (Slave-to-Me) y 5 (Hybrid).',sections:['modbusCore','modbusMap'],showQuick:false,showRuntime:false,showCloud:false,showProvisioning:false,showLogs:false,showSummary:false,showConfig:true},
+
+cloud:{title:'Cloud IoT Provision',note:'Provision y parametros esenciales para conectar el equipo.',sections:[],showQuick:false,showRuntime:false,showCloud:false,showProvisioning:true,showLogs:false,showSummary:false,showConfig:false}
+
+};
+
+const CURRENT_PAGE=(new URLSearchParams(location.search).get('page')||'main').toLowerCase();
+
+function currentPageDef(){return PAGE_DEFS[CURRENT_PAGE]||PAGE_DEFS.main}
+
+function sectionById(id){return SECTIONS.find(section=>section.id===id)}
+
+const ARRAY_FIELDS=new Set(['inputPins','relayPins','sensorPins','sensorTypes','sensorTempCalibrationX10','sensorHumCalibrationX10','sensorAnalogMinVoltageX100','sensorAnalogMaxVoltageX100','sensorAnalogMinValueX10','sensorAnalogMaxValueX10','modbusTempRegisters','modbusMirrorTempRegisters','modbusTempRegisterWords','modbusMirrorTempRegisterWords','modbusHumRegisters','modbusMirrorHumRegisters','modbusHumRegisterWords','modbusMirrorHumRegisterWords','modbusRelayRegisters','modbusMirrorRelayRegisters']);
+
+const TEXTAREA_FIELDS=new Set(['iotBootstrapUrl','iotSyncUrl','iotCapabilities']);
+
+const PASSWORD_FIELDS=new Set(['adminPass','wifiPass','apPassword','otaPassword','iotBootstrapToken']);
+
+const BOOL_FIELDS=new Set(['enableMdns','enableOta','resetIfWifiMissing','keepApEnabled','relayActiveHigh','inputPullup','stopRelay1OnDefrost','stopRelay2OnDefrost','enableCloudIot','allowInsecureTls','iotStoreTelemetry','enableModbus']);
+
+const FIELD_MAXLEN={hostName:31,adminUser:15,adminPass:23,wifiSsid:39,wifiPass:63,wifiStaticIp:15,wifiSubnetMask:15,wifiGateway:15,wifiDns1:15,wifiDns2:15,apPassword:23,otaPassword:23,iotOrganizationId:47,iotAssetId:47,iotDeviceKey:47,iotBootstrapToken:71,iotBootstrapUrl:127,iotSyncUrl:127,iotFirmwareVersion:39,iotCapabilities:127};
+
+const FIELD_HINTS={workMode:'0=Disabled, 1=Thermostat, 2=Pushbutton, 3=Manual, 4=Custom.',modbusRemoteUnitId:'TCP to RTU: 0 desactiva la copia remota; 1-247 selecciona el esclavo a reflejar en local/cloud.',modbusWordOrder32:'Define el orden de palabras para valores de 32-bit en publicacion local y espejo remoto.',modbusTempRegisterWords:'Configura por canal si el valor remoto usa 1 word (16-bit) o 2 words (32-bit).',modbusHumRegisterWords:'Configura por canal si el valor remoto usa 1 word (16-bit) o 2 words (32-bit).',sensorPins:'Define los GPIO fisicos de lectura de sondas.',sensorTypes:'Asigna el tipo de sonda por canal para evitar lecturas inconsistentes.',sensorAnalogMinVoltageX100:'Para Analog Linear: voltaje de entrada minimo por canal (x100). Ej: 0.00V => 0.',sensorAnalogMaxVoltageX100:'Para Analog Linear: voltaje de entrada maximo por canal (x100). Ej: 2.50V => 250, 5.00V => 500.',sensorAnalogMinValueX10:'Para Analog Linear: valor fisico minimo por canal (x10). Ej: 0.0 bar => 0.',sensorAnalogMaxValueX10:'Para Analog Linear: valor fisico maximo por canal (x10). Ej: 10.0 bar => 100.'};
+
+const ARRAY_META={inputPins:{labels:['IN1','IN2','IN3','IN4']},relayPins:{labels:['REL1','REL2','REL3','REL4']},sensorPins:{labels:['S1','S2','S3','S4']},sensorTypes:{labels:['S1 type','S2 type','S3 type','S4 type']},sensorTempCalibrationX10:{labels:['S1 temp','S2 temp','S3 temp','S4 temp']},sensorHumCalibrationX10:{labels:['S1 hum','S2 hum','S3 hum','S4 hum']},sensorAnalogMinVoltageX100:{labels:['S1 Vmin(x100)','S2 Vmin(x100)','S3 Vmin(x100)','S4 Vmin(x100)']},sensorAnalogMaxVoltageX100:{labels:['S1 Vmax(x100)','S2 Vmax(x100)','S3 Vmax(x100)','S4 Vmax(x100)']},sensorAnalogMinValueX10:{labels:['S1 valMin(x10)','S2 valMin(x10)','S3 valMin(x10)','S4 valMin(x10)']},sensorAnalogMaxValueX10:{labels:['S1 valMax(x10)','S2 valMax(x10)','S3 valMax(x10)','S4 valMax(x10)']},modbusTempRegisters:{labels:['T1 reg','T2 reg','T3 reg','T4 reg']},modbusMirrorTempRegisters:{labels:['T1 reg','T2 reg','T3 reg','T4 reg']},modbusTempRegisterWords:{labels:['T1 formato','T2 formato','T3 formato','T4 formato']},modbusMirrorTempRegisterWords:{labels:['T1 formato','T2 formato','T3 formato','T4 formato']},modbusHumRegisters:{labels:['H1 reg','H2 reg']},modbusMirrorHumRegisters:{labels:['H1 reg','H2 reg']},modbusHumRegisterWords:{labels:['H1 formato','H2 formato']},modbusMirrorHumRegisterWords:{labels:['H1 formato','H2 formato']},modbusRelayRegisters:{labels:['R1 reg','R2 reg','R3 reg','R4 reg']},modbusMirrorRelayRegisters:{labels:['R1 reg','R2 reg','R3 reg','R4 reg']}};
+
+const FIELD_LABELS={wifiUseDhcp:'STA IP Mode',coolingMode:'Operating Mode',tempAlarmDelayMin:'Alarm Delay (min)',modbusScale:'Slave scale',modbusTcpScale:'TCP scale',modbusWordOrder32:'32-bit word order',modbusMirrorTempRegisters:'Temp map',modbusTempRegisters:'Temp reg',modbusMirrorTempRegisterWords:'Temp map words',modbusTempRegisterWords:'Temp words',modbusMirrorHumRegisters:'Hum map',modbusHumRegisters:'Hum reg',modbusMirrorHumRegisterWords:'Hum map words',modbusHumRegisterWords:'Hum words',modbusMirrorRelayRegisters:'Relay map',modbusRelayRegisters:'Relay reg',modbusMirrorSetpointRegister:'Setpoint map reg',modbusSetpointRegister:'Setpoint reg',modbusMirrorStatusRegister:'Status map reg',modbusStatusRegister:'Status reg'};
+
+const MAP_PAIR_ARRAY={modbusTempRegisters:'modbusMirrorTempRegisters',modbusTempRegisterWords:'modbusMirrorTempRegisterWords',modbusHumRegisters:'modbusMirrorHumRegisters',modbusHumRegisterWords:'modbusMirrorHumRegisterWords',modbusRelayRegisters:'modbusMirrorRelayRegisters'};
+
+const MAP_PAIR_SCALAR={modbusSetpointRegister:'modbusMirrorSetpointRegister',modbusStatusRegister:'modbusMirrorStatusRegister'};
+
+const MODBUS_WORD_ARRAY_BY_REGISTER={modbusTempRegisters:'modbusTempRegisterWords',modbusMirrorTempRegisters:'modbusMirrorTempRegisterWords',modbusHumRegisters:'modbusHumRegisterWords',modbusMirrorHumRegisters:'modbusMirrorHumRegisterWords'};
+
+const MODBUS_SCALAR_REGISTER_KEYS=new Set(['modbusSetpointRegister','modbusMirrorSetpointRegister','modbusStatusRegister','modbusMirrorStatusRegister']);
+
+const MODBUS_WORD_ARRAY_KEYS=['modbusTempRegisterWords','modbusHumRegisterWords','modbusMirrorTempRegisterWords','modbusMirrorHumRegisterWords'];
+
+const SHORT_BOOTSTRAP_URL='https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceBootstrap';
+
+const SHORT_SYNC_URL='https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceSync';
+
+let relayModel=[false,false,false,false];
+
+let relayDirty=false;
+
+let appConfig={};
+
+function el(id){return document.getElementById(id)}
+
+function flash(message,kind=''){const node=el('flash');node.textContent=message;node.style.color=kind==='error'?'#ff9a9a':kind==='ok'?'#8be08d':'#dbe7eb'}
+
+function titleize(key){return FIELD_LABELS[key]||key.replace(/([A-Z])/g,' $1').replace(/^./,c=>c.toUpperCase())}
+
+function fieldValue(key,value){if(ARRAY_FIELDS.has(key))return Array.isArray(value)?value.join(', '):'';return value ?? ''}
+
+function toNumber(value){const n=Number(value);return Number.isFinite(n)?n:0}
+
+function isHybridModeSelected(){const modeNode=el('cfg-modbusMode');const mode=modeNode?toNumber(modeNode.value):toNumber(appConfig.modbusMode??0);return mode===5}
+
+function fmt(value,digits=1){return value==null||Number.isNaN(value)?'--':Number(value).toFixed(digits)}
+
+async function callApi(url,options={}){const opts={cache:'no-store',...options};if(opts.body&&!opts.headers){opts.headers={'Content-Type':'application/json'}}const res=await fetch(url,opts);if(!res.ok){throw new Error(await res.text()||res.statusText)}return res}
+
+function telemetryBadgeKind(status){const value=String(status||'').toLowerCase();if(value.includes('ok')||value.includes('online')||value.includes('bootstrapped'))return'ok';if(value.includes('error')||value.includes('failed')||value.includes('blocked')||value.includes('missing'))return'danger';return'warn'}
+
+function renderQuickMode(){const select=el('quick-mode');select.innerHTML='';Object.entries(SELECTS.workMode).forEach(([value,label])=>{const option=document.createElement('option');option.value=value;option.textContent=label;select.appendChild(option)})}
+
+function renderRelayButtons(){const host=el('relay-buttons');host.innerHTML='';relayModel.forEach((state,index)=>{const button=document.createElement('button');button.className='relay-btn'+(state?' active':'');button.textContent='Relay '+(index+1)+' '+(state?'ON':'OFF');button.dataset.index=index;button.onclick=()=>{relayDirty=true;relayModel[index]=!relayModel[index];renderRelayButtons()};host.appendChild(button)})}
+
+function statCard(label,value){return `<div class="stat"><b>${label}</b><span>${value}</span></div>`}
+
+function renderStats(state){el('stats').innerHTML=[statCard('Platform',state.platform||'--'),statCard('IP',state.ipAddress||'offline'),statCard('SSID',state.connectedSsid||state.apSsid||'--'),statCard('AP',state.apModeActive?(state.apSsid||'active'):'off'),statCard('Heap',`${state.freeHeap||0} / ${state.minHeap||0}`),statCard('OTA',state.otaActive?'ready':'idle'),statCard('Loop',`${state.lastLoopUs||0} us`),statCard('Restart',state.lastRestartReason||'--')].join('');const net=el('net-badge');net.textContent=state.wifiConnected?`STA ${state.connectedSsid||state.ipAddress}`:(state.apModeActive?`AP ${state.apSsid||'active'}`:'Offline');net.className='badge '+(state.wifiConnected?'ok':(state.apModeActive?'warn':'danger'));const mode=el('mode-badge');mode.textContent='Mode '+(state.mode||'--');mode.className='badge';const cloud=el('cloud-badge');cloud.textContent='Cloud '+(state.lastCloudStatus||'--');cloud.className='badge '+telemetryBadgeKind(state.lastCloudStatus)}
+
+function renderSensors(state){const host=el('sensor-table');host.innerHTML='';const temps=state.temperature||[];const hum=state.humidity||[];const relays=state.relayState||[];const inputs=state.inputState||[];const sensorTypes=appConfig.sensorTypes||[];for(let i=0;i<4;i++){const type=toNumber(sensorTypes[i]??0);const analogLinear=type===9;const tempLabel=analogLinear?'Value':'T';const tempUnit=analogLinear?'':' C';const box=document.createElement('div');box.className='sensor-box';box.innerHTML=`<div class="section-title">Channel ${i+1}</div><div>${tempLabel}: <b>${temps[i]==null?'--':fmt(temps[i])}${tempUnit}</b></div><div>H: <b>${hum[i]==null?'--':fmt(hum[i])} %</b></div><div>Input: <b>${inputs[i]?'ON':'OFF'}</b></div><div>Relay: <b>${relays[i]?'ON':'OFF'}</b></div>`;host.appendChild(box)}}
+
+function syncQuick(state){if(document.activeElement!==el('quick-setpoint'))el('quick-setpoint').value=state.setpoint??'';if(document.activeElement!==el('quick-setpoint2'))el('quick-setpoint2').value=state.setpoint2??'';if(document.activeElement!==el('quick-mode'))el('quick-mode').value=String(appConfig.workMode??0);updateMainControlVisibility();if(!relayDirty&&Array.isArray(state.manualRelayState)&&state.manualRelayState.length===4){relayModel=[...state.manualRelayState];renderRelayButtons()}}
+
+function buildArrayField(key,value){
+  const meta=ARRAY_META[key];
+  const wrap=document.createElement('div');
+  wrap.className='field array-block';
+  wrap.dataset.key=key;
+  const label=document.createElement('label');
+  label.className='array-title';
+  label.textContent=titleize(key);
+  wrap.appendChild(label);
+
+  const values=Array.isArray(value)?value:[];
+  const selectOptions=ARRAY_SELECTS[key];
+  const pairMirrorKey=MAP_PAIR_ARRAY[key];
+  const wordsKey=MODBUS_WORD_ARRAY_BY_REGISTER[key]||null;
+  const wordsValues=wordsKey&&Array.isArray(appConfig[wordsKey])?appConfig[wordsKey]:[];
+  const mirrorWordsKey=wordsKey?MAP_PAIR_ARRAY[wordsKey]:null;
+
+  const appendWordFlag=(host,arrayKey,index,checked,enabled)=>{
+    const flag=document.createElement('label');
+    flag.className='word-flag'+(enabled?'':' disabled');
+    const chk=document.createElement('input');
+    chk.type='checkbox';
+    chk.checked=Boolean(checked);
+    if(enabled){
+      chk.dataset.arrayKey=arrayKey;
+      chk.dataset.arrayIndex=String(index);
+    }else{
+      chk.disabled=true;
+    }
+    const txt=document.createElement('span');
+    txt.textContent='32';
+    flag.append(chk,txt);
+    host.appendChild(flag);
+  };
+
+  if(pairMirrorKey&&isHybridModeSelected()){
+    const sourceValues=Array.isArray(appConfig[pairMirrorKey])?appConfig[pairMirrorKey]:[];
+    const sourceWordValues=mirrorWordsKey&&Array.isArray(appConfig[mirrorWordsKey])?appConfig[mirrorWordsKey]:[];
+    const rows=document.createElement('div');
+    rows.style.display='grid';
+    rows.style.gap='8px';
+    meta.labels.forEach((caption,index)=>{
+      const row=document.createElement('div');
+      row.className='config-grid';
+      row.style.gridTemplateColumns='repeat(2,minmax(0,1fr))';
+      row.style.padding='8px';
+      row.style.border='1px solid rgba(255,255,255,.08)';
+      row.style.borderRadius='10px';
+      row.style.background='rgba(4,12,18,.45)';
+
+      const left=document.createElement('div');
+      left.className='field';
+      const leftLabel=document.createElement('label');
+      leftLabel.textContent=`${caption}`;
+      const leftWrap=document.createElement('div');
+      leftWrap.className='reg-inline';
+      const leftInput=document.createElement('input');
+      leftInput.type='number';
+      leftInput.step='1';
+      leftInput.value=sourceValues[index]??0;
+      leftInput.dataset.arrayKey=pairMirrorKey;
+      leftInput.dataset.arrayIndex=String(index);
+      leftWrap.appendChild(leftInput);
+      appendWordFlag(leftWrap,mirrorWordsKey,index,(sourceWordValues[index]??1)>1,Boolean(wordsKey&&mirrorWordsKey));
+      left.append(leftLabel,leftWrap);
+
+      const right=document.createElement('div');
+      right.className='field';
+      const rightLabel=document.createElement('label');
+      rightLabel.textContent=`${caption.replace(' reg','')} map reg`;
+      const rightWrap=document.createElement('div');
+      rightWrap.className='reg-inline';
+      const rightInput=document.createElement('input');
+      rightInput.type='number';
+      rightInput.step='1';
+      rightInput.value=values[index]??0;
+      rightInput.dataset.arrayKey=key;
+      rightInput.dataset.arrayIndex=String(index);
+      rightWrap.appendChild(rightInput);
+      appendWordFlag(rightWrap,wordsKey,index,(wordsValues[index]??1)>1,Boolean(wordsKey));
+      right.append(rightLabel,rightWrap);
+
+      row.append(left,right);
+      rows.appendChild(row);
+    });
+    wrap.appendChild(rows);
+    if(FIELD_HINTS[pairMirrorKey]){
+      const hint=document.createElement('div');
+      hint.className='hint';
+      hint.textContent=FIELD_HINTS[pairMirrorKey];
+      wrap.appendChild(hint);
+    }
+    return wrap;
+  }
+
+  const grid=document.createElement('div');
+  grid.className='config-grid';
+  meta.labels.forEach((caption,index)=>{
+    const item=document.createElement('div');
+    item.className='field';
+    const itemLabel=document.createElement('label');
+    itemLabel.textContent=caption;
+    let input;
+    if(selectOptions){
+      input=document.createElement('select');
+      Object.entries(selectOptions).forEach(([optionValue,optionLabel])=>{
+        const option=document.createElement('option');
+        option.value=optionValue;
+        option.textContent=optionLabel;
+        input.appendChild(option);
+      });
+      input.value=String(values[index]??0);
+    }else{
+      input=document.createElement('input');
+      input.type='number';
+      input.step='1';
+      input.value=values[index]??0;
+    }
+    input.dataset.arrayKey=key;
+    input.dataset.arrayIndex=String(index);
+    if(wordsKey){
+      const inline=document.createElement('div');
+      inline.className='reg-inline';
+      inline.appendChild(input);
+      appendWordFlag(inline,wordsKey,index,(wordsValues[index]??1)>1,true);
+      item.append(itemLabel,inline);
+    }else if(key==='modbusRelayRegisters'||key==='modbusMirrorRelayRegisters'){
+      const inline=document.createElement('div');
+      inline.className='reg-inline';
+      inline.appendChild(input);
+      appendWordFlag(inline,'',index,false,false);
+      item.append(itemLabel,inline);
+    }else{
+      item.append(itemLabel,input);
+    }
+    grid.appendChild(item);
+  });
+  wrap.appendChild(grid);
+  if(FIELD_HINTS[key]){
+    const hint=document.createElement('div');
+    hint.className='hint';
+    hint.textContent=FIELD_HINTS[key];
+    wrap.appendChild(hint);
+  }
+  return wrap;
+}
+
+function buildField(key,value){
+  if(ARRAY_META[key]) return buildArrayField(key,value);
+
+  const appendSmallWordFlag=(host,checked,enabled)=>{
+    const flag=document.createElement('label');
+    flag.className='word-flag'+(enabled?'':' disabled');
+    const chk=document.createElement('input');
+    chk.type='checkbox';
+    chk.checked=Boolean(checked);
+    chk.disabled=!enabled;
+    const txt=document.createElement('span');
+    txt.textContent='32';
+    flag.append(chk,txt);
+    host.appendChild(flag);
+  };
+
+  const pairMirrorKey=MAP_PAIR_SCALAR[key];
+  if(pairMirrorKey&&isHybridModeSelected()){
+    const wrap=document.createElement('div');
+    wrap.className='field';
+    wrap.dataset.key=key;
+    const label=document.createElement('label');
+    label.textContent=titleize(key);
+    wrap.appendChild(label);
+
+    const row=document.createElement('div');
+    row.className='config-grid';
+    row.style.gridTemplateColumns='repeat(2,minmax(0,1fr))';
+
+    const left=document.createElement('div');
+    left.className='field';
+    const leftLabel=document.createElement('label');
+    leftLabel.textContent='reg';
+    const leftInline=document.createElement('div');
+    leftInline.className='reg-inline';
+    const leftInput=document.createElement('input');
+    leftInput.type='number';
+    leftInput.step='1';
+    leftInput.id='cfg-'+pairMirrorKey;
+    leftInput.value=fieldValue(pairMirrorKey,appConfig[pairMirrorKey]);
+    leftInline.appendChild(leftInput);
+    if(MODBUS_SCALAR_REGISTER_KEYS.has(key)||MODBUS_SCALAR_REGISTER_KEYS.has(pairMirrorKey)){
+      appendSmallWordFlag(leftInline,false,false);
+    }
+    left.append(leftLabel,leftInline);
+
+    const right=document.createElement('div');
+    right.className='field';
+    const rightLabel=document.createElement('label');
+    rightLabel.textContent='map reg';
+    const rightInline=document.createElement('div');
+    rightInline.className='reg-inline';
+    const rightInput=document.createElement('input');
+    rightInput.type='number';
+    rightInput.step='1';
+    rightInput.id='cfg-'+key;
+    rightInput.value=fieldValue(key,value);
+    rightInline.appendChild(rightInput);
+    if(MODBUS_SCALAR_REGISTER_KEYS.has(key)||MODBUS_SCALAR_REGISTER_KEYS.has(pairMirrorKey)){
+      appendSmallWordFlag(rightInline,false,false);
+    }
+    right.append(rightLabel,rightInline);
+
+    row.append(left,right);
+    wrap.appendChild(row);
+    if(FIELD_HINTS[pairMirrorKey]){
+      const hint=document.createElement('div');
+      hint.className='hint';
+      hint.textContent=FIELD_HINTS[pairMirrorKey];
+      wrap.appendChild(hint);
+    }
+    return wrap;
+  }
+
+  const wrap=document.createElement('div');
+  wrap.className=BOOL_FIELDS.has(key)?'field checkbox':'field';
+  wrap.dataset.key=key;
+  const label=document.createElement('label');
+  label.htmlFor='cfg-'+key;
+  label.textContent=titleize(key);
+
+  if(BOOL_FIELDS.has(key)){
+    const input=document.createElement('input');
+    input.type='checkbox';
+    input.id='cfg-'+key;
+    input.checked=Boolean(value);
+    wrap.append(label,input);
+    return wrap;
+  }
+
+  if(SELECTS[key]){
+    const input=document.createElement('select');
+    input.id='cfg-'+key;
+    Object.entries(SELECTS[key]).forEach(([v,text])=>{
+      const option=document.createElement('option');
+      option.value=v;
+      option.textContent=text;
+      input.appendChild(option);
+    });
+    input.value=String(typeof value==='boolean'?(value?1:0):(value ?? 0));
+    wrap.append(label,input);
+  }else if(TEXTAREA_FIELDS.has(key)){
+    const input=document.createElement('textarea');
+    input.id='cfg-'+key;
+    input.value=fieldValue(key,value);
+    if(FIELD_MAXLEN[key]) input.maxLength=FIELD_MAXLEN[key];
+    wrap.append(label,input);
+  }else{
+    const input=document.createElement('input');
+    input.id='cfg-'+key;
+    input.type=PASSWORD_FIELDS.has(key)?'password':(typeof value==='number'?'number':'text');
+    if(typeof value==='number') input.step='1';
+    input.value=fieldValue(key,value);
+    if(FIELD_MAXLEN[key]) input.maxLength=FIELD_MAXLEN[key];
+
+    if(MODBUS_SCALAR_REGISTER_KEYS.has(key)){
+      const inline=document.createElement('div');
+      inline.className='reg-inline';
+      inline.appendChild(input);
+      appendSmallWordFlag(inline,false,false);
+      wrap.append(label,inline);
+    }else{
+      wrap.append(label,input);
+    }
+  }
+
+  if(FIELD_HINTS[key]){
+    const hint=document.createElement('div');
+    hint.className='hint';
+    hint.textContent=FIELD_HINTS[key];
+    wrap.appendChild(hint);
+  }
+  return wrap;
+}
+
+function updateStaticIpFields(){const node=el('cfg-wifiUseDhcp');const dhcp=node?node.value!=='0':Boolean(appConfig.wifiUseDhcp);['wifiStaticIp','wifiSubnetMask','wifiGateway','wifiDns1','wifiDns2'].forEach(key=>{const wrap=document.querySelector(`[data-key="${key}"]`);if(wrap)wrap.hidden=dhcp})}
+
+function setFieldHidden(key,hidden){const wrap=document.querySelector(`[data-key="${key}"]`);if(wrap)wrap.hidden=hidden}
+
+function updateModbusModeFields(){
+  const modeNode=el('cfg-modbusMode');
+  const mode=modeNode?toNumber(modeNode.value):toNumber(appConfig.modbusMode??0);
+  const isRtuServer=mode===1;
+  const isTcpServer=mode===2;
+  const isTcpBridge=mode===3;
+  const isSlaveToMe=mode===4;
+  const isHybrid=mode===5;
+  const isMirrorMapMode=isTcpBridge||isSlaveToMe||isHybrid;
+  const usesTcpScale=isTcpServer||isTcpBridge||isHybrid;
+
+  setFieldHidden('modbusUnitId',!(isRtuServer||isTcpBridge));
+  setFieldHidden('modbusRemoteUnitId',!(isTcpBridge||isSlaveToMe||isHybrid));
+  setFieldHidden('modbusPort',!(isTcpServer||isTcpBridge||isHybrid));
+  setFieldHidden('modbusTcpScale',!usesTcpScale);
+
+  setFieldHidden('modbusTempRegisters',!isMirrorMapMode);
+  setFieldHidden('modbusTempRegisterWords',!isMirrorMapMode);
+  setFieldHidden('modbusHumRegisters',!isMirrorMapMode);
+  setFieldHidden('modbusHumRegisterWords',!isMirrorMapMode);
+  setFieldHidden('modbusRelayRegisters',!isMirrorMapMode);
+  setFieldHidden('modbusSetpointRegister',!isMirrorMapMode);
+  setFieldHidden('modbusStatusRegister',!isMirrorMapMode);
+
+  const note=el('config-note');
+  if(CURRENT_PAGE==='modbus'&&note){
+    if(isHybrid){
+      note.textContent='Hybrid: source (slave remoto) y publish (local/cloud) se editan juntos. Reg/map reg y words/map words.';
+    }else if(isTcpBridge){
+      note.textContent='TCP to RTU: mapeo habilitado. UnitID=modbusUnitId se atiende local; resto se reenvia al bus RTU. Remote Unit Id=0 desactiva copia remota.';
+    }else if(isSlaveToMe){
+      note.textContent='Slave to Me: mapeo habilitado para reflejar registros del esclavo remoto en local/cloud.';
+    }else{
+      note.textContent='Modo sin mapeo remoto activo. El editor de mapeo se habilita solo en modos 3, 4 y 5.';
+    }
+  }
+}
+
+function updateMainControlVisibility(){if(CURRENT_PAGE!=='main'){el('quick-logic-wrap').hidden=true;return}const thermostat=Number(el('quick-mode')?.value ?? appConfig.workMode ?? 0)===1;el('quick-logic-wrap').hidden=!thermostat;el('config-panel').hidden=true}
+
+function applyPageLayout(){const page=currentPageDef();el('config-title').textContent=page.title;el('config-note').textContent=page.note;el('quick-logic-title').textContent=page.title;el('quick-logic-note').textContent=page.note;el('device-summary-panel').hidden=!page.showSummary;el('quick-panel').hidden=!page.showQuick;el('runtime-panel').hidden=!page.showRuntime;el('cloud-panel').hidden=!page.showCloud;el('provisioning-panel').hidden=!page.showProvisioning;el('logs-panel').hidden=!page.showLogs;el('config-panel').hidden=!page.showConfig;updateMainControlVisibility()}
+
+function renderConfig(){const page=currentPageDef();const quickRoot=el('quick-config-sections');const configRoot=el('config-sections');quickRoot.innerHTML='';configRoot.innerHTML='';const root=CURRENT_PAGE==='main'?quickRoot:configRoot;page.sections.forEach(sectionId=>{const section=sectionById(sectionId);if(!section)return;const panel=document.createElement('div');if(CURRENT_PAGE==='main'){panel.style.marginTop='14px'}else{panel.className='panel';panel.style.marginTop='14px'}const title=document.createElement('div');title.className='section-title';title.textContent=section.title;panel.appendChild(title);const grid=document.createElement('div');grid.className='config-grid';section.fields.forEach(key=>grid.appendChild(buildField(key,appConfig[key])));panel.appendChild(grid);root.appendChild(panel)});updateStaticIpFields();applyPageLayout();updateModbusModeFields()}
+
+function readConfigField(key){
+  if(ARRAY_FIELDS.has(key)){
+    return Array.from(document.querySelectorAll(`[data-array-key="${key}"]`))
+      .sort((a,b)=>Number(a.dataset.arrayIndex)-Number(b.dataset.arrayIndex))
+      .map(node=>node.type==='checkbox'?(node.checked?2:1):toNumber(node.value));
+  }
+  const node=el('cfg-'+key);
+  if(!node)return appConfig[key];
+  if(BOOL_FIELDS.has(key))return node.checked;
+  if(key==='wifiUseDhcp'||key==='coolingMode')return node.value!=='0';
+  if(SELECTS[key])return toNumber(node.value);
+  if(typeof appConfig[key]==='number')return toNumber(node.value);
+  return node.value;
+}
+
+function collectConfig(){const payload={...appConfig};currentPageDef().sections.forEach(sectionId=>{const section=sectionById(sectionId);if(!section)return;section.fields.forEach(key=>payload[key]=readConfigField(key))});MODBUS_WORD_ARRAY_KEYS.forEach(key=>{payload[key]=readConfigField(key)});Object.entries(MAP_PAIR_ARRAY).forEach(([,mirrorKey])=>payload[mirrorKey]=readConfigField(mirrorKey));Object.entries(MAP_PAIR_SCALAR).forEach(([,mirrorKey])=>payload[mirrorKey]=readConfigField(mirrorKey));return payload}
+
+function normalizeEndpointValue(value,fallback=''){const text=String(value??'').trim()||String(fallback??'').trim();if(!text)return'';return /^https?:\/\//i.test(text)?text:`https://${text}`}
+
+function endpointHost(url){try{return new URL(url).hostname.toLowerCase()}catch{return''}}
+
+function endpointMatches(url,suffix,aliasHost){const normalized=normalizeEndpointValue(url);if(!normalized)return false;const lower=normalized.toLowerCase();if(suffix&&lower.endsWith(String(suffix).toLowerCase()))return true;return endpointHost(normalized)===String(aliasHost||'').toLowerCase()}
+
+function endpointInfo(url,suffix,maxLen,aliasHost){const normalized=normalizeEndpointValue(url);return{value:normalized,length:normalized.length,validEndpoint:endpointMatches(normalized,suffix,aliasHost),withinLimit:normalized.length<=maxLen,empty:!normalized.length}}
+
+function renderCloudDiagnostics(){const host=el('cloud-diag');if(!host)return;const bootstrap=endpointInfo(appConfig.iotBootstrapUrl,'/iotDeviceBootstrap',127,'devicebootstrap.maintelligence.app');const sync=endpointInfo(appConfig.iotSyncUrl,'/iotDeviceSync',127,'devicesync.maintelligence.app');const card=(label,value)=>`<div class="sensor-box"><div class="section-title">${label}</div><div><b>${value}</b></div></div>`;const busy=window.__lastState?.cloudBusy?'busy':'idle';const stack=window.__lastState?.cloudWorkerStackHighWater??0;const status=window.__lastState?.lastCloudStatus||'--';const error=window.__lastState?.lastCloudError||'none';const bootstrapped=Boolean(appConfig.iotBootstrapDone);const tokenPresent=Boolean(String(appConfig.iotBootstrapToken||'').trim());const authMode=bootstrapped?'sync active':(tokenPresent?'token pending':'missing creds');host.innerHTML=[card('Cloud Enabled',appConfig.enableCloudIot?'yes':'no'),card('Organization',appConfig.iotOrganizationId||'--'),card('Asset',appConfig.iotAssetId||'--'),card('Device',appConfig.iotDeviceKey||'--'),card('Bootstrap State',bootstrapped?'bootstrapped':'bootstrap pending'),card('Auth Mode',authMode),card('Device Secret','hidden'),card('Bootstrap Token',tokenPresent?'loaded':'empty'),card('Bootstrap URL',`${bootstrap.value||'--'} | ${bootstrap.length}/127 ${bootstrap.validEndpoint?'endpoint-ok':'endpoint-error'}`),card('Sync URL',`${sync.value||'--'} | ${sync.length}/127 ${sync.validEndpoint?'endpoint-ok':'endpoint-error'}`),card('Last Desired Version',window.__lastState?.iotLastDesiredVersion??'--'),card('Cloud Status',status),card('Cloud Error',error),card('Cloud Worker',busy),card('Worker Stack Headroom',stack?`${stack} bytes`:'--')].join('')}
+
+function validatePayload(payload){const issues=[];Object.entries(FIELD_MAXLEN).forEach(([key,maxLen])=>{const value=String(payload[key]??'');if(value.length>maxLen)issues.push(`${titleize(key)} exceeds ${maxLen} chars`)});if(payload.enableCloudIot){if(String(payload.iotBootstrapUrl||'').trim()&&!endpointMatches(payload.iotBootstrapUrl,'/iotDeviceBootstrap','devicebootstrap.maintelligence.app'))issues.push('Bootstrap URL must end with /iotDeviceBootstrap (recommended: https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceBootstrap)');if(String(payload.iotSyncUrl||'').trim()&&!endpointMatches(payload.iotSyncUrl,'/iotDeviceSync','devicesync.maintelligence.app'))issues.push('Sync URL must end with /iotDeviceSync (recommended: https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceSync)')}return issues}
+
+function parseProvisioningCode(raw){const trimmed=String(raw||'').trim();if(!trimmed)throw new Error('provisioning code is empty');if(!trimmed.includes('|')||!trimmed.includes('='))throw new Error('Unsupported provisioning code format. Use key=value|key=value');const result={};trimmed.split('|').forEach(part=>{const idx=part.indexOf('=');if(idx<=0)return;const key=part.slice(0,idx).trim();let value=part.slice(idx+1).trim();try{value=decodeURIComponent(value)}catch(_unused){}if(key)result[key]=value});if(!Object.keys(result).length)throw new Error('invalid key-value provisioning code');return result}
+
+function provisioningFromManualFields(){const payload={organizationId:el('provisioning-organization-id').value.trim(),assetId:el('provisioning-asset-id').value.trim(),deviceKey:el('provisioning-device-key').value.trim(),bootstrapToken:el('provisioning-bootstrap-token').value.trim(),bootstrapUrl:normalizeEndpointValue(el('provisioning-bootstrap-url').value.trim(),SHORT_BOOTSTRAP_URL),syncUrl:normalizeEndpointValue(el('provisioning-sync-url').value.trim(),SHORT_SYNC_URL)};const pollRaw=Number(el('provisioning-poll-ms').value||0);if(Number.isFinite(pollRaw)&&pollRaw>0)payload.pollIntervalMs=pollRaw;return payload}
+
+function provisioningFromConfig(){return{organizationId:String(appConfig.iotOrganizationId||''),assetId:String(appConfig.iotAssetId||''),deviceKey:String(appConfig.iotDeviceKey||''),bootstrapToken:String(appConfig.iotBootstrapToken||''),bootstrapUrl:normalizeEndpointValue(appConfig.iotBootstrapUrl,SHORT_BOOTSTRAP_URL),syncUrl:normalizeEndpointValue(appConfig.iotSyncUrl,SHORT_SYNC_URL),pollIntervalMs:Math.max(5,toNumber(appConfig.iotPollSeconds||15))*1000}}
+
+function buildProvisioningCode(snippet){const fields=[['organizationId',snippet.organizationId],['assetId',snippet.assetId],['deviceKey',snippet.deviceKey],['bootstrapToken',snippet.bootstrapToken],['bootstrapUrl',snippet.bootstrapUrl],['syncUrl',snippet.syncUrl],['pollIntervalMs',snippet.pollIntervalMs]];return fields.filter(([,value])=>String(value??'').trim().length).map(([key,value])=>`${key}=${encodeURIComponent(String(value))}`).join('|')}
+
+function syncProvisioningPreview(){const snippet=provisioningFromConfig();if(el('provisioning-code'))el('provisioning-code').value=buildProvisioningCode(snippet)}
+
+function setProvisioningFields(){if(el('provisioning-organization-id'))el('provisioning-organization-id').value=String(appConfig.iotOrganizationId||'');if(el('provisioning-asset-id'))el('provisioning-asset-id').value=String(appConfig.iotAssetId||'');if(el('provisioning-device-key'))el('provisioning-device-key').value=String(appConfig.iotDeviceKey||'');if(el('provisioning-bootstrap-token'))el('provisioning-bootstrap-token').value=String(appConfig.iotBootstrapToken||'');if(el('provisioning-bootstrap-url'))el('provisioning-bootstrap-url').value=normalizeEndpointValue(appConfig.iotBootstrapUrl,SHORT_BOOTSTRAP_URL);if(el('provisioning-sync-url'))el('provisioning-sync-url').value=normalizeEndpointValue(appConfig.iotSyncUrl,SHORT_SYNC_URL);if(el('provisioning-poll-ms'))el('provisioning-poll-ms').value=String(Math.max(5,toNumber(appConfig.iotPollSeconds||15))*1000);syncProvisioningPreview()}
+
+function applyProvisioningData(snippet){if(snippet.organizationId!=null)appConfig.iotOrganizationId=String(snippet.organizationId).trim();if(snippet.assetId!=null)appConfig.iotAssetId=String(snippet.assetId).trim();if(snippet.deviceKey!=null)appConfig.iotDeviceKey=String(snippet.deviceKey).trim();if(snippet.bootstrapToken!=null)appConfig.iotBootstrapToken=String(snippet.bootstrapToken).trim();const bootstrapSource=snippet.bootstrapUrl??snippet.bootstrapUrlPreferred??snippet.bootstrapUrlAlias??snippet.bootstrapUrlReal;if(bootstrapSource!=null)appConfig.iotBootstrapUrl=normalizeEndpointValue(String(bootstrapSource).trim(),SHORT_BOOTSTRAP_URL);else if(!String(appConfig.iotBootstrapUrl||'').trim())appConfig.iotBootstrapUrl=SHORT_BOOTSTRAP_URL;const syncSource=snippet.syncUrl??snippet.syncUrlPreferred??snippet.syncUrlAlias??snippet.syncUrlReal;if(syncSource!=null)appConfig.iotSyncUrl=normalizeEndpointValue(String(syncSource).trim(),SHORT_SYNC_URL);else if(!String(appConfig.iotSyncUrl||'').trim())appConfig.iotSyncUrl=SHORT_SYNC_URL;if(snippet.firmwareVersion!=null)appConfig.iotFirmwareVersion=String(snippet.firmwareVersion).trim();if(Array.isArray(snippet.capabilities))appConfig.iotCapabilities=snippet.capabilities.join(',');else if(typeof snippet.capabilities==='string')appConfig.iotCapabilities=snippet.capabilities.trim();if(snippet.storeTelemetry!=null)appConfig.iotStoreTelemetry=Boolean(snippet.storeTelemetry);if(snippet.pollIntervalMs!=null){const pollMs=Number(snippet.pollIntervalMs);if(Number.isFinite(pollMs)&&pollMs>0)appConfig.iotPollSeconds=Math.max(5,Math.min(3600,Math.round(pollMs/1000)))}appConfig.iotDeviceSecret='';appConfig.iotBootstrapDone=false;appConfig.iotLastDesiredVersion=-1;appConfig.enableCloudIot=true;appConfig.allowInsecureTls=true;setProvisioningFields()}
+
+function applyProvisioningFromCode(){try{const raw=el('provisioning-code').value.trim();const snippet=parseProvisioningCode(raw);applyProvisioningData(snippet);renderConfig();renderCloudDiagnostics();flash('Provision cargada desde codigo.','ok')}catch(error){flash('Provisioning code error: '+error.message,'error')}}
+
+function applyProvisioningFromFields(){try{const snippet=provisioningFromManualFields();if(!snippet.organizationId)throw new Error('organizationId is required');if(!snippet.assetId&&!snippet.deviceKey)throw new Error('assetId or deviceKey is required');if(!snippet.bootstrapToken)throw new Error('bootstrapToken is required');applyProvisioningData(snippet);renderConfig();renderCloudDiagnostics();flash('Provision cargada desde campos separados.','ok')}catch(error){flash('Manual provisioning error: '+error.message,'error')}}
+
+async function loadCurrentProvisioning(){try{const current=await (await callApi('/api/v1/config')).json();appConfig={...appConfig,...current};if(!String(appConfig.iotBootstrapUrl||'').trim())appConfig.iotBootstrapUrl=SHORT_BOOTSTRAP_URL;if(!String(appConfig.iotSyncUrl||'').trim())appConfig.iotSyncUrl=SHORT_SYNC_URL;setProvisioningFields();renderCloudDiagnostics();flash('Provision actual leida del equipo.','ok')}catch(error){flash('Error leyendo provision actual: '+error.message,'error')}}
+
+async function saveProvisioningLoaded(){try{const snippet=provisioningFromManualFields();if(!snippet.organizationId)throw new Error('organizationId is required');if(!snippet.assetId&&!snippet.deviceKey)throw new Error('assetId or deviceKey is required');if(!snippet.bootstrapToken)throw new Error('bootstrapToken is required');applyProvisioningData(snippet);await saveConfig();flash('Provision cargada y guardada.','ok')}catch(error){flash('Error guardando provision: '+error.message,'error')}}
+
+async function refreshState(){const state=await (await callApi('/api/v1/state')).json();window.__lastState=state;renderStats(state);renderSensors(state);syncQuick(state);renderCloudDiagnostics()}
+
+async function loadConfig(){appConfig=await (await callApi('/api/v1/config')).json();if(!String(appConfig.iotBootstrapUrl||'').trim())appConfig.iotBootstrapUrl=SHORT_BOOTSTRAP_URL;if(!String(appConfig.iotSyncUrl||'').trim())appConfig.iotSyncUrl=SHORT_SYNC_URL;renderConfig();setProvisioningFields();renderCloudDiagnostics();el('quick-mode').value=String(appConfig.workMode??0);el('quick-setpoint').value=((appConfig.setpointX10??0)/10).toFixed(1);el('quick-setpoint2').value=((appConfig.setpoint2X10??0)/10).toFixed(1)}
+
+async function loadLogs(){el('logs').textContent=await (await callApi('/api/v1/logs')).text()}
+
+async function saveConfig(){try{const payload=collectConfig();payload.iotBootstrapUrl=normalizeEndpointValue(payload.iotBootstrapUrl,SHORT_BOOTSTRAP_URL);payload.iotSyncUrl=normalizeEndpointValue(payload.iotSyncUrl,SHORT_SYNC_URL);const issues=validatePayload(payload);if(issues.length)throw new Error(issues.join(' | '));await callApi('/api/v1/config',{method:'POST',body:JSON.stringify(payload),headers:{'Content-Type':'application/json'}});await Promise.all([loadConfig(),refreshState()]);flash('Configuration saved and reloaded from device.','ok')}catch(error){flash('Config error: '+error.message,'error')}}
+
+async function applyControl(){try{const payload={workMode:toNumber(el('quick-mode').value),setpoint:toNumber(el('quick-setpoint').value),setpoint2:toNumber(el('quick-setpoint2').value),manualRelays:[...relayModel]};await callApi('/api/v1/control',{method:'POST',body:JSON.stringify(payload),headers:{'Content-Type':'application/json'}});appConfig.workMode=payload.workMode;appConfig.setpointX10=Math.round(payload.setpoint*10);appConfig.setpoint2X10=Math.round(payload.setpoint2*10);relayDirty=false;updateMainControlVisibility();flash('Control command accepted.','ok');setTimeout(refreshState,300)}catch(error){flash('Control error: '+error.message,'error')}}
+
+async function rebootDevice(){try{await callApi('/api/v1/reboot',{method:'POST'});flash('Reboot scheduled.','ok')}catch(error){flash('Reboot error: '+error.message,'error')}}
+
+async function resetDevice(){if(!confirm('Reset configuration to defaults and reboot?'))return;try{await callApi('/api/v1/factory-reset',{method:'POST'});flash('Factory reset scheduled.','ok')}catch(error){flash('Factory reset error: '+error.message,'error')}}
+
+async function boot(){renderQuickMode();renderRelayButtons();const pageSelect=el('page-select');if(pageSelect){pageSelect.value=`/app?page=${CURRENT_PAGE}`;pageSelect.onchange=()=>{const target=pageSelect.value||'/app?page=main';if(target!==`${location.pathname}${location.search}`)location.href=target}}el('quick-mode').onchange=updateMainControlVisibility;document.addEventListener('change',event=>{if(event.target&&event.target.id==='cfg-wifiUseDhcp')updateStaticIpFields();if(event.target&&event.target.id==='cfg-modbusMode'){const nextMode=toNumber(event.target.value);const draft=collectConfig();appConfig={...appConfig,...draft,modbusMode:nextMode};renderConfig()}});el('apply-control').onclick=applyControl;el('save-config').onclick=saveConfig;el('reload-config').onclick=loadConfig;el('save-quick-config').onclick=saveConfig;el('reload-quick-config').onclick=loadConfig;el('reboot').onclick=rebootDevice;el('factory-reset').onclick=resetDevice;el('apply-provisioning-code').onclick=applyProvisioningFromCode;el('apply-provisioning-fields').onclick=applyProvisioningFromFields;el('load-current-provisioning').onclick=()=>{void loadCurrentProvisioning()};el('save-provisioning').onclick=()=>{void saveProvisioningLoaded()};Promise.all([refreshState(),loadConfig(),loadLogs()]).then(()=>flash('Device synchronized.','ok')).catch(error=>flash('Startup error: '+error.message,'error'));setInterval(refreshState,2000);setInterval(loadLogs,6000)}
+
+boot();
+
+</script>
+
+</body>
+
+</html>
+
