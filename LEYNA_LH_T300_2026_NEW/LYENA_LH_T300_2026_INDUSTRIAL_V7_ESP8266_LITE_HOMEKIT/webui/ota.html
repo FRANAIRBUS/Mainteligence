@@ -1,0 +1,112 @@
+
+
+<!doctype html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="utf-8">
+
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>LH Industrial V6 OTA</title>
+
+<style>
+
+:root{--bg:#09131a;--panel:#102630;--ink:#eef4f6;--muted:#91aab4;--line:#2d5868;--accent:#ff9340;--ok:#8ce08f;--danger:#ff7b7b}
+
+*{box-sizing:border-box}
+
+html{-webkit-text-size-adjust:100%}
+
+body{margin:0;font-family:"Trebuchet MS","Gill Sans",sans-serif;background:radial-gradient(circle at top left,#244c59 0,#08131a 42%),linear-gradient(145deg,#08131a,#15303c 58%,#21414c);color:var(--ink);overflow-x:hidden}
+
+button,input,select,textarea{font:inherit}
+
+a.btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+
+.wrap{max-width:760px;margin:0 auto;padding:22px}
+
+h1{margin:0 0 8px;font-size:clamp(28px,4vw,40px);text-transform:uppercase;letter-spacing:.08em}
+
+.sub{color:var(--muted);margin-bottom:18px;overflow-wrap:anywhere;word-break:break-word}
+
+.panel{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px 16px 18px;margin-bottom:16px}
+
+.field{display:grid;gap:8px}
+
+.field input{width:100%;padding:12px;border-radius:12px;background:#08161d;color:var(--ink);border:1px solid var(--line);min-height:44px}
+
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+
+.btn{padding:11px 16px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--accent),#ffb266);color:#20150b;font-weight:700;cursor:pointer;text-decoration:none;min-height:44px;touch-action:manipulation}
+
+.btn.ghost{background:#0b1a21;color:var(--ink);border:1px solid var(--line)}
+
+.status{font-size:14px;padding:12px 14px;border-radius:12px;background:#08161d;border:1px solid var(--line);overflow-wrap:anywhere;word-break:break-word}
+
+.ok{color:var(--ok)}
+
+.danger{color:var(--danger)}
+
+.muted{color:var(--muted)}
+
+@media (max-width:720px){.wrap{padding:14px}.panel{padding:14px;border-radius:14px}h1{font-size:24px;letter-spacing:.04em;line-height:1.15}.sub{font-size:14px;line-height:1.45}.actions{flex-direction:column}.actions .btn,.actions a.btn{width:100%;min-height:46px}.field input{font-size:16px}}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="wrap">
+
+  <h1>OTA Upload</h1>
+
+  <div class="sub">Sube un firmware `.bin` o `.bin.gz` desde el navegador. Esta ruta esta protegida por autenticacion admin.</div>
+
+  <div class="panel">
+
+    <div class="field">
+
+      <label for="firmware">Firmware file</label>
+
+      <input id="firmware" type="file" accept=".bin,.gz,.bin.gz,application/octet-stream">
+
+    </div>
+
+    <div class="actions">
+
+      <button class="btn" id="upload">Upload Firmware</button>
+
+      <a class="btn ghost" href="/app">Back to App</a>
+
+    </div>
+
+  </div>
+
+  <div class="panel">
+
+    <div class="status muted" id="status">Select a firmware file.</div>
+
+  </div>
+
+</div>
+
+<script>
+
+function el(id){return document.getElementById(id)}
+
+function setStatus(text,kind='muted'){const node=el('status');node.textContent=text;node.className='status '+kind}
+
+async function uploadFirmware(){const file=el('firmware').files[0];if(!file){setStatus('Select a .bin file first.','danger');return}const data=new FormData();data.append('firmware',file);setStatus('Uploading firmware... do not close this page.','muted');try{const res=await fetch('/api/v1/ota',{method:'POST',body:data,cache:'no-store'});const text=await res.text();if(!res.ok)throw new Error(text||res.statusText);setStatus(text||'OTA uploaded. Reboot scheduled.','ok')}catch(error){setStatus('OTA error: '+error.message,'danger')}}
+
+el('upload').onclick=uploadFirmware;
+
+</script>
+
+</body>
+
+</html>
+

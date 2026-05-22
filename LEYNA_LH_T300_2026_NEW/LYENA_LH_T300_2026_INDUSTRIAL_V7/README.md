@@ -1,4 +1,4 @@
-# LEYNA LH T300 Industrial V6
+# LYENA LH T300 Industrial V6
 
 Base firmware industrial para ESP8266 y ESP32 orientada a fiabilidad operativa. Esta versión utiliza un scheduler cooperativo ligero compatible con la API base usada anteriormente desde EdgeUnified, pero ya no depende de AutoConnect ni de PageBuilder. La conectividad, el provisioning, el captive portal y la OTA se resuelven con una capa nativa propia.
 
@@ -17,7 +17,7 @@ Base firmware industrial para ESP8266 y ESP32 orientada a fiabilidad operativa. 
 
 ## Modulos principales
 
-- `LEYNA_LH_T300_2026_INDUSTRIAL_V6.ino`: arranque y loop principal.
+- `LYENA_LH_T300_2026_INDUSTRIAL_V6.ino`: arranque y loop principal.
 - `IndustrialApp.*`: scheduler, sensores, control, conectividad, OTA y persistencia.
 - `WebUi.*`: HMI industrial, setup portal y rutas `/api/v1/*`.
 - `webui/*.html`: fuentes editables de la UI embebida (app/setup/ota).
@@ -93,4 +93,3 @@ Por compatibilidad, puede mantenerse temporalmente:
 
 ```cpp
 #include <EdgeUnified.h>
-

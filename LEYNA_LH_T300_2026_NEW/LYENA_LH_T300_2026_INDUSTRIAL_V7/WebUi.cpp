@@ -1574,6 +1574,7 @@ Comandos validos:
 SET RELn ON|OFF
 BLINK RELn onMs [offMs]
 TIMER RELn onMs offMs
+ONBOOT RELn delayMs onMs
 ONCHANGE INn TOGGLE RELm
 PULSE INn RELm onMs count [gapMs]
 THERMOSTAT RELn TEMPm setpoint diff [AUTO|COOL|HEAT]
@@ -1606,6 +1607,7 @@ Operadores: == != > >= < <=
           <li><span class="mono">SET RELn ON|OFF</span></li>
           <li><span class="mono">BLINK RELn onMs [offMs]</span> (50..3600000 ms)</li>
           <li><span class="mono">TIMER RELn onMs offMs</span> (50..3600000 ms)</li>
+          <li><span class="mono">ONBOOT RELn delayMs onMs</span> (pulso unico tras arranque, 50..3600000 ms)</li>
           <li><span class="mono">ONCHANGE INn TOGGLE RELm</span></li>
           <li><span class="mono">PULSE INn RELm onMs count [gapMs]</span> (count 1..20)</li>
           <li><span class="mono">THERMOSTAT RELn TEMPm setpoint diff [AUTO|COOL|HEAT]</span></li>

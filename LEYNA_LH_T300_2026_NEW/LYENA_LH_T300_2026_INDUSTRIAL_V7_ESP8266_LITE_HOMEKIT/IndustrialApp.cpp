@@ -6,7 +6,7 @@
 #include <OneWire.h>
 #include <ArduinoOTA.h>
 #include <DNSServer.h>
-#if APP_HAS_MODBUS_RTU
+#if APP_ENABLE_MODBUS && APP_HAS_MODBUS_RTU
 #include <ModbusRTU.h>
 #endif
 #include <math.h>
@@ -22,24 +22,31 @@
 
 #include "LogBuffer.h"
 #include "MaintCloud.h"
+#include "HomeKitBridge.h"
 #include "WebUi.h"
 
 namespace industrial_v2 {
 
 AppWebServer server;
 AppRuntimeData runtimeData;
+#if APP_ENABLE_MODBUS
 ModbusIP modbusIp;
 #if APP_HAS_MODBUS_RTU
 ModbusRTU modbusRtu;
+#endif
 #endif
 
 namespace {
 
 static constexpr char kConfigFile[] = "/lh_v4_config.json";
+static constexpr char kConfigBinFile[] = "/lh_v4_config.bin";
+static constexpr char kConfigBinTempFile[] = "/lh_v4_config.tmp";
+static constexpr uint32_t kConfigBinMagic = 0x4C485633UL;  // "LHV3"
 static constexpr uint32_t kSystemDriverMs = 250U;
 static constexpr uint32_t kSensorDriverMs = 200U;
 static constexpr uint32_t kAlarmBlinkOnMs = 400U;
 static constexpr uint32_t kAlarmBlinkOffMs = 1000U;
+#if APP_ENABLE_MODBUS
 static constexpr uint32_t kBridgeMirrorPollMs = 2000U;
 static constexpr uint32_t kBridgeMirrorIdleBeforePollMs = 4000U;
 static constexpr uint32_t kModbusDiagReqLogMs = 1200U;
@@ -47,16 +54,33 @@ static constexpr uint32_t kModbusDiagRspLogMs = 1200U;
 static constexpr uint32_t kModbusDiagReadLogMs = 1500U;
 static constexpr uint32_t kModbusDiagDecodeLogMs = 800U;
 static constexpr uint32_t kModbusDiagIgnoreLogMs = 5000U;
+#endif
+static constexpr uint32_t kHomeKitDriverMs = 50U;
 static constexpr float kReferenceVoltage = 3.3f;
 static constexpr float kReferenceResistor = 10000.0f;
 static constexpr float kPtcEsp32RawGain = 1.81f;
 static constexpr float kNominalResistance = 10000.0f;
 static constexpr float kNominalTemperature = 25.0f;
 static constexpr float kBeta = 3950.0f;
+#if defined(ARDUINO_ARCH_ESP8266)
+static constexpr size_t kConfigJsonCapacity = 8192U;
+#else
 static constexpr size_t kConfigJsonCapacity = 10240U;
+#endif
+#if defined(ARDUINO_ARCH_ESP8266)
+static constexpr size_t kIncomingConfigJsonMinCapacity = 1536U;
+static constexpr size_t kIncomingConfigJsonMaxCapacity = 4096U;
+static constexpr size_t kIncomingNetworkJsonMinCapacity = 640U;
+static constexpr size_t kIncomingNetworkJsonMaxCapacity = 2048U;
+#else
+static constexpr size_t kIncomingConfigJsonMinCapacity = 2048U;
+static constexpr size_t kIncomingConfigJsonMaxCapacity = 8192U;
+static constexpr size_t kIncomingNetworkJsonMinCapacity = 768U;
+static constexpr size_t kIncomingNetworkJsonMaxCapacity = 3072U;
+#endif
 static constexpr uint32_t kWifiRetryMs = 10000U;
 static constexpr uint16_t kCaptiveDnsPort = 53U;
-#if APP_HAS_MODBUS_RTU
+#if APP_ENABLE_MODBUS && APP_HAS_MODBUS_RTU
 #if defined(ARDUINO_ARCH_ESP32)
 static constexpr int16_t kModbusRtuFixedRxPin = 16;
 static constexpr int16_t kModbusRtuFixedTxPin = 17;
@@ -72,7 +96,17 @@ struct SystemTaskData { uint32_t runs = 0; };
 struct SensorTaskData { uint32_t runs = 0; };
 struct ControlTaskData { uint32_t runs = 0; };
 struct CloudTaskData { uint32_t runs = 0; };
+#if APP_ENABLE_MODBUS
 struct ModbusTaskData { uint32_t runs = 0; };
+#endif
+struct HomeKitTaskData { uint32_t runs = 0; };
+
+struct ConfigBinHeader {
+  uint32_t magic;
+  uint16_t schemaVersion;
+  uint16_t dataSize;
+  uint32_t checksum;
+};
 
 static constexpr size_t kCustomMaxRules = 24U;
 static constexpr uint32_t kCustomBlinkMinMs = 50U;
@@ -160,9 +194,14 @@ void endControlTask();
 void startCloudTask();
 void processCloudTask();
 void endCloudTask();
+#if APP_ENABLE_MODBUS
 void startModbusTask();
 void processModbusTask();
 void endModbusTask();
+#endif
+void startHomeKitTask();
+void processHomeKitTask();
+void endHomeKitTask();
 bool cloudConfigured();
 unsigned long currentCloudIntervalMs();
 void updateCloudIntervalFromConfig();
@@ -183,10 +222,12 @@ void applyCommissioningSafeDefaults(AppConfigData& appConfig);
 bool connectivityConfigurationChanged(const AppConfigData& previous, const AppConfigData& next);
 bool ioConfigurationChanged(const AppConfigData& previous, const AppConfigData& next);
 bool sensorConfigurationChanged(const AppConfigData& previous, const AppConfigData& next);
+#if APP_ENABLE_MODBUS
 bool modbusConfigurationChanged(const AppConfigData& previous, const AppConfigData& next);
+#endif
 void armOperationalRuntime();
 bool thermostatDemandFromSensor(bool previousState, bool coolingMode, float temperature, float setpoint, float differential);
-#if APP_HAS_MODBUS_RTU
+#if APP_ENABLE_MODBUS && APP_HAS_MODBUS_RTU
 void applyRemoteModbusMirrorValue(uint16_t address, uint32_t value, uint8_t sourceWords = 1U);
 #endif
 #if defined(ARDUINO_ARCH_ESP32)
@@ -199,7 +240,10 @@ EdgeDriver<SystemTaskData> systemDriver(startSystemTask, processSystemTask, endS
 EdgeDriver<SensorTaskData> sensorDriver(startSensorTask, processSensorTask, endSensorTask);
 EdgeDriver<ControlTaskData> controlDriver(startControlTask, processControlTask, endControlTask);
 EdgeDriver<CloudTaskData> cloudDriver(startCloudTask, processCloudTask, endCloudTask);
+#if APP_ENABLE_MODBUS
 EdgeDriver<ModbusTaskData> modbusDriver(startModbusTask, processModbusTask, endModbusTask);
+#endif
+EdgeDriver<HomeKitTaskData> homeKitDriver(startHomeKitTask, processHomeKitTask, endHomeKitTask);
 
 OneWire* gOneWire[kChannelCount] = {nullptr, nullptr, nullptr, nullptr};
 DallasTemperature* gDallas[kChannelCount] = {nullptr, nullptr, nullptr, nullptr};
@@ -224,13 +268,14 @@ bool gWifiConnectInProgress = false;
 bool gConnectivityReloadRequested = false;
 bool gOperationalRuntimeArmed = false;
 bool gModbusServerConfigured = false;
+AppConfigData gConfigUpdateBackup;
 uint32_t gWifiConnectStartedAt = 0;
 uint32_t gLastWifiAttemptAt = 0;
 DNSServer gDnsServer;
 CustomProgramRuntime gCustomProgram;
 bool gCustomExecutionPrimed = false;
 bool gCustomFailSafeApplied = false;
-#if APP_HAS_MODBUS_RTU
+#if APP_ENABLE_MODBUS && APP_HAS_MODBUS_RTU
 IPAddress gModbusBridgeClientIp;
 uint16_t gModbusBridgeTransactionId = 0;
 uint8_t gModbusBridgeSlaveId = 0;
@@ -268,6 +313,7 @@ const char* workModeLabel(uint8_t mode) {
   }
 }
 
+#if APP_ENABLE_MODBUS
 const char* modbusModeLabel(uint8_t mode) {
   switch (mode) {
     case MODBUS_RTU_SERVER: return "rtu-server";
@@ -362,6 +408,20 @@ uint8_t modbusPublishScale() {
   }
   return fallbackScale;
 }
+#else
+const char* modbusModeLabel(uint8_t mode) {
+  (void)mode;
+  return "disabled";
+}
+
+bool modbusMirrorModeActive() {
+  return false;
+}
+
+bool modbusMirrorReadbackActive() {
+  return false;
+}
+#endif
 
 float readInternalTemperature() {
 #if APP_HAS_INTERNAL_TEMP
@@ -382,6 +442,151 @@ void setRuntimeText(char* dst, size_t length, const String& value) {
 
 void setModbusStatus(const String& value) {
   setRuntimeText(runtimeData.lastModbusStatus, sizeof(runtimeData.lastModbusStatus), value);
+}
+
+size_t incomingConfigJsonCapacity(size_t payloadLength) {
+  size_t capacity = payloadLength + 768U;
+  if (capacity < kIncomingConfigJsonMinCapacity) capacity = kIncomingConfigJsonMinCapacity;
+  if (capacity > kIncomingConfigJsonMaxCapacity) capacity = kIncomingConfigJsonMaxCapacity;
+  return capacity;
+}
+
+size_t incomingNetworkJsonCapacity(size_t payloadLength) {
+  size_t capacity = payloadLength + 256U;
+  if (capacity < kIncomingNetworkJsonMinCapacity) capacity = kIncomingNetworkJsonMinCapacity;
+  if (capacity > kIncomingNetworkJsonMaxCapacity) capacity = kIncomingNetworkJsonMaxCapacity;
+  return capacity;
+}
+
+uint32_t configChecksum(const AppConfigData& appConfig) {
+  const uint8_t* bytes = reinterpret_cast<const uint8_t*>(&appConfig);
+  uint32_t hash = 2166136261UL;
+  for (size_t index = 0; index < sizeof(AppConfigData); ++index) {
+    hash ^= bytes[index];
+    hash *= 16777619UL;
+  }
+  return hash;
+}
+
+bool saveConfigBinary(const AppConfigData& appConfig) {
+  if (APP_FILESYSTEM.exists(kConfigBinTempFile)) {
+    APP_FILESYSTEM.remove(kConfigBinTempFile);
+  }
+
+  File file = APP_FILESYSTEM.open(kConfigBinTempFile, "w");
+  if (!file) {
+    addLog("Unable to open %s for write", kConfigBinTempFile);
+    return false;
+  }
+
+  const ConfigBinHeader header = {
+      kConfigBinMagic,
+      kConfigSchemaVersion,
+      static_cast<uint16_t>(sizeof(AppConfigData)),
+      configChecksum(appConfig)};
+  const size_t headerWritten = file.write(reinterpret_cast<const uint8_t*>(&header), sizeof(header));
+  const size_t dataWritten = file.write(reinterpret_cast<const uint8_t*>(&appConfig), sizeof(AppConfigData));
+  file.flush();
+  const size_t fileSize = file.size();
+  file.close();
+
+  if (headerWritten != sizeof(header) || dataWritten != sizeof(AppConfigData) || !fileSize) {
+    addLog("Cfg bin write fail: header=%u data=%u", static_cast<unsigned>(headerWritten), static_cast<unsigned>(dataWritten));
+    return false;
+  }
+
+  File verifyFile = APP_FILESYSTEM.open(kConfigBinTempFile, "r");
+  if (!verifyFile) {
+    addLog("Reopen %s failed", kConfigBinTempFile);
+    return false;
+  }
+
+  ConfigBinHeader verifyHeader = {0, 0, 0, 0};
+  if (verifyFile.read(reinterpret_cast<uint8_t*>(&verifyHeader), sizeof(verifyHeader)) != sizeof(verifyHeader)) {
+    verifyFile.close();
+    addLog("Cfg bin verify header read fail");
+    return false;
+  }
+  if (verifyHeader.magic != kConfigBinMagic ||
+      verifyHeader.dataSize != sizeof(AppConfigData) ||
+      verifyHeader.schemaVersion != kConfigSchemaVersion) {
+    verifyFile.close();
+    addLog("Cfg bin verify header mismatch");
+    return false;
+  }
+  uint32_t streamHash = 2166136261UL;
+  uint8_t verifyBuffer[128];
+  size_t remaining = sizeof(AppConfigData);
+  while (remaining) {
+    const size_t chunk = remaining > sizeof(verifyBuffer) ? sizeof(verifyBuffer) : remaining;
+    const size_t readNow = verifyFile.read(verifyBuffer, chunk);
+    if (readNow != chunk) {
+      verifyFile.close();
+      addLog("Cfg bin verify data read fail");
+      return false;
+    }
+    for (size_t index = 0; index < readNow; ++index) {
+      streamHash ^= verifyBuffer[index];
+      streamHash *= 16777619UL;
+    }
+    remaining -= readNow;
+  }
+  verifyFile.close();
+
+  if (streamHash != verifyHeader.checksum) {
+    addLog("Cfg bin verify checksum fail");
+    return false;
+  }
+
+  if (APP_FILESYSTEM.exists(kConfigBinFile) && !APP_FILESYSTEM.remove(kConfigBinFile)) {
+    addLog("Cfg bin replace remove fail");
+    APP_FILESYSTEM.remove(kConfigBinTempFile);
+    return false;
+  }
+  if (!APP_FILESYSTEM.rename(kConfigBinTempFile, kConfigBinFile)) {
+    addLog("Cfg bin atomic rename fail");
+    APP_FILESYSTEM.remove(kConfigBinTempFile);
+    return false;
+  }
+
+  addLog("Config persisted (bin): %u bytes", static_cast<unsigned>(fileSize));
+  return true;
+}
+
+bool loadConfigBinary(AppConfigData& appConfig) {
+  if (!APP_FILESYSTEM.exists(kConfigBinFile)) return false;
+
+  File file = APP_FILESYSTEM.open(kConfigBinFile, "r");
+  if (!file) {
+    addLog("Unable to open %s for read", kConfigBinFile);
+    return false;
+  }
+
+  ConfigBinHeader header = {0, 0, 0, 0};
+  if (file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)) {
+    file.close();
+    addLog("Cfg bin header read fail");
+    return false;
+  }
+  if (header.magic != kConfigBinMagic ||
+      header.dataSize != sizeof(AppConfigData) ||
+      header.schemaVersion != kConfigSchemaVersion) {
+    file.close();
+    addLog("Cfg bin header mismatch");
+    return false;
+  }
+  if (file.read(reinterpret_cast<uint8_t*>(&appConfig), sizeof(AppConfigData)) != sizeof(AppConfigData)) {
+    file.close();
+    addLog("Cfg bin data read fail");
+    return false;
+  }
+  file.close();
+
+  if (configChecksum(appConfig) != header.checksum) {
+    addLog("Cfg bin checksum mismatch");
+    return false;
+  }
+  return true;
 }
 
 template <typename T, size_t N>
@@ -452,6 +657,7 @@ bool sensorConfigurationChanged(const AppConfigData& previous, const AppConfigDa
 }
 
 bool modbusConfigurationChanged(const AppConfigData& previous, const AppConfigData& next) {
+#if APP_ENABLE_MODBUS
   return previous.enableModbus != next.enableModbus ||
          previous.modbusMode != next.modbusMode ||
          previous.modbusPort != next.modbusPort ||
@@ -475,6 +681,11 @@ bool modbusConfigurationChanged(const AppConfigData& previous, const AppConfigDa
          !arrayEquals(previous.modbusMirrorHumRegisterWords, next.modbusMirrorHumRegisterWords) ||
          !arrayEquals(previous.modbusRelayRegisters, next.modbusRelayRegisters) ||
          !arrayEquals(previous.modbusMirrorRelayRegisters, next.modbusMirrorRelayRegisters);
+#else
+  (void)previous;
+  (void)next;
+  return false;
+#endif
 }
 
 bool wifiCredentialsConfigured() {
@@ -560,10 +771,12 @@ String provisioningSsid() {
 }
 
 void ensureServerStarted() {
+#if APP_ENABLE_WEBUI
   if (gServerStarted) return;
   server.begin();
   gServerStarted = true;
   addLog("HTTP server started");
+#endif
 }
 
 void stopProvisioningAccessPoint() {
@@ -612,6 +825,10 @@ void startWifiStationIfNeeded(uint32_t now) {
   appSetHostName(config().hostName);
   WiFi.persistent(false);
   WiFi.setAutoReconnect(true);
+#if defined(ARDUINO_ARCH_ESP8266)
+  // HomeKit pairing/verify is sensitive to WiFi modem sleep latency.
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+#endif
   WiFi.mode(runtimeData.apModeActive || config().keepApEnabled ? WIFI_AP_STA : WIFI_STA);
   configureWifiStationNetwork();
   WiFi.begin(config().wifiSsid, config().wifiPass);
@@ -679,6 +896,11 @@ void manageConnectivity(uint32_t now) {
 }
 
 void ensureOtaReady() {
+#if APP_ENABLE_HOMEKIT && defined(ARDUINO_ARCH_ESP8266)
+  // Keep RAM and mDNS ownership focused on HomeKit on ESP8266.
+  runtimeData.otaActive = false;
+  return;
+#endif
   if (!config().enableOta || WiFi.status() != WL_CONNECTED) {
     runtimeData.otaActive = false;
     return;
@@ -729,6 +951,14 @@ bool readInputHardware(size_t index) {
 }
 
 void startMdnsIfNeeded() {
+#if !APP_ENABLE_WEBUI
+  return;
+#endif
+#if APP_ENABLE_HOMEKIT && defined(ARDUINO_ARCH_ESP8266)
+  // HomeKit owns the ESP8266 mDNS responder lifecycle; avoid reinitializing it
+  // from the app layer because that can drop the _hap._tcp service advertisement.
+  return;
+#endif
   if (!config().enableMdns || WiFi.status() != WL_CONNECTED) return;
   if (gMdnsStarted) return;
   if (MDNS.begin(config().hostName)) {
@@ -1741,10 +1971,27 @@ bool saveConfigDocument(const AppConfigData& appConfig) {
     return false;
   }
 
+#if defined(ARDUINO_ARCH_ESP8266)
+  if (saveConfigBinary(appConfig)) {
+    return true;
+  }
+  const size_t requiredJsonHeap = kConfigJsonCapacity + 1024U;
+  if (appFreeHeap() < requiredJsonHeap) {
+    addLog("Cfg json fallback skipped: free=%lu need=%u",
+           static_cast<unsigned long>(appFreeHeap()),
+           static_cast<unsigned>(requiredJsonHeap));
+    return false;
+  }
+  addLog("Cfg bin save failed, trying JSON fallback");
+#endif
+
   DynamicJsonDocument doc(kConfigJsonCapacity);
   serializeConfig(doc.to<JsonObject>(), appConfig);
   if (doc.overflowed()) {
-    addLog("Cfg JSON overflow");
+    addLog("Cfg JSON overflow: cap=%u used=%u free=%lu",
+           static_cast<unsigned>(doc.capacity()),
+           static_cast<unsigned>(doc.memoryUsage()),
+           static_cast<unsigned long>(appFreeHeap()));
     return false;
   }
   File file = APP_FILESYSTEM.open(kConfigFile, "w");
@@ -1771,8 +2018,8 @@ bool saveConfigDocument(const AppConfigData& appConfig) {
     addLog("Reopen %s failed", kConfigFile);
     return false;
   }
-  DynamicJsonDocument verifyDoc(kConfigJsonCapacity);
-  const DeserializationError verifyError = deserializeJson(verifyDoc, verifyFile);
+  doc.clear();  // Reuse the same allocation to avoid a second 10KB heap peak on ESP8266.
+  const DeserializationError verifyError = deserializeJson(doc, verifyFile);
   verifyFile.close();
   if (verifyError) {
     addLog("Cfg verify parse err: %s", verifyError.c_str());
@@ -1788,6 +2035,12 @@ bool loadConfigDocument(AppConfigData& appConfig) {
     addLog("FS mount fail loading cfg");
     return false;
   }
+
+#if defined(ARDUINO_ARCH_ESP8266)
+  if (loadConfigBinary(appConfig)) {
+    return true;
+  }
+#endif
 
   if (!APP_FILESYSTEM.exists(kConfigFile)) {
     addLog("Cfg %s missing, defaults", kConfigFile);
@@ -1809,6 +2062,10 @@ bool loadConfigDocument(AppConfigData& appConfig) {
   }
 
   deserializeConfig(doc.as<JsonObjectConst>(), appConfig);
+
+#if defined(ARDUINO_ARCH_ESP8266)
+  saveConfigBinary(appConfig);
+#endif
   return true;
 }
 
@@ -2166,6 +2423,7 @@ void sampleSensorChannel(size_t index, uint32_t now) {
   setSensorValues(index, temp, tempValid, hum, humValid);
 }
 
+#if APP_ENABLE_MODBUS
 int32_t scaleToSignedInt32(float value, uint8_t scale) {
   const float scaled = value * static_cast<float>(scale);
   long rounded = lroundf(scaled);
@@ -3021,6 +3279,7 @@ void setupModbusRuntime() {
 
   gModbusServerConfigured = true;
 }
+#endif
 
 void armOperationalRuntime() {
   if (!gHasStoredConfig) return;
@@ -3028,11 +3287,13 @@ void armOperationalRuntime() {
   clearSensorObjects();
   initSensorObjects();
   controlDriver.setEdgeInterval(config().controlPeriodMs);
+#if APP_ENABLE_MODBUS
   modbusDriver.setEdgeInterval(config().modbusTaskMs);
   if (!gModbusServerConfigured && config().enableModbus && config().modbusMode != MODBUS_OFF) {
     setupModbusRuntime();
     addLog("Modbus armed no reboot");
   }
+#endif
   gOperationalRuntimeArmed = true;
   addLog("Operational runtime armed");
 }
@@ -3077,6 +3338,12 @@ void processSensorTask() {
   if (!gHasStoredConfig) return;
   const uint32_t now = millis();
 
+#if !APP_ENABLE_MODBUS
+  for (size_t index = 0; index < kChannelCount; ++index) {
+    sampleSensorChannel(index, now);
+  }
+  return;
+#else
   if (!modbusMirrorReadbackActive()) {
     for (size_t index = 0; index < kChannelCount; ++index) {
       sampleSensorChannel(index, now);
@@ -3105,6 +3372,7 @@ void processSensorTask() {
       runtimeData.humidityValid[index] = previousHumValid;
     }
   }
+#endif
 }
 
 void endSensorTask() {
@@ -3232,6 +3500,30 @@ void endCloudTask() {
   runtimeData.cloudBusy = false;
 }
 
+void startHomeKitTask() {
+  homeKitDriver.data.runs = 0;
+#if APP_ENABLE_HOMEKIT
+  addLog("HomeKit task started: %s", homekitBridgeStatus());
+#else
+  addLog("HomeKit task disabled for platform");
+#endif
+}
+
+void processHomeKitTask() {
+  homeKitDriver.data.runs++;
+#if APP_ENABLE_HOMEKIT
+  if (!hasStoredConfig()) {
+    return;
+  }
+  if (runtimeData.wifiConnected) {
+    homekitBridgeBegin(config());
+  }
+#endif
+}
+
+void endHomeKitTask() {}
+
+#if APP_ENABLE_MODBUS
 void startModbusTask() {
   modbusDriver.data.runs = 0;
   if (!config().enableModbus || config().modbusMode == MODBUS_OFF) setModbusStatus("disabled");
@@ -3301,6 +3593,7 @@ void processModbusTask() {
 void endModbusTask() {
   setModbusStatus("stopped");
 }
+#endif
 
 }  // namespace
 
@@ -3329,10 +3622,10 @@ bool saveConfigToFile() {
   recompileCustomProgramFromConfig();
   if (saveConfigDocument(configDriver.data)) {
     gHasStoredConfig = true;
-    addLog("Config saved to %s", kConfigFile);
+    addLog("Config saved");
     return true;
   }
-  addLog("Config save failed: %s", kConfigFile);
+  addLog("Config save failed");
   return false;
 }
 
@@ -3347,8 +3640,17 @@ void factoryResetAndRestart() {
     addLog("Factory reset: FS unavailable");
     return;
   }
+  homekitBridgeResetPairings();
   if (APP_FILESYSTEM.exists(kConfigFile) && !APP_FILESYSTEM.remove(kConfigFile)) {
     addLog("Factory reset: remove %s fail", kConfigFile);
+    return;
+  }
+  if (APP_FILESYSTEM.exists(kConfigBinFile) && !APP_FILESYSTEM.remove(kConfigBinFile)) {
+    addLog("Factory reset: remove %s fail", kConfigBinFile);
+    return;
+  }
+  if (APP_FILESYSTEM.exists(kConfigBinTempFile) && !APP_FILESYSTEM.remove(kConfigBinTempFile)) {
+    addLog("Factory reset: remove %s fail", kConfigBinTempFile);
     return;
   }
   stopProvisioningAccessPoint();
@@ -3399,13 +3701,19 @@ String buildStateJson() {
   doc["lastCloudError"] = runtimeData.lastCloudError;
   doc["cloudBusy"] = runtimeData.cloudBusy;
   doc["cloudWorkerStackHighWater"] = runtimeData.cloudWorkerStackHighWater;
+  doc["homekitStatus"] = homekitBridgeStatus();
+  doc["homekitEnabled"] = APP_ENABLE_HOMEKIT != 0;
   doc["enableCloudIot"] = config().enableCloudIot;
   doc["iotBootstrapDone"] = config().iotBootstrapDone;
   doc["iotPollSeconds"] = config().iotPollSeconds;
   doc["iotLastDesiredVersion"] = config().iotLastDesiredVersion;
   doc["lastRestartReason"] = runtimeData.lastRestartReason;
   doc["lastModbusWrite"] = runtimeData.lastModbusWrite;
+#if APP_ENABLE_MODBUS
   doc["modbusProfile"] = modbusModeLabel(config().modbusMode);
+#else
+  doc["modbusProfile"] = "disabled";
+#endif
   doc["modbusStatus"] = runtimeData.lastModbusStatus;
   doc["setpoint"] = x10ToFloat(config().setpointX10);
   doc["setpoint2"] = x10ToFloat(config().setpoint2X10);
@@ -3432,8 +3740,22 @@ String buildStateJson() {
     manualRelays.add(runtimeData.manualRelayState[index]);
   }
 
+  const size_t expected = measureJson(doc);
   String out;
-  serializeJson(doc, out);
+  if (!out.reserve(expected + 1U)) {
+    addLog("State JSON reserve fail: need=%u free=%lu",
+           static_cast<unsigned>(expected),
+           static_cast<unsigned long>(appFreeHeap()));
+    return "{\"error\":\"state-json-oom\"}";
+  }
+  const size_t written = serializeJson(doc, out);
+  if (written != expected) {
+    addLog("State JSON truncated: wrote=%u need=%u free=%lu",
+           static_cast<unsigned>(written),
+           static_cast<unsigned>(expected),
+           static_cast<unsigned long>(appFreeHeap()));
+    return "{\"error\":\"state-json-truncated\"}";
+  }
   return out;
 }
 
@@ -3441,8 +3763,22 @@ String buildConfigJson() {
   DynamicJsonDocument doc(kConfigJsonCapacity);
   serializeConfig(doc.to<JsonObject>(), config());
   doc.remove("iotDeviceSecret");
+  const size_t expected = measureJson(doc);
   String out;
-  serializeJson(doc, out);
+  if (!out.reserve(expected + 1U)) {
+    addLog("Config JSON reserve fail: need=%u free=%lu",
+           static_cast<unsigned>(expected),
+           static_cast<unsigned long>(appFreeHeap()));
+    return "{\"error\":\"config-json-oom\"}";
+  }
+  const size_t written = serializeJson(doc, out);
+  if (written != expected) {
+    addLog("Config JSON truncated: wrote=%u need=%u free=%lu",
+           static_cast<unsigned>(written),
+           static_cast<unsigned>(expected),
+           static_cast<unsigned long>(appFreeHeap()));
+    return "{\"error\":\"config-json-truncated\"}";
+  }
   return out;
 }
 
@@ -3451,22 +3787,49 @@ String buildLogsText() {
 }
 
 bool updateConfigFromJson(const String& body, String& errorMessage) {
-  DynamicJsonDocument doc(kConfigJsonCapacity);
-  const DeserializationError error = deserializeJson(doc, body);
+  const size_t payloadLength = body.length();
+  const size_t parseCapacity = incomingConfigJsonCapacity(payloadLength);
+  if (appFreeHeap() < parseCapacity + 1024U) {
+    errorMessage = "InsufficientHeap";
+    addLog("Cfg parse skipped: payload=%u cap=%u free=%lu",
+           static_cast<unsigned>(payloadLength),
+           static_cast<unsigned>(parseCapacity),
+           static_cast<unsigned long>(appFreeHeap()));
+    return false;
+  }
+  DynamicJsonDocument doc(parseCapacity);
+  char* jsonBuffer = body.length() ? const_cast<char*>(body.c_str()) : nullptr;
+  if (!jsonBuffer) {
+    errorMessage = "EmptyInput";
+    return false;
+  }
+  // Zero-copy parsing avoids duplicating strings in the JsonDocument and reduces RAM pressure.
+  const DeserializationError error = deserializeJson(doc, jsonBuffer);
   if (error) {
+    if (error == DeserializationError::NoMemory) {
+      addLog("Cfg parse NoMemory: payload=%u cap=%u free=%lu",
+             static_cast<unsigned>(payloadLength),
+             static_cast<unsigned>(parseCapacity),
+             static_cast<unsigned long>(appFreeHeap()));
+    }
     errorMessage = error.c_str();
     return false;
   }
-  const AppConfigData previousConfig = config();
+  gConfigUpdateBackup = config();
+  const AppConfigData& previousConfig = gConfigUpdateBackup;
+  AppConfigData& nextConfig = mutableConfig();
+  nextConfig = previousConfig;
   const bool hadStoredConfig = gHasStoredConfig;
   const String previousOrg = String(previousConfig.iotOrganizationId);
   const String previousAssetId = String(previousConfig.iotAssetId);
   const String previousDeviceKey = String(previousConfig.iotDeviceKey);
   const String previousBootstrapToken = String(previousConfig.iotBootstrapToken);
   const String previousBootstrapUrl = String(previousConfig.iotBootstrapUrl);
-  AppConfigData nextConfig = previousConfig;
   deserializeConfig(doc.as<JsonObjectConst>(), nextConfig);
   sanitizeConfig(nextConfig);
+#if !APP_ENABLE_MODBUS
+  nextConfig.enableModbus = false;
+#endif
   const bool cloudIdentityChanged = previousOrg != String(nextConfig.iotOrganizationId) ||
                                     previousAssetId != String(nextConfig.iotAssetId) ||
                                     previousDeviceKey != String(nextConfig.iotDeviceKey) ||
@@ -3483,6 +3846,7 @@ bool updateConfigFromJson(const String& body, String& errorMessage) {
   if (!nextConfig.wifiUseDhcp) {
     String wifiError;
     if (!validateStaticWifiConfig(nextConfig, wifiError)) {
+      nextConfig = previousConfig;
       errorMessage = wifiError;
       return false;
     }
@@ -3491,13 +3855,15 @@ bool updateConfigFromJson(const String& body, String& errorMessage) {
   const bool connectivityChanged = connectivityConfigurationChanged(previousConfig, nextConfig);
   const bool ioChanged = ioConfigurationChanged(previousConfig, nextConfig);
   const bool sensorChanged = sensorConfigurationChanged(previousConfig, nextConfig);
+#if APP_ENABLE_MODBUS
   const bool modbusChanged = modbusConfigurationChanged(previousConfig, nextConfig);
+#endif
   const bool controlIntervalChanged = previousConfig.controlPeriodMs != nextConfig.controlPeriodMs;
   const bool cloudIntervalChanged = previousConfig.iotPollSeconds != nextConfig.iotPollSeconds ||
                                     previousConfig.enableCloudIot != nextConfig.enableCloudIot;
 
-  configDriver.data = nextConfig;
   if (!saveConfigToFile()) {
+    nextConfig = previousConfig;
     errorMessage = "unable to persist configuration";
     return false;
   }
@@ -3509,6 +3875,7 @@ bool updateConfigFromJson(const String& body, String& errorMessage) {
     controlDriver.setEdgeInterval(config().controlPeriodMs);
     addLog("Control task interval updated: %u ms", config().controlPeriodMs);
   }
+#if APP_ENABLE_MODBUS
   if (modbusChanged) {
     modbusDriver.setEdgeInterval(config().modbusTaskMs);
     if (!gModbusServerConfigured && config().enableModbus && config().modbusMode != MODBUS_OFF) {
@@ -3519,6 +3886,7 @@ bool updateConfigFromJson(const String& body, String& errorMessage) {
       scheduleRestart("modbus cfg", 1200U);
     }
   }
+#endif
   if (cloudIntervalChanged) {
     updateCloudIntervalFromConfig();
   }
@@ -3531,7 +3899,97 @@ bool updateConfigFromJson(const String& body, String& errorMessage) {
   return true;
 }
 
+bool updateNetworkFromJson(const String& body, String& errorMessage) {
+  const size_t payloadLength = body.length();
+  const size_t parseCapacity = incomingNetworkJsonCapacity(payloadLength);
+  if (appFreeHeap() < parseCapacity + 768U) {
+    errorMessage = "InsufficientHeap";
+    addLog("Net cfg parse skipped: payload=%u cap=%u free=%lu",
+           static_cast<unsigned>(payloadLength),
+           static_cast<unsigned>(parseCapacity),
+           static_cast<unsigned long>(appFreeHeap()));
+    return false;
+  }
+  DynamicJsonDocument doc(parseCapacity);
+  char* jsonBuffer = payloadLength ? const_cast<char*>(body.c_str()) : nullptr;
+  if (!jsonBuffer) {
+    errorMessage = "EmptyInput";
+    return false;
+  }
+
+  const DeserializationError error = deserializeJson(doc, jsonBuffer);
+  if (error) {
+    if (error == DeserializationError::NoMemory) {
+      addLog("Net cfg parse NoMemory: payload=%u cap=%u free=%lu",
+             static_cast<unsigned>(payloadLength),
+             static_cast<unsigned>(parseCapacity),
+             static_cast<unsigned long>(appFreeHeap()));
+    }
+    errorMessage = error.c_str();
+    return false;
+  }
+
+  AppConfigData& nextConfig = mutableConfig();
+  gConfigUpdateBackup = nextConfig;
+  const AppConfigData& previousConfig = gConfigUpdateBackup;
+  const bool hadStoredConfig = gHasStoredConfig;
+  JsonObjectConst root = doc.as<JsonObjectConst>();
+
+  if (root.containsKey("hostName")) copyText(nextConfig.hostName, root["hostName"] | String(nextConfig.hostName));
+  if (root.containsKey("adminUser")) copyText(nextConfig.adminUser, root["adminUser"] | String(nextConfig.adminUser));
+  if (root.containsKey("adminPass")) copyText(nextConfig.adminPass, root["adminPass"] | String(nextConfig.adminPass));
+  if (root.containsKey("wifiSsid")) copyText(nextConfig.wifiSsid, root["wifiSsid"] | String(nextConfig.wifiSsid));
+  if (root.containsKey("wifiPass")) copyText(nextConfig.wifiPass, root["wifiPass"] | String(nextConfig.wifiPass));
+  if (root.containsKey("apPassword")) copyText(nextConfig.apPassword, root["apPassword"] | String(nextConfig.apPassword));
+  if (root.containsKey("otaPassword")) copyText(nextConfig.otaPassword, root["otaPassword"] | String(nextConfig.otaPassword));
+  if (root.containsKey("wifiUseDhcp")) nextConfig.wifiUseDhcp = root["wifiUseDhcp"].as<bool>();
+  if (root.containsKey("wifiStaticIp")) copyText(nextConfig.wifiStaticIp, root["wifiStaticIp"] | String(nextConfig.wifiStaticIp));
+  if (root.containsKey("wifiSubnetMask")) copyText(nextConfig.wifiSubnetMask, root["wifiSubnetMask"] | String(nextConfig.wifiSubnetMask));
+  if (root.containsKey("wifiGateway")) copyText(nextConfig.wifiGateway, root["wifiGateway"] | String(nextConfig.wifiGateway));
+  if (root.containsKey("wifiDns1")) copyText(nextConfig.wifiDns1, root["wifiDns1"] | String(nextConfig.wifiDns1));
+  if (root.containsKey("wifiDns2")) copyText(nextConfig.wifiDns2, root["wifiDns2"] | String(nextConfig.wifiDns2));
+  if (root.containsKey("wifiConnectTimeoutSec")) nextConfig.wifiConnectTimeoutSec = root["wifiConnectTimeoutSec"].as<uint16_t>();
+  if (root.containsKey("keepApEnabled")) nextConfig.keepApEnabled = root["keepApEnabled"].as<bool>();
+  if (root.containsKey("enableMdns")) nextConfig.enableMdns = root["enableMdns"].as<bool>();
+  if (root.containsKey("enableOta")) nextConfig.enableOta = root["enableOta"].as<bool>();
+
+  sanitizeConfig(nextConfig);
+
+  if (!nextConfig.wifiUseDhcp) {
+    String wifiError;
+    if (!validateStaticWifiConfig(nextConfig, wifiError)) {
+      nextConfig = previousConfig;
+      errorMessage = wifiError;
+      return false;
+    }
+  }
+
+  const bool connectivityChanged = connectivityConfigurationChanged(previousConfig, nextConfig);
+  if (!saveConfigDocument(configDriver.data)) {
+    nextConfig = previousConfig;
+    errorMessage = "unable to persist network configuration";
+    return false;
+  }
+  gHasStoredConfig = true;
+
+  if (!hadStoredConfig) {
+    armOperationalRuntime();
+  }
+  if (connectivityChanged) {
+    requestConnectivityReload();
+    addLog("Network cfg updated, connectivity reload");
+  } else {
+    addLog("Network cfg updated, no connectivity reload");
+  }
+  return true;
+}
+
 bool handleControlJson(const String& body, String& errorMessage) {
+  if (appFreeHeap() < 3072U) {
+    errorMessage = "InsufficientHeap";
+    addLog("Control parse skipped: free=%lu", static_cast<unsigned long>(appFreeHeap()));
+    return false;
+  }
   DynamicJsonDocument doc(2048);
   const DeserializationError error = deserializeJson(doc, body);
   if (error) {
@@ -3584,6 +4042,7 @@ bool handleControlJson(const String& body, String& errorMessage) {
 void initializeApplication() {
   memset(&runtimeData, 0, sizeof(runtimeData));
   gLogBuffer.begin();
+  addLog("FW marker: HK_FIX_2026_04_28_FORCE_START");
   runtimeData.bootMillis = millis();
   runtimeData.lastWifiOkMillis = runtimeData.bootMillis;
   runtimeData.lastDefrostCycleMillis = runtimeData.bootMillis;
@@ -3599,11 +4058,16 @@ void initializeApplication() {
     applyCommissioningSafeDefaults(configDriver.data);
   }
   sanitizeConfig(configDriver.data);
+#if !APP_ENABLE_MODBUS
+  configDriver.data.enableModbus = false;
+#endif
   recompileCustomProgramFromConfig();
   addLog("Boot step: config %s", gHasStoredConfig ? "loaded" : "defaults-safe");
 
   addLog("Boot step: routes");
+#if APP_ENABLE_WEBUI
   registerWebRoutes();
+#endif
 
   addLog("Boot step: connectivity");
   requestConnectivityReload();
@@ -3615,8 +4079,12 @@ void initializeApplication() {
   addLog("Boot step: pin init");
   configurePins();
   gOperationalRuntimeArmed = gHasStoredConfig;
+#if APP_ENABLE_MODBUS
   addLog("Boot step: modbus init");
   setupModbusRuntime();
+#else
+  setModbusStatus("disabled");
+#endif
 
   addLog("Boot step: edge attach");
   Edge.attach(configDriver);
@@ -3624,9 +4092,12 @@ void initializeApplication() {
   Edge.attach(sensorDriver, kSensorDriverMs);
   Edge.attach(controlDriver, config().controlPeriodMs);
   Edge.attach(cloudDriver, currentCloudIntervalMs());
+#if APP_ENABLE_MODBUS
   Edge.attach(modbusDriver, config().modbusTaskMs);
+#endif
+  Edge.attach(homeKitDriver, kHomeKitDriverMs);
 
-  addLog("LH Industrial V6 initialized");
+  addLog("LH Industrial V7 ESP8266 Lite HomeKit initialized");
   addLog("Provisioning URI: /setup");
   addLog("AP password: %s", config().apPassword[0] ? config().apPassword : "12345678");
   addLog("Auth user: %s", config().adminUser);
@@ -3634,12 +4105,50 @@ void initializeApplication() {
 
 void processApplication() {
   if (gDnsStarted) gDnsServer.processNextRequest();
+  #if APP_ENABLE_WEBUI
   if (gServerStarted) server.handleClient();
+  #endif
   if (gOtaStarted) ArduinoOTA.handle();
-  Edge.process();
+
+  bool homekitClientActive = false;
+#if APP_ENABLE_HOMEKIT
+  if (hasStoredConfig()) {
+    if (runtimeData.wifiConnected) {
+      homekitBridgeBegin(config());
+    }
+    // Run HomeKit before the scheduler so pairing/verify traffic has priority.
+    homekitBridgeProcess(runtimeData);
+#if defined(ARDUINO_ARCH_ESP8266)
+    homekitClientActive = arduino_homekit_connected_clients_count() > 0;
+#endif
+  }
+#endif
+
+  // Keep scheduler activity very low while HomeKit has active traffic.
+  // ESP8266 pairing/add flows can fail if other tasks block the loop for too long.
+  static uint32_t lastEdgeProcessAt = 0;
+  static uint32_t lastHomekitClientAt = 0;
+  const uint32_t now = millis();
+  if (homekitClientActive) {
+    lastHomekitClientAt = now;
+  }
+  const bool homekitPriorityWindow =
+      lastHomekitClientAt && static_cast<uint32_t>(now - lastHomekitClientAt) < 30000U;
+  const uint32_t edgeIntervalMs = homekitPriorityWindow ? 2500U : 20U;
+  if (!lastEdgeProcessAt || !homekitPriorityWindow ||
+      static_cast<uint32_t>(now - lastEdgeProcessAt) >= edgeIntervalMs) {
+    Edge.process();
+    lastEdgeProcessAt = now;
+  }
+
+#if APP_ENABLE_HOMEKIT
+  if (hasStoredConfig()) {
+    // Second pass after task execution to flush pending HomeKit frames quickly.
+    homekitBridgeProcess(runtimeData);
+  }
+#endif
   appUpdateMdns();
   runtimeData.loopCounter++;
-  yield();
 }
 
 void recordLoopDuration(uint32_t loopDurationUs) {

@@ -1,0 +1,25 @@
+Boot step: config loaded
+Boot step: routes
+Boot step: connectivity
+WiFi network mode: DHCP
+WiFi connection started: AP_SALON
+Connectivity stack reloaded
+Boot step: http begin
+HTTP server started
+Boot step: pin init
+Boot step: edge attach
+System task started on ESP8266
+Sensor task started
+Control task started in pushbutton mode
+Cloud IoT task started
+HomeKit task started: idle
+LH Industrial V7 ESP8266 Lite HomeKit initialized
+Provisioning URI: /setup
+AP password: 12345678
+Auth user: admin
+WiFi connected: 192.168.20.119 RSSI -57
+mDNS started at LH-D7B4.local
+OTA ready on LH-D7B4
+Config JSON reserve fail: need=1920 free=4896
+State JSON reserve fail: need=1130 free=3224
+
