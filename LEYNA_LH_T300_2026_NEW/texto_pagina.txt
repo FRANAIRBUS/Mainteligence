@@ -1,0 +1,315 @@
+Panel IoT
+Dispositivos conectados, sensores y paneles visuales dentro de Mainteligence.
+
+Nuevo activo IoT
+
+Avatar de usuario
+Dispositivos
+9
+Activos con panel configurado
+En linea
+8
+Con datos en los ultimos 30 minutos
+Buscar por nombre, codigo o dispositivo
+
+Todas las ubicaciones
+prueba
+ASSET-01ENDL1X6FR3YSBXCRMZ
+IP: 192.168.20.120
+Global
+Offline
+Dato: 25/03/2026, 07:44prueba
+16.8
+°c
+Imagen seleccionada: PiscinaGraficaEncendido
+REL1: OFF
+REL2: OFF
+REL3: OFF
+
+Sonda 1
+17
+°c
+
+Consigna
+3.0
+°c
+
+Provision
+
+Etiquetas
+Ultimo registro
+25/03/2026, 07:44
+Panel thermostat
+Ver payload IoT
+Provision y control
+Camara Congelados 1
+ASSET-9QEOWGTLBOHJUG5V11NF
+IP: 192.168.1.50
+Lugar Demo
+Online
+Dato: 09/04/2026, 19:42Camara Congelados 1GraficaEncendidoAlarma
+-20.0
+°c
+Humidity =
+35
+%
+CompresorVentiladorSet
+Cool: ON
+Fan: ON
+Def: OFF
+
+Sonda 1
+-20
+°c
+
+Consigna
+-20.0
+°°c
+
+Provision
+
+Etiquetas
+Ultimo registro
+09/04/2026, 19:42
+Panel thermostat
+Ver payload IoT
+Provision y control
+Tanque 6000
+ASSET-AL8E5I0DIYWFSDBGT3SP
+IP: 172.26.0.43
+Lugar Demo
+Online
+Dato: 09/04/2026, 19:42Tanque 6000
+19.6
+C
+Imagen seleccionada: Tanque grandeGraficaEncendido
+REL1: ON
+REL2: ON
+REL3: OFF
+REL4: OFF
+
+Sonda 1
+20
+C
+
+Consigna
+3.0
+C
+
+Provision
+
+Etiquetas
+Ultimo registro
+09/04/2026, 19:42
+Panel thermostat
+Ver payload IoT
+Provision y control
+Agua Caliente Procesos
+ASSET-SJKGVSCSAK41YGODPZCC
+IP: 172.26.0.183
+Lugar Demo
+Caldera Vapor
+Online
+Dato: 09/04/2026, 19:43Agua Caliente ProcesosS1
+107
+°c
+S2
+29.8
+°c
+Imagen seleccionada: IntercambiadorGraficaEncendido
+REL1: OFF
+REL2: OFF
+REL3: OFF
+REL4: OFF
+
+Sonda 1
+107
+°c
+
+Consigna
+95.0
+°c
+
+Provision
+
+Etiquetas
+Ultimo registro
+09/04/2026, 19:43
+Panel thermostat
+Ver payload IoT
+Provision y control
+Camara Ahumadero
+ASSET-UNR39AED4SXBKIYYLS8H
+IP: 172.26.0.55
+Lugar Demo
+Online
+Dato: 09/04/2026, 19:42Camara Ahumadero
+29.3
+C
+Imagen seleccionada: CompresorGraficaEncendido
+REL1: ON
+REL2: ON
+REL3: OFF
+REL4: OFF
+
+Sonda 1
+29
+C
+
+Consigna
+4.0
+C
+
+Provision
+
+Etiquetas
+Ultimo registro
+09/04/2026, 19:42
+Panel thermostat
+Ver payload IoT
+Provision y control
+Aire A Salon
+ASSET-BG5BUJOS2WZ8KERV1NKX
+IP: 192.168.20.120
+Lugar Demo
+Online
+Dato: 09/04/2026, 19:42Aire A Salon
+28.2
+°c
+Imagen seleccionada: Aire acondicionadoGraficaEncendido
+REL1: OFF
+REL2: OFF
+REL3: OFF
+REL4: OFF
+
+Sonda 1
+28
+°c
+
+Consigna
+3.0
+°c
+
+Provision
+
+Etiquetas
+Ultimo registro
+09/04/2026, 19:42
+Panel thermostat
+Ver payload IoT
+Provision y control
+Camara Mantenimiento 1
+ASSET-BQVRMHPLYMBMYVSUJLWB
+IP: 192.168.20.115
+Global
+Online
+Dato: 09/04/2026, 19:43Camara Mantenimiento 1GraficaEncendidoAlarma
+30.3
+°c
+Humidity =
+31
+%
+CompresorVentiladorSet
+REL1: ON
+REL2: ON
+REL3: OFF
+REL4: OFF
+
+Sonda 1
+30
+°c
+
+Consigna
+18.0
+°c
+
+Provision
+
+Etiquetas
+Ultimo registro
+09/04/2026, 19:43
+Panel thermostat
+Ver payload IoT
+Provision y control
+Pasteurizador 1
+ASSET-JDC9QPDATJPJWI0NNYEJ
+IP: 172.26.0.81
+Lugar Demo
+Online
+Dato: 09/04/2026, 19:42Pasteurizador 1S1
+41.6
+°c
+S2
+37.7
+°c
+Imagen seleccionada: PasteurizadorGraficaEncendido
+REL1: OFF
+REL2: OFF
+Alarma: OFF
+REL4: OFF
+
+Sonda 1
+42
+°c
+
+Consigna
+10.0
+°c
+
+Provision
+
+Etiquetas
+Ultimo registro
+09/04/2026, 19:42
+Panel thermostat
+Ver payload IoT
+Provision y control
+GROWATT 1
+ASSET-TGOE6PK46SANY2LOYMXN
+IP: 172.26.0.23
+Lugar Demo
+Online
+Dato: 09/04/2026, 19:43GROWATT 1
+242
+Wat
+Imagen seleccionada: InversorGraficaEncendido
+REL1: ON
+REL2: ON
+REL3: OFF
+REL4: OFF
+
+Sonda 1
+242
+Wat
+
+Consigna
+12.0
+Kw
+
+Provision
+
+Etiquetas
+Ultimo registro
+09/04/2026, 19:43
+Panel thermostat
+Ver payload IoT
+Alarmas activas
+high_temp
+Provision y control
+Guia rapida del panel IoT
+Referencia practica para entender que estas viendo en esta pantalla y como interactuar con los dispositivos.
+Que es un activo IoT
+Un activo IoT es un activo normal de Mainteligence al que se le conecta un equipo en campo (termostato, sensor o rele) para enviar lecturas y recibir ordenes.
+
+En esta vista puedes ver estado online/offline, ultimo registro, variables medidas y salidas activas.
+
+Como funcionan los botones
+SET: abre el panel de ordenes para enviar cambios (consigna, relays, modos).
+
+GRAF: abre historico y exportacion CSV de telemetria.
+
+SKIN: cambia el estilo visual del panel (no cambia la logica del dispositivo).
+
+Engranaje: abre configuracion de unidades y etiquetas del panel para ese activo IoT.
+
+PROBE: alterna la sonda mostrada cuando el equipo reporta varias entradas.

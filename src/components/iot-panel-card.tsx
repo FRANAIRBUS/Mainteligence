@@ -26,6 +26,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { IotDeviceAdminDialog } from '@/components/iot-device-admin-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -34,6 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useFirebaseApp, useFirestore, useUser } from '@/lib/firebase';
 import { orgDocPath } from '@/lib/organization';
 import type { Asset, AssetIotReading, AssetIotRelay } from '@/lib/firebase/models';
+import { canManageMasterData, normalizeRole } from '@/lib/rbac';
 
 type IotPanelCardProps = {
   asset: Asset;
@@ -907,13 +909,37 @@ function normalizeOperatingMode(value: unknown) {
 
   const normalized = String(value ?? '').trim().toLowerCase();
   if (!normalized) return 'thermostat';
-  if (['0', 'disabled', 'manual_disable'].includes(normalized)) return 'disabled';
+  if (['0', 'disabled', 'disable', 'manual_disable'].includes(normalized)) return 'disabled';
   if (['1', 'thermostat'].includes(normalized)) return 'thermostat';
   if (['2', 'pushbutton', 'pushbotton'].includes(normalized)) return 'pushbutton';
   if (['3', 'manual'].includes(normalized)) return 'manual';
   if (['4', 'custom', 'work_custom'].includes(normalized)) return 'custom';
   if (['thermostat', 'pushbutton', 'manual', 'custom', 'disabled'].includes(normalized)) return normalized;
   return 'thermostat';
+}
+
+function resolveOperatingModeFromAsset(asset: Asset) {
+  return normalizeOperatingMode(
+    firstDefinedIotValue([
+      asset.iot?.reportedState?.workMode,
+      asset.iot?.reportedState?.workModeLabel,
+      asset.iot?.reportedState?.operatingMode,
+      asset.iot?.lastReading?.workMode,
+      asset.iot?.lastReading?.workModeLabel,
+      asset.iot?.lastReading?.operatingMode,
+      asset.iot?.desiredState?.workMode,
+      asset.iot?.desiredState?.operatingMode,
+    ]),
+  );
+}
+
+function operatingModeDisplayLabel(value: string) {
+  if (value === 'disabled') return 'DISABLED';
+  if (value === 'thermostat') return 'THERMOSTAT';
+  if (value === 'pushbutton') return 'PUSHBUTTON';
+  if (value === 'manual') return 'MANUAL';
+  if (value === 'custom') return 'CUSTOM';
+  return 'THERMOSTAT';
 }
 
 function workModeFromOperatingMode(value: string) {
@@ -1243,7 +1269,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const [mode, setMode] = useState(asset.iot?.desiredState?.mode ?? 'cool');
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
   const [power, setPower] = useState(asset.iot?.desiredState?.power ?? true);
-  const [operatingMode, setOperatingMode] = useState(() => normalizeOperatingMode(asset.iot?.desiredState?.workMode ?? asset.iot?.desiredState?.operatingMode));
+  const [operatingMode, setOperatingMode] = useState(() => resolveOperatingModeFromAsset(asset));
   const [customProgram, setCustomProgram] = useState(() => String(asset.iot?.desiredState?.customProgram ?? ''));
   const [customGuideOpen, setCustomGuideOpen] = useState(false);
   const [editableFunctionName, setEditableFunctionName] = useState(() => String(asset.iot?.desiredState?.editableFunctionName ?? ''));
@@ -1283,7 +1309,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     setMode(draftAsset.iot?.desiredState?.mode ?? 'cool');
     setFan(draftAsset.iot?.desiredState?.fan ?? 'auto');
     setPower(draftAsset.iot?.desiredState?.power ?? true);
-    setOperatingMode(normalizeOperatingMode(draftAsset.iot?.desiredState?.workMode ?? draftAsset.iot?.desiredState?.operatingMode));
+    setOperatingMode(resolveOperatingModeFromAsset(draftAsset));
     setCustomProgram(String(draftAsset.iot?.desiredState?.customProgram ?? ''));
     setCustomGuideOpen(false);
     setEditableFunctionName(String(draftAsset.iot?.desiredState?.editableFunctionName ?? ''));
@@ -1899,6 +1925,8 @@ function LegacyThermostatPanel({
   const relay1On = getRelayState(relays, 'REL1');
   const relay2On = getRelayState(relays, 'REL2');
   const relay3On = getRelayState(relays, 'REL3');
+  const currentOperatingMode = resolveOperatingModeFromAsset(asset);
+  const currentOperatingModeLabel = operatingModeDisplayLabel(currentOperatingMode);
   const alarmOn = alarms.length > 0;
   const timestamp = formatReadingDate(readingTimestamp(asset, reading));
   const temperature = probeTemperature(reading, activeProbe);
@@ -2574,6 +2602,15 @@ function LegacyThermostatPanel({
             </button>
           </>
         ) : null}
+
+        <div
+          className="pointer-events-none absolute left-[11.2%] flex h-[7.9%] min-w-[18.0%] items-center justify-center rounded-[6px] border border-white/45 bg-black/70 px-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-100 sm:text-[11px]"
+          style={{ top: 'calc(80.2% + 5px)' }}
+          title="Modo de trabajo actual"
+          aria-label="Modo de trabajo actual"
+        >
+          MODE {currentOperatingModeLabel}
+        </div>
       </div>
 
       <Dialog open={photoGalleryOpen} onOpenChange={setPhotoGalleryOpen}>
@@ -2813,12 +2850,12 @@ function LegacyThermostatPanel({
             <button
               type="button"
               className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-center text-sm font-medium text-slate-100 transition hover:border-sky-300/50 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
-              title="Abrir Provision y control"
-              aria-label="Abrir Provision y control"
+              title="Abrir configuracion de control"
+              aria-label="Abrir configuracion de control"
             >
               <div className="flex items-center justify-center gap-2">
                 <Send className="h-4 w-4 text-sky-300" />
-                <span>Provision</span>
+                <span>Configuracion</span>
               </div>
             </button>
           )}
@@ -2841,8 +2878,10 @@ function LegacyThermostatPanel({
 }
 
 export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
+  const { role } = useUser();
   const reading = resolveDisplayReading(asset);
   const panelType = asset.iot?.panelType ?? 'sensor';
+  const canManage = canManageMasterData(normalizeRole(role));
   const status = readingStatus(asset);
   const deviceIp = resolveDeviceIp(asset);
   const temperature = readingMetric(reading, 'temperature', 'Temp1');
@@ -2977,6 +3016,20 @@ export function IotPanelCard({ asset, siteName }: IotPanelCardProps) {
               {canInspectPayload ? <IotPayloadDialog asset={asset} reading={reading} /> : null}
             </div>
           </div>
+          
+          {canManage ? (
+            <IotDeviceAdminDialog
+              asset={asset}
+              trigger={(
+                <Button
+                  variant="outline"
+                  className="w-full border-sky-300/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
+                >
+                  Provision dispositivo
+                </Button>
+              )}
+            />
+          ) : null}
 
           {alarms.length > 0 ? (
             <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3 text-sm text-amber-100">

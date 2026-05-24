@@ -1959,34 +1959,52 @@ function optionalStringValue(input: unknown) {
 
 const validOperatingModes = new Set(['thermostat', 'pushbutton', 'manual', 'disabled', 'custom']);
 
-function optionalOperatingModeValue(input: unknown) {
-  const normalized = optionalStringValue(input)?.toLowerCase();
+function normalizeOperatingModeAlias(input: unknown) {
+  const normalized = String(input ?? '').trim().toLowerCase();
   if (!normalized) return null;
-  if (normalized === 'manual_disable') return 'disabled';
+  if (normalized === 'manual_disable' || normalized === 'disable') return 'disabled';
   if (normalized === 'pushbotton') return 'pushbutton';
   if (normalized === 'work_custom') return 'custom';
   if (validOperatingModes.has(normalized)) return normalized;
+  return null;
+}
+
+function operatingModeFromWorkMode(input: unknown) {
+  if (typeof input !== 'number' || !Number.isInteger(input)) return null;
+  if (input === 0) return 'disabled';
+  if (input === 1) return 'thermostat';
+  if (input === 2) return 'pushbutton';
+  if (input === 3) return 'manual';
+  if (input === 4) return 'custom';
+  return null;
+}
+
+function optionalOperatingModeValue(input: unknown) {
+  const normalized = String(input ?? '').trim().toLowerCase();
+  if (!normalized) return null;
+  const canonicalMode = normalizeOperatingModeAlias(normalized);
+  if (canonicalMode) return canonicalMode;
   throw httpsError('invalid-argument', 'state.operatingMode invalido.');
 }
 
-function optionalWorkModeValue(input: unknown) {
+function optionalWorkModeValue(input: unknown, field = 'state.workMode') {
   if (input === null || input === undefined || input === '') return null;
 
   if (typeof input === 'number') {
     if (!Number.isInteger(input) || input < 0 || input > 4) {
-      throw httpsError('invalid-argument', 'state.workMode invalido.');
+      throw httpsError('invalid-argument', `${field} invalido.`);
     }
     return input;
   }
 
   const normalized = String(input).trim().toLowerCase();
   if (!normalized) return null;
-  if (['0', 'disabled'].includes(normalized)) return 0;
+  if (['0', 'disabled', 'disable'].includes(normalized)) return 0;
   if (['1', 'thermostat'].includes(normalized)) return 1;
   if (['2', 'pushbutton', 'pushbotton'].includes(normalized)) return 2;
   if (['3', 'manual'].includes(normalized)) return 3;
   if (['4', 'custom', 'work_custom'].includes(normalized)) return 4;
-  throw httpsError('invalid-argument', 'state.workMode invalido.');
+  throw httpsError('invalid-argument', `${field} invalido.`);
 }
 
 function optionalCustomProgramValue(input: unknown) {
@@ -2213,6 +2231,12 @@ function sanitizeReportedState(input: unknown) {
 
   const raw = isPlainObject(input.raw) ? input.raw : undefined;
   const relays = sanitizeRelayArray(input.relays) ?? sanitizeRelayArray(relayMapFromLegacyState(raw ?? input));
+  let workMode = optionalWorkModeValue(input.workMode, 'reportedState.workMode');
+  const explicitOperatingMode = normalizeOperatingModeAlias(input.workModeLabel ?? input.operatingMode ?? input.workMode);
+  if (workMode === null && explicitOperatingMode !== null) {
+    workMode = optionalWorkModeValue(explicitOperatingMode, 'reportedState.workMode');
+  }
+  const normalizedOperatingMode = explicitOperatingMode ?? operatingModeFromWorkMode(workMode);
 
   return stripUndefinedDeep({
     readingAt,
@@ -2222,6 +2246,9 @@ function sanitizeReportedState(input: unknown) {
     setpoint: optionalFiniteNumber(input.setpoint, 'reportedState.setpoint'),
     power: optionalBoolean(input.power, 'reportedState.power'),
     mode: optionalStringValue(input.mode),
+    workMode,
+    workModeLabel: normalizedOperatingMode,
+    operatingMode: normalizedOperatingMode,
     fan: optionalStringValue(input.fan),
     status: status || undefined,
     alarms: sanitizeAlarmArray(input.alarms),
@@ -2246,6 +2273,9 @@ function buildLastReadingFromReportedState(reportedState: Record<string, unknown
     setpoint: reportedState.setpoint,
     power: reportedState.power,
     mode: reportedState.mode,
+    workMode: reportedState.workMode,
+    workModeLabel: reportedState.workModeLabel,
+    operatingMode: reportedState.operatingMode,
     fan: reportedState.fan,
     status: reportedState.status,
     alarms: reportedState.alarms,

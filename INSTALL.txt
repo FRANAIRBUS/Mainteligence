@@ -1,0 +1,33 @@
+De local a github
+
+git status
+git add .
+git commit -m "Actualiza X"
+git push origin main
+
+git status
+git add .
+git commit -m "Actualiza X"
+git push origin main:staging_digi
+
+git status
+git add .
+git commit -m "Actualiza X"
+git push origin main
+git push --force origin main:staging_digi
+
+
+
+De github a local
+
+git fetch origin
+git status
+git pull --rebase origin main
+
+flutter analyze
+
+flutter build web --release
+
+firebase deploy --only hosting
+
+firebase deploy --only firestore:rules
