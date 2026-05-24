@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { Cpu, Plus, RadioTower, Search, Thermometer } from 'lucide-react';
+import { Cpu, FileCode2, Plus, RadioTower, Search, Thermometer } from 'lucide-react';
 
 import { AppShell } from '@/components/app-shell';
 import { AddAssetDialog } from '@/components/add-asset-dialog';
@@ -259,7 +259,7 @@ export default function IotPage() {
             Referencia practica para entender que estas viendo en esta pantalla y como interactuar con los dispositivos.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 text-sm text-muted-foreground md:grid-cols-2">
+        <CardContent className="grid gap-3 text-sm text-muted-foreground md:grid-cols-3">
           <div className="rounded-xl border border-white/60 bg-background p-4">
             <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
               <Thermometer className="h-4 w-4 text-sky-500" />
@@ -290,6 +290,19 @@ export default function IotPage() {
             <p className="mt-1">
               <strong>PROBE:</strong> alterna la sonda mostrada cuando el equipo reporta varias entradas.
             </p>
+          </div>
+          <div className="rounded-xl border border-white/60 bg-background p-4">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-foreground">
+              <FileCode2 className="h-4 w-4 text-sky-500" />
+              Guia de customProgram
+            </div>
+            <p>
+              Documentacion completa en espanol para comandos legacy y secuencia PROGRAM
+              (START/STEP/WAIT/WAITUNTIL/LOOP/SAFETY) con ejemplos ONBOOT y disparo VIN.
+            </p>
+            <Button asChild variant="outline" className="mt-3">
+              <Link href="/iot/custom-program-guide">Abrir guia cloud</Link>
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -327,6 +340,5 @@ function SummaryCard({
     </Card>
   );
 }
-
 
 

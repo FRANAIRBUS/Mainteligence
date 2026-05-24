@@ -32,5 +32,22 @@ bool saveConfigToFile();
 void scheduleRestart(const char* reason, uint32_t delayMs = 1500U);
 void factoryResetAndRestart();
 void addLog(const char* format, ...);
+bool setVirtualInputByLabel(const String& label, bool state);
+bool pulseVirtualInputByLabel(const String& label);
+bool customProgramValidFlag();
+uint16_t customProgramCompiledCount();
+const char* customProgramErrorText();
+const char* customProgramModeText();
+bool sequenceProgramValidFlag();
+bool sequenceProgramRunningFlag();
+const char* sequenceProgramNameText();
+const char* sequenceProgramStateText();
+uint8_t sequenceProgramCurrentStep();
+uint8_t sequenceProgramCurrentLoop();
+const char* sequenceProgramErrorText();
+size_t sequenceProgramErrorLine();
+uint8_t sequenceProgramUsedRelayMask();
+uint8_t sequenceProgramReservedRelayMask();
+float sequenceProgramLastTemperature();
 
 }  // namespace industrial_v2

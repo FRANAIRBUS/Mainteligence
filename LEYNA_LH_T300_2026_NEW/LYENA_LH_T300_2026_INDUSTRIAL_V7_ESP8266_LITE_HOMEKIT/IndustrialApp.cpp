@@ -56,6 +56,7 @@ static constexpr uint32_t kModbusDiagDecodeLogMs = 800U;
 static constexpr uint32_t kModbusDiagIgnoreLogMs = 5000U;
 #endif
 static constexpr uint32_t kHomeKitDriverMs = 50U;
+static constexpr uint32_t kHomekitTrafficHoldoffMs = 30000U;
 static constexpr float kReferenceVoltage = 3.3f;
 static constexpr float kReferenceResistor = 10000.0f;
 static constexpr float kPtcEsp32RawGain = 1.81f;
@@ -268,6 +269,8 @@ bool gWifiConnectInProgress = false;
 bool gConnectivityReloadRequested = false;
 bool gOperationalRuntimeArmed = false;
 bool gModbusServerConfigured = false;
+bool gHomekitTrafficWindow = false;
+uint32_t gHomekitTrafficLastAt = 0;
 AppConfigData gConfigUpdateBackup;
 uint32_t gWifiConnectStartedAt = 0;
 uint32_t gLastWifiAttemptAt = 0;
@@ -302,6 +305,16 @@ static constexpr uint32_t kCloudWorkerStackSize = 8192U;
 TaskHandle_t gCloudWorkerHandle = nullptr;
 portMUX_TYPE gLogBufferMux = portMUX_INITIALIZER_UNLOCKED;
 #endif
+
+bool homekitTrafficWindowActive(uint32_t now) {
+#if APP_ENABLE_HOMEKIT && defined(ARDUINO_ARCH_ESP8266)
+  if (!gHomekitTrafficLastAt) return false;
+  return static_cast<uint32_t>(now - gHomekitTrafficLastAt) < kHomekitTrafficHoldoffMs;
+#else
+  (void)now;
+  return false;
+#endif
+}
 
 const char* workModeLabel(uint8_t mode) {
   switch (mode) {
@@ -3336,6 +3349,7 @@ void startSensorTask() {
 void processSensorTask() {
   sensorDriver.data.runs++;
   if (!gHasStoredConfig) return;
+  if (gHomekitTrafficWindow) return;
   const uint32_t now = millis();
 
 #if !APP_ENABLE_MODBUS
@@ -3391,6 +3405,7 @@ void startControlTask() {
 void processControlTask() {
   controlDriver.data.runs++;
   if (!gHasStoredConfig) return;
+  if (gHomekitTrafficWindow) return;
   const uint32_t now = millis();
   processInputDebounce(now);
 
@@ -3464,7 +3479,36 @@ void startCloudTask() {
 
 void processCloudTask() {
   cloudDriver.data.runs++;
+  if (gHomekitTrafficWindow) return;
   updateCloudIntervalFromConfig();
+#if APP_ENABLE_HOMEKIT && defined(ARDUINO_ARCH_ESP8266)
+  static bool sHomekitPairStateKnown = false;
+  static bool sHomekitWasPaired = false;
+  static uint32_t sHomekitPairSettleUntil = 0;
+  const bool homekitPaired = homekitBridgeIsPaired();
+  const uint32_t now = millis();
+  if (!sHomekitPairStateKnown || homekitPaired != sHomekitWasPaired) {
+    sHomekitPairStateKnown = true;
+    sHomekitWasPaired = homekitPaired;
+    if (homekitPaired) {
+      sHomekitPairSettleUntil = now + 45000U;
+      addLog("Cloud paused 45s after HomeKit pairing");
+    } else {
+      sHomekitPairSettleUntil = 0;
+      addLog("Cloud paused until HomeKit is paired");
+    }
+  }
+  if (!homekitPaired) {
+    runtimeData.cloudBusy = false;
+    copyText(runtimeData.lastCloudStatus, String("waiting-homekit-pair"));
+    return;
+  }
+  if (sHomekitPairSettleUntil && !reachedDeadline(now, sHomekitPairSettleUntil)) {
+    runtimeData.cloudBusy = false;
+    copyText(runtimeData.lastCloudStatus, String("homekit-settle"));
+    return;
+  }
+#endif
   if (!config().enableCloudIot) {
     runtimeData.cloudBusy = false;
     copyText(runtimeData.lastCloudStatus, String("disabled"));
@@ -4124,19 +4168,16 @@ void processApplication() {
   }
 #endif
 
-  // Keep scheduler activity very low while HomeKit has active traffic.
-  // ESP8266 pairing/add flows can fail if other tasks block the loop for too long.
+  // Keep the scheduler responsive, but mark a HomeKit traffic window so heavy
+  // tasks can skip work while iOS is pairing/verifying.
   static uint32_t lastEdgeProcessAt = 0;
-  static uint32_t lastHomekitClientAt = 0;
   const uint32_t now = millis();
   if (homekitClientActive) {
-    lastHomekitClientAt = now;
+    gHomekitTrafficLastAt = now;
   }
-  const bool homekitPriorityWindow =
-      lastHomekitClientAt && static_cast<uint32_t>(now - lastHomekitClientAt) < 30000U;
-  const uint32_t edgeIntervalMs = homekitPriorityWindow ? 2500U : 20U;
-  if (!lastEdgeProcessAt || !homekitPriorityWindow ||
-      static_cast<uint32_t>(now - lastEdgeProcessAt) >= edgeIntervalMs) {
+  gHomekitTrafficWindow = homekitTrafficWindowActive(now);
+
+  if (!lastEdgeProcessAt || static_cast<uint32_t>(now - lastEdgeProcessAt) >= 20U) {
     Edge.process();
     lastEdgeProcessAt = now;
   }

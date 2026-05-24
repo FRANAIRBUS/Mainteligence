@@ -272,6 +272,8 @@ export interface AssetIotDesiredState {
   operatingMode?: string | null;
   workMode?: number | null;
   customProgram?: string | null;
+  pulseVirtualInput?: string | null;
+  virtualInputs?: Record<string, boolean> | null;
   editableFunctionName?: string | null;
   relays?: Record<string, boolean> | null;
   note?: string | null;
@@ -284,6 +286,22 @@ export interface AssetIotReportedState extends AssetIotReading {
   appliedDesiredVersion?: number | null;
   applyStatus?: "idle" | "applied" | "partial" | "rejected" | "error" | null;
   applyMessage?: string | null;
+  customProgramValid?: boolean | null;
+  customProgramRuleCount?: number | null;
+  customProgramMode?: string | null;
+  customProgramError?: string | null;
+  sequenceValid?: boolean | null;
+  sequenceRunning?: boolean | null;
+  sequenceName?: string | null;
+  sequenceState?: string | null;
+  sequenceCurrentStep?: number | null;
+  sequenceCurrentLoop?: number | null;
+  sequenceError?: string | null;
+  sequenceErrorLine?: number | null;
+  sequenceLastTemp?: number | null;
+  virtualInputs?: Record<string, boolean> | null;
+  sequenceUsedRelays?: string[] | null;
+  sequenceReservedRelays?: string[] | null;
 }
 
 export interface AssetIotProvisioning {
@@ -426,6 +444,5 @@ export interface Ticket extends BaseEntity {
   reopenedBy?: string;
   reopenedAt?: Timestamp;
 }
-
 
 

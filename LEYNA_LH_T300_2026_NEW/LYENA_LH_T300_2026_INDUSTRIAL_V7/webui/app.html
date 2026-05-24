@@ -124,7 +124,7 @@ pre{margin:0;padding:14px;background:#061017;border:1px solid var(--line);border
 
 .section-title{margin:0 0 10px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.1em}
 
-.menu-row{display:grid;gap:10px;grid-template-columns:minmax(220px,1fr) repeat(4,minmax(140px,auto));align-items:end;margin-top:14px}
+.menu-row{display:grid;gap:10px;grid-template-columns:minmax(220px,1fr) repeat(5,minmax(140px,auto));align-items:end;margin-top:14px}
 
 details{margin-top:12px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:#08161d}
 
@@ -199,6 +199,8 @@ details summary{cursor:pointer;color:var(--muted);text-transform:uppercase;lette
       <a class="btn ghost" href="/app?page=modbus">Modbus Map</a>
 
       <a class="btn ghost" href="/custom-program">Custom Program</a>
+
+      <a class="btn ghost" href="/custom-program-guide">Guia Program</a>
 
       <a class="btn ghost" href="/setup">Setup Portal</a>
 
@@ -288,7 +290,22 @@ details summary{cursor:pointer;color:var(--muted);text-transform:uppercase;lette
 
       <div class="sensor-table" id="cloud-diag"></div>
 
-      <div class="footer-note">This panel shows the exact cloud URLs currently loaded in the device, including length and endpoint validation (full path or short Maintelligence domains).</div>
+      <div class="section-title">Custom Program y secuencia</div>
+      <div class="sensor-table" id="cloud-program-diag"></div>
+
+      <div class="actions">
+        <button class="btn alt" id="cloud-pulse-vin1">Pulsar VIN1</button>
+        <button class="btn alt" id="cloud-pulse-vin2">Pulsar VIN2</button>
+        <button class="btn alt" id="cloud-pulse-vin3">Pulsar VIN3</button>
+        <button class="btn alt" id="cloud-pulse-vin4">Pulsar VIN4</button>
+      </div>
+
+      <details>
+        <summary>Payloads recomendados para API local y cloud</summary>
+        <pre id="cloud-program-payloads"></pre>
+      </details>
+
+      <div class="footer-note">Este panel muestra URLs cloud activas, estado de parser/secuencia, entradas virtuales y payloads listos para desiredState/customProgram.</div>
 
     </section>
 
@@ -855,7 +872,90 @@ function endpointMatches(url,suffix,aliasHost){const normalized=normalizeEndpoin
 
 function endpointInfo(url,suffix,maxLen,aliasHost){const normalized=normalizeEndpointValue(url);return{value:normalized,length:normalized.length,validEndpoint:endpointMatches(normalized,suffix,aliasHost),withinLimit:normalized.length<=maxLen,empty:!normalized.length}}
 
-function renderCloudDiagnostics(){const host=el('cloud-diag');if(!host)return;const bootstrap=endpointInfo(appConfig.iotBootstrapUrl,'/iotDeviceBootstrap',127,'devicebootstrap.maintelligence.app');const sync=endpointInfo(appConfig.iotSyncUrl,'/iotDeviceSync',127,'devicesync.maintelligence.app');const card=(label,value)=>`<div class="sensor-box"><div class="section-title">${label}</div><div><b>${value}</b></div></div>`;const busy=window.__lastState?.cloudBusy?'busy':'idle';const stack=window.__lastState?.cloudWorkerStackHighWater??0;const status=window.__lastState?.lastCloudStatus||'--';const error=window.__lastState?.lastCloudError||'none';const bootstrapped=Boolean(appConfig.iotBootstrapDone);const tokenPresent=Boolean(String(appConfig.iotBootstrapToken||'').trim());const authMode=bootstrapped?'sync active':(tokenPresent?'token pending':'missing creds');host.innerHTML=[card('Cloud Enabled',appConfig.enableCloudIot?'yes':'no'),card('Organization',appConfig.iotOrganizationId||'--'),card('Asset',appConfig.iotAssetId||'--'),card('Device',appConfig.iotDeviceKey||'--'),card('Bootstrap State',bootstrapped?'bootstrapped':'bootstrap pending'),card('Auth Mode',authMode),card('Device Secret','hidden'),card('Bootstrap Token',tokenPresent?'loaded':'empty'),card('Bootstrap URL',`${bootstrap.value||'--'} | ${bootstrap.length}/127 ${bootstrap.validEndpoint?'endpoint-ok':'endpoint-error'}`),card('Sync URL',`${sync.value||'--'} | ${sync.length}/127 ${sync.validEndpoint?'endpoint-ok':'endpoint-error'}`),card('Last Desired Version',window.__lastState?.iotLastDesiredVersion??'--'),card('Cloud Status',status),card('Cloud Error',error),card('Cloud Worker',busy),card('Worker Stack Headroom',stack?`${stack} bytes`:'--')].join('')}
+function relayListText(value){if(!Array.isArray(value)||!value.length)return'none';return value.join(', ')}
+
+function virtualInputsText(value){if(!value||typeof value!=='object')return'VIN1:OFF | VIN2:OFF | VIN3:OFF | VIN4:OFF';const labels=['VIN1','VIN2','VIN3','VIN4'];return labels.map(label=>`${label}:${value[label]?'ON':'OFF'}`).join(' | ')}
+
+function renderCloudDiagnostics(){
+  const host=el('cloud-diag');
+  if(!host)return;
+
+  const bootstrap=endpointInfo(appConfig.iotBootstrapUrl,'/iotDeviceBootstrap',127,'devicebootstrap.maintelligence.app');
+  const sync=endpointInfo(appConfig.iotSyncUrl,'/iotDeviceSync',127,'devicesync.maintelligence.app');
+  const card=(label,value)=>`<div class="sensor-box"><div class="section-title">${label}</div><div><b>${value}</b></div></div>`;
+  const liveState=window.__lastState||{};
+  const busy=liveState.cloudBusy?'busy':'idle';
+  const stack=liveState.cloudWorkerStackHighWater??0;
+  const status=liveState.lastCloudStatus||'--';
+  const error=liveState.lastCloudError||'none';
+  const bootstrapped=Boolean(appConfig.iotBootstrapDone);
+  const tokenPresent=Boolean(String(appConfig.iotBootstrapToken||'').trim());
+  const authMode=bootstrapped?'sync active':(tokenPresent?'token pending':'missing creds');
+
+  host.innerHTML=[
+    card('Cloud Enabled',appConfig.enableCloudIot?'yes':'no'),
+    card('Organization',appConfig.iotOrganizationId||'--'),
+    card('Asset',appConfig.iotAssetId||'--'),
+    card('Device',appConfig.iotDeviceKey||'--'),
+    card('Bootstrap State',bootstrapped?'bootstrapped':'bootstrap pending'),
+    card('Auth Mode',authMode),
+    card('Device Secret','hidden'),
+    card('Bootstrap Token',tokenPresent?'loaded':'empty'),
+    card('Bootstrap URL',`${bootstrap.value||'--'} | ${bootstrap.length}/127 ${bootstrap.validEndpoint?'endpoint-ok':'endpoint-error'}`),
+    card('Sync URL',`${sync.value||'--'} | ${sync.length}/127 ${sync.validEndpoint?'endpoint-ok':'endpoint-error'}`),
+    card('Last Desired Version',liveState.iotLastDesiredVersion??'--'),
+    card('Cloud Status',status),
+    card('Cloud Error',error),
+    card('Cloud Worker',busy),
+    card('Worker Stack Headroom',stack?`${stack} bytes`:'--')
+  ].join('');
+
+  const programHost=el('cloud-program-diag');
+  if(programHost){
+    const seqErr=liveState.sequenceError||'none';
+    const seqErrLine=liveState.sequenceErrorLine?` @L${liveState.sequenceErrorLine}`:'';
+    const seqLastTemp=(liveState.sequenceLastTemp==null||Number.isNaN(Number(liveState.sequenceLastTemp)))?'--':`${Number(liveState.sequenceLastTemp).toFixed(1)} C`;
+    programHost.innerHTML=[
+      card('customProgramValid',liveState.customProgramValid?'true':'false'),
+      card('customProgramMode',liveState.customProgramMode||'--'),
+      card('sequenceRunning',liveState.sequenceRunning?'true':'false'),
+      card('sequenceState',liveState.sequenceState||'--'),
+      card('sequenceName',liveState.sequenceName||'--'),
+      card('sequenceCurrentStep',liveState.sequenceCurrentStep??0),
+      card('sequenceCurrentLoop',liveState.sequenceCurrentLoop??0),
+      card('sequenceLastTemp',seqLastTemp),
+      card('sequenceError',`${seqErr}${seqErrLine}`),
+      card('virtualInputs',virtualInputsText(liveState.virtualInputs)),
+      card('sequenceUsedRelays',relayListText(liveState.sequenceUsedRelays)),
+      card('sequenceReservedRelays',relayListText(liveState.sequenceReservedRelays))
+    ].join('');
+  }
+
+  const payloads=el('cloud-program-payloads');
+  if(payloads){
+    const sampleProgram='PROGRAM NAME=VIN_QUICK\\nSTART VIN=VIN1\\nSTEP REL=REL1 STATE=ON TIME=5000\\nSTEP REL=REL1 STATE=OFF\\nEND';
+    payloads.textContent=[
+      'API local (pulso virtual):',
+      JSON.stringify({pulseVirtualInput:'VIN1'},null,2),
+      '',
+      'Cloud desiredState (pulso recomendado):',
+      JSON.stringify({desiredState:{pulseVirtualInput:'VIN1'}},null,2),
+      '',
+      'Cloud desiredState (cargar customProgram):',
+      JSON.stringify({desiredState:{workMode:4,customProgram:sampleProgram}},null,2)
+    ].join('\\n');
+  }
+}
+
+async function pulseVirtualInput(label){
+  try{
+    await callApi('/api/v1/control',{method:'POST',body:JSON.stringify({pulseVirtualInput:label}),headers:{'Content-Type':'application/json'}});
+    await refreshState();
+    flash('Pulso virtual enviado: '+label,'ok');
+  }catch(error){
+    flash('Error pulsando '+label+': '+error.message,'error');
+  }
+}
 
 function validatePayload(payload){const issues=[];Object.entries(FIELD_MAXLEN).forEach(([key,maxLen])=>{const value=String(payload[key]??'');if(value.length>maxLen)issues.push(`${titleize(key)} exceeds ${maxLen} chars`)});if(payload.enableCloudIot){if(String(payload.iotBootstrapUrl||'').trim()&&!endpointMatches(payload.iotBootstrapUrl,'/iotDeviceBootstrap','devicebootstrap.maintelligence.app'))issues.push('Bootstrap URL must end with /iotDeviceBootstrap (recommended: https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceBootstrap)');if(String(payload.iotSyncUrl||'').trim()&&!endpointMatches(payload.iotSyncUrl,'/iotDeviceSync','devicesync.maintelligence.app'))issues.push('Sync URL must end with /iotDeviceSync (recommended: https://us-central1-studio-4350140400-a3f8f.cloudfunctions.net/iotDeviceSync)')}return issues}
 
@@ -895,7 +995,56 @@ async function rebootDevice(){try{await callApi('/api/v1/reboot',{method:'POST'}
 
 async function resetDevice(){if(!confirm('Reset configuration to defaults and reboot?'))return;try{await callApi('/api/v1/factory-reset',{method:'POST'});flash('Factory reset scheduled.','ok')}catch(error){flash('Factory reset error: '+error.message,'error')}}
 
-async function boot(){renderQuickMode();renderRelayButtons();const pageSelect=el('page-select');if(pageSelect){pageSelect.value=`/app?page=${CURRENT_PAGE}`;pageSelect.onchange=()=>{const target=pageSelect.value||'/app?page=main';if(target!==`${location.pathname}${location.search}`)location.href=target}}el('quick-mode').onchange=updateMainControlVisibility;document.addEventListener('change',event=>{if(event.target&&event.target.id==='cfg-wifiUseDhcp')updateStaticIpFields();if(event.target&&event.target.id==='cfg-modbusMode'){const nextMode=toNumber(event.target.value);const draft=collectConfig();appConfig={...appConfig,...draft,modbusMode:nextMode};renderConfig()}});el('apply-control').onclick=applyControl;el('save-config').onclick=saveConfig;el('reload-config').onclick=loadConfig;el('save-quick-config').onclick=saveConfig;el('reload-quick-config').onclick=loadConfig;el('reboot').onclick=rebootDevice;el('factory-reset').onclick=resetDevice;el('apply-provisioning-code').onclick=applyProvisioningFromCode;el('apply-provisioning-fields').onclick=applyProvisioningFromFields;el('load-current-provisioning').onclick=()=>{void loadCurrentProvisioning()};el('save-provisioning').onclick=()=>{void saveProvisioningLoaded()};Promise.all([refreshState(),loadConfig(),loadLogs()]).then(()=>flash('Device synchronized.','ok')).catch(error=>flash('Startup error: '+error.message,'error'));setInterval(refreshState,2000);setInterval(loadLogs,6000)}
+async function boot(){
+  renderQuickMode();
+  renderRelayButtons();
+
+  const pageSelect=el('page-select');
+  if(pageSelect){
+    pageSelect.value=`/app?page=${CURRENT_PAGE}`;
+    pageSelect.onchange=()=>{
+      const target=pageSelect.value||'/app?page=main';
+      if(target!==`${location.pathname}${location.search}`)location.href=target;
+    };
+  }
+
+  el('quick-mode').onchange=updateMainControlVisibility;
+  document.addEventListener('change',event=>{
+    if(event.target&&event.target.id==='cfg-wifiUseDhcp')updateStaticIpFields();
+    if(event.target&&event.target.id==='cfg-modbusMode'){
+      const nextMode=toNumber(event.target.value);
+      const draft=collectConfig();
+      appConfig={...appConfig,...draft,modbusMode:nextMode};
+      renderConfig();
+    }
+  });
+
+  el('apply-control').onclick=applyControl;
+  el('save-config').onclick=saveConfig;
+  el('reload-config').onclick=loadConfig;
+  el('save-quick-config').onclick=saveConfig;
+  el('reload-quick-config').onclick=loadConfig;
+  el('reboot').onclick=rebootDevice;
+  el('factory-reset').onclick=resetDevice;
+  el('apply-provisioning-code').onclick=applyProvisioningFromCode;
+  el('apply-provisioning-fields').onclick=applyProvisioningFromFields;
+  el('load-current-provisioning').onclick=()=>{void loadCurrentProvisioning()};
+  el('save-provisioning').onclick=()=>{void saveProvisioningLoaded()};
+
+  const vinButtons=['VIN1','VIN2','VIN3','VIN4'];
+  vinButtons.forEach(label=>{
+    const node=el('cloud-pulse-'+label.toLowerCase());
+    if(node){
+      node.onclick=()=>{void pulseVirtualInput(label)};
+    }
+  });
+
+  Promise.all([refreshState(),loadConfig(),loadLogs()])
+    .then(()=>flash('Device synchronized.','ok'))
+    .catch(error=>flash('Startup error: '+error.message,'error'));
+  setInterval(refreshState,2000);
+  setInterval(loadLogs,6000);
+}
 
 boot();
 

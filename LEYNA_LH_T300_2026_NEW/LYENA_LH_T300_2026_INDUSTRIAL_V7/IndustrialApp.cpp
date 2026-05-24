@@ -47,6 +47,8 @@ static constexpr uint32_t kModbusDiagRspLogMs = 1200U;
 static constexpr uint32_t kModbusDiagReadLogMs = 1500U;
 static constexpr uint32_t kModbusDiagDecodeLogMs = 800U;
 static constexpr uint32_t kModbusDiagIgnoreLogMs = 5000U;
+static constexpr uint8_t kFactoryResetButtonPin = 0U;
+static constexpr uint32_t kFactoryResetHoldMs = 10000U;
 static constexpr float kReferenceVoltage = 3.3f;
 static constexpr float kReferenceResistor = 10000.0f;
 static constexpr float kPtcEsp32RawGain = 1.81f;
@@ -77,6 +79,12 @@ struct ModbusTaskData { uint32_t runs = 0; };
 static constexpr size_t kCustomMaxRules = 24U;
 static constexpr uint32_t kCustomBlinkMinMs = 50U;
 static constexpr uint32_t kCustomBlinkMaxMs = 3600000U;
+static constexpr uint32_t kVirtualInputPulseMs = 180U;
+static constexpr size_t kSequenceMaxProgramLines = 32U;
+static constexpr size_t kSequenceMaxSteps = 24U;
+static constexpr uint32_t kSequenceTimeMinMs = 50U;
+static constexpr uint32_t kSequenceTimeMaxMs = 86400000U;
+static constexpr uint8_t kSequenceMaxLoopIterations = 32U;
 
 enum CustomRuleType : uint8_t {
   CUSTOM_RULE_SET = 0,
@@ -112,6 +120,32 @@ enum CustomThermostatMode : uint8_t {
   CUSTOM_TH_HEAT = 2,
 };
 
+enum CustomProgramMode : uint8_t {
+  CUSTOM_PROGRAM_RULES = 0,
+  CUSTOM_PROGRAM_SEQUENCE = 1,
+  CUSTOM_PROGRAM_MIXED = 2,
+};
+
+enum SequenceState : uint8_t {
+  SEQ_STATE_IDLE = 0,
+  SEQ_STATE_READY = 1,
+  SEQ_STATE_RUNNING = 2,
+  SEQ_STATE_WAITING = 3,
+  SEQ_STATE_LOOPING = 4,
+  SEQ_STATE_DONE = 5,
+  SEQ_STATE_ERROR = 6,
+  SEQ_STATE_ABORTED = 7,
+  SEQ_STATE_SAFETY_STOP = 8,
+  SEQ_STATE_ABORTED_AFTER_REBOOT = 9,
+};
+
+enum SequenceStepType : uint8_t {
+  SEQ_STEP_SET = 0,
+  SEQ_STEP_STEP = 1,
+  SEQ_STEP_WAIT = 2,
+  SEQ_STEP_WAITUNTIL = 3,
+};
+
 struct CustomRule {
   CustomRuleType type = CUSTOM_RULE_SET;
   uint8_t relayIndex = 0;
@@ -132,9 +166,74 @@ struct CustomRule {
   uint8_t pulseCount = 1U;
 };
 
+struct SequenceCondition {
+  bool valid = false;
+  CustomSignalType signal = CUSTOM_SIGNAL_TEMP;
+  uint8_t sourceIndex = 0;
+  CustomComparator comparator = CUSTOM_CMP_EQ;
+  float threshold = 0.0f;
+};
+
+struct SequenceStep {
+  SequenceStepType type = SEQ_STEP_SET;
+  uint8_t relayIndex = 0;
+  bool relayState = false;
+  bool hasDuration = false;
+  uint32_t durationMs = 0;
+  SequenceCondition condition;
+  uint32_t stableMs = 0;
+  uint32_t maxMs = 0;
+  size_t lineNumber = 0;
+};
+
+struct SequenceLoopRuntime {
+  bool enabled = false;
+  uint8_t beginStep = 0;
+  uint8_t endStep = 0;
+  uint8_t maxIterations = 0;
+  SequenceCondition untilCondition;
+  uint32_t stableMs = 0;
+  size_t lineNumber = 0;
+};
+
+struct SequenceProgramRuntime {
+  bool present = false;
+  bool valid = false;
+  bool running = false;
+  char name[32] = {0};
+  SequenceState state = SEQ_STATE_IDLE;
+  uint8_t stepCount = 0;
+  SequenceStep steps[kSequenceMaxSteps];
+  bool startDefined = false;
+  uint8_t startInputIndex = 0;
+  bool startUsesVirtualInput = false;
+  bool startEdgeArmed = false;
+  bool startLastState = false;
+  bool safetyDefined = false;
+  uint8_t safetyInputIndex = 0;
+  bool safetyUsesVirtualInput = false;
+  SequenceLoopRuntime loop;
+  uint32_t stepStartedAt = 0;
+  uint32_t loopStartedAt = 0;
+  uint32_t stableStartedAt = 0;
+  bool stableArmed = false;
+  uint8_t currentStep = 0;
+  uint8_t currentLoop = 0;
+  uint8_t previousStepWithDuration = 0xFFU;
+  bool previousStepAutoOffPending = false;
+  float lastTemperature = NAN;
+  uint8_t usedRelayMask = 0;
+  uint8_t reservedRelayMask = 0;
+  size_t sourceLineCount = 0;
+  size_t errorLine = 0;
+  char errorMessage[96] = {0};
+};
+
 struct CustomProgramRuntime {
   bool valid = false;
   uint8_t ruleCount = 0;
+  uint8_t sequenceStepCount = 0;
+  CustomProgramMode mode = CUSTOM_PROGRAM_RULES;
   char error[96] = {0};
   CustomRule rules[kCustomMaxRules];
   bool blinkState[kCustomMaxRules] = {false};
@@ -146,6 +245,7 @@ struct CustomProgramRuntime {
   uint8_t pulseRemaining[kCustomMaxRules] = {0};
   bool onbootActive[kCustomMaxRules] = {false};
   bool onbootDone[kCustomMaxRules] = {false};
+  SequenceProgramRuntime sequence;
 };
 
 void startConfigTask();
@@ -180,6 +280,9 @@ void applyConnectivityReloadIfNeeded(uint32_t now);
 void manageConnectivity(uint32_t now);
 void ensureServerStarted();
 void ensureOtaReady();
+void initializeFactoryResetButton();
+void processFactoryResetButton(uint32_t now);
+void processVirtualInputPulses(uint32_t now);
 void startCaptiveDns(const IPAddress& apIp);
 void stopCaptiveDns();
 void applyCommissioningSafeDefaults(AppConfigData& appConfig);
@@ -229,6 +332,12 @@ bool gOperationalRuntimeArmed = false;
 bool gModbusServerConfigured = false;
 uint32_t gWifiConnectStartedAt = 0;
 uint32_t gLastWifiAttemptAt = 0;
+bool gFactoryResetButtonEnabled = false;
+bool gFactoryResetButtonHoldActive = false;
+bool gFactoryResetButtonTriggered = false;
+uint32_t gFactoryResetButtonPressedAt = 0;
+bool gVirtualInputPulseActive[kChannelCount] = {false, false, false, false};
+uint32_t gVirtualInputPulseStartedAt[kChannelCount] = {0, 0, 0, 0};
 DNSServer gDnsServer;
 CustomProgramRuntime gCustomProgram;
 bool gCustomExecutionPrimed = false;
@@ -268,6 +377,29 @@ const char* workModeLabel(uint8_t mode) {
     case WORK_MANUAL: return "manual";
     case WORK_CUSTOM: return "custom";
     default: return "disabled";
+  }
+}
+
+const char* customProgramModeLabel(CustomProgramMode mode) {
+  switch (mode) {
+    case CUSTOM_PROGRAM_SEQUENCE: return "sequence";
+    case CUSTOM_PROGRAM_MIXED: return "mixed";
+    default: return "rules";
+  }
+}
+
+const char* sequenceStateLabel(SequenceState state) {
+  switch (state) {
+    case SEQ_STATE_READY: return "READY";
+    case SEQ_STATE_RUNNING: return "RUNNING";
+    case SEQ_STATE_WAITING: return "WAITING";
+    case SEQ_STATE_LOOPING: return "LOOPING";
+    case SEQ_STATE_DONE: return "DONE";
+    case SEQ_STATE_ERROR: return "ERROR";
+    case SEQ_STATE_ABORTED: return "ABORTED";
+    case SEQ_STATE_SAFETY_STOP: return "SAFETY_STOP";
+    case SEQ_STATE_ABORTED_AFTER_REBOOT: return "ABORTED_AFTER_REBOOT";
+    default: return "IDLE";
   }
 }
 
@@ -810,6 +942,9 @@ void configurePins() {
     gLastInputRaw[index] = readInputHardware(index);
     gLastInputChangeAt[index] = millis();
     runtimeData.inputState[index] = gLastInputRaw[index];
+    runtimeData.virtualInputState[index] = false;
+    gVirtualInputPulseActive[index] = false;
+    gVirtualInputPulseStartedAt[index] = 0;
     runtimeData.manualRelayState[index] = false;
   }
 }
@@ -1011,9 +1146,119 @@ bool reachedDeadline(uint32_t now, uint32_t deadline) {
   return static_cast<int32_t>(now - deadline) >= 0;
 }
 
+bool factoryResetButtonPinConflicts() {
+  for (size_t index = 0; index < kChannelCount; ++index) {
+    if (config().relayPins[index] == kFactoryResetButtonPin) return true;
+    if (config().inputPins[index] == kFactoryResetButtonPin) return true;
+    if (config().sensorTypes[index] != SENSOR_NONE && config().sensorPins[index] == kFactoryResetButtonPin) return true;
+  }
+  return false;
+}
+
+void initializeFactoryResetButton() {
+  gFactoryResetButtonEnabled = !factoryResetButtonPinConflicts();
+  gFactoryResetButtonHoldActive = false;
+  gFactoryResetButtonTriggered = false;
+  gFactoryResetButtonPressedAt = 0;
+
+  if (!gFactoryResetButtonEnabled) {
+    addLog("Factory reset button disabled: GPIO%u used by config", static_cast<unsigned>(kFactoryResetButtonPin));
+    return;
+  }
+
+  pinMode(kFactoryResetButtonPin, INPUT_PULLUP);
+  addLog("Factory reset button armed on GPIO%u (hold %lu ms)",
+         static_cast<unsigned>(kFactoryResetButtonPin),
+         static_cast<unsigned long>(kFactoryResetHoldMs));
+}
+
+void processFactoryResetButton(uint32_t now) {
+  if (!gFactoryResetButtonEnabled || gFactoryResetButtonTriggered) return;
+  if (runtimeData.pendingRestartAtMillis) return;
+
+  const bool pressed = digitalRead(kFactoryResetButtonPin) == LOW;
+  if (!pressed) {
+    gFactoryResetButtonHoldActive = false;
+    gFactoryResetButtonPressedAt = 0;
+    return;
+  }
+
+  if (!gFactoryResetButtonHoldActive) {
+    gFactoryResetButtonHoldActive = true;
+    gFactoryResetButtonPressedAt = now;
+    return;
+  }
+
+  if (!elapsedSince(now, gFactoryResetButtonPressedAt, kFactoryResetHoldMs)) return;
+
+  gFactoryResetButtonTriggered = true;
+  addLog("Factory reset button hold reached %lu ms", static_cast<unsigned long>(kFactoryResetHoldMs));
+  factoryResetAndRestart();
+}
+
+void setVirtualInputStateByIndex(uint8_t index, bool state) {
+  if (index >= kChannelCount) return;
+  runtimeData.virtualInputState[index] = state;
+  if (!state) {
+    gVirtualInputPulseActive[index] = false;
+    gVirtualInputPulseStartedAt[index] = 0;
+  }
+}
+
+void pulseVirtualInputByIndex(uint8_t index) {
+  if (index >= kChannelCount) return;
+  runtimeData.virtualInputState[index] = true;
+  gVirtualInputPulseActive[index] = true;
+  gVirtualInputPulseStartedAt[index] = millis();
+}
+
+void processVirtualInputPulses(uint32_t now) {
+  for (size_t index = 0; index < kChannelCount; ++index) {
+    if (!gVirtualInputPulseActive[index]) continue;
+    if (!elapsedSince(now, gVirtualInputPulseStartedAt[index], kVirtualInputPulseMs)) continue;
+    gVirtualInputPulseActive[index] = false;
+    gVirtualInputPulseStartedAt[index] = 0;
+    runtimeData.virtualInputState[index] = false;
+  }
+}
+
+void resetSequenceRuntime(SequenceProgramRuntime& sequence) {
+  sequence.present = false;
+  sequence.valid = false;
+  sequence.running = false;
+  sequence.name[0] = '\0';
+  sequence.state = SEQ_STATE_IDLE;
+  sequence.stepCount = 0;
+  sequence.startDefined = false;
+  sequence.startInputIndex = 0;
+  sequence.startUsesVirtualInput = false;
+  sequence.startEdgeArmed = false;
+  sequence.startLastState = false;
+  sequence.safetyDefined = false;
+  sequence.safetyInputIndex = 0;
+  sequence.safetyUsesVirtualInput = false;
+  sequence.loop = SequenceLoopRuntime();
+  sequence.stepStartedAt = 0;
+  sequence.loopStartedAt = 0;
+  sequence.stableStartedAt = 0;
+  sequence.stableArmed = false;
+  sequence.currentStep = 0;
+  sequence.currentLoop = 0;
+  sequence.previousStepWithDuration = 0xFFU;
+  sequence.previousStepAutoOffPending = false;
+  sequence.lastTemperature = NAN;
+  sequence.usedRelayMask = 0;
+  sequence.reservedRelayMask = 0;
+  sequence.sourceLineCount = 0;
+  sequence.errorLine = 0;
+  sequence.errorMessage[0] = '\0';
+}
+
 void resetCustomProgramRuntime() {
   gCustomProgram.valid = false;
   gCustomProgram.ruleCount = 0;
+  gCustomProgram.sequenceStepCount = 0;
+  gCustomProgram.mode = CUSTOM_PROGRAM_RULES;
   gCustomProgram.error[0] = '\0';
   for (size_t index = 0; index < kCustomMaxRules; ++index) {
     gCustomProgram.blinkState[index] = false;
@@ -1026,15 +1271,31 @@ void resetCustomProgramRuntime() {
     gCustomProgram.onbootActive[index] = false;
     gCustomProgram.onbootDone[index] = false;
   }
+  resetSequenceRuntime(gCustomProgram.sequence);
   gCustomExecutionPrimed = false;
 }
 
 void setCustomProgramError(size_t lineNumber, const String& message) {
   const String text = lineNumber ? (String("L") + String(static_cast<unsigned>(lineNumber)) + ": " + message) : message;
   strlcpy(gCustomProgram.error, text.c_str(), sizeof(gCustomProgram.error));
+  gCustomProgram.sequence.errorLine = lineNumber;
+  strlcpy(gCustomProgram.sequence.errorMessage, text.c_str(), sizeof(gCustomProgram.sequence.errorMessage));
+  gCustomProgram.sequence.state = SEQ_STATE_ERROR;
+  gCustomProgram.sequence.running = false;
+  gCustomProgram.sequence.valid = false;
   addLog("Custom program invalid: %s", gCustomProgram.error);
   gCustomProgram.valid = false;
   gCustomExecutionPrimed = false;
+}
+
+void setSequenceRuntimeError(size_t lineNumber, const String& message) {
+  SequenceProgramRuntime& sequence = gCustomProgram.sequence;
+  const String text = lineNumber ? (String("L") + String(static_cast<unsigned>(lineNumber)) + ": " + message) : message;
+  sequence.errorLine = lineNumber;
+  strlcpy(sequence.errorMessage, text.c_str(), sizeof(sequence.errorMessage));
+  sequence.state = SEQ_STATE_ERROR;
+  sequence.running = false;
+  addLog("Sequence runtime error: %s", text.c_str());
 }
 
 size_t tokenizeCustomLine(const String& line, String* tokens, size_t maxTokens) {
@@ -1066,6 +1327,46 @@ String upperToken(const String& token) {
   return output;
 }
 
+String stripCustomLineComments(const String& rawLine) {
+  String line = rawLine;
+  const int hashPos = line.indexOf('#');
+  if (hashPos >= 0) line.remove(hashPos);
+  const int slashPos = line.indexOf("//");
+  if (slashPos >= 0) line.remove(slashPos);
+  line.trim();
+  return line;
+}
+
+bool isSimpleProgramName(const String& value) {
+  if (!value.length()) return false;
+  for (size_t index = 0; index < value.length(); ++index) {
+    const char ch = value.charAt(index);
+    const bool allowed = (ch >= 'A' && ch <= 'Z') ||
+                         (ch >= 'a' && ch <= 'z') ||
+                         (ch >= '0' && ch <= '9') ||
+                         ch == '_' || ch == '-';
+    if (!allowed) return false;
+  }
+  return true;
+}
+
+bool parseKeyValueToken(const String& token, String& keyOut, String& valueOut) {
+  const int sep = token.indexOf('=');
+  if (sep <= 0 || sep >= static_cast<int>(token.length() - 1)) return false;
+  keyOut = upperToken(token.substring(0, sep));
+  valueOut = token.substring(sep + 1);
+  valueOut.trim();
+  return keyOut.length() && valueOut.length();
+}
+
+bool containsForbiddenExpressionChars(const String& text) {
+  for (size_t index = 0; index < text.length(); ++index) {
+    const char ch = text.charAt(index);
+    if (ch == '+' || ch == '*' || ch == '/' || ch == '(' || ch == ')') return true;
+  }
+  return false;
+}
+
 bool parseUnsignedLong(const String& token, uint32_t& value) {
   char* end = nullptr;
   const unsigned long parsed = strtoul(token.c_str(), &end, 10);
@@ -1093,6 +1394,16 @@ bool parseIndexedToken(const String& token, const char* prefix, size_t maxCount,
   if (!parseUnsignedLong(numberPart, parsed) || parsed < 1 || parsed > maxCount) return false;
   indexOut = static_cast<uint8_t>(parsed - 1U);
   return true;
+}
+
+bool parseVirtualInputToken(const String& token, uint8_t& indexOut) {
+  return parseIndexedToken(token, "VIN", kChannelCount, indexOut);
+}
+
+int virtualInputIndexFromLabel(const String& label) {
+  uint8_t index = 0;
+  if (!parseVirtualInputToken(label, index)) return -1;
+  return static_cast<int>(index);
 }
 
 bool parseOnOffToken(const String& token, bool& value) {
@@ -1255,10 +1566,7 @@ bool readCustomSignalValue(CustomSignalType signal, uint8_t sourceIndex, float& 
 bool parseCustomRuleLine(const String& rawLine, size_t lineNumber, CustomRule& ruleOut, bool& hasRule) {
   hasRule = false;
 
-  String line = rawLine;
-  const int hashPos = line.indexOf('#');
-  if (hashPos >= 0) line = line.substring(0, hashPos);
-  line.trim();
+  String line = stripCustomLineComments(rawLine);
   if (!line.length() || line.startsWith("//")) return true;
 
   String tokens[12];
@@ -1542,6 +1850,541 @@ bool parseCustomRuleLine(const String& rawLine, size_t lineNumber, CustomRule& r
   return false;
 }
 
+bool parseSequenceConditionExpression(const String& rawExpression,
+                                      size_t lineNumber,
+                                      SequenceCondition& conditionOut,
+                                      const char* errorPrefix) {
+  String expression = rawExpression;
+  expression.trim();
+  if (!expression.length()) {
+    setCustomProgramError(lineNumber, String(errorPrefix) + " condicion vacia");
+    return false;
+  }
+  if (containsForbiddenExpressionChars(expression)) {
+    setCustomProgramError(lineNumber, String(errorPrefix) + " condicion invalida");
+    return false;
+  }
+
+  struct ComparatorToken {
+    const char* token;
+    CustomComparator comparator;
+  };
+  static constexpr ComparatorToken kComparators[] = {
+    {"<=", CUSTOM_CMP_LE},
+    {">=", CUSTOM_CMP_GE},
+    {"==", CUSTOM_CMP_EQ},
+    {"!=", CUSTOM_CMP_NE},
+    {">", CUSTOM_CMP_GT},
+    {"<", CUSTOM_CMP_LT},
+  };
+
+  int opPos = -1;
+  size_t opLen = 0;
+  CustomComparator comparator = CUSTOM_CMP_EQ;
+  for (const ComparatorToken& candidate : kComparators) {
+    const int found = expression.indexOf(candidate.token);
+    if (found < 0) continue;
+    opPos = found;
+    opLen = strlen(candidate.token);
+    comparator = candidate.comparator;
+    break;
+  }
+  if (opPos <= 0 || opLen == 0) {
+    setCustomProgramError(lineNumber, String(errorPrefix) + " operador invalido");
+    return false;
+  }
+
+  String left = expression.substring(0, opPos);
+  String right = expression.substring(opPos + static_cast<int>(opLen));
+  left = upperToken(left);
+  right.trim();
+  if (!left.length() || !right.length()) {
+    setCustomProgramError(lineNumber, String(errorPrefix) + " condicion incompleta");
+    return false;
+  }
+
+  uint8_t index = 0;
+  SequenceCondition condition;
+  if (parseIndexedToken(left, "TEMP", kChannelCount, index)) {
+    condition.signal = CUSTOM_SIGNAL_TEMP;
+    condition.sourceIndex = index;
+    if (!parseFloatValue(right, condition.threshold)) {
+      setCustomProgramError(lineNumber, String(errorPrefix) + " VALUE invalido");
+      return false;
+    }
+  } else if (parseIndexedToken(left, "HUM", kHumidityChannelCount, index)) {
+    condition.signal = CUSTOM_SIGNAL_HUM;
+    condition.sourceIndex = index;
+    if (!parseFloatValue(right, condition.threshold)) {
+      setCustomProgramError(lineNumber, String(errorPrefix) + " VALUE invalido");
+      return false;
+    }
+  } else if (parseIndexedToken(left, "IN", kChannelCount, index)) {
+    bool state = false;
+    if (!parseOnOffToken(right, state)) {
+      setCustomProgramError(lineNumber, String(errorPrefix) + " VALUE invalido");
+      return false;
+    }
+    condition.signal = CUSTOM_SIGNAL_INPUT;
+    condition.sourceIndex = index;
+    condition.threshold = state ? 1.0f : 0.0f;
+  } else {
+    setCustomProgramError(lineNumber, String(errorPrefix) + " fuente invalida");
+    return false;
+  }
+
+  condition.comparator = comparator;
+  condition.valid = true;
+  conditionOut = condition;
+  return true;
+}
+
+bool evaluateSequenceCondition(const SequenceCondition& condition, float& observedValue) {
+  if (!condition.valid) return false;
+  if (!readCustomSignalValue(condition.signal, condition.sourceIndex, observedValue)) return false;
+  return evaluateCustomComparator(observedValue, condition.threshold, condition.comparator);
+}
+
+bool parseSequenceStepSet(const String* tokens,
+                          size_t tokenCount,
+                          size_t lineNumber,
+                          SequenceProgramRuntime& sequence,
+                          bool timedStepAllowed) {
+  uint8_t relayIndex = 0;
+  bool state = false;
+  bool hasRelay = false;
+  bool hasState = false;
+  bool hasTime = false;
+  uint32_t timeMs = 0;
+
+  for (size_t index = 1; index < tokenCount; ++index) {
+    String key;
+    String value;
+    if (!parseKeyValueToken(tokens[index], key, value)) {
+      setCustomProgramError(lineNumber, "token clave=valor invalido");
+      return false;
+    }
+
+    if (key == "REL") {
+      if (!parseIndexedToken(value, "REL", kChannelCount, relayIndex)) {
+        setCustomProgramError(lineNumber, "REL invalido");
+        return false;
+      }
+      hasRelay = true;
+      continue;
+    }
+    if (key == "STATE") {
+      if (!parseOnOffToken(value, state)) {
+        setCustomProgramError(lineNumber, "STATE invalido");
+        return false;
+      }
+      hasState = true;
+      continue;
+    }
+    if (key == "TIME" && timedStepAllowed) {
+      if (!parseUnsignedLong(value, timeMs)) {
+        setCustomProgramError(lineNumber, "TIME invalido");
+        return false;
+      }
+      if (timeMs < kSequenceTimeMinMs || timeMs > kSequenceTimeMaxMs) {
+        setCustomProgramError(lineNumber, "TIME fuera de rango");
+        return false;
+      }
+      hasTime = true;
+      continue;
+    }
+
+    setCustomProgramError(lineNumber, String("clave no soportada: ") + key);
+    return false;
+  }
+
+  if (!hasRelay) {
+    setCustomProgramError(lineNumber, "falta REL");
+    return false;
+  }
+  if (!hasState) {
+    setCustomProgramError(lineNumber, "falta STATE");
+    return false;
+  }
+
+  if (sequence.stepCount >= kSequenceMaxSteps) {
+    setCustomProgramError(lineNumber, "se superan pasos maximos");
+    return false;
+  }
+
+  SequenceStep& step = sequence.steps[sequence.stepCount++];
+  step = SequenceStep();
+  step.type = timedStepAllowed ? SEQ_STEP_STEP : SEQ_STEP_SET;
+  step.relayIndex = relayIndex;
+  step.relayState = state;
+  step.hasDuration = hasTime;
+  step.durationMs = hasTime ? timeMs : 0U;
+  step.lineNumber = lineNumber;
+
+  sequence.usedRelayMask |= static_cast<uint8_t>(1U << relayIndex);
+  sequence.reservedRelayMask = sequence.usedRelayMask;
+  return true;
+}
+
+bool parseSequenceWait(const String* tokens,
+                       size_t tokenCount,
+                       size_t lineNumber,
+                       SequenceProgramRuntime& sequence) {
+  bool hasTime = false;
+  uint32_t timeMs = 0;
+  for (size_t index = 1; index < tokenCount; ++index) {
+    String key;
+    String value;
+    if (!parseKeyValueToken(tokens[index], key, value)) {
+      setCustomProgramError(lineNumber, "token clave=valor invalido");
+      return false;
+    }
+    if (key != "TIME") {
+      setCustomProgramError(lineNumber, String("clave no soportada: ") + key);
+      return false;
+    }
+    if (!parseUnsignedLong(value, timeMs)) {
+      setCustomProgramError(lineNumber, "TIME invalido");
+      return false;
+    }
+    if (timeMs < kSequenceTimeMinMs || timeMs > kSequenceTimeMaxMs) {
+      setCustomProgramError(lineNumber, "TIME fuera de rango");
+      return false;
+    }
+    hasTime = true;
+  }
+  if (!hasTime) {
+    setCustomProgramError(lineNumber, "WAIT requiere TIME");
+    return false;
+  }
+
+  if (sequence.stepCount >= kSequenceMaxSteps) {
+    setCustomProgramError(lineNumber, "se superan pasos maximos");
+    return false;
+  }
+
+  SequenceStep& step = sequence.steps[sequence.stepCount++];
+  step = SequenceStep();
+  step.type = SEQ_STEP_WAIT;
+  step.durationMs = timeMs;
+  step.lineNumber = lineNumber;
+  return true;
+}
+
+bool parseSequenceWaitUntil(const String* tokens,
+                            size_t tokenCount,
+                            size_t lineNumber,
+                            SequenceProgramRuntime& sequence) {
+  String sourceToken;
+  CustomSignalType expectedSignal = CUSTOM_SIGNAL_TEMP;
+  bool sourceDefined = false;
+  String operatorToken;
+  bool operatorDefined = false;
+  String valueToken;
+  bool valueDefined = false;
+  uint32_t stableMs = 0;
+  uint32_t maxMs = 0;
+  bool stableDefined = false;
+  bool maxDefined = false;
+
+  for (size_t index = 1; index < tokenCount; ++index) {
+    String key;
+    String value;
+    if (!parseKeyValueToken(tokens[index], key, value)) {
+      setCustomProgramError(lineNumber, "token clave=valor invalido");
+      return false;
+    }
+    if (key == "TEMP" || key == "HUM" || key == "IN") {
+      if (sourceDefined) {
+        setCustomProgramError(lineNumber, "WAITUNTIL solo admite una fuente");
+        return false;
+      }
+      sourceDefined = true;
+      if (key == "TEMP") expectedSignal = CUSTOM_SIGNAL_TEMP;
+      else if (key == "HUM") expectedSignal = CUSTOM_SIGNAL_HUM;
+      else expectedSignal = CUSTOM_SIGNAL_INPUT;
+      sourceToken = upperToken(value);
+      continue;
+    }
+    if (key == "OP") {
+      operatorDefined = true;
+      operatorToken = value;
+      continue;
+    }
+    if (key == "VALUE") {
+      valueDefined = true;
+      valueToken = value;
+      continue;
+    }
+    if (key == "STABLE") {
+      if (!parseUnsignedLong(value, stableMs)) {
+        setCustomProgramError(lineNumber, "STABLE invalido");
+        return false;
+      }
+      if (stableMs < kSequenceTimeMinMs || stableMs > kSequenceTimeMaxMs) {
+        setCustomProgramError(lineNumber, "STABLE fuera de rango");
+        return false;
+      }
+      stableDefined = true;
+      continue;
+    }
+    if (key == "MAX") {
+      if (!parseUnsignedLong(value, maxMs)) {
+        setCustomProgramError(lineNumber, "MAX invalido");
+        return false;
+      }
+      if (maxMs < kSequenceTimeMinMs || maxMs > kSequenceTimeMaxMs) {
+        setCustomProgramError(lineNumber, "MAX fuera de rango");
+        return false;
+      }
+      maxDefined = true;
+      continue;
+    }
+    setCustomProgramError(lineNumber, String("clave no soportada: ") + key);
+    return false;
+  }
+
+  if (!sourceDefined || !operatorDefined || !valueDefined || !stableDefined || !maxDefined) {
+    setCustomProgramError(lineNumber, "WAITUNTIL requiere TEMP/HUM/IN, OP, VALUE, STABLE y MAX");
+    return false;
+  }
+
+  String expression = sourceToken + operatorToken + valueToken;
+  SequenceCondition condition;
+  if (!parseSequenceConditionExpression(expression, lineNumber, condition, "WAITUNTIL")) {
+    return false;
+  }
+
+  if (condition.signal != expectedSignal) {
+    setCustomProgramError(lineNumber, "WAITUNTIL fuente no coincide con clave");
+    return false;
+  }
+
+  if (sequence.stepCount >= kSequenceMaxSteps) {
+    setCustomProgramError(lineNumber, "se superan pasos maximos");
+    return false;
+  }
+
+  SequenceStep& step = sequence.steps[sequence.stepCount++];
+  step = SequenceStep();
+  step.type = SEQ_STEP_WAITUNTIL;
+  step.condition = condition;
+  step.stableMs = stableMs;
+  step.maxMs = maxMs;
+  step.lineNumber = lineNumber;
+  return true;
+}
+
+bool readSequenceInputSignal(bool usesVirtualInput, uint8_t inputIndex) {
+  if (inputIndex >= kChannelCount) return false;
+  return usesVirtualInput ? runtimeData.virtualInputState[inputIndex] : runtimeData.inputState[inputIndex];
+}
+
+void cancelOnbootPendingForSequenceRelays() {
+  const uint8_t reservedMask = gCustomProgram.sequence.reservedRelayMask;
+  if (!reservedMask) return;
+  for (size_t index = 0; index < gCustomProgram.ruleCount; ++index) {
+    const CustomRule& rule = gCustomProgram.rules[index];
+    if (rule.type != CUSTOM_RULE_ONBOOT) continue;
+    if (rule.relayIndex >= kChannelCount) continue;
+    if ((reservedMask & static_cast<uint8_t>(1U << rule.relayIndex)) == 0U) continue;
+    gCustomProgram.onbootActive[index] = false;
+    gCustomProgram.onbootDone[index] = true;
+  }
+}
+
+void sequenceStopAndRelease(SequenceProgramRuntime& sequence, bool* target, SequenceState nextState) {
+  sequence.running = false;
+  sequence.state = nextState;
+  sequence.stepStartedAt = 0;
+  sequence.loopStartedAt = 0;
+  sequence.stableStartedAt = 0;
+  sequence.stableArmed = false;
+  sequence.currentStep = 0;
+  sequence.currentLoop = 0;
+  sequence.previousStepWithDuration = 0xFFU;
+  sequence.previousStepAutoOffPending = false;
+  for (size_t index = 0; index < kChannelCount; ++index) {
+    if ((sequence.reservedRelayMask & static_cast<uint8_t>(1U << index)) != 0U) {
+      target[index] = false;
+    }
+  }
+}
+
+void processSequenceProgram(uint32_t now, bool* target) {
+  SequenceProgramRuntime& sequence = gCustomProgram.sequence;
+  if (!sequence.present || !sequence.valid) return;
+  if (!sequence.startDefined) return;
+
+  const bool startSignal = readSequenceInputSignal(sequence.startUsesVirtualInput, sequence.startInputIndex);
+  if (!sequence.startEdgeArmed) {
+    sequence.startEdgeArmed = true;
+    sequence.startLastState = startSignal;
+    if (!sequence.running &&
+        (sequence.state == SEQ_STATE_IDLE ||
+         sequence.state == SEQ_STATE_ABORTED_AFTER_REBOOT ||
+         sequence.state == SEQ_STATE_DONE ||
+         sequence.state == SEQ_STATE_ABORTED ||
+         sequence.state == SEQ_STATE_SAFETY_STOP)) {
+      sequence.state = SEQ_STATE_READY;
+    }
+  }
+
+  if (!sequence.running && !sequence.startLastState && startSignal) {
+    sequence.running = true;
+    sequence.state = SEQ_STATE_RUNNING;
+    sequence.currentStep = 0;
+    sequence.currentLoop = 0;
+    sequence.stepStartedAt = 0;
+    sequence.loopStartedAt = 0;
+    sequence.stableStartedAt = 0;
+    sequence.stableArmed = false;
+    sequence.previousStepWithDuration = 0xFFU;
+    sequence.previousStepAutoOffPending = false;
+    cancelOnbootPendingForSequenceRelays();
+    addLog("Sequence start: %s", sequence.name[0] ? sequence.name : "PROGRAM");
+  }
+  sequence.startLastState = startSignal;
+
+  if (!sequence.running) return;
+
+  if (sequence.safetyDefined && readSequenceInputSignal(sequence.safetyUsesVirtualInput, sequence.safetyInputIndex)) {
+    for (size_t index = 0; index < kChannelCount; ++index) {
+      target[index] = false;
+    }
+    sequenceStopAndRelease(sequence, target, SEQ_STATE_SAFETY_STOP);
+    addLog("Sequence safety stop: %s%u",
+           sequence.safetyUsesVirtualInput ? "VIN" : "IN",
+           static_cast<unsigned>(sequence.safetyInputIndex + 1U));
+    return;
+  }
+
+  if (sequence.previousStepAutoOffPending && sequence.previousStepWithDuration < kChannelCount) {
+    target[sequence.previousStepWithDuration] = false;
+    sequence.previousStepAutoOffPending = false;
+    sequence.previousStepWithDuration = 0xFFU;
+  }
+
+  if (sequence.currentStep >= sequence.stepCount) {
+    sequenceStopAndRelease(sequence, target, SEQ_STATE_DONE);
+    addLog("Sequence done");
+    return;
+  }
+
+  SequenceStep& step = sequence.steps[sequence.currentStep];
+  switch (step.type) {
+    case SEQ_STEP_SET:
+      target[step.relayIndex] = step.relayState;
+      sequence.currentStep++;
+      sequence.state = SEQ_STATE_RUNNING;
+      break;
+
+    case SEQ_STEP_STEP:
+      if (!step.hasDuration) {
+        target[step.relayIndex] = step.relayState;
+        sequence.currentStep++;
+        sequence.state = SEQ_STATE_RUNNING;
+        break;
+      }
+      if (!sequence.stepStartedAt) sequence.stepStartedAt = now;
+      target[step.relayIndex] = step.relayState;
+      sequence.state = SEQ_STATE_RUNNING;
+      if (elapsedSince(now, sequence.stepStartedAt, step.durationMs)) {
+        sequence.stepStartedAt = 0;
+        sequence.currentStep++;
+        if (step.relayState) {
+          sequence.previousStepWithDuration = step.relayIndex;
+          sequence.previousStepAutoOffPending = true;
+        }
+      }
+      break;
+
+    case SEQ_STEP_WAIT:
+      if (!sequence.stepStartedAt) sequence.stepStartedAt = now;
+      sequence.state = SEQ_STATE_WAITING;
+      if (elapsedSince(now, sequence.stepStartedAt, step.durationMs)) {
+        sequence.stepStartedAt = 0;
+        sequence.currentStep++;
+      }
+      break;
+
+    case SEQ_STEP_WAITUNTIL: {
+      if (!sequence.stepStartedAt) sequence.stepStartedAt = now;
+      sequence.state = SEQ_STATE_WAITING;
+
+      float observed = NAN;
+      const bool conditionMet = evaluateSequenceCondition(step.condition, observed);
+      if (step.condition.signal == CUSTOM_SIGNAL_TEMP && !isnan(observed)) {
+        sequence.lastTemperature = observed;
+      }
+
+      if (conditionMet) {
+        if (!sequence.stableArmed) {
+          sequence.stableArmed = true;
+          sequence.stableStartedAt = now;
+        } else if (elapsedSince(now, sequence.stableStartedAt, step.stableMs)) {
+          sequence.stepStartedAt = 0;
+          sequence.stableArmed = false;
+          sequence.stableStartedAt = 0;
+          sequence.currentStep++;
+        }
+      } else {
+        sequence.stableArmed = false;
+        sequence.stableStartedAt = 0;
+      }
+
+      if (sequence.running && step.maxMs && elapsedSince(now, sequence.stepStartedAt, step.maxMs)) {
+        setSequenceRuntimeError(step.lineNumber ? step.lineNumber : 0U, "WAITUNTIL timeout MAX");
+        sequenceStopAndRelease(sequence, target, SEQ_STATE_ERROR);
+      }
+      break;
+    }
+
+    default:
+      break;
+  }
+
+  if (!sequence.running) return;
+
+  if (!sequence.loop.enabled) return;
+  if (!sequence.stepCount) return;
+  if (sequence.currentStep != sequence.loop.endStep + 1U) return;
+
+  float observed = NAN;
+  const bool untilMet = evaluateSequenceCondition(sequence.loop.untilCondition, observed);
+  if (sequence.loop.untilCondition.signal == CUSTOM_SIGNAL_TEMP && !isnan(observed)) {
+    sequence.lastTemperature = observed;
+  }
+
+  if (untilMet) {
+    if (!sequence.stableArmed) {
+      sequence.stableArmed = true;
+      sequence.stableStartedAt = now;
+    } else if (elapsedSince(now, sequence.stableStartedAt, sequence.loop.stableMs)) {
+      sequence.currentStep = sequence.loop.endStep + 1U;
+      sequence.stableArmed = false;
+      sequence.stableStartedAt = 0;
+      sequence.state = SEQ_STATE_RUNNING;
+      return;
+    }
+  } else {
+    sequence.stableArmed = false;
+    sequence.stableStartedAt = 0;
+  }
+
+  if (sequence.currentLoop + 1U >= sequence.loop.maxIterations) {
+    setSequenceRuntimeError(sequence.loop.lineNumber ? sequence.loop.lineNumber : 0U, "LOOP alcanzado MAX");
+    sequenceStopAndRelease(sequence, target, SEQ_STATE_ERROR);
+    return;
+  }
+
+  sequence.currentLoop++;
+  sequence.currentStep = sequence.loop.beginStep;
+  sequence.stepStartedAt = 0;
+  sequence.state = SEQ_STATE_LOOPING;
+  sequence.loopStartedAt = now;
+}
+
 void recompileCustomProgramFromConfig() {
   resetCustomProgramRuntime();
 
@@ -1553,78 +2396,373 @@ void recompileCustomProgramFromConfig() {
     return;
   }
 
+  SequenceProgramRuntime& sequence = gCustomProgram.sequence;
   size_t lineNumber = 1U;
   int start = 0;
+  bool inProgram = false;
+  bool seenProgram = false;
+  bool seenProgramEnd = false;
+  bool loopOpen = false;
+  bool loopSeen = false;
+  uint8_t loopBeginStep = 0;
+
   while (start <= program.length()) {
-    const int next = program.indexOf('\n', start);
-    const String line = (next >= 0) ? program.substring(start, next) : program.substring(start);
+    const int nextLine = program.indexOf('\n', start);
+    const String rawLine = (nextLine >= 0) ? program.substring(start, nextLine) : program.substring(start);
+    const String line = stripCustomLineComments(rawLine);
 
-    CustomRule rule;
-    bool hasRule = false;
-    if (!parseCustomRuleLine(line, lineNumber, rule, hasRule)) {
-      return;
-    }
-    if (hasRule) {
-      if (gCustomProgram.ruleCount >= kCustomMaxRules) {
-        setCustomProgramError(lineNumber, "se excedio el maximo de reglas (24)");
-        return;
+    if (line.length()) {
+      String tokens[16];
+      const size_t tokenCount = tokenizeCustomLine(line, tokens, 16);
+      if (tokenCount) {
+        const String command = upperToken(tokens[0]);
+
+        if (inProgram) {
+          sequence.sourceLineCount++;
+          if (sequence.sourceLineCount > kSequenceMaxProgramLines) {
+            setCustomProgramError(lineNumber, "PROGRAM supera 32 lineas");
+            return;
+          }
+
+          if (command == "END") {
+            if (loopOpen) {
+              setCustomProgramError(lineNumber, "LOOP sin ENDLOOP");
+              return;
+            }
+            inProgram = false;
+            seenProgramEnd = true;
+          } else if (command == "START") {
+            bool hasInput = false;
+            bool usesVirtualInput = false;
+            uint8_t inputIndex = 0;
+            for (size_t index = 1; index < tokenCount; ++index) {
+              String key;
+              String value;
+              if (!parseKeyValueToken(tokens[index], key, value)) {
+                setCustomProgramError(lineNumber, "START invalido");
+                return;
+              }
+              if (key == "IN") {
+                if (hasInput) {
+                  setCustomProgramError(lineNumber, "START solo admite una entrada");
+                  return;
+                }
+                if (!parseIndexedToken(value, "IN", kChannelCount, inputIndex)) {
+                  setCustomProgramError(lineNumber, "START IN invalido");
+                  return;
+                }
+                hasInput = true;
+                usesVirtualInput = false;
+                continue;
+              }
+              if (key == "VIN") {
+                if (hasInput) {
+                  setCustomProgramError(lineNumber, "START solo admite una entrada");
+                  return;
+                }
+                if (!parseVirtualInputToken(value, inputIndex)) {
+                  setCustomProgramError(lineNumber, "START VIN invalido");
+                  return;
+                }
+                hasInput = true;
+                usesVirtualInput = true;
+                continue;
+              }
+              setCustomProgramError(lineNumber, String("clave no soportada: ") + key);
+              return;
+            }
+            if (!hasInput) {
+              setCustomProgramError(lineNumber, "START requiere IN o VIN");
+              return;
+            }
+            sequence.startDefined = true;
+            sequence.startInputIndex = inputIndex;
+            sequence.startUsesVirtualInput = usesVirtualInput;
+          } else if (command == "SET") {
+            if (!parseSequenceStepSet(tokens, tokenCount, lineNumber, sequence, false)) return;
+          } else if (command == "STEP") {
+            if (!parseSequenceStepSet(tokens, tokenCount, lineNumber, sequence, true)) return;
+          } else if (command == "WAIT") {
+            if (!parseSequenceWait(tokens, tokenCount, lineNumber, sequence)) return;
+          } else if (command == "WAITUNTIL") {
+            if (!parseSequenceWaitUntil(tokens, tokenCount, lineNumber, sequence)) return;
+          } else if (command == "LOOP") {
+            if (loopSeen) {
+              setCustomProgramError(lineNumber, "mas de 1 LOOP no permitido");
+              return;
+            }
+            if (loopOpen) {
+              setCustomProgramError(lineNumber, "LOOP anidado no permitido");
+              return;
+            }
+
+            bool maxDefined = false;
+            bool untilDefined = false;
+            bool stableDefined = false;
+            uint32_t maxIterations = 0;
+            String untilExpression;
+            uint32_t stableMs = 0;
+
+            for (size_t index = 1; index < tokenCount; ++index) {
+              String key;
+              String value;
+              if (!parseKeyValueToken(tokens[index], key, value)) {
+                setCustomProgramError(lineNumber, "LOOP invalido");
+                return;
+              }
+              if (key == "MAX") {
+                if (!parseUnsignedLong(value, maxIterations)) {
+                  setCustomProgramError(lineNumber, "LOOP MAX invalido");
+                  return;
+                }
+                if (maxIterations < 1U || maxIterations > kSequenceMaxLoopIterations) {
+                  setCustomProgramError(lineNumber, "LOOP MAX fuera de rango");
+                  return;
+                }
+                maxDefined = true;
+                continue;
+              }
+              if (key == "UNTIL") {
+                untilExpression = value;
+                untilDefined = true;
+                continue;
+              }
+              if (key == "STABLE") {
+                if (!parseUnsignedLong(value, stableMs)) {
+                  setCustomProgramError(lineNumber, "LOOP STABLE invalido");
+                  return;
+                }
+                if (stableMs < kSequenceTimeMinMs || stableMs > kSequenceTimeMaxMs) {
+                  setCustomProgramError(lineNumber, "LOOP STABLE fuera de rango");
+                  return;
+                }
+                stableDefined = true;
+                continue;
+              }
+              setCustomProgramError(lineNumber, String("clave no soportada: ") + key);
+              return;
+            }
+
+            if (!maxDefined || !untilDefined || !stableDefined) {
+              setCustomProgramError(lineNumber, "LOOP requiere MAX, UNTIL y STABLE");
+              return;
+            }
+
+            SequenceCondition untilCondition;
+            if (!parseSequenceConditionExpression(untilExpression, lineNumber, untilCondition, "LOOP")) {
+              return;
+            }
+
+            loopSeen = true;
+            loopOpen = true;
+            loopBeginStep = sequence.stepCount;
+            sequence.loop.enabled = true;
+            sequence.loop.beginStep = loopBeginStep;
+            sequence.loop.maxIterations = static_cast<uint8_t>(maxIterations);
+            sequence.loop.untilCondition = untilCondition;
+            sequence.loop.stableMs = stableMs;
+            sequence.loop.lineNumber = lineNumber;
+          } else if (command == "ENDLOOP") {
+            if (!loopOpen) {
+              setCustomProgramError(lineNumber, "ENDLOOP sin LOOP");
+              return;
+            }
+            if (sequence.stepCount == loopBeginStep) {
+              setCustomProgramError(lineNumber, "LOOP vacio");
+              return;
+            }
+            sequence.loop.endStep = static_cast<uint8_t>(sequence.stepCount - 1U);
+            loopOpen = false;
+          } else if (command == "SAFETY") {
+            bool hasInput = false;
+            bool usesVirtualInput = false;
+            bool hasAction = false;
+            uint8_t inputIndex = 0;
+            for (size_t index = 1; index < tokenCount; ++index) {
+              String key;
+              String value;
+              if (!parseKeyValueToken(tokens[index], key, value)) {
+                setCustomProgramError(lineNumber, "SAFETY invalido");
+                return;
+              }
+              if (key == "IN") {
+                if (hasInput) {
+                  setCustomProgramError(lineNumber, "SAFETY solo admite una entrada");
+                  return;
+                }
+                if (!parseIndexedToken(value, "IN", kChannelCount, inputIndex)) {
+                  setCustomProgramError(lineNumber, "SAFETY IN invalido");
+                  return;
+                }
+                hasInput = true;
+                usesVirtualInput = false;
+                continue;
+              }
+              if (key == "VIN") {
+                if (hasInput) {
+                  setCustomProgramError(lineNumber, "SAFETY solo admite una entrada");
+                  return;
+                }
+                if (!parseVirtualInputToken(value, inputIndex)) {
+                  setCustomProgramError(lineNumber, "SAFETY VIN invalido");
+                  return;
+                }
+                hasInput = true;
+                usesVirtualInput = true;
+                continue;
+              }
+              if (key == "ACTION") {
+                if (upperToken(value) != "ALL_OFF") {
+                  setCustomProgramError(lineNumber, "SAFETY ACTION invalida");
+                  return;
+                }
+                hasAction = true;
+                continue;
+              }
+              setCustomProgramError(lineNumber, String("clave no soportada: ") + key);
+              return;
+            }
+            if (!hasInput || !hasAction) {
+              setCustomProgramError(lineNumber, "SAFETY requiere IN|VIN y ACTION");
+              return;
+            }
+            sequence.safetyDefined = true;
+            sequence.safetyInputIndex = inputIndex;
+            sequence.safetyUsesVirtualInput = usesVirtualInput;
+          } else if (command == "PROGRAM") {
+            setCustomProgramError(lineNumber, "mas de 1 PROGRAM no permitido");
+            return;
+          } else {
+            setCustomProgramError(lineNumber, String("comando desconocido en PROGRAM: ") + command);
+            return;
+          }
+        } else {
+          if (command == "PROGRAM") {
+            if (seenProgram) {
+              setCustomProgramError(lineNumber, "mas de 1 PROGRAM no permitido");
+              return;
+            }
+            bool foundName = false;
+            String programName;
+            for (size_t index = 1; index < tokenCount; ++index) {
+              String key;
+              String value;
+              if (!parseKeyValueToken(tokens[index], key, value)) {
+                setCustomProgramError(lineNumber, "PROGRAM invalido");
+                return;
+              }
+              if (key != "NAME") {
+                setCustomProgramError(lineNumber, String("clave no soportada: ") + key);
+                return;
+              }
+              if (!isSimpleProgramName(value)) {
+                setCustomProgramError(lineNumber, "PROGRAM NAME invalido");
+                return;
+              }
+              foundName = true;
+              programName = value;
+            }
+            if (!foundName) {
+              setCustomProgramError(lineNumber, "PROGRAM requiere NAME");
+              return;
+            }
+            seenProgram = true;
+            inProgram = true;
+            sequence.present = true;
+            sequence.sourceLineCount = 1U;
+            strlcpy(sequence.name, programName.c_str(), sizeof(sequence.name));
+          } else if (command == "END" || command == "ENDLOOP" || command == "LOOP" ||
+                     command == "START" || command == "STEP" || command == "WAIT" ||
+                     command == "WAITUNTIL" || command == "SAFETY") {
+            setCustomProgramError(lineNumber, "bloque PROGRAM invalido");
+            return;
+          } else {
+            CustomRule rule;
+            bool hasRule = false;
+            if (!parseCustomRuleLine(line, lineNumber, rule, hasRule)) {
+              return;
+            }
+            if (hasRule) {
+              if (gCustomProgram.ruleCount >= kCustomMaxRules) {
+                setCustomProgramError(lineNumber, "se excedio el maximo de reglas (24)");
+                return;
+              }
+              gCustomProgram.rules[gCustomProgram.ruleCount++] = rule;
+            }
+          }
+        }
       }
-      gCustomProgram.rules[gCustomProgram.ruleCount++] = rule;
     }
 
-    if (next < 0) break;
-    start = next + 1;
+    if (nextLine < 0) break;
+    start = nextLine + 1;
     ++lineNumber;
   }
 
-  if (!gCustomProgram.ruleCount) {
+  if (inProgram) {
+    setCustomProgramError(lineNumber, "falta END");
+    return;
+  }
+  if (loopOpen) {
+    setCustomProgramError(lineNumber, "LOOP sin ENDLOOP");
+    return;
+  }
+  if (seenProgram && !seenProgramEnd) {
+    setCustomProgramError(lineNumber, "PROGRAM sin END");
+    return;
+  }
+
+  if (sequence.present) {
+    if (!sequence.startDefined) {
+      setCustomProgramError(0, "PROGRAM sin START valido");
+      return;
+    }
+    if (!sequence.stepCount) {
+      setCustomProgramError(0, "PROGRAM sin pasos");
+      return;
+    }
+    sequence.valid = true;
+    sequence.running = false;
+    sequence.state = SEQ_STATE_READY;
+    sequence.startEdgeArmed = false;
+    sequence.stepStartedAt = 0;
+    sequence.stableStartedAt = 0;
+    sequence.stableArmed = false;
+    gCustomProgram.sequenceStepCount = sequence.stepCount;
+  }
+
+  if (!gCustomProgram.ruleCount && !sequence.present) {
     setCustomProgramError(0, "customProgram sin reglas activas");
     return;
   }
 
+  if (sequence.present && gCustomProgram.ruleCount) gCustomProgram.mode = CUSTOM_PROGRAM_MIXED;
+  else if (sequence.present) gCustomProgram.mode = CUSTOM_PROGRAM_SEQUENCE;
+  else gCustomProgram.mode = CUSTOM_PROGRAM_RULES;
+
   gCustomProgram.valid = true;
   gCustomProgram.error[0] = '\0';
+  gCustomProgram.sequence.errorMessage[0] = '\0';
+  gCustomProgram.sequence.errorLine = 0;
   gCustomExecutionPrimed = false;
-  addLog("Custom program compiled: %u rules", static_cast<unsigned>(gCustomProgram.ruleCount));
+  addLog("Custom program compiled: %u rules, %u seq-steps (%s)",
+         static_cast<unsigned>(gCustomProgram.ruleCount),
+         static_cast<unsigned>(gCustomProgram.sequenceStepCount),
+         customProgramModeLabel(gCustomProgram.mode));
 }
 
-void applyCustomMode(uint32_t now) {
-  if (!gCustomProgram.valid) {
-    if (!gCustomFailSafeApplied) {
-      const char* reason = gCustomProgram.error[0] ? gCustomProgram.error : "unknown custom error";
-      addLog("Custom failsafe: switching to disabled (%s)", reason);
-      mutableConfig().workMode = WORK_DISABLED;
-      gCustomFailSafeApplied = true;
-    }
-    setAllRelaysOff();
-    return;
-  }
+bool isSequenceRelayReserved(size_t relayIndex) {
+  if (relayIndex >= kChannelCount) return false;
+  if (!gCustomProgram.sequence.present || !gCustomProgram.sequence.valid) return false;
+  if (!gCustomProgram.sequence.running) return false;
+  return (gCustomProgram.sequence.reservedRelayMask & static_cast<uint8_t>(1U << relayIndex)) != 0U;
+}
 
-  gCustomFailSafeApplied = false;
-
-  if (!gCustomExecutionPrimed) {
-    for (size_t index = 0; index < gCustomProgram.ruleCount; ++index) {
-      gCustomProgram.blinkState[index] = false;
-      gCustomProgram.blinkAt[index] = now;
-      gCustomProgram.edgeArmed[index] = false;
-      gCustomProgram.edgeLastInput[index] = false;
-      gCustomProgram.pulseActive[index] = false;
-      gCustomProgram.pulseOnPhase[index] = false;
-      gCustomProgram.pulseRemaining[index] = 0;
-      gCustomProgram.onbootActive[index] = false;
-      gCustomProgram.onbootDone[index] = false;
-    }
-    gCustomExecutionPrimed = true;
-  }
-
-  bool target[kChannelCount];
-  for (size_t index = 0; index < kChannelCount; ++index) {
-    target[index] = runtimeData.manualRelayState[index];
-  }
-
+void applyLegacyCustomRules(uint32_t now, bool* target) {
   for (size_t index = 0; index < gCustomProgram.ruleCount; ++index) {
     const CustomRule& rule = gCustomProgram.rules[index];
     if (rule.relayIndex >= kChannelCount) continue;
+    if (isSequenceRelayReserved(rule.relayIndex)) continue;
 
     switch (rule.type) {
       case CUSTOM_RULE_SET:
@@ -1668,7 +2806,6 @@ void applyCustomMode(uint32_t now) {
           && evaluateCustomComparator(leftValue, rule.threshold, rule.comparator);
         const bool rightOk = readCustomSignalValue(rule.signal2, rule.sourceIndex2, rightValue)
           && evaluateCustomComparator(rightValue, rule.threshold2, rule.comparator2);
-
         const bool result = (rule.type == CUSTOM_RULE_IFALL) ? (leftOk && rightOk) : (leftOk || rightOk);
         if (result) target[rule.relayIndex] = rule.actionState;
         break;
@@ -1689,7 +2826,6 @@ void applyCustomMode(uint32_t now) {
 
       case CUSTOM_RULE_PULSE: {
         if (rule.sourceIndex >= kChannelCount) break;
-
         const bool inputNow = runtimeData.inputState[rule.sourceIndex];
         if (!gCustomProgram.edgeArmed[index]) {
           gCustomProgram.edgeArmed[index] = true;
@@ -1704,9 +2840,7 @@ void applyCustomMode(uint32_t now) {
             gCustomProgram.blinkAt[index] = now;
           }
         }
-
         if (!gCustomProgram.pulseActive[index]) break;
-
         if (gCustomProgram.pulseOnPhase[index]) {
           target[rule.relayIndex] = true;
           if (elapsedSince(now, gCustomProgram.blinkAt[index], rule.onMs)) {
@@ -1744,7 +2878,6 @@ void applyCustomMode(uint32_t now) {
           target[rule.relayIndex] = false;
           break;
         }
-
         if (!gCustomProgram.onbootActive[index]) {
           if (!elapsedSince(now, runtimeData.bootMillis, rule.offMs)) {
             target[rule.relayIndex] = false;
@@ -1753,7 +2886,6 @@ void applyCustomMode(uint32_t now) {
           gCustomProgram.onbootActive[index] = true;
           gCustomProgram.blinkAt[index] = now;
         }
-
         target[rule.relayIndex] = true;
         if (elapsedSince(now, gCustomProgram.blinkAt[index], rule.onMs)) {
           gCustomProgram.onbootActive[index] = false;
@@ -1767,6 +2899,43 @@ void applyCustomMode(uint32_t now) {
         break;
     }
   }
+}
+
+void applyCustomMode(uint32_t now) {
+  if (!gCustomProgram.valid) {
+    if (!gCustomFailSafeApplied) {
+      const char* reason = gCustomProgram.error[0] ? gCustomProgram.error : "unknown custom error";
+      addLog("Custom failsafe: switching to disabled (%s)", reason);
+      mutableConfig().workMode = WORK_DISABLED;
+      gCustomFailSafeApplied = true;
+    }
+    setAllRelaysOff();
+    return;
+  }
+
+  gCustomFailSafeApplied = false;
+  if (!gCustomExecutionPrimed) {
+    for (size_t index = 0; index < gCustomProgram.ruleCount; ++index) {
+      gCustomProgram.blinkState[index] = false;
+      gCustomProgram.blinkAt[index] = now;
+      gCustomProgram.edgeArmed[index] = false;
+      gCustomProgram.edgeLastInput[index] = false;
+      gCustomProgram.pulseActive[index] = false;
+      gCustomProgram.pulseOnPhase[index] = false;
+      gCustomProgram.pulseRemaining[index] = 0;
+      gCustomProgram.onbootActive[index] = false;
+      gCustomProgram.onbootDone[index] = false;
+    }
+    gCustomExecutionPrimed = true;
+  }
+
+  bool target[kChannelCount];
+  for (size_t index = 0; index < kChannelCount; ++index) {
+    target[index] = runtimeData.manualRelayState[index];
+  }
+
+  processSequenceProgram(now, target);
+  applyLegacyCustomRules(now, target);
 
   for (size_t index = 0; index < kChannelCount; ++index) {
     runtimeData.manualRelayState[index] = target[index];
@@ -3375,6 +4544,82 @@ const AppConfigData& config() {
 bool hasStoredConfig() {
   return gHasStoredConfig;
 }
+
+bool customProgramValidFlag() {
+  return gCustomProgram.valid;
+}
+
+uint16_t customProgramCompiledCount() {
+  return static_cast<uint16_t>(gCustomProgram.ruleCount + gCustomProgram.sequenceStepCount);
+}
+
+const char* customProgramErrorText() {
+  return gCustomProgram.error;
+}
+
+const char* customProgramModeText() {
+  return customProgramModeLabel(gCustomProgram.mode);
+}
+
+bool sequenceProgramValidFlag() {
+  return gCustomProgram.sequence.valid;
+}
+
+bool sequenceProgramRunningFlag() {
+  return gCustomProgram.sequence.running;
+}
+
+const char* sequenceProgramNameText() {
+  return gCustomProgram.sequence.name;
+}
+
+const char* sequenceProgramStateText() {
+  return sequenceStateLabel(gCustomProgram.sequence.state);
+}
+
+uint8_t sequenceProgramCurrentStep() {
+  if (!gCustomProgram.sequence.running) return 0U;
+  return static_cast<uint8_t>(gCustomProgram.sequence.currentStep + 1U);
+}
+
+uint8_t sequenceProgramCurrentLoop() {
+  return gCustomProgram.sequence.currentLoop;
+}
+
+const char* sequenceProgramErrorText() {
+  return gCustomProgram.sequence.errorMessage;
+}
+
+size_t sequenceProgramErrorLine() {
+  return gCustomProgram.sequence.errorLine;
+}
+
+uint8_t sequenceProgramUsedRelayMask() {
+  return gCustomProgram.sequence.usedRelayMask;
+}
+
+uint8_t sequenceProgramReservedRelayMask() {
+  return gCustomProgram.sequence.running ? gCustomProgram.sequence.reservedRelayMask : 0U;
+}
+
+float sequenceProgramLastTemperature() {
+  return gCustomProgram.sequence.lastTemperature;
+}
+
+bool setVirtualInputByLabel(const String& label, bool state) {
+  const int index = virtualInputIndexFromLabel(label);
+  if (index < 0) return false;
+  setVirtualInputStateByIndex(static_cast<uint8_t>(index), state);
+  return true;
+}
+
+bool pulseVirtualInputByLabel(const String& label) {
+  const int index = virtualInputIndexFromLabel(label);
+  if (index < 0) return false;
+  pulseVirtualInputByIndex(static_cast<uint8_t>(index));
+  return true;
+}
+
 void addLog(const char* format, ...) {
   char buffer[LogBuffer::kLineSize];
   va_list args;
@@ -3412,6 +4657,11 @@ void factoryResetAndRestart() {
     return;
   }
   stopProvisioningAccessPoint();
+#if defined(ARDUINO_ARCH_ESP32)
+  WiFi.disconnect(true, true);
+#else
+  WiFi.disconnect(true);
+#endif
   resetConfigToDefaults(configDriver.data);
   applyCommissioningSafeDefaults(configDriver.data);
   sanitizeConfig(configDriver.data);
@@ -3431,12 +4681,27 @@ bool ensureAdminAuthenticated() {
 }
 
 String buildStateJson() {
-  StaticJsonDocument<3328> doc;
+  StaticJsonDocument<4864> doc;
   doc["platform"] = appPlatformName();
   doc["mode"] = workModeLabel(config().workMode);
   doc["customProgramValid"] = gCustomProgram.valid;
-  doc["customProgramRuleCount"] = gCustomProgram.ruleCount;
+  doc["customProgramRuleCount"] = static_cast<uint16_t>(gCustomProgram.ruleCount + gCustomProgram.sequenceStepCount);
   doc["customProgramError"] = gCustomProgram.error;
+  doc["customProgramMode"] = customProgramModeLabel(gCustomProgram.mode);
+  doc["sequenceValid"] = gCustomProgram.sequence.valid;
+  doc["sequenceRunning"] = gCustomProgram.sequence.running;
+  doc["sequenceName"] = gCustomProgram.sequence.name;
+  doc["sequenceState"] = sequenceStateLabel(gCustomProgram.sequence.state);
+  doc["sequenceCurrentStep"] = gCustomProgram.sequence.running ?
+                               static_cast<uint16_t>(gCustomProgram.sequence.currentStep + 1U) :
+                               static_cast<uint16_t>(0U);
+  doc["sequenceCurrentLoop"] = gCustomProgram.sequence.currentLoop;
+  if (gCustomProgram.sequence.errorMessage[0]) doc["sequenceError"] = gCustomProgram.sequence.errorMessage;
+  else doc["sequenceError"] = nullptr;
+  if (gCustomProgram.sequence.errorLine) doc["sequenceErrorLine"] = gCustomProgram.sequence.errorLine;
+  else doc["sequenceErrorLine"] = nullptr;
+  if (!isnan(gCustomProgram.sequence.lastTemperature)) doc["sequenceLastTemp"] = gCustomProgram.sequence.lastTemperature;
+  else doc["sequenceLastTemp"] = nullptr;
   doc["uptimeSec"] = millis() / 1000UL;
   doc["wifiConnected"] = runtimeData.wifiConnected;
   doc["wifiHasCredentials"] = runtimeData.wifiHasCredentials;
@@ -3477,6 +4742,9 @@ String buildStateJson() {
   JsonArray inputs = doc.createNestedArray("inputState");
   JsonArray relays = doc.createNestedArray("relayState");
   JsonArray manualRelays = doc.createNestedArray("manualRelayState");
+  JsonObject virtualInputs = doc.createNestedObject("virtualInputs");
+  JsonArray usedRelays = doc.createNestedArray("sequenceUsedRelays");
+  JsonArray reservedRelays = doc.createNestedArray("sequenceReservedRelays");
 
   for (size_t index = 0; index < kChannelCount; ++index) {
     if (runtimeData.temperatureValid[index]) temperatures.add(runtimeData.temperature[index]);
@@ -3490,6 +4758,14 @@ String buildStateJson() {
     inputs.add(runtimeData.inputState[index]);
     relays.add(runtimeData.relayState[index]);
     manualRelays.add(runtimeData.manualRelayState[index]);
+    virtualInputs[String("VIN") + String(index + 1U)] = runtimeData.virtualInputState[index];
+    if ((gCustomProgram.sequence.usedRelayMask & static_cast<uint8_t>(1U << index)) != 0U) {
+      usedRelays.add(String("REL") + String(index + 1U));
+    }
+    if ((gCustomProgram.sequence.reservedRelayMask & static_cast<uint8_t>(1U << index)) != 0U &&
+        gCustomProgram.sequence.running) {
+      reservedRelays.add(String("REL") + String(index + 1U));
+    }
   }
 
   String out;
@@ -3618,6 +4894,25 @@ bool handleControlJson(const String& body, String& errorMessage) {
     copyText(mutableConfig().customProgram, root["customProgram"] | String(mutableConfig().customProgram));
     configChanged = true;
   }
+  if (root.containsKey("pulseVirtualInput") && !root["pulseVirtualInput"].isNull()) {
+    const String label = root["pulseVirtualInput"].as<String>();
+    if (!pulseVirtualInputByLabel(label)) {
+      errorMessage = "pulseVirtualInput invalido (usa VIN1..VIN4)";
+      return false;
+    }
+  }
+
+  JsonObjectConst virtualInputs = root["virtualInputs"].as<JsonObjectConst>();
+  if (!virtualInputs.isNull()) {
+    for (JsonPairConst pair : virtualInputs) {
+      const int index = virtualInputIndexFromLabel(String(pair.key().c_str()));
+      if (index < 0) {
+        errorMessage = "virtualInputs invalido (usa VIN1..VIN4)";
+        return false;
+      }
+      setVirtualInputStateByIndex(static_cast<uint8_t>(index), pair.value().as<bool>());
+    }
+  }
 
   JsonArrayConst manualRelays = root["manualRelays"].as<JsonArrayConst>();
   if (!manualRelays.isNull()) {
@@ -3660,6 +4955,10 @@ void initializeApplication() {
   }
   sanitizeConfig(configDriver.data);
   recompileCustomProgramFromConfig();
+  if (gCustomProgram.sequence.present && gCustomProgram.sequence.valid) {
+    gCustomProgram.sequence.running = false;
+    gCustomProgram.sequence.state = SEQ_STATE_ABORTED_AFTER_REBOOT;
+  }
   addLog("Boot step: config %s", gHasStoredConfig ? "loaded" : "defaults-safe");
 
   addLog("Boot step: routes");
@@ -3674,6 +4973,7 @@ void initializeApplication() {
 
   addLog("Boot step: pin init");
   configurePins();
+  initializeFactoryResetButton();
   gOperationalRuntimeArmed = gHasStoredConfig;
   addLog("Boot step: modbus init");
   setupModbusRuntime();
@@ -3693,9 +4993,12 @@ void initializeApplication() {
 }
 
 void processApplication() {
+  const uint32_t now = millis();
+  processFactoryResetButton(now);
   if (gDnsStarted) gDnsServer.processNextRequest();
   if (gServerStarted) server.handleClient();
   if (gOtaStarted) ArduinoOTA.handle();
+  processVirtualInputPulses(millis());
   Edge.process();
   appUpdateMdns();
   runtimeData.loopCounter++;

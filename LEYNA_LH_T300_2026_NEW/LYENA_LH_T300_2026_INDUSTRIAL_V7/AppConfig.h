@@ -159,6 +159,7 @@ struct AppRuntimeData {
   bool temperatureValid[kChannelCount];
   bool humidityValid[kChannelCount];
   bool inputState[kChannelCount];
+  bool virtualInputState[kChannelCount];
   bool relayState[kChannelCount];
   bool manualRelayState[kChannelCount];
   bool defrosting;

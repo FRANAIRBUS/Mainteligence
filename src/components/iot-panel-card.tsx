@@ -1,6 +1,7 @@
 
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -157,10 +158,25 @@ type CustomProgramTemplate = {
   program: string;
 };
 
+const VIRTUAL_INPUT_LABELS = ['VIN1', 'VIN2', 'VIN3', 'VIN4'] as const;
+type VirtualInputLabel = (typeof VIRTUAL_INPUT_LABELS)[number];
+
 const customProgramOperations = [
+  'PROGRAM NAME=...',
+  'START IN=INn | START VIN=VINn',
+  'SET REL=RELn STATE=ON|OFF',
+  'STEP REL=RELn STATE=ON|OFF [TIME=ms]',
+  'WAIT TIME=ms',
+  'WAITUNTIL TEMP=TEMPn OP=op VALUE=valor STABLE=ms MAX=ms',
+  'LOOP MAX=n UNTIL=condicion STABLE=ms',
+  'ENDLOOP',
+  'SAFETY IN=INn ACTION=ALL_OFF',
+  'SAFETY VIN=VINn ACTION=ALL_OFF',
+  'END',
   'SET RELn ON|OFF',
   'BLINK RELn onMs [offMs] (50..3600000 ms)',
   'TIMER RELn onMs offMs (50..3600000 ms)',
+  'ONBOOT RELn delayMs onMs (50..3600000 ms)',
   'ONCHANGE INn TOGGLE RELm',
   'PULSE INn RELm onMs count [gapMs] (count 1..20)',
   'THERMOSTAT RELn TEMPm setpoint diff [AUTO|COOL|HEAT]',
@@ -174,7 +190,7 @@ const customProgramOperations = [
 
 const customProgramFullExample = [
   '# Ejemplo completo de referencia',
-  '# Usa SET, TIMER, IF, IFALL/IFANY, ONCHANGE, PULSE y THERMOSTAT',
+  '# Usa SET, TIMER, IF, IFALL/IFANY, ONCHANGE, PULSE, THERMOSTAT y ONBOOT',
   'SET REL1 OFF',
   'SET REL2 OFF',
   'SET REL3 OFF',
@@ -190,6 +206,11 @@ const customProgramFullExample = [
   '',
   '# REL3: conmutacion por pulsador (flanco)',
   'ONCHANGE IN3 TOGGLE REL3',
+
+  '# ONBOOT escalonado tras reinicio',
+  'ONBOOT REL1 10000 2000',
+  'ONBOOT REL2 12000 2000',
+  'ONBOOT REL3 14000 2000',
   '',
   '# REL4: campana doble al detectar timbre en IN4',
   'PULSE IN4 REL4 2000 2 300',
@@ -204,7 +225,7 @@ const customProgramTemplates: CustomProgramTemplate[] = [
   {
     id: 'full-systems',
     title: 'Demo completa (todos los sistemas)',
-    description: 'Prueba SET, TIMER, IF/IFALL/IFANY, ONCHANGE, PULSE y THERMOSTAT en un solo programa.',
+    description: 'Prueba SET, TIMER, ONBOOT, IF/IFALL/IFANY, ONCHANGE, PULSE y THERMOSTAT en un solo programa.',
     program: customProgramFullExample,
   },
   {
@@ -270,6 +291,47 @@ const customProgramTemplates: CustomProgramTemplate[] = [
       'ONCHANGE IN3 TOGGLE REL2',
       'SET REL1 OFF',
       'SET REL3 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'onboot-staggered',
+    title: 'ONBOOT escalonado',
+    description: 'Disparo por arranque con tres pulsos separados para REL1..REL3.',
+    program: [
+      '# ONBOOT escalonado',
+      'ONBOOT REL1 10000 2000',
+      'ONBOOT REL2 12000 2000',
+      'ONBOOT REL3 14000 2000',
+      'SET REL4 OFF',
+    ].join('\n'),
+  },
+  {
+    id: 'marmita-cool-sequence',
+    title: 'Enfriamiento de marmita por fases',
+    description: 'Secuencia PROGRAM visual con LOOP, WAITUNTIL y SAFETY.',
+    program: [
+      'PROGRAM NAME=MARMITA_COOL',
+      'START VIN=VIN1',
+      '',
+      'SET REL=REL1 STATE=OFF',
+      'SET REL=REL2 STATE=OFF',
+      'SET REL=REL3 STATE=OFF',
+      'SET REL=REL4 STATE=OFF',
+      '',
+      'LOOP MAX=8 UNTIL=TEMP1<=40.0 STABLE=30000',
+      'STEP REL=REL1 STATE=ON TIME=30000',
+      'STEP REL=REL2 STATE=ON TIME=45000',
+      'WAIT TIME=300000',
+      'ENDLOOP',
+      '',
+      'STEP REL=REL3 STATE=ON',
+      'STEP REL=REL4 STATE=ON',
+      'WAITUNTIL TEMP=TEMP1 OP=<= VALUE=10.0 STABLE=60000 MAX=3600000',
+      'STEP REL=REL3 STATE=OFF',
+      'STEP REL=REL4 STATE=OFF',
+      '',
+      'SAFETY IN=IN4 ACTION=ALL_OFF',
+      'END',
     ].join('\n'),
   },
 ];
@@ -980,6 +1042,31 @@ function readIotFieldValue(asset: Asset, key: string, rawKeys: string[] = []) {
   ]);
 }
 
+function readVirtualInputsState(asset: Asset) {
+  const state: Record<VirtualInputLabel, boolean> = {
+    VIN1: false,
+    VIN2: false,
+    VIN3: false,
+    VIN4: false,
+  };
+  const value = readIotFieldValue(asset, 'virtualInputs');
+  if (!isPlainObject(value)) return state;
+
+  for (const label of VIRTUAL_INPUT_LABELS) {
+    const parsed = asBoolean((value as Record<string, unknown>)[label]);
+    if (parsed !== null) state[label] = parsed;
+  }
+  return state;
+}
+
+function formatRelayList(value: unknown) {
+  if (!Array.isArray(value)) return '--';
+  const labels = value
+    .map((entry) => String(entry ?? '').trim().toUpperCase())
+    .filter(Boolean);
+  return labels.length > 0 ? labels.join(', ') : '--';
+}
+
 function resolveDeviceIp(asset: Asset) {
   const ipValue = firstDefinedIotValue([
     asset.iot?.reportedState?.ipAddress,
@@ -1265,6 +1352,7 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const [open, setOpen] = useState(false);
   const [lockedAsset, setLockedAsset] = useState<Asset | null>(null);
   const [loadingDesiredState, setLoadingDesiredState] = useState(false);
+  const [loadingVirtualPulse, setLoadingVirtualPulse] = useState<VirtualInputLabel | null>(null);
   const [setpoint, setSetpoint] = useState(() => String(asset.iot?.desiredState?.setpoint ?? asset.iot?.lastReading?.setpoint ?? ''));
   const [mode, setMode] = useState(asset.iot?.desiredState?.mode ?? 'cool');
   const [fan, setFan] = useState(asset.iot?.desiredState?.fan ?? 'auto');
@@ -1291,6 +1379,16 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
   const supportsThermostatLogic = panelType === 'thermostat';
   const editingCustomMode = operatingMode === 'custom';
   const customProgramLength = customProgram.replace(/\r/g, '').length;
+  const virtualInputs = useMemo(() => readVirtualInputsState(sourceAsset), [sourceAsset]);
+  const customProgramValid = asBoolean(readIotFieldValue(sourceAsset, 'customProgramValid', ['customProgramValid']));
+  const customProgramMode = String(readIotFieldValue(sourceAsset, 'customProgramMode', ['customProgramMode']) ?? '--');
+  const sequenceRunning = asBoolean(readIotFieldValue(sourceAsset, 'sequenceRunning', ['sequenceRunning']));
+  const sequenceState = String(readIotFieldValue(sourceAsset, 'sequenceState', ['sequenceState']) ?? '--');
+  const sequenceStep = readIotFieldValue(sourceAsset, 'sequenceCurrentStep', ['sequenceCurrentStep']);
+  const sequenceLoop = readIotFieldValue(sourceAsset, 'sequenceCurrentLoop', ['sequenceCurrentLoop']);
+  const sequenceError = String(readIotFieldValue(sourceAsset, 'sequenceError', ['sequenceError']) ?? '--');
+  const sequenceUsedRelays = formatRelayList(readIotFieldValue(sourceAsset, 'sequenceUsedRelays', ['sequenceUsedRelays']));
+  const sequenceReservedRelays = formatRelayList(readIotFieldValue(sourceAsset, 'sequenceReservedRelays', ['sequenceReservedRelays']));
 
   const handleLoadCustomTemplate = (template: CustomProgramTemplate) => {
     setCustomProgram(template.program);
@@ -1428,6 +1526,36 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
     }
   };
 
+  const handlePulseVirtualInput = async (label: VirtualInputLabel) => {
+    if (!app || !organizationId) return;
+    setLoadingVirtualPulse(label);
+    try {
+      const fn = httpsCallable(getFunctions(app), 'setAssetIotDesiredState');
+      await fn({
+        organizationId,
+        payload: {
+          assetId: asset.id,
+          state: {
+            pulseVirtualInput: label,
+            note: note.trim() || undefined,
+          },
+        },
+      });
+      toast({
+        title: `Pulso enviado: ${label}`,
+        description: 'Se actualizo desiredState.pulseVirtualInput para ejecutar el flanco virtual.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: `No se pudo pulsar ${label}`,
+        description: error.message || 'Error enviando pulseVirtualInput.',
+      });
+    } finally {
+      setLoadingVirtualPulse(null);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
@@ -1491,9 +1619,30 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
 
                 {customGuideOpen ? (
                   <div className="grid gap-3 rounded-lg border bg-background/70 p-3">
+                    <div className="rounded-md border p-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-semibold">Guia externa completa (espanol)</p>
+                        <Button type="button" size="sm" variant="outline" asChild>
+                          <Link href="/iot/custom-program-guide" target="_blank" rel="noreferrer">
+                            Abrir guia
+                          </Link>
+                        </Button>
+                      </div>
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Referencia total de comandos legacy + PROGRAM secuencial, limites de parser, ejemplos ONBOOT y flujo cloud para desiredState.
+                      </p>
+                      <pre className="mt-2 rounded bg-muted/60 p-2 text-[11px] leading-5">{[
+                        'PROGRAM NAME=VIN_QUICK',
+                        'START VIN=VIN1',
+                        'STEP REL=REL1 STATE=ON TIME=5000',
+                        'STEP REL=REL1 STATE=OFF',
+                        'END',
+                      ].join('\n')}</pre>
+                    </div>
+
                     <div className="grid gap-2 md:grid-cols-2">
                       <div className="rounded-md border p-2">
-                        <p className="text-xs font-semibold">Operaciones permitidas</p>
+                        <p className="text-xs font-semibold">Sintaxis rapida</p>
                         <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
                           {customProgramOperations.map((operation) => (
                             <li key={operation}>{operation}</li>
@@ -1501,35 +1650,43 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                         </ul>
                       </div>
                       <div className="rounded-md border p-2">
-                        <p className="text-xs font-semibold">Limites y notas</p>
+                        <p className="text-xs font-semibold">Estado cloud reportado</p>
                         <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
-                          <li>Maximo 24 reglas activas por programa.</li>
-                          <li>Longitud maxima recomendada/remota: 640 caracteres.</li>
-                          <li>No soporta expresiones libres (+, -, *, /, AND, OR, ELSE).</li>
-                          <li>Comentarios validos: # o //.</li>
+                          <li>customProgramValid: <strong>{customProgramValid == null ? '--' : customProgramValid ? 'true' : 'false'}</strong></li>
+                          <li>customProgramMode: <strong>{customProgramMode}</strong></li>
+                          <li>sequenceRunning: <strong>{sequenceRunning == null ? '--' : sequenceRunning ? 'true' : 'false'}</strong></li>
+                          <li>sequenceState: <strong>{sequenceState}</strong></li>
+                          <li>sequenceStep/Loop: <strong>{String(sequenceStep ?? '--')} / {String(sequenceLoop ?? '--')}</strong></li>
+                          <li>sequenceError: <strong>{sequenceError}</strong></li>
+                          <li>sequenceUsedRelays: <strong>{sequenceUsedRelays}</strong></li>
+                          <li>sequenceReservedRelays: <strong>{sequenceReservedRelays}</strong></li>
+                          <li>virtualInputs: <strong>{VIRTUAL_INPUT_LABELS.map((label) => `${label}:${virtualInputs[label] ? 'ON' : 'OFF'}`).join(' | ')}</strong></li>
                         </ul>
                       </div>
                     </div>
 
                     <div className="rounded-md border p-2">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-xs font-semibold">Ejemplo completo (todos los sistemas)</p>
-                        <div className="flex gap-2">
-                          <Button type="button" size="sm" variant="outline" onClick={() => setCustomProgram(customProgramFullExample)}>
-                            Cargar ejemplo
+                      <p className="mb-2 text-xs font-semibold">Pulso virtual remoto (VIN1..VIN4)</p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {VIRTUAL_INPUT_LABELS.map((label) => (
+                          <Button
+                            key={label}
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void handlePulseVirtualInput(label)}
+                            disabled={loadingVirtualPulse !== null}
+                          >
+                            {loadingVirtualPulse === label ? `Pulsando ${label}...` : `Pulsar ${label}`}
                           </Button>
-                          <Button type="button" size="sm" variant="outline" onClick={() => handleInsertCustomTemplate(customProgramTemplates[0])}>
-                            Insertar ejemplo
-                          </Button>
-                        </div>
+                        ))}
                       </div>
-                      <pre className="max-h-52 overflow-auto rounded bg-muted/60 p-2 text-[11px] leading-5">{customProgramFullExample}</pre>
                     </div>
 
                     <div className="rounded-md border p-2">
                       <p className="mb-2 text-xs font-semibold">Galeria de programas</p>
                       <div className="grid gap-2 md:grid-cols-2">
-                        {customProgramTemplates.filter((template) => template.id !== 'full-systems').map((template) => (
+                        {customProgramTemplates.map((template) => (
                           <div key={template.id} className="rounded-md border bg-muted/30 p-2">
                             <p className="text-xs font-medium">{template.title}</p>
                             <p className="mt-1 text-xs text-muted-foreground">{template.description}</p>
@@ -1554,17 +1711,18 @@ function IotDesiredStateDialog({ asset, trigger }: { asset: Asset; trigger: Reac
                   onChange={(e) => setCustomProgram(e.target.value)}
                   rows={10}
                   placeholder={[
-                    '# Ejemplo rapido',
-                    'THERMOSTAT REL1 TEMP1 4.0 0.8 COOL',
-                    'IF HUM1 >= 85 THEN REL2 ON',
-                    'IF HUM1 <= 78 THEN REL2 OFF',
-                    'BLINK REL3 5000 3000',
-                    'SET REL4 OFF',
+                    '# Ejemplo rapido (secuencia visual)',
+                    'PROGRAM NAME=VIN_QUICK',
+                    'START VIN=VIN1',
+                    'STEP REL=REL1 STATE=ON TIME=5000',
+                    'WAIT TIME=1000',
+                    'STEP REL=REL1 STATE=OFF',
+                    'END',
                   ].join('\n')}
                 />
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
                   <span>
-                    Se guarda en desiredState.customProgram y el firmware lo valida al sincronizar.
+                    Se guarda en desiredState.customProgram. Para flancos virtuales usa desiredState.pulseVirtualInput (VIN1..VIN4).
                   </span>
                   <span className={customProgramLength > 640 ? 'font-semibold text-red-500' : ''}>
                     {customProgramLength}/640

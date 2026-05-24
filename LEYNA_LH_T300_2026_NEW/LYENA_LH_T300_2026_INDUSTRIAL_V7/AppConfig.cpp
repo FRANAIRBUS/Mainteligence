@@ -124,7 +124,7 @@ void resetConfigToDefaults(AppConfigData& config) {
   const String defaultHost = defaultHostNameFromMac();
   setDefaultText(config.hostName, sizeof(config.hostName), defaultHost.c_str());
   setDefaultText(config.adminUser, sizeof(config.adminUser), "admin");
-  setDefaultText(config.adminPass, sizeof(config.adminPass), "ChangeMe123");
+  setDefaultText(config.adminPass, sizeof(config.adminPass), "12345678");
   setDefaultText(config.apPassword, sizeof(config.apPassword), "12345678");
   config.wifiUseDhcp = true;
   setDefaultText(config.wifiStaticIp, sizeof(config.wifiStaticIp), "192.168.20.120");
@@ -274,7 +274,7 @@ void sanitizeConfig(AppConfigData& config) {
     setDefaultText(config.hostName, sizeof(config.hostName), defaultHost.c_str());
   }
   if (!config.adminUser[0]) setDefaultText(config.adminUser, sizeof(config.adminUser), "admin");
-  if (!config.adminPass[0]) setDefaultText(config.adminPass, sizeof(config.adminPass), "ChangeMe123");
+  if (!config.adminPass[0]) setDefaultText(config.adminPass, sizeof(config.adminPass), "12345678");
   if (!config.apPassword[0]) setDefaultText(config.apPassword, sizeof(config.apPassword), "12345678");
   if (!config.wifiStaticIp[0]) setDefaultText(config.wifiStaticIp, sizeof(config.wifiStaticIp), "192.168.20.120");
   if (!config.wifiSubnetMask[0]) setDefaultText(config.wifiSubnetMask, sizeof(config.wifiSubnetMask), "255.255.255.0");
@@ -643,4 +643,3 @@ void deserializeConfig(JsonObjectConst json, AppConfigData& config) {
 }
 
 }  // namespace industrial_v2
-

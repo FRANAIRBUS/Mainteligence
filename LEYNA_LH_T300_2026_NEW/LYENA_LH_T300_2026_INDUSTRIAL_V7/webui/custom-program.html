@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="es">
 <head>
@@ -38,7 +37,7 @@ button.primary{background:linear-gradient(135deg,var(--accent),#a9ecff);color:#0
 <body>
 <div class="wrap">
   <h1>Programa Custom (WORK_CUSTOM)</h1>
-  <p class="muted">Editor seguro de reglas online para relays. El parser valida sintaxis y ejecuta en ciclos no bloqueantes.</p>
+  <p class="muted">Editor de reglas y secuencias. La documentacion completa ahora vive en una pagina separada para mantener este editor limpio.</p>
 
   <div class="panel">
     <div class="grid">
@@ -60,9 +59,27 @@ button.primary{background:linear-gradient(135deg,var(--accent),#a9ecff);color:#0
     <div class="actions">
       <button class="primary" id="save">Guardar programa</button>
       <button id="reload">Recargar</button>
-      <button id="template-blink">Plantilla Blink</button>
-      <button id="template-pasteurizer">Plantilla Pasteurizador</button>
-      <button id="template-wash">Plantilla Lavado</button>
+      <select id="example-picker">
+        <option value="">Galeria de ejemplos</option>
+        <option value="garage">Puerta de garaje</option>
+        <option value="windows-heat">Cerrar ventanas si hace calor</option>
+        <option value="hood-double">Campana doble exacta</option>
+        <option value="irrigation">Riego automatico</option>
+        <option value="lights-button">Luces con pulsador</option>
+        <option value="onboot-stagger">ONBOOT escalonado (nuevo)</option>
+        <option value="full-reference">Ejemplo completo de referencia</option>
+        <option value="marmita-cool">Enfriamiento de marmita por fases</option>
+        <option value="blink">Plantilla Blink</option>
+        <option value="pasteurizer">Plantilla Pasteurizador</option>
+        <option value="wash">Plantilla Lavado</option>
+      </select>
+      <button id="load-example">Cargar ejemplo</button>
+      <button id="insert-example">Insertar ejemplo</button>
+      <button id="pulse-vin1">Pulsar VIN1</button>
+      <button id="pulse-vin2">Pulsar VIN2</button>
+      <button id="pulse-vin3">Pulsar VIN3</button>
+      <button id="pulse-vin4">Pulsar VIN4</button>
+      <a href="/custom-program-guide">Guia completa</a>
       <a href="/app">Volver a /app</a>
     </div>
   </div>
@@ -71,106 +88,44 @@ button.primary{background:linear-gradient(135deg,var(--accent),#a9ecff);color:#0
     <label for="program">Programa custom</label>
     <textarea id="program" spellcheck="false"></textarea>
     <p class="hint">
-Comandos validos:
-SET RELn ON|OFF
-BLINK RELn onMs [offMs]
-TIMER RELn onMs offMs
-ONBOOT RELn delayMs onMs
-ONCHANGE INn TOGGLE RELm
-PULSE INn RELm onMs count [gapMs]
-THERMOSTAT RELn TEMPm setpoint diff [AUTO|COOL|HEAT]
-IF TEMPn op valor THEN RELm ON|OFF
-IF HUMn op valor THEN RELm ON|OFF
-IF INn op ON|OFF THEN RELm ON|OFF
-IFALL src1 op v1 src2 op v2 THEN RELm ON|OFF
-IFANY src1 op v1 src2 op v2 THEN RELm ON|OFF
-Operadores: == != > >= < <=
+Legacy (compatible): SET, BLINK, TIMER, ONBOOT, ONCHANGE, PULSE, THERMOSTAT, IF, IFALL, IFANY.<br>
+Secuencia PROGRAM (visual): START IN=IN1 o START VIN=VIN1, STEP REL=REL1 STATE=ON TIME=5000, WAIT TIME=2000, WAITUNTIL ..., LOOP ... ENDLOOP, SAFETY ... y END.<br>
+Comparadores: == != &gt; &gt;= &lt; &lt;=.
     </p>
   </div>
 
   <div class="panel">
-    <h2 style="margin:0 0 10px">Referencia completa</h2>
     <div class="docs">
       <div class="doc">
-        <h3>Campos del script</h3>
+        <h3>Ejemplo visual rapido</h3>
+        <span class="code">PROGRAM NAME=ARRANQUE_RAPIDO
+START VIN=VIN1
+STEP REL=REL1 STATE=ON TIME=5000
+WAIT TIME=1000
+STEP REL=REL1 STATE=OFF
+SAFETY IN=IN4 ACTION=ALL_OFF
+END</span>
+      </div>
+      <div class="doc">
+        <h3>API y cloud para VIN</h3>
         <ul>
-          <li><span class="mono">REL1..REL4</span>: salidas (reles) que puedes activar.</li>
-          <li><span class="mono">IN1..IN4</span>: entradas digitales.</li>
-          <li><span class="mono">TEMP1..TEMP4</span>: sondas de temperatura.</li>
-          <li><span class="mono">HUM1..HUM2</span>: sondas de humedad.</li>
-          <li>Maximo de reglas: <span class="mono">24</span>.</li>
+          <li><span class="mono">POST /api/v1/control</span> con <span class="mono">{"pulseVirtualInput":"VIN1"}</span>.</li>
+          <li>En cloud: usar <span class="mono">desiredState.pulseVirtualInput</span> para pulsos.</li>
+          <li><span class="mono">GET /api/v1/state</span> expone <span class="mono">virtualInputs</span> y estado de secuencia.</li>
         </ul>
       </div>
-
       <div class="doc">
-        <h3>Sintaxis disponible</h3>
+        <h3>Documentacion completa</h3>
         <ul>
-          <li><span class="mono">SET RELn ON|OFF</span></li>
-          <li><span class="mono">BLINK RELn onMs [offMs]</span> (50..3600000 ms)</li>
-          <li><span class="mono">TIMER RELn onMs offMs</span> (50..3600000 ms)</li>
-          <li><span class="mono">ONBOOT RELn delayMs onMs</span> (pulso unico tras arranque, 50..3600000 ms)</li>
-          <li><span class="mono">ONCHANGE INn TOGGLE RELm</span></li>
-          <li><span class="mono">PULSE INn RELm onMs count [gapMs]</span> (count 1..20)</li>
-          <li><span class="mono">THERMOSTAT RELn TEMPm setpoint diff [AUTO|COOL|HEAT]</span></li>
-          <li><span class="mono">IF TEMPn op valor THEN RELm ON|OFF</span></li>
-          <li><span class="mono">IF HUMn op valor THEN RELm ON|OFF</span></li>
-          <li><span class="mono">IF INn op ON|OFF THEN RELm ON|OFF</span></li>
-          <li><span class="mono">IFALL src1 op v1 src2 op v2 THEN RELm ON|OFF</span></li>
-          <li><span class="mono">IFANY src1 op v1 src2 op v2 THEN RELm ON|OFF</span></li>
+          <li>Comandos legacy y secuencia PROGRAM, linea por linea.</li>
+          <li>Ejemplos ONBOOT, MARMITA_COOL y payloads cloud.</li>
+          <li>Prioridades de seguridad y reserva de reles.</li>
         </ul>
-      </div>
-
-      <div class="doc">
-        <h3>Condiciones y matematica</h3>
-        <ul>
-          <li>Comparadores: <span class="mono">== != &gt; &gt;= &lt; &lt;=</span></li>
-          <li>Soporta histeresis con <span class="mono">THERMOSTAT</span> usando <span class="mono">setpoint</span> y <span class="mono">diff</span>.</li>
-          <li>Soporta compuertas logicas de 2 condiciones con <span class="mono">IFALL</span> (AND) y <span class="mono">IFANY</span> (OR).</li>
-          <li>No soporta expresiones libres: <span class="mono">+ - * / () ELSE</span>.</li>
-          <li>Comentarios: linea con <span class="mono">//</span> o inline con <span class="mono">#</span>.</li>
-        </ul>
-      </div>
-
-      <div class="doc">
-        <h3>API local para actuar</h3>
-        <ul>
-          <li><span class="mono">GET /api/v1/config</span></li>
-          <li><span class="mono">POST /api/v1/config</span> para guardar config completa.</li>
-          <li><span class="mono">POST /api/v1/control</span> para cambios rapidos de control.</li>
-          <li><span class="mono">GET /api/v1/state</span> para validacion del parser.</li>
-          <li>Estado parser: <span class="mono">customProgramValid</span>, <span class="mono">customProgramRuleCount</span>, <span class="mono">customProgramError</span>.</li>
-        </ul>
-      </div>
-
-      <div class="doc">
-        <h3>Campos clave (control local)</h3>
-        <ul>
-          <li><span class="mono">workMode</span> (0..4)</li>
-          <li><span class="mono">customProgram</span> (texto del programa)</li>
-          <li><span class="mono">setpoint</span>, <span class="mono">setpoint2</span></li>
-          <li><span class="mono">manualRelays</span> (array bool)</li>
-          <li><span class="mono">relay1..relay4</span> (bool)</li>
-        </ul>
-      </div>
-
-      <div class="doc">
-        <h3>Campos cloud desiredState</h3>
-        <ul>
-          <li><span class="mono">workMode</span>, <span class="mono">customProgram</span>, <span class="mono">power</span>, <span class="mono">mode</span>, <span class="mono">fan</span></li>
-          <li><span class="mono">setpoint</span>, <span class="mono">setpoint2</span>, <span class="mono">differentialX10</span></li>
-          <li><span class="mono">highAlarmX10</span>, <span class="mono">lowAlarmX10</span>, <span class="mono">tempAlarmDelayMin</span></li>
-          <li><span class="mono">controlPeriodMs</span>, <span class="mono">defrostIntervalMin</span>, <span class="mono">defrostDurationMin</span>, <span class="mono">defrostStopX10</span></li>
-          <li><span class="mono">stopRelay1OnDefrost</span>, <span class="mono">stopRelay2OnDefrost</span>, <span class="mono">relay2Mode</span>, <span class="mono">relay3Mode</span></li>
-          <li><span class="mono">relays</span> objeto: <span class="mono">{"REL1":true,"REL2":false,...}</span></li>
-        </ul>
+        <div class="actions" style="margin-top:10px">
+          <a href="/custom-program-guide">Abrir /custom-program-guide</a>
+        </div>
       </div>
     </div>
-
-    <span class="code">Ejemplo POST /api/v1/config
-{
-  "workMode": 4,
-  "customProgram": "THERMOSTAT REL1 TEMP1 4.0 0.8 COOL\nIFALL TEMP1 &gt; 30 HUM1 &gt; 70 THEN REL2 ON\nIFANY IN1 == ON IN2 == ON THEN REL2 OFF\nONCHANGE IN3 TOGGLE REL3\nPULSE IN4 REL4 2000 2 300\nTIMER REL2 5000 3000"
-}</span>
   </div>
 
   <div id="status">Cargando...</div>
@@ -185,6 +140,87 @@ function setStatus(text,kind){const n=el('status');n.textContent=text;n.classNam
 function toInt(v,fallback=0){const n=Number(v);return Number.isFinite(n)?Math.trunc(n):fallback}
 
 const templates={
+  garage:[
+    '# Puerta de garaje',
+    '# Pulsador en IN1 y motor en REL1',
+    'SET REL1 OFF',
+    'PULSE IN1 REL1 1200 1 300'
+  ].join('\n'),
+  'windows-heat':[
+    '# Cerrar ventanas si hace calor',
+    '# REL1 acciona cierre de ventana',
+    'IF TEMP1 >= 30 THEN REL1 ON',
+    'IF TEMP1 <= 27 THEN REL1 OFF'
+  ].join('\n'),
+  'hood-double':[
+    '# Campana doble exacta',
+    '# REL1 y REL2 activos solo con doble condicion',
+    'IFALL TEMP1 >= 65 HUM1 >= 70 THEN REL1 ON',
+    'IFALL TEMP1 >= 65 HUM1 >= 70 THEN REL2 ON',
+    'IFANY TEMP1 < 63 HUM1 < 68 THEN REL1 OFF',
+    'IFANY TEMP1 < 63 HUM1 < 68 THEN REL2 OFF'
+  ].join('\n'),
+  irrigation:[
+    '# Riego automatico',
+    '# IN1 habilita riego, REL1 bomba, REL2 valvula',
+    'IF IN1 == ON THEN REL2 ON',
+    'IF IN1 == OFF THEN REL2 OFF',
+    'TIMER REL1 15000 120000',
+    'IF IN1 == OFF THEN REL1 OFF'
+  ].join('\n'),
+  'lights-button':[
+    '# Luces con pulsador',
+    'ONCHANGE IN1 TOGGLE REL1',
+    'ONCHANGE IN2 TOGGLE REL2'
+  ].join('\n'),
+  'onboot-stagger':[
+    '# ONBOOT escalonado',
+    '# Cada rele dispara una sola vez tras arranque',
+    'ONBOOT REL1 10000 2000',
+    'ONBOOT REL2 12000 2000',
+    'ONBOOT REL3 14000 2000'
+  ].join('\n'),
+  'full-reference':[
+    '# Ejemplo completo de referencia',
+    'SET REL1 OFF',
+    'BLINK REL2 500 500',
+    'TIMER REL3 1200 1800',
+    'ONBOOT REL1 10000 2000',
+    'ONBOOT REL2 12000 2000',
+    'ONBOOT REL3 14000 2000',
+    'ONCHANGE IN1 TOGGLE REL1',
+    'PULSE IN2 REL2 1000 2 300',
+    'THERMOSTAT REL1 TEMP1 4.0 0.8 COOL',
+    'IF TEMP1 >= 8 THEN REL4 ON',
+    'IF HUM1 >= 80 THEN REL4 OFF',
+    'IF IN3 == ON THEN REL3 OFF',
+    'IFALL TEMP1 > 30 HUM1 > 70 THEN REL2 ON',
+    'IFANY IN1 == ON IN2 == ON THEN REL2 OFF'
+  ].join('\n'),
+  'marmita-cool':[
+    'PROGRAM NAME=MARMITA_COOL',
+    'START IN=IN1',
+    '',
+    'SET REL=REL1 STATE=OFF',
+    'SET REL=REL2 STATE=OFF',
+    'SET REL=REL3 STATE=OFF',
+    'SET REL=REL4 STATE=OFF',
+    '',
+    'LOOP MAX=8 UNTIL=TEMP1<=40.0 STABLE=30000',
+    'STEP REL=REL1 STATE=ON TIME=30000',
+    'STEP REL=REL2 STATE=ON TIME=45000',
+    'WAIT TIME=300000',
+    'ENDLOOP',
+    '',
+    'STEP REL=REL3 STATE=ON',
+    'STEP REL=REL4 STATE=ON',
+    'WAITUNTIL TEMP=TEMP1 OP=<= VALUE=10.0 STABLE=60000 MAX=3600000',
+    'STEP REL=REL3 STATE=OFF',
+    'STEP REL=REL4 STATE=OFF',
+    '',
+    'SAFETY IN=IN4 ACTION=ALL_OFF',
+    'END'
+  ].join('\n'),
   blink:[
     '# Blink simple',
     'BLINK REL1 500 500',
@@ -219,17 +255,73 @@ function render(){
   el('program').value=typeof cfg.customProgram==='string'?cfg.customProgram:'';
   const valid=Boolean(state.customProgramValid);
   const count=toInt(state.customProgramRuleCount,0);
+  const mode=String(state.customProgramMode||'rules');
   const error=state.customProgramError||'';
+  const seqState=String(state.sequenceState||'IDLE');
+  const seqStep=toInt(state.sequenceCurrentStep,0);
+  const seqLoop=toInt(state.sequenceCurrentLoop,0);
+  const seqErr=state.sequenceError||'';
+  const seqErrLine=toInt(state.sequenceErrorLine,0);
   const node=el('compile-status');
   if(valid){
-    node.textContent='Valido ('+count+' reglas)';
+    let text='Valido ('+count+' reglas/pasos) | modo: '+mode;
+    if(mode!=='rules'){
+      text+=' | secuencia: '+seqState+' (step '+seqStep+', loop '+seqLoop+')';
+    }
+    if(seqErr){
+      text+=' | sequenceError: '+seqErr+(seqErrLine?(' @L'+seqErrLine):'');
+    }
+    node.textContent=text;
     node.className='hint ok';
   }else if(error){
-    node.textContent='Invalido: '+error;
+    node.textContent='Invalido: '+error+(seqErr?(' | sequenceError: '+seqErr):'');
     node.className='hint err';
   }else{
     node.textContent='Sin compilar';
     node.className='hint warn';
+  }
+}
+
+function selectedExample(){
+  const key=String(el('example-picker').value||'');
+  if(!key || !templates[key]) return '';
+  return templates[key];
+}
+
+function loadSelectedExample(){
+  const text=selectedExample();
+  if(!text){
+    setStatus('Selecciona un ejemplo de la galeria.', 'warn');
+    return;
+  }
+  el('program').value=text;
+  setStatus('Ejemplo cargado en el editor.', 'ok');
+}
+
+function insertSelectedExample(){
+  const text=selectedExample();
+  if(!text){
+    setStatus('Selecciona un ejemplo de la galeria.', 'warn');
+    return;
+  }
+  const current=el('program').value;
+  el('program').value=current?current+'\n\n'+text:text;
+  setStatus('Ejemplo insertado en el editor.', 'ok');
+}
+
+async function pulseVirtualInput(label){
+  try{
+    const payload={pulseVirtualInput:label};
+    const res=await fetch('/api/v1/control',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    if(!res.ok)throw new Error(await res.text()||res.statusText);
+    await loadAll();
+    setStatus('Pulso virtual enviado: '+label, 'ok');
+  }catch(error){
+    setStatus('Error pulsando '+label+': '+error.message, 'err');
   }
 }
 
@@ -271,9 +363,12 @@ async function saveProgram(){
 
 el('save').onclick=()=>{void saveProgram()};
 el('reload').onclick=()=>{void loadAll()};
-el('template-blink').onclick=()=>{el('program').value=templates.blink};
-el('template-pasteurizer').onclick=()=>{el('program').value=templates.pasteurizer};
-el('template-wash').onclick=()=>{el('program').value=templates.wash};
+el('load-example').onclick=loadSelectedExample;
+el('insert-example').onclick=insertSelectedExample;
+el('pulse-vin1').onclick=()=>{void pulseVirtualInput('VIN1')};
+el('pulse-vin2').onclick=()=>{void pulseVirtualInput('VIN2')};
+el('pulse-vin3').onclick=()=>{void pulseVirtualInput('VIN3')};
+el('pulse-vin4').onclick=()=>{void pulseVirtualInput('VIN4')};
 void loadAll().catch(error=>setStatus('Error cargando: '+error.message, 'err'));
 </script>
 </body>

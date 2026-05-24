@@ -2017,6 +2017,32 @@ function optionalCustomProgramValue(input: unknown) {
   return normalized;
 }
 
+function normalizeVirtualInputLabel(input: unknown) {
+  const normalized = String(input ?? '').trim().toUpperCase();
+  if (!normalized) return null;
+  if (['VIN1', 'VIN2', 'VIN3', 'VIN4'].includes(normalized)) return normalized;
+  return null;
+}
+
+function optionalPulseVirtualInputValue(input: unknown) {
+  if (input === null || input === undefined || input === '') return null;
+  const normalized = normalizeVirtualInputLabel(input);
+  if (!normalized) throw httpsError('invalid-argument', 'state.pulseVirtualInput invalido (usa VIN1..VIN4).');
+  return normalized;
+}
+
+function optionalVirtualInputsValue(input: unknown) {
+  if (!isPlainObject(input)) return null;
+  const normalizedEntries = Object.entries(input).reduce<Record<string, boolean>>((acc, [key, value]) => {
+    const label = normalizeVirtualInputLabel(key);
+    if (!label) throw httpsError('invalid-argument', 'state.virtualInputs invalido (usa VIN1..VIN4).');
+    const parsed = optionalBoolean(value, `state.virtualInputs.${label}`);
+    if (parsed !== null) acc[label] = parsed;
+    return acc;
+  }, {});
+  return Object.keys(normalizedEntries).length > 0 ? normalizedEntries : null;
+}
+
 function sanitizeCapabilities(input: unknown) {
   if (!Array.isArray(input)) return undefined;
   const capabilities = input
@@ -2147,6 +2173,8 @@ function sanitizeDesiredStatePatch(input: unknown) {
   if ('operatingMode' in input) patch.operatingMode = optionalOperatingModeValue(input.operatingMode);
   if ('workMode' in input) patch.workMode = optionalWorkModeValue(input.workMode);
   if ('customProgram' in input) patch.customProgram = optionalCustomProgramValue(input.customProgram);
+  if ('pulseVirtualInput' in input) patch.pulseVirtualInput = optionalPulseVirtualInputValue(input.pulseVirtualInput);
+  if ('virtualInputs' in input) patch.virtualInputs = optionalVirtualInputsValue(input.virtualInputs);
   if ('editableFunctionName' in input) patch.editableFunctionName = optionalStringValue(input.editableFunctionName);
   if ('note' in input) patch.note = optionalStringValue(input.note);
 

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guia Custom Program</title>
+<style>
+:root{--bg:#08131a;--panel:#102633;--ink:#eef4f7;--muted:#9bb5c7;--line:#2a5069;--accent:#4ec6ff;--ok:#87df8a;--warn:#ffd37a}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Trebuchet MS","Gill Sans",sans-serif;background:radial-gradient(circle at 8% 0,#1b3e51 0,#08131a 45%),linear-gradient(145deg,#08131a,#122736 58%,#1a3443);color:var(--ink)}
+.wrap{max-width:1180px;margin:0 auto;padding:20px}
+.panel{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px;margin-bottom:14px}
+h1{margin:0 0 6px;font-size:30px}
+h2{margin:0 0 10px;font-size:18px;letter-spacing:.03em}
+h3{margin:0 0 8px;font-size:15px}
+.muted{color:var(--muted);line-height:1.5}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+a,button{padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#0a1a23;color:var(--ink);text-decoration:none}
+a.primary{background:linear-gradient(135deg,var(--accent),#afe7ff);color:#072737;border:none;font-weight:700}
+ul{margin:0;padding-left:18px}
+li{margin:6px 0;color:var(--muted);line-height:1.45}
+.code{margin:0;padding:10px;border-radius:10px;background:#07121a;border:1px solid #244a62;color:#d4ecf8;white-space:pre-wrap;font-family:Consolas,"Courier New",monospace;font-size:12px;line-height:1.35}
+.kpi{display:flex;flex-wrap:wrap;gap:8px}
+.badge{padding:6px 10px;border-radius:999px;border:1px solid var(--line);font-size:12px;background:#08161f;color:var(--muted)}
+.table{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px}
+.block{background:#08161f;border:1px solid var(--line);border-radius:10px;padding:10px}
+.block p{margin:0;color:var(--muted);line-height:1.45}
+.toc a{display:block;margin:4px 0}
+@media (max-width:760px){.wrap{padding:12px}.actions{flex-direction:column}a,button{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Guia completa de Custom Program</h1>
+  <p class="muted">Pagina independiente de <span class="code" style="display:inline;padding:2px 6px">/custom-program</span> para documentar toda la sintaxis legacy y la nueva secuencia PROGRAM sin romper compatibilidad.</p>
+
+  <div class="panel">
+    <div class="actions">
+      <a class="primary" href="/custom-program">Abrir editor /custom-program</a>
+      <a href="/app">Volver a /app</a>
+    </div>
+    <div class="kpi" style="margin-top:10px">
+      <span class="badge">Compatible: SET, BLINK, TIMER, ONBOOT, ONCHANGE, PULSE, THERMOSTAT, IF, IFALL, IFANY</span>
+      <span class="badge">Nuevo: PROGRAM / STEP / WAIT / WAITUNTIL / LOOP / SAFETY</span>
+      <span class="badge">VIN soportado: VIN1..VIN4</span>
+    </div>
+  </div>
+
+  <div class="panel toc">
+    <h2>Indice rapido</h2>
+    <a href="#campos">1. Campos y operadores</a>
+    <a href="#legacy">2. Comandos legacy (compatibles)</a>
+    <a href="#sequence">3. Secuencia PROGRAM por pasos</a>
+    <a href="#vin">4. Entradas virtuales VIN y disparo remoto</a>
+    <a href="#api">5. API local y cloud</a>
+    <a href="#state">6. Estado parser/secuencia (/api/v1/state)</a>
+    <a href="#examples">7. Ejemplos listos para copiar</a>
+  </div>
+
+  <div class="panel" id="campos">
+    <h2>1) Campos y operadores</h2>
+    <div class="grid">
+      <div class="block">
+        <h3>Fuentes disponibles</h3>
+        <ul>
+          <li><span class="code" style="display:inline;padding:2px 6px">REL1..REL4</span>: salidas/reles.</li>
+          <li><span class="code" style="display:inline;padding:2px 6px">IN1..IN4</span>: entradas digitales fisicas.</li>
+          <li><span class="code" style="display:inline;padding:2px 6px">VIN1..VIN4</span>: entradas virtuales.</li>
+          <li><span class="code" style="display:inline;padding:2px 6px">TEMP1..TEMP4</span>: temperatura.</li>
+          <li><span class="code" style="display:inline;padding:2px 6px">HUM1..HUM2</span>: humedad.</li>
+        </ul>
+      </div>
+      <div class="block">
+        <h3>Comparadores y comentarios</h3>
+        <ul>
+          <li>Operadores: <span class="code" style="display:inline;padding:2px 6px">== != &gt; &gt;= &lt; &lt;=</span>.</li>
+          <li>Comentarios por linea: <span class="code" style="display:inline;padding:2px 6px">// texto</span>.</li>
+          <li>Comentarios inline: <span class="code" style="display:inline;padding:2px 6px"># texto</span>.</li>
+          <li>No soporta expresiones libres <span class="code" style="display:inline;padding:2px 6px">+ - * / () ELSE</span>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="legacy">
+    <h2>2) Comandos legacy (compatibles)</h2>
+    <div class="table">
+      <div class="block"><h3>SET</h3><p>Fija un rele.</p><pre class="code">SET REL1 ON
+SET REL2 OFF</pre></div>
+      <div class="block"><h3>BLINK</h3><p>Parpadeo continuo.</p><pre class="code">BLINK REL1 500 500</pre></div>
+      <div class="block"><h3>TIMER</h3><p>Ciclo ON/OFF por tiempos.</p><pre class="code">TIMER REL2 15000 120000</pre></div>
+      <div class="block"><h3>ONBOOT</h3><p>Pulso unico tras arranque.</p><pre class="code">ONBOOT REL1 10000 2000
+ONBOOT REL2 12000 2000
+ONBOOT REL3 14000 2000</pre></div>
+      <div class="block"><h3>ONCHANGE</h3><p>Accion por cambio de entrada.</p><pre class="code">ONCHANGE IN1 TOGGLE REL1</pre></div>
+      <div class="block"><h3>PULSE</h3><p>Serie de pulsos sobre rele.</p><pre class="code">PULSE IN2 REL2 1000 2 300</pre></div>
+      <div class="block"><h3>THERMOSTAT</h3><p>Control con histeresis.</p><pre class="code">THERMOSTAT REL1 TEMP1 4.0 0.8 COOL</pre></div>
+      <div class="block"><h3>IF / IFALL / IFANY</h3><p>Condiciones simples o dobles.</p><pre class="code">IF TEMP1 &gt;= 8 THEN REL4 ON
+IFALL TEMP1 &gt; 30 HUM1 &gt; 70 THEN REL2 ON
+IFANY IN1 == ON IN2 == ON THEN REL2 OFF</pre></div>
+    </div>
+  </div>
+
+  <div class="panel" id="sequence">
+    <h2>3) Secuencia PROGRAM por pasos</h2>
+    <p class="muted">Sintaxis visual recomendada en formato clave=valor. El motor es no bloqueante (millis), con reserva de reles y prioridad de seguridad.</p>
+    <div class="table">
+      <div class="block"><h3>Inicio y fin</h3><pre class="code">PROGRAM NAME=MARMITA_COOL
+START IN=IN1
+...
+END</pre></div>
+      <div class="block"><h3>SET y STEP</h3><pre class="code">SET REL=REL1 STATE=OFF
+STEP REL=REL1 STATE=ON TIME=5000
+STEP REL=REL1 STATE=OFF</pre></div>
+      <div class="block"><h3>WAIT y WAITUNTIL</h3><pre class="code">WAIT TIME=300000
+WAITUNTIL TEMP=TEMP1 OP=&lt;= VALUE=10.0 STABLE=60000 MAX=3600000</pre></div>
+      <div class="block"><h3>LOOP</h3><pre class="code">LOOP MAX=8 UNTIL=TEMP1&lt;=40.0 STABLE=30000
+...
+ENDLOOP</pre></div>
+      <div class="block"><h3>SAFETY</h3><pre class="code">SAFETY IN=IN4 ACTION=ALL_OFF
+SAFETY VIN=VIN2 ACTION=ALL_OFF</pre></div>
+      <div class="block"><h3>Limites clave</h3><ul><li>Maximo 1 PROGRAM.</li><li>Maximo 1 LOOP, sin anidado.</li><li>Maximo 24 pasos ejecutables.</li><li>Tiempos 50..86400000 ms.</li><li>Reles usados quedan reservados mientras corre la secuencia.</li></ul></div>
+    </div>
+  </div>
+
+  <div class="panel" id="vin">
+    <h2>4) Entradas virtuales VIN</h2>
+    <div class="grid">
+      <div class="block">
+        <h3>Arranque por VIN</h3>
+        <pre class="code">PROGRAM NAME=VIN_START
+START VIN=VIN1
+STEP REL=REL1 STATE=ON TIME=1000
+END</pre>
+        <p>El arranque usa flanco ascendente OFF -&gt; ON, igual que IN fisica.</p>
+      </div>
+      <div class="block">
+        <h3>Parada virtual opcional</h3>
+        <pre class="code">SAFETY VIN=VIN2 ACTION=ALL_OFF</pre>
+        <p>Sirve como paro remoto desde UI/cloud. Para emergencia real, usa tambien una entrada fisica cableada con SAFETY IN=INx.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="api">
+    <h2>5) API local y cloud</h2>
+    <div class="table">
+      <div class="block">
+        <h3>API local</h3>
+        <pre class="code">GET  /api/v1/config
+POST /api/v1/config
+POST /api/v1/control
+GET  /api/v1/state</pre>
+        <pre class="code">POST /api/v1/control
+{
+  "pulseVirtualInput": "VIN1"
+}</pre>
+      </div>
+      <div class="block">
+        <h3>Cloud desiredState recomendado</h3>
+        <pre class="code">{
+  "desiredState": {
+    "pulseVirtualInput": "VIN1"
+  }
+}</pre>
+        <pre class="code">{
+  "desiredState": {
+    "workMode": 4,
+    "customProgram": "PROGRAM NAME=TEST\nSTART VIN=VIN1\nSTEP REL=REL1 STATE=ON TIME=1000\nEND"
+  }
+}</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="state">
+    <h2>6) Estado parser/secuencia en /api/v1/state</h2>
+    <pre class="code">customProgramValid
+customProgramRuleCount
+customProgramError
+customProgramMode
+sequenceValid
+sequenceRunning
+sequenceName
+sequenceState
+sequenceCurrentStep
+sequenceCurrentLoop
+sequenceError
+sequenceErrorLine
+sequenceLastTemp
+virtualInputs
+sequenceUsedRelays
+sequenceReservedRelays</pre>
+    <p class="muted">Tambien se reporta hacia cloud en reportedState cuando el bridge IoT esta activo.</p>
+  </div>
+
+  <div class="panel" id="examples">
+    <h2>7) Ejemplos listos para copiar</h2>
+    <div class="table">
+      <div class="block">
+        <h3>A) ONBOOT escalonado</h3>
+        <pre class="code">ONBOOT REL1 10000 2000
+ONBOOT REL2 12000 2000
+ONBOOT REL3 14000 2000</pre>
+      </div>
+      <div class="block">
+        <h3>B) Secuencia minima con STEP visual</h3>
+        <pre class="code">PROGRAM NAME=TEST
+START VIN=VIN1
+STEP REL=REL1 STATE=ON TIME=5000
+STEP REL=REL1 STATE=OFF
+END</pre>
+      </div>
+      <div class="block">
+        <h3>C) Enfriamiento de marmita por fases</h3>
+        <pre class="code">PROGRAM NAME=MARMITA_COOL
+START IN=IN1
+
+SET REL=REL1 STATE=OFF
+SET REL=REL2 STATE=OFF
+SET REL=REL3 STATE=OFF
+SET REL=REL4 STATE=OFF
+
+LOOP MAX=8 UNTIL=TEMP1&lt;=40.0 STABLE=30000
+STEP REL=REL1 STATE=ON TIME=30000
+STEP REL=REL2 STATE=ON TIME=45000
+WAIT TIME=300000
+ENDLOOP
+
+STEP REL=REL3 STATE=ON
+STEP REL=REL4 STATE=ON
+WAITUNTIL TEMP=TEMP1 OP=&lt;= VALUE=10.0 STABLE=60000 MAX=3600000
+STEP REL=REL3 STATE=OFF
+STEP REL=REL4 STATE=OFF
+
+SAFETY IN=IN4 ACTION=ALL_OFF
+END</pre>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

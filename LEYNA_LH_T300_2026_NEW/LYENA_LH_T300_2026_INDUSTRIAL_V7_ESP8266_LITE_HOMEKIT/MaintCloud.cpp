@@ -43,7 +43,11 @@ static constexpr unsigned long kMaintMinPollSeconds = 5UL;
 static constexpr unsigned long kMaintDefaultPollSeconds = 15UL;
 static constexpr unsigned long kMaintMaxPollSeconds = 3600UL;
 static constexpr uint32_t kMaintClockRetryMs = 60000UL;
+#if defined(ARDUINO_ARCH_ESP8266)
+static constexpr uint32_t kMaintRequestTimeoutMs = 3500UL;
+#else
 static constexpr uint32_t kMaintRequestTimeoutMs = 15000UL;
+#endif
 static constexpr time_t kMaintClockReadyEpoch = 1700000000;
 const char* kMaintNtp1 = "pool.ntp.org";
 const char* kMaintNtp2 = "time.google.com";
@@ -268,7 +272,12 @@ bool sameEndpoint(const String& left, const String& right) {
 bool shouldFallbackToDefault(const String& configuredUrl, const char* fallbackUrl, int httpCode) {
   if (!fallbackUrl || !fallbackUrl[0]) return false;
   if (sameEndpoint(configuredUrl, String(fallbackUrl))) return false;
+#if defined(ARDUINO_ARCH_ESP8266)
+  // On ESP8266 avoid double blocking retries when the WAN is down.
+  return httpCode == 404;
+#else
   return httpCode == 404 || httpCode <= 0;
+#endif
 }
 
 bool postJson(const String& url, const String& body, DynamicJsonDocument& responseDoc, int& httpCode, bool signRequest);

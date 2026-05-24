@@ -315,6 +315,25 @@ void fillReportedState(JsonObject reportedState, const String& applyStatus, cons
   reportedState["workMode"] = config().workMode;
   reportedState["workModeLabel"] = workModeLabel(config().workMode);
   reportedState["customProgramActive"] = config().workMode == WORK_CUSTOM;
+  reportedState["customProgramValid"] = customProgramValidFlag();
+  reportedState["customProgramRuleCount"] = customProgramCompiledCount();
+  if (customProgramErrorText() && customProgramErrorText()[0]) reportedState["customProgramError"] = customProgramErrorText();
+  else reportedState["customProgramError"] = nullptr;
+  reportedState["customProgramMode"] = customProgramModeText();
+  reportedState["sequenceValid"] = sequenceProgramValidFlag();
+  reportedState["sequenceRunning"] = sequenceProgramRunningFlag();
+  if (sequenceProgramNameText() && sequenceProgramNameText()[0]) reportedState["sequenceName"] = sequenceProgramNameText();
+  else reportedState["sequenceName"] = nullptr;
+  reportedState["sequenceState"] = sequenceProgramStateText();
+  reportedState["sequenceCurrentStep"] = sequenceProgramCurrentStep();
+  reportedState["sequenceCurrentLoop"] = sequenceProgramCurrentLoop();
+  if (sequenceProgramErrorText() && sequenceProgramErrorText()[0]) reportedState["sequenceError"] = sequenceProgramErrorText();
+  else reportedState["sequenceError"] = nullptr;
+  if (sequenceProgramErrorLine()) reportedState["sequenceErrorLine"] = sequenceProgramErrorLine();
+  else reportedState["sequenceErrorLine"] = nullptr;
+  const float seqLastTemp = sequenceProgramLastTemperature();
+  if (!isnan(seqLastTemp)) reportedState["sequenceLastTemp"] = seqLastTemp;
+  else reportedState["sequenceLastTemp"] = nullptr;
   if (runtimeData.temperatureValid[0]) reportedState["temperature"] = runtimeData.temperature[0];
   if (runtimeData.temperatureValid[1]) reportedState["secondaryTemperature"] = runtimeData.temperature[1];
   if (runtimeData.temperatureValid[2]) reportedState["temp3"] = runtimeData.temperature[2];
@@ -330,6 +349,22 @@ void fillReportedState(JsonObject reportedState, const String& applyStatus, cons
     JsonObject relays = reportedState.createNestedObject("relays");
     for (size_t index = 0; index < kChannelCount; ++index) {
       relays[String("REL") + String(index + 1U)] = runtimeData.relayState[index];
+    }
+  }
+  JsonObject virtualInputs = reportedState.createNestedObject("virtualInputs");
+  for (size_t index = 0; index < kChannelCount; ++index) {
+    virtualInputs[String("VIN") + String(index + 1U)] = runtimeData.virtualInputState[index];
+  }
+  JsonArray sequenceUsedRelays = reportedState.createNestedArray("sequenceUsedRelays");
+  JsonArray sequenceReservedRelays = reportedState.createNestedArray("sequenceReservedRelays");
+  const uint8_t usedMask = sequenceProgramUsedRelayMask();
+  const uint8_t reservedMask = sequenceProgramReservedRelayMask();
+  for (size_t index = 0; index < kChannelCount; ++index) {
+    if ((usedMask & static_cast<uint8_t>(1U << index)) != 0U) {
+      sequenceUsedRelays.add(String("REL") + String(index + 1U));
+    }
+    if ((reservedMask & static_cast<uint8_t>(1U << index)) != 0U) {
+      sequenceReservedRelays.add(String("REL") + String(index + 1U));
     }
   }
 
@@ -471,6 +506,8 @@ bool applyDesiredState(JsonObjectConst desiredState, String& applyStatus, String
   bool relayChanged = false;
   bool switchedToManual = false;
   bool fanChanged = false;
+  bool virtualInputsChanged = false;
+  bool virtualPulseTriggered = false;
 
   bool requestedWorkModeProvided = false;
   uint8_t requestedWorkMode = initialWorkMode;
@@ -689,6 +726,28 @@ bool applyDesiredState(JsonObjectConst desiredState, String& applyStatus, String
     }
   }
 
+  if (desiredState.containsKey("pulseVirtualInput") && !desiredState["pulseVirtualInput"].isNull()) {
+    const String pulseInput = desiredState["pulseVirtualInput"].as<String>();
+    if (pulseVirtualInputByLabel(pulseInput)) {
+      virtualPulseTriggered = true;
+    } else {
+      addLog("Cloud IoT desired state ignored invalid pulseVirtualInput: %s", pulseInput.c_str());
+    }
+  }
+
+  JsonObjectConst virtualInputObject = desiredState["virtualInputs"].as<JsonObjectConst>();
+  if (!virtualInputObject.isNull() && virtualInputObject.size() > 0) {
+    for (JsonPairConst virtualPair : virtualInputObject) {
+      const String vinLabel = String(virtualPair.key().c_str());
+      const bool nextState = virtualPair.value().as<bool>();
+      if (setVirtualInputByLabel(vinLabel, nextState)) {
+        virtualInputsChanged = true;
+      } else {
+        addLog("Cloud IoT desired state ignored invalid virtual input key: %s", vinLabel.c_str());
+      }
+    }
+  }
+
   sanitizeConfig(mutableConfig());
   mutableConfig().iotLastDesiredVersion = appliedVersion;
   saveConfigToFile();
@@ -706,6 +765,12 @@ bool applyDesiredState(JsonObjectConst desiredState, String& applyStatus, String
     applyMessage = "Desired state applied. Relay control moved to manual mode.";
   } else if (fanChanged) {
     applyMessage = "Desired state applied. Fan mapped to relay2 mode.";
+  } else if (virtualPulseTriggered && virtualInputsChanged) {
+    applyMessage = "Desired state applied. Virtual input pulse and state updated.";
+  } else if (virtualPulseTriggered) {
+    applyMessage = "Desired state applied. Virtual input pulse triggered.";
+  } else if (virtualInputsChanged) {
+    applyMessage = "Desired state applied. Virtual input state updated.";
   } else if (configChanged || relayChanged) {
     applyMessage = "Desired state applied locally.";
   } else {
@@ -797,7 +862,7 @@ bool syncDevice() {
     return false;
   }
 
-  DynamicJsonDocument payloadDoc(3072);
+  DynamicJsonDocument payloadDoc(4608);
   JsonObject reportedState = payloadDoc.createNestedObject("reportedState");
   fillReportedState(reportedState, String(), String(), -1);
   JsonArray capabilities = payloadDoc.createNestedArray("capabilities");

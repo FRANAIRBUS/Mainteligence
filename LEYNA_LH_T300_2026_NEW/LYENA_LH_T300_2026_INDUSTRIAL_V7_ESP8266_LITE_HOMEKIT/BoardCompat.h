@@ -16,8 +16,8 @@ using AppWebServer = ESP8266WebServer;
 #define APP_HAS_MIN_HEAP 0
 #define APP_HAS_MODBUS_RTU 0
 #define APP_ENABLE_HOMEKIT 1
-#define APP_ENABLE_MAINT_CLOUD 0
-#define APP_ENABLE_WEBUI 0
+#define APP_ENABLE_MAINT_CLOUD 1
+#define APP_ENABLE_WEBUI 1
 
 inline const char* appPlatformName() { return "ESP8266"; }
 inline bool appBeginFilesystem() { return LittleFS.begin(); }

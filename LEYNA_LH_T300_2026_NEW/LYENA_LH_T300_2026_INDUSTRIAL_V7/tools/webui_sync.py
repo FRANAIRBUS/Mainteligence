@@ -28,6 +28,7 @@ BLOCKS = {
 RAW_BLOCKS = {
     "MODBUS_MAP_HTML": "modbus-map.html",
     "CUSTOM_PROGRAM_HTML": "custom-program.html",
+    "CUSTOM_PROGRAM_GUIDE_HTML": "custom-program-guide.html",
 }
 
 

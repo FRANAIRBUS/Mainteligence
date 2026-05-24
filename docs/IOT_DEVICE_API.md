@@ -48,6 +48,31 @@ Respuesta:
 }
 ```
 
+Campos recomendados para control remoto de entradas virtuales:
+
+```json
+{
+  "desiredState": {
+    "pulseVirtualInput": "VIN1"
+  }
+}
+```
+
+Opcional (si se quiere forzar estado mantenido):
+
+```json
+{
+  "desiredState": {
+    "virtualInputs": {
+      "VIN1": false,
+      "VIN2": true,
+      "VIN3": false,
+      "VIN4": false
+    }
+  }
+}
+```
+
 ### POST `iotDeviceSync`
 Headers:
 - `x-maint-org-id`
@@ -199,6 +224,17 @@ Respuesta:
 - `iot.reportedState`
 - `iot.desiredState`
 - `iot.provisioning.*`
+
+Campos reportados utiles para customProgram/secuencia:
+- `iot.reportedState.customProgramValid`
+- `iot.reportedState.customProgramMode`
+- `iot.reportedState.customProgramError`
+- `iot.reportedState.sequenceRunning`
+- `iot.reportedState.sequenceState`
+- `iot.reportedState.sequenceCurrentStep`
+- `iot.reportedState.sequenceCurrentLoop`
+- `iot.reportedState.sequenceError`
+- `iot.reportedState.virtualInputs`
 
 ### Credencial privada del dispositivo
 `iotDevices/{orgId}__{deviceKey}`

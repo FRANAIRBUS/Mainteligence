@@ -195,6 +195,14 @@ void homekitBridgeResetPairings() {
 #endif
 }
 
+bool homekitBridgeIsPaired() {
+#if APP_HAS_NATIVE_HOMEKIT
+  return homekit_is_paired();
+#else
+  return false;
+#endif
+}
+
 const char* homekitBridgeStatus() {
 #if APP_HAS_NATIVE_HOMEKIT
   return gHomekitStatus;
