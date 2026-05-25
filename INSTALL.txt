@@ -8,13 +8,13 @@ git push origin main
 git status
 git add .
 git commit -m "Actualiza X"
-git push origin main:staging_digi
+git push origin main:staging_multi
 
 git status
 git add .
 git commit -m "Actualiza X"
 git push origin main
-git push --force origin main:staging_digi
+git push --force origin main:staging_multi
 
 
 

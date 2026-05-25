@@ -45,3 +45,8 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+
+# local build artifacts
+functions/lib/
+**/.arduino_build_cli/
+**/.arduino_build_cli2/

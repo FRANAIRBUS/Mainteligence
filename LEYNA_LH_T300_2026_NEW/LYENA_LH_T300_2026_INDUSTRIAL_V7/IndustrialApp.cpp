@@ -205,10 +205,11 @@ struct SequenceProgramRuntime {
   uint8_t stepCount = 0;
   SequenceStep steps[kSequenceMaxSteps];
   bool startDefined = false;
-  uint8_t startInputIndex = 0;
-  bool startUsesVirtualInput = false;
+  uint8_t startPhysicalMask = 0;
+  uint8_t startVirtualMask = 0;
   bool startEdgeArmed = false;
-  bool startLastState = false;
+  uint8_t startLastPhysicalMask = 0;
+  uint8_t startLastVirtualMask = 0;
   bool safetyDefined = false;
   uint8_t safetyInputIndex = 0;
   bool safetyUsesVirtualInput = false;
@@ -1230,10 +1231,11 @@ void resetSequenceRuntime(SequenceProgramRuntime& sequence) {
   sequence.state = SEQ_STATE_IDLE;
   sequence.stepCount = 0;
   sequence.startDefined = false;
-  sequence.startInputIndex = 0;
-  sequence.startUsesVirtualInput = false;
+  sequence.startPhysicalMask = 0;
+  sequence.startVirtualMask = 0;
   sequence.startEdgeArmed = false;
-  sequence.startLastState = false;
+  sequence.startLastPhysicalMask = 0;
+  sequence.startLastVirtualMask = 0;
   sequence.safetyDefined = false;
   sequence.safetyInputIndex = 0;
   sequence.safetyUsesVirtualInput = false;
@@ -2180,6 +2182,19 @@ bool readSequenceInputSignal(bool usesVirtualInput, uint8_t inputIndex) {
   return usesVirtualInput ? runtimeData.virtualInputState[inputIndex] : runtimeData.inputState[inputIndex];
 }
 
+uint8_t readSequenceInputMask(bool usesVirtualInput) {
+  uint8_t mask = 0;
+  for (uint8_t index = 0; index < kChannelCount; ++index) {
+    const bool state = usesVirtualInput ? runtimeData.virtualInputState[index] : runtimeData.inputState[index];
+    if (state) mask = static_cast<uint8_t>(mask | static_cast<uint8_t>(1U << index));
+  }
+  return mask;
+}
+
+bool sequenceHasStartSources(const SequenceProgramRuntime& sequence) {
+  return static_cast<uint8_t>(sequence.startPhysicalMask | sequence.startVirtualMask) != 0U;
+}
+
 void cancelOnbootPendingForSequenceRelays() {
   const uint8_t reservedMask = gCustomProgram.sequence.reservedRelayMask;
   if (!reservedMask) return;
@@ -2214,12 +2229,14 @@ void sequenceStopAndRelease(SequenceProgramRuntime& sequence, bool* target, Sequ
 void processSequenceProgram(uint32_t now, bool* target) {
   SequenceProgramRuntime& sequence = gCustomProgram.sequence;
   if (!sequence.present || !sequence.valid) return;
-  if (!sequence.startDefined) return;
+  if (!sequence.startDefined || !sequenceHasStartSources(sequence)) return;
 
-  const bool startSignal = readSequenceInputSignal(sequence.startUsesVirtualInput, sequence.startInputIndex);
+  const uint8_t startPhysicalMask = static_cast<uint8_t>(readSequenceInputMask(false) & sequence.startPhysicalMask);
+  const uint8_t startVirtualMask = static_cast<uint8_t>(readSequenceInputMask(true) & sequence.startVirtualMask);
   if (!sequence.startEdgeArmed) {
     sequence.startEdgeArmed = true;
-    sequence.startLastState = startSignal;
+    sequence.startLastPhysicalMask = startPhysicalMask;
+    sequence.startLastVirtualMask = startVirtualMask;
     if (!sequence.running &&
         (sequence.state == SEQ_STATE_IDLE ||
          sequence.state == SEQ_STATE_ABORTED_AFTER_REBOOT ||
@@ -2230,7 +2247,11 @@ void processSequenceProgram(uint32_t now, bool* target) {
     }
   }
 
-  if (!sequence.running && !sequence.startLastState && startSignal) {
+  const uint8_t startPhysicalRising =
+      static_cast<uint8_t>(startPhysicalMask & static_cast<uint8_t>(~sequence.startLastPhysicalMask));
+  const uint8_t startVirtualRising =
+      static_cast<uint8_t>(startVirtualMask & static_cast<uint8_t>(~sequence.startLastVirtualMask));
+  if (!sequence.running && (startPhysicalRising != 0U || startVirtualRising != 0U)) {
     sequence.running = true;
     sequence.state = SEQ_STATE_RUNNING;
     sequence.currentStep = 0;
@@ -2244,7 +2265,8 @@ void processSequenceProgram(uint32_t now, bool* target) {
     cancelOnbootPendingForSequenceRelays();
     addLog("Sequence start: %s", sequence.name[0] ? sequence.name : "PROGRAM");
   }
-  sequence.startLastState = startSignal;
+  sequence.startLastPhysicalMask = startPhysicalMask;
+  sequence.startLastVirtualMask = startVirtualMask;
 
   if (!sequence.running) return;
 
@@ -2444,7 +2466,7 @@ void recompileCustomProgramFromConfig() {
               }
               if (key == "IN") {
                 if (hasInput) {
-                  setCustomProgramError(lineNumber, "START solo admite una entrada");
+                  setCustomProgramError(lineNumber, "START solo admite una entrada por linea");
                   return;
                 }
                 if (!parseIndexedToken(value, "IN", kChannelCount, inputIndex)) {
@@ -2457,7 +2479,7 @@ void recompileCustomProgramFromConfig() {
               }
               if (key == "VIN") {
                 if (hasInput) {
-                  setCustomProgramError(lineNumber, "START solo admite una entrada");
+                  setCustomProgramError(lineNumber, "START solo admite una entrada por linea");
                   return;
                 }
                 if (!parseVirtualInputToken(value, inputIndex)) {
@@ -2475,9 +2497,10 @@ void recompileCustomProgramFromConfig() {
               setCustomProgramError(lineNumber, "START requiere IN o VIN");
               return;
             }
+            const uint8_t bitMask = static_cast<uint8_t>(1U << inputIndex);
+            if (usesVirtualInput) sequence.startVirtualMask = static_cast<uint8_t>(sequence.startVirtualMask | bitMask);
+            else sequence.startPhysicalMask = static_cast<uint8_t>(sequence.startPhysicalMask | bitMask);
             sequence.startDefined = true;
-            sequence.startInputIndex = inputIndex;
-            sequence.startUsesVirtualInput = usesVirtualInput;
           } else if (command == "SET") {
             if (!parseSequenceStepSet(tokens, tokenCount, lineNumber, sequence, false)) return;
           } else if (command == "STEP") {
