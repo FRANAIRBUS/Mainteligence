@@ -21,6 +21,8 @@ static constexpr unsigned long kMaintMinPollSeconds = 5UL;
 static constexpr unsigned long kMaintDefaultPollSeconds = 15UL;
 static constexpr unsigned long kMaintMaxPollSeconds = 3600UL;
 static constexpr uint32_t kMaintClockRetryMs = 60000UL;
+static constexpr uint32_t kMaintClockRefreshMs = 6UL * 60UL * 60UL * 1000UL;
+static constexpr uint32_t kMaintForcedClockRetryMs = 15000UL;
 static constexpr uint32_t kMaintRequestTimeoutMs = 15000UL;
 static constexpr time_t kMaintClockReadyEpoch = 1700000000;
 const char* kMaintNtp1 = "pool.ntp.org";
@@ -51,19 +53,34 @@ bool clockReady() {
   return time(nullptr) > kMaintClockReadyEpoch;
 }
 
-void requestClockSyncIfNeeded() {
+void requestClockSyncIfNeeded(bool force = false) {
   const uint32_t now = millis();
-  if (gMaintTimeConfigured && static_cast<uint32_t>(now - gMaintLastTimeAttemptMs) < kMaintClockRetryMs) return;
+  const uint32_t elapsed = gMaintLastTimeAttemptMs ? static_cast<uint32_t>(now - gMaintLastTimeAttemptMs) : 0U;
+  if (force) {
+    if (gMaintLastTimeAttemptMs && elapsed < kMaintForcedClockRetryMs) return;
+  } else if (gMaintTimeConfigured) {
+    const uint32_t minInterval = clockReady() ? kMaintClockRefreshMs : kMaintClockRetryMs;
+    if (elapsed < minInterval) return;
+  }
 
   configTime(0, 0, kMaintNtp1, kMaintNtp2, kMaintNtp3);
   gMaintTimeConfigured = true;
   gMaintLastTimeAttemptMs = now;
-  addLog("NTP sync requested for cloud IoT");
+  addLog("NTP sync requested for cloud IoT%s", force ? " (forced)" : "");
+}
+
+bool isTimestampWindowError(const String& message) {
+  if (!message.length()) return false;
+  String normalized = message;
+  normalized.toLowerCase();
+  if (normalized.indexOf("timestamp fuera de ventana permitida") >= 0) return true;
+  if (normalized.indexOf("timestamp out of window") >= 0) return true;
+  return normalized.indexOf("timestamp") >= 0 && normalized.indexOf("ventana") >= 0;
 }
 
 bool ensureClockReady() {
-  if (clockReady()) return true;
   requestClockSyncIfNeeded();
+  if (clockReady()) return true;
   setCloudState("waiting-time", "clock not synchronized");
   return false;
 }
@@ -482,6 +499,13 @@ bool postJson(const String& url, const String& body, DynamicJsonDocument& respon
     if (!message.length()) message = String("HTTP ") + httpCode;
     if (responsePreview.length()) {
       addLog("Cloud IoT API error body: %s", responsePreview.c_str());
+    }
+    if (httpCode == 401 && isTimestampWindowError(message)) {
+      requestClockSyncIfNeeded(true);
+      setCloudState("waiting-time", "timestamp rejected; ntp resync requested");
+      addLog("Cloud IoT timestamp rejected by server, forcing NTP resync");
+      addLog("Cloud IoT API error: HTTP %d", httpCode);
+      return false;
     }
     setCloudState("api-error", message);
     addLog("Cloud IoT API error: HTTP %d", httpCode);
