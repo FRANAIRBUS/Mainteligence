@@ -89,7 +89,7 @@ button.primary{background:linear-gradient(135deg,var(--accent),#a9ecff);color:#0
     <textarea id="program" spellcheck="false"></textarea>
     <p class="hint">
 Legacy (compatible): SET, BLINK, TIMER, ONBOOT, ONCHANGE, PULSE, THERMOSTAT, IF, IFALL, IFANY.<br>
-Secuencia PROGRAM (visual): START IN=IN1 o START VIN=VIN1, STEP REL=REL1 STATE=ON TIME=5000, WAIT TIME=2000, WAITUNTIL ..., LOOP ... ENDLOOP, SAFETY ... y END.<br>
+Secuencia PROGRAM (visual): START IN=IN1 o START VIN=VIN1, STEP REL=REL1 STATE=ON TIME=5000, WAIT TIME=2000, WAITUNTIL ..., LOOP COUNT=2 o LOOP MAX=8 UNTIL=..., SAFETY ... y END.<br>
 Comparadores: == != &gt; &gt;= &lt; &lt;=.
     </p>
   </div>
@@ -206,7 +206,7 @@ const templates={
     'SET REL=REL3 STATE=OFF',
     'SET REL=REL4 STATE=OFF',
     '',
-    'LOOP MAX=8 UNTIL=TEMP1<=40.0 STABLE=30000',
+    'LOOP COUNT=2',
     'STEP REL=REL1 STATE=ON TIME=30000',
     'STEP REL=REL2 STATE=ON TIME=45000',
     'WAIT TIME=300000',

@@ -60,7 +60,8 @@ Permite procesos paso a paso:
 - `STEP REL=... STATE=... TIME=...`
 - `WAIT TIME=...`
 - `WAITUNTIL TEMP=... OP=... VALUE=... STABLE=... MAX=...`
-- `LOOP ... ENDLOOP`
+- `LOOP COUNT=... ENDLOOP`
+- `LOOP MAX=... UNTIL=... STABLE=... ENDLOOP`
 - `SAFETY IN=... ACTION=ALL_OFF`
 - `SAFETY VIN=... ACTION=ALL_OFF`
 - `END`
@@ -103,6 +104,7 @@ Punto clave comercial:
 - Maximo 32 lineas dentro del `PROGRAM`.
 - Maximo 24 pasos ejecutables.
 - Maximo 1 `LOOP` (sin anidado).
+- `COUNT` ejecuta vueltas exactas; `MAX` sigue siendo el limite de seguridad.
 - Tiempos entre 50 ms y 86400000 ms.
 - `customProgram` en configuracion: 640 caracteres.
 - Sin expresiones matematicas libres ni `ELSE`.
@@ -150,7 +152,7 @@ SET REL=REL2 STATE=OFF
 SET REL=REL3 STATE=OFF
 SET REL=REL4 STATE=OFF
 
-LOOP MAX=8 UNTIL=TEMP1<=40.0 STABLE=30000
+LOOP COUNT=2
 STEP REL=REL1 STATE=ON TIME=30000
 STEP REL=REL2 STATE=ON TIME=45000
 WAIT TIME=300000

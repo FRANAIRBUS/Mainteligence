@@ -67,16 +67,28 @@ La pagina `/app` incluye accesos directos a:
 - Alarmas, defrost y control por setpoint.
 - Bridge Cloud IoT/Firebase (bootstrap + sync + desired state).
 - Modbus RTU server, Modbus TCP server, puente TCP to RTU y modo Slave to Me con registros configurables.
+- Los reles mapeados en Modbus tienen prioridad sobre `custom program`; los reles no mapeados siguen bajo control local.
+- El espejo Modbus de sensores no pisa la logica local: `custom program` y termostato usan las lecturas locales; Modbus solo publica o refleja estado.
 - OTA autenticable con password dedicada o `adminPass` como fallback.
 
 ## Dependencias esperadas
 
 - `EdgeLite`
-- `ArduinoJson`
+- `ArduinoJson 7.4.3`
 - `modbus-esp8266`
 - `DallasTemperature`
 - `OneWire`
 - `DHT sensor library`
+
+La base del proyecto se ha validado con `ArduinoJson 7.4.3`. Versiones mezcladas o instalaciones corruptas de esa libreria rompen la compilacion con errores internos de `ArrayRef`, `VariantRef` y `JsonDocument`.
+
+Si el IDE sigue mostrando avisos de bibliotecas duplicadas, conviene dejar una sola copia por cabecera:
+
+- `modbus-esp8266-master` `4.1.0` y quitar `modbus-esp8266`
+- `AsyncTCP` `1.1.4` y quitar `AsyncTCP-master`
+- `ESP_Async_WebServer` `3.10.3` y quitar `ESPAsyncWebServer-master`
+- `WebSerial` `2.1.2` y quitar `WebSerial-master`
+- `TFT_eSPI` `2.5.43` y quitar la copia dentro de `T-Display-S3-main/lib`
 
 ## Dependencias eliminadas
 

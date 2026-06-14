@@ -42,7 +42,7 @@ li{margin:6px 0;color:var(--muted);line-height:1.45}
     </div>
     <div class="kpi" style="margin-top:10px">
       <span class="badge">Compatible: SET, BLINK, TIMER, ONBOOT, ONCHANGE, PULSE, THERMOSTAT, IF, IFALL, IFANY</span>
-      <span class="badge">Nuevo: PROGRAM / STEP / WAIT / WAITUNTIL / LOOP / SAFETY</span>
+      <span class="badge">Nuevo: PROGRAM / STEP / WAIT / WAITUNTIL / LOOP COUNT / LOOP MAX / SAFETY</span>
       <span class="badge">VIN soportado: VIN1..VIN4</span>
     </div>
   </div>
@@ -115,12 +115,15 @@ STEP REL=REL1 STATE=ON TIME=5000
 STEP REL=REL1 STATE=OFF</pre></div>
       <div class="block"><h3>WAIT y WAITUNTIL</h3><pre class="code">WAIT TIME=300000
 WAITUNTIL TEMP=TEMP1 OP=&lt;= VALUE=10.0 STABLE=60000 MAX=3600000</pre></div>
-      <div class="block"><h3>LOOP</h3><pre class="code">LOOP MAX=8 UNTIL=TEMP1&lt;=40.0 STABLE=30000
+      <div class="block"><h3>LOOP</h3><pre class="code">LOOP COUNT=2
+...
+ENDLOOP</pre><p>COUNT hace vueltas exactas. MAX sigue como limite de seguridad cuando usas LOOP condicional.</p></div>
+      <div class="block"><h3>LOOP condicional</h3><pre class="code">LOOP MAX=8 UNTIL=TEMP1&lt;=40.0 STABLE=30000
 ...
 ENDLOOP</pre></div>
       <div class="block"><h3>SAFETY</h3><pre class="code">SAFETY IN=IN4 ACTION=ALL_OFF
 SAFETY VIN=VIN2 ACTION=ALL_OFF</pre></div>
-      <div class="block"><h3>Limites clave</h3><ul><li>Maximo 1 PROGRAM.</li><li>Maximo 1 LOOP, sin anidado.</li><li>Maximo 24 pasos ejecutables.</li><li>Tiempos 50..86400000 ms.</li><li>Reles usados quedan reservados mientras corre la secuencia.</li></ul></div>
+      <div class="block"><h3>Limites clave</h3><ul><li>Maximo 1 PROGRAM.</li><li>Maximo 1 LOOP, sin anidado.</li><li>Maximo 24 pasos ejecutables.</li><li>Tiempos 50..86400000 ms.</li><li>Reles usados quedan reservados mientras corre la secuencia.</li><li>COUNT hace bucle exacto; MAX es seguridad.</li></ul></div>
     </div>
   </div>
 
@@ -222,7 +225,7 @@ SET REL=REL2 STATE=OFF
 SET REL=REL3 STATE=OFF
 SET REL=REL4 STATE=OFF
 
-LOOP MAX=8 UNTIL=TEMP1&lt;=40.0 STABLE=30000
+LOOP COUNT=2
 STEP REL=REL1 STATE=ON TIME=30000
 STEP REL=REL2 STATE=ON TIME=45000
 WAIT TIME=300000

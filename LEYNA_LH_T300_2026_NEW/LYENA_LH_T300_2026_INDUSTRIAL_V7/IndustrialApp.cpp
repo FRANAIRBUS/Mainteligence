@@ -188,9 +188,11 @@ struct SequenceStep {
 
 struct SequenceLoopRuntime {
   bool enabled = false;
+  bool countMode = false;
   uint8_t beginStep = 0;
   uint8_t endStep = 0;
   uint8_t maxIterations = 0;
+  uint8_t exactIterations = 0;
   SequenceCondition untilCondition;
   uint32_t stableMs = 0;
   size_t lineNumber = 0;
@@ -484,6 +486,12 @@ uint16_t modbusMirrorSetpointSourceRegister() {
 uint16_t modbusMirrorStatusSourceRegister() {
   if (!modbusMirrorHybridMapActive()) return config().modbusStatusRegister;
   return config().modbusMirrorStatusRegister ? config().modbusMirrorStatusRegister : config().modbusStatusRegister;
+}
+
+bool relayOwnedByModbus(size_t index) {
+  if (!gHasStoredConfig || !config().enableModbus || index >= kChannelCount) return false;
+  if (config().modbusRelayRegisters[index] != 0U) return true;
+  return modbusMirrorModeActive() && modbusMirrorRelaySourceRegister(index) != 0U;
 }
 
 uint8_t modbusMirrorScale() {
@@ -847,7 +855,8 @@ void logInternal(const char* buffer) {
 #endif
 }
 
-void writeRelayHardware(size_t index, bool on) {
+void writeRelayHardware(size_t index, bool on, bool force = false) {
+  if (!force && relayOwnedByModbus(index)) return;
   const uint8_t pin = config().relayPins[index];
   runtimeData.relayState[index] = on;
   const bool driveHigh = config().relayActiveHigh ? on : !on;
@@ -856,7 +865,7 @@ void writeRelayHardware(size_t index, bool on) {
 
 void setAllRelaysOff() {
   for (size_t index = 0; index < kChannelCount; ++index) {
-    writeRelayHardware(index, false);
+    writeRelayHardware(index, false, true);
   }
 }
 
@@ -929,7 +938,7 @@ void configurePins() {
 
   for (size_t index = 0; index < kChannelCount; ++index) {
     pinMode(config().relayPins[index], OUTPUT);
-    writeRelayHardware(index, false);
+    writeRelayHardware(index, false, true);
     if (config().inputPullup) pinMode(config().inputPins[index], INPUT_PULLUP);
     else pinMode(config().inputPins[index], INPUT);
 #if defined(ARDUINO_ARCH_ESP32)
@@ -2372,32 +2381,49 @@ void processSequenceProgram(uint32_t now, bool* target) {
   if (!sequence.stepCount) return;
   if (sequence.currentStep != sequence.loop.endStep + 1U) return;
 
-  float observed = NAN;
-  const bool untilMet = evaluateSequenceCondition(sequence.loop.untilCondition, observed);
-  if (sequence.loop.untilCondition.signal == CUSTOM_SIGNAL_TEMP && !isnan(observed)) {
-    sequence.lastTemperature = observed;
-  }
-
-  if (untilMet) {
-    if (!sequence.stableArmed) {
-      sequence.stableArmed = true;
-      sequence.stableStartedAt = now;
-    } else if (elapsedSince(now, sequence.stableStartedAt, sequence.loop.stableMs)) {
-      sequence.currentStep = sequence.loop.endStep + 1U;
+  if (sequence.loop.countMode) {
+    if (sequence.currentLoop + 1U >= sequence.loop.exactIterations) {
+      sequence.loop.enabled = false;
       sequence.stableArmed = false;
       sequence.stableStartedAt = 0;
       sequence.state = SEQ_STATE_RUNNING;
+      addLog("Sequence loop completed");
+      return;
+    }
+    if (sequence.currentLoop + 1U >= sequence.loop.maxIterations) {
+      setSequenceRuntimeError(sequence.loop.lineNumber ? sequence.loop.lineNumber : 0U, "LOOP alcanzado MAX");
+      sequenceStopAndRelease(sequence, target, SEQ_STATE_ERROR);
       return;
     }
   } else {
-    sequence.stableArmed = false;
-    sequence.stableStartedAt = 0;
-  }
+    float observed = NAN;
+    const bool untilMet = evaluateSequenceCondition(sequence.loop.untilCondition, observed);
+    if (sequence.loop.untilCondition.signal == CUSTOM_SIGNAL_TEMP && !isnan(observed)) {
+      sequence.lastTemperature = observed;
+    }
 
-  if (sequence.currentLoop + 1U >= sequence.loop.maxIterations) {
-    setSequenceRuntimeError(sequence.loop.lineNumber ? sequence.loop.lineNumber : 0U, "LOOP alcanzado MAX");
-    sequenceStopAndRelease(sequence, target, SEQ_STATE_ERROR);
-    return;
+    if (untilMet) {
+      if (!sequence.stableArmed) {
+        sequence.stableArmed = true;
+        sequence.stableStartedAt = now;
+      } else if (elapsedSince(now, sequence.stableStartedAt, sequence.loop.stableMs)) {
+        sequence.loop.enabled = false;
+        sequence.stableArmed = false;
+        sequence.stableStartedAt = 0;
+        sequence.state = SEQ_STATE_RUNNING;
+        addLog("Sequence loop completed");
+        return;
+      }
+    } else {
+      sequence.stableArmed = false;
+      sequence.stableStartedAt = 0;
+    }
+
+    if (sequence.currentLoop + 1U >= sequence.loop.maxIterations) {
+      setSequenceRuntimeError(sequence.loop.lineNumber ? sequence.loop.lineNumber : 0U, "LOOP alcanzado MAX");
+      sequenceStopAndRelease(sequence, target, SEQ_STATE_ERROR);
+      return;
+    }
   }
 
   sequence.currentLoop++;
@@ -2520,9 +2546,11 @@ void recompileCustomProgramFromConfig() {
             }
 
             bool maxDefined = false;
+            bool countDefined = false;
             bool untilDefined = false;
             bool stableDefined = false;
             uint32_t maxIterations = 0;
+            uint32_t exactIterations = 0;
             String untilExpression;
             uint32_t stableMs = 0;
 
@@ -2543,6 +2571,18 @@ void recompileCustomProgramFromConfig() {
                   return;
                 }
                 maxDefined = true;
+                continue;
+              }
+              if (key == "COUNT") {
+                if (!parseUnsignedLong(value, exactIterations)) {
+                  setCustomProgramError(lineNumber, "LOOP COUNT invalido");
+                  return;
+                }
+                if (exactIterations < 1U || exactIterations > kSequenceMaxLoopIterations) {
+                  setCustomProgramError(lineNumber, "LOOP COUNT fuera de rango");
+                  return;
+                }
+                countDefined = true;
                 continue;
               }
               if (key == "UNTIL") {
@@ -2566,24 +2606,41 @@ void recompileCustomProgramFromConfig() {
               return;
             }
 
-            if (!maxDefined || !untilDefined || !stableDefined) {
-              setCustomProgramError(lineNumber, "LOOP requiere MAX, UNTIL y STABLE");
-              return;
-            }
+            if (countDefined) {
+              if (untilDefined || stableDefined) {
+                setCustomProgramError(lineNumber, "LOOP COUNT no admite UNTIL ni STABLE");
+                return;
+              }
+              if (!maxDefined) {
+                maxIterations = exactIterations;
+                maxDefined = true;
+              }
+              if (maxIterations < exactIterations) {
+                setCustomProgramError(lineNumber, "LOOP COUNT supera MAX");
+                return;
+              }
+            } else {
+              if (!maxDefined || !untilDefined || !stableDefined) {
+                setCustomProgramError(lineNumber, "LOOP requiere MAX, UNTIL y STABLE");
+                return;
+              }
 
-            SequenceCondition untilCondition;
-            if (!parseSequenceConditionExpression(untilExpression, lineNumber, untilCondition, "LOOP")) {
-              return;
+              SequenceCondition untilCondition;
+              if (!parseSequenceConditionExpression(untilExpression, lineNumber, untilCondition, "LOOP")) {
+                return;
+              }
+              sequence.loop.untilCondition = untilCondition;
+              sequence.loop.stableMs = stableMs;
             }
 
             loopSeen = true;
             loopOpen = true;
             loopBeginStep = sequence.stepCount;
             sequence.loop.enabled = true;
+            sequence.loop.countMode = countDefined;
             sequence.loop.beginStep = loopBeginStep;
             sequence.loop.maxIterations = static_cast<uint8_t>(maxIterations);
-            sequence.loop.untilCondition = untilCondition;
-            sequence.loop.stableMs = stableMs;
+            sequence.loop.exactIterations = countDefined ? static_cast<uint8_t>(exactIterations) : 0U;
             sequence.loop.lineNumber = lineNumber;
           } else if (command == "ENDLOOP") {
             if (!loopOpen) {
@@ -2961,6 +3018,7 @@ void applyCustomMode(uint32_t now) {
   applyLegacyCustomRules(now, target);
 
   for (size_t index = 0; index < kChannelCount; ++index) {
+    if (relayOwnedByModbus(index)) continue;
     runtimeData.manualRelayState[index] = target[index];
     writeRelayHardware(index, target[index]);
   }
@@ -3546,6 +3604,7 @@ bool applyModbusWriteAddress(uint16_t address, uint16_t value) {
   for (size_t index = 0; index < kChannelCount; ++index) {
     if (address == config().modbusRelayRegisters[index]) {
       runtimeData.manualRelayState[index] = value != 0;
+      writeRelayHardware(index, runtimeData.manualRelayState[index], true);
       snprintf(runtimeData.lastModbusWrite, sizeof(runtimeData.lastModbusWrite), "relay%u=%u", static_cast<unsigned>(index + 1U), value);
       addLog("Modbus write relay%u -> %s", static_cast<unsigned>(index + 1U), runtimeData.manualRelayState[index] ? "ON" : "OFF");
       break;
@@ -4083,6 +4142,7 @@ void applyRemoteModbusMirrorValue(uint16_t address, uint32_t value, uint8_t sour
     if (address == modbusMirrorRelaySourceRegister(index)) {
       runtimeData.manualRelayState[index] = value != 0;
       runtimeData.relayState[index] = value != 0;
+      writeRelayHardware(index, value != 0, true);
       return;
     }
   }
@@ -4328,7 +4388,6 @@ void processSensorTask() {
   sensorDriver.data.runs++;
   if (!gHasStoredConfig) return;
   const uint32_t now = millis();
-
   if (!modbusMirrorReadbackActive()) {
     for (size_t index = 0; index < kChannelCount; ++index) {
       sampleSensorChannel(index, now);
@@ -4377,13 +4436,6 @@ void processControlTask() {
   if (!gHasStoredConfig) return;
   const uint32_t now = millis();
   processInputDebounce(now);
-
-  if (modbusMirrorModeActive()) {
-    gHighAlarmConditionAt = 0;
-    gLowAlarmConditionAt = 0;
-    applyManualMode();
-    return;
-  }
 
   runtimeData.highAlarmActive = false;
   runtimeData.lowAlarmActive = false;
